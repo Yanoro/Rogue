@@ -1,0 +1,22 @@
+#pragma once
+
+#include <string>
+#include <mutex>
+#include <atomic>
+#include "AI.h"
+
+class AIChatWindow {
+public:
+    AIChatWindow(AI* aiInstance, const std::string& startPrompt);
+    void Draw();
+
+private:
+    AI* ai;
+    std::string prompt;
+    std::string inputBuffer;
+    std::mutex promptMutex;
+    std::atomic<bool> isGenerating{false};
+
+    void DrawSpinner();
+    void generateResponse(std::string currentPrompt);
+};
