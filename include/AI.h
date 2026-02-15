@@ -9,7 +9,7 @@ public:
   using StreamCallback = std::function<void(const std::string&)>;
 
   virtual std::string generate(const std::string& prompt) = 0;
-  virtual void generateStream(const std::string& prompt, StreamCallback callback) = 0;
+  virtual bool generateStream(const std::string& prompt, StreamCallback callback) = 0;
   virtual ~AI() = default;
 };
 
@@ -34,5 +34,5 @@ public:
   void setOption(const std::string& key, const nlohmann::json& value);
 
   std::string generate(const std::string& prompt) override;
-  void generateStream(const std::string& prompt, StreamCallback callback) override;
+  bool generateStream(const std::string& prompt, StreamCallback callback) override;
 };

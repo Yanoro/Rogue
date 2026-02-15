@@ -6,7 +6,7 @@
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
 #include "rlImGui.h"
-#include "raylib.h"
+#include "raylib-cpp.hpp"
 
 const size_t DEFAULT_DELAY_AI_TEXT_MS = 90;
 
@@ -19,12 +19,18 @@ void AIChatWindow::Draw() {
     ImGui::Begin("AI Chat", nullptr, ImGuiWindowFlags_AlwaysAutoResize); 
 
     if (ImGui::BeginChild("LogScroll", ImVec2(500, 300), ImGuiChildFlags_Borders)) {
-        std::lock_guard<std::mutex> lock(promptMutex);
-        ImGui::TextWrapped("%s", prompt.c_str());
+        if (not couldConnect) {
+          ImGui::TextWrapped("%s", "Could not connect to AI Backend!");
+        }
+        else {
+          std::lock_guard<std::mutex> lock(promptMutex);
+          ImGui::TextWrapped("%s", prompt.c_str());
+        }
     }
     ImGui::EndChild();
 
-    if (isGenerating) {
+    
+    if (isGenerating and couldConnect) {
         ImGui::Text("AI is thinking...");
         ImGui::SameLine();
         DrawSpinner();
@@ -58,7 +64,7 @@ void AIChatWindow::DrawSpinner() {
     float radius = 8.0f;
     pos.x += radius;
     pos.y += radius;
-    float time = (float)GetTime();
+    float time = (float)raylib::Window::GetTime();
     for (int i = 0; i < 8; i++) {
         float angle = time * 4.0f + i * (M_PI / 4.0f);
         float alpha = (float)i / 8.0f;
@@ -72,7 +78,7 @@ void AIChatWindow::DrawSpinner() {
 void AIChatWindow::generateResponse(std::string currentPrompt) {
     isGenerating = true;
     std::thread([this, currentPrompt]() {
-        ai->generateStream(currentPrompt, [this](const std::string &token) {
+        bool res = ai->generateStream(currentPrompt, [this](const std::string &token) {
             for (const char c : token) {
                 {
                     std::lock_guard<std::mutex> lock(promptMutex);
@@ -81,6 +87,12 @@ void AIChatWindow::generateResponse(std::string currentPrompt) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(DEFAULT_DELAY_AI_TEXT_MS));
             }
         }); 
-        isGenerating = false;
+        if (not res) {
+          couldConnect = false;
+        }
+        else {
+          isGenerating = false;
+          couldConnect = true;
+        }
     }).detach();
 }

@@ -91,46 +91,48 @@ std::string OllamaAI::generate(const std::string& prompt) {
   return readBuffer; // Return raw if parse fails or no response field
 }
 
-void OllamaAI::generateStream(const std::string& prompt, StreamCallback callback) {
+bool OllamaAI::generateStream(const std::string& prompt, StreamCallback callback) {
   CURL* curl;
   CURLcode res;
   StreamContext ctx;
   ctx.callback = callback;
 
   curl = curl_easy_init();
-  if(curl) {
-    curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
+  if (!curl) { return false; }
 
-    nlohmann::json payload = {
-      {"model", modelName},
-      {"prompt", prompt},
-      {"stream", true},
-    };
+  curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
 
-    if (!options.empty()) {
-      payload["options"] = options;
-    }
+  nlohmann::json payload = {
+    {"model", modelName},
+    {"prompt", prompt},
+    {"stream", true},
+  };
 
-    if (!context.empty()) {
-      payload["context"] = context;
-    }
-
-    std::string jsonStr = payload.dump();
-
-    struct curl_slist* headers = NULL;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallbackStream);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
-
-    res = curl_easy_perform(curl);
-
-    if(res != CURLE_OK) {
-      std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
-    }
-
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+  if (!options.empty()) {
+    payload["options"] = options;
   }
+
+  if (!context.empty()) {
+    payload["context"] = context;
+  }
+
+  std::string jsonStr = payload.dump();
+
+  struct curl_slist* headers = NULL;
+  headers = curl_slist_append(headers, "Content-Type: application/json");
+  curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallbackStream);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
+
+  res = curl_easy_perform(curl);
+
+  if(res != CURLE_OK) {
+    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << std::endl;
+    return false;
+  }
+
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+  return true;
 }
