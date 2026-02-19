@@ -1,0 +1,22 @@
+{ "frames": [
+   {
+    "filename": "Rocks.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 208, "h": 304 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 208, "h": 304 },
+    "sourceSize": { "w": 208, "h": 304 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Rocks.png",
+  "format": "RGBA8888",
+  "size": { "w": 208, "h": 304 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

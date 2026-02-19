@@ -1,0 +1,328 @@
+{ "frames": [
+   {
+    "filename": "Anvil_03 0.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 1.aseprite",
+    "frame": { "x": 96, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 2.aseprite",
+    "frame": { "x": 192, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 3.aseprite",
+    "frame": { "x": 288, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 4.aseprite",
+    "frame": { "x": 384, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 5.aseprite",
+    "frame": { "x": 480, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 6.aseprite",
+    "frame": { "x": 576, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 7.aseprite",
+    "frame": { "x": 672, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 8.aseprite",
+    "frame": { "x": 768, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 9.aseprite",
+    "frame": { "x": 864, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 10.aseprite",
+    "frame": { "x": 960, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 11.aseprite",
+    "frame": { "x": 1056, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 12.aseprite",
+    "frame": { "x": 1152, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 13.aseprite",
+    "frame": { "x": 1248, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 14.aseprite",
+    "frame": { "x": 1344, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 15.aseprite",
+    "frame": { "x": 1440, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 16.aseprite",
+    "frame": { "x": 1536, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 17.aseprite",
+    "frame": { "x": 1632, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 18.aseprite",
+    "frame": { "x": 1728, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 19.aseprite",
+    "frame": { "x": 1824, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 20.aseprite",
+    "frame": { "x": 1920, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 21.aseprite",
+    "frame": { "x": 2016, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 22.aseprite",
+    "frame": { "x": 2112, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 23.aseprite",
+    "frame": { "x": 2208, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 24.aseprite",
+    "frame": { "x": 2304, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 25.aseprite",
+    "frame": { "x": 2400, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 26.aseprite",
+    "frame": { "x": 2496, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 27.aseprite",
+    "frame": { "x": 2592, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 28.aseprite",
+    "frame": { "x": 2688, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 29.aseprite",
+    "frame": { "x": 2784, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 30.aseprite",
+    "frame": { "x": 2880, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 31.aseprite",
+    "frame": { "x": 2976, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 32.aseprite",
+    "frame": { "x": 3072, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 33.aseprite",
+    "frame": { "x": 3168, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   },
+   {
+    "filename": "Anvil_03 34.aseprite",
+    "frame": { "x": 3264, "y": 0, "w": 96, "h": 112 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 112 },
+    "sourceSize": { "w": 96, "h": 112 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Anvil_03.png",
+  "format": "RGBA8888",
+  "size": { "w": 3360, "h": 112 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

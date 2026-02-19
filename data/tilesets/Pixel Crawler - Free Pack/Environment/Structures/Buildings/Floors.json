@@ -1,0 +1,22 @@
+{ "frames": [
+   {
+    "filename": "Floors.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 400, "h": 400 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 400, "h": 400 },
+    "sourceSize": { "w": 400, "h": 400 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Floors.png",
+  "format": "RGBA8888",
+  "size": { "w": 400, "h": 400 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

@@ -7,7 +7,7 @@
 
 ResourceManager::ResourceManager() {};
 
-raylib::Texture* ResourceManager::GetTexture(std::string &filePath) {
+raylib::Texture* ResourceManager::GetTexture(const std::string &filePath) {
   auto it = textures.find(filePath);
   if (it != textures.end()) {
     return it->second.get();

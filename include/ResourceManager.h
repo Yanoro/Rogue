@@ -7,7 +7,7 @@
 class ResourceManager {
 public:
   ResourceManager();
-  raylib::Texture* GetTexture(std::string &filePath);
+  raylib::Texture* GetTexture(const std::string &filePath);
 private:
   std::unordered_map<std::string, std::unique_ptr<raylib::Texture>> textures;
 };

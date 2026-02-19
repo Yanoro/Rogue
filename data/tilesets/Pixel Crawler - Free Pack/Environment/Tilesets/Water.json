@@ -1,0 +1,49 @@
+{ "frames": [
+   {
+    "filename": "Water 0.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 96, "h": 80 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 80 },
+    "sourceSize": { "w": 96, "h": 80 },
+    "duration": 100
+   },
+   {
+    "filename": "Water 1.aseprite",
+    "frame": { "x": 96, "y": 0, "w": 96, "h": 80 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 80 },
+    "sourceSize": { "w": 96, "h": 80 },
+    "duration": 100
+   },
+   {
+    "filename": "Water 2.aseprite",
+    "frame": { "x": 192, "y": 0, "w": 96, "h": 80 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 80 },
+    "sourceSize": { "w": 96, "h": 80 },
+    "duration": 100
+   },
+   {
+    "filename": "Water 3.aseprite",
+    "frame": { "x": 288, "y": 0, "w": 96, "h": 80 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 96, "h": 80 },
+    "sourceSize": { "w": 96, "h": 80 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Water.png",
+  "format": "RGBA8888",
+  "size": { "w": 384, "h": 80 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

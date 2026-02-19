@@ -1,0 +1,49 @@
+{ "frames": [
+   {
+    "filename": "Stone_03 0.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 48, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 48, "h": 64 },
+    "sourceSize": { "w": 48, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Stone_03 1.aseprite",
+    "frame": { "x": 48, "y": 0, "w": 48, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 48, "h": 64 },
+    "sourceSize": { "w": 48, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Stone_03 2.aseprite",
+    "frame": { "x": 96, "y": 0, "w": 48, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 48, "h": 64 },
+    "sourceSize": { "w": 48, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Stone_03 3.aseprite",
+    "frame": { "x": 144, "y": 0, "w": 48, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 48, "h": 64 },
+    "sourceSize": { "w": 48, "h": 64 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Stone_03.png",
+  "format": "RGBA8888",
+  "size": { "w": 192, "h": 64 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

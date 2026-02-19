@@ -1,0 +1,49 @@
+{ "frames": [
+   {
+    "filename": "Grill_04 0.aseprite",
+    "frame": { "x": 0, "y": 0, "w": 80, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 80, "h": 64 },
+    "sourceSize": { "w": 80, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Grill_04 1.aseprite",
+    "frame": { "x": 80, "y": 0, "w": 80, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 80, "h": 64 },
+    "sourceSize": { "w": 80, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Grill_04 2.aseprite",
+    "frame": { "x": 160, "y": 0, "w": 80, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 80, "h": 64 },
+    "sourceSize": { "w": 80, "h": 64 },
+    "duration": 100
+   },
+   {
+    "filename": "Grill_04 3.aseprite",
+    "frame": { "x": 240, "y": 0, "w": 80, "h": 64 },
+    "rotated": false,
+    "trimmed": false,
+    "spriteSourceSize": { "x": 0, "y": 0, "w": 80, "h": 64 },
+    "sourceSize": { "w": 80, "h": 64 },
+    "duration": 100
+   }
+ ],
+ "meta": {
+  "app": "http://www.aseprite.org/",
+  "version": "1.3.13",
+  "image": "Grill_04.png",
+  "format": "RGBA8888",
+  "size": { "w": 320, "h": 64 },
+  "scale": "1",
+  "frameTags": [
+  ]
+ }
+}

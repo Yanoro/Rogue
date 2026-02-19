@@ -1,6 +1,6 @@
 #include "Map.h"
 
-Map::Map(std::string jsonPath) {
+Map::Map(std::string jsonPath, ResourceManager &rm) : resourceManager(rm) {
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
@@ -16,20 +16,18 @@ Map::Map(std::string jsonPath) {
     auto json = nlohmann::json::parse(jsonFile);
     width = json["width"];
     height = json["height"];
+    tileWidth = json["tilewidth"];
+    tileHeight = json["tileheight"];
  
-    
-
     tiles.resize(width * height);
     tileSets.reserve(json["tilesets"].size());
     for (const auto &tileSetJson : json["tilesets"]) {
       tileSets.emplace_back(
         tileSetJson["name"],
-        std::make_unique<raylib::Texture>(tileSetJson["image"]),
+        resourceManager.GetTexture(tileSetJson["image"]),
         tileSetJson["firstgid"],
         tileSetJson["tilecount"],
-        tileSetJson["columns"],
-        tileSetJson["tilewidth"],
-        tileSetJson["tileheight"]
+        tileSetJson["columns"]
       );
     }
 
@@ -71,6 +69,10 @@ bool Map::IsInBounds(int x, int y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);
 }
 
+ScreenCoords Map::MapCoordsToScreenCoords(int x, int y) const {
+  return std::make_pair(x * tileWidth, y * tileHeight);    
+}
+
 // Tile& Map::GetTile(int x, int y) {
 //   if (!IsInBounds(x, y)) {
 //     static Tile voidTile = Tile::Void();
@@ -85,23 +87,8 @@ void Map::SetTile(int x, int y, Tile tile) {
   }
 }
 
-// void Map::GenerateBasic(int seed) {
-//   // Basic room generation for testing
-//   // Fill with walls
-//   for (int i = 0; i < width * height; ++i) {
-//     tiles[i] = Tile::Wall();
-//   }
-//
-//   // Carve out a simple rectangle
-//   for (int y = 5; y < height - 5; ++y) {
-//     for (int x = 5; x < width - 5; ++x) {
-//       SetTile(x, y, Tile::Floor());
-//     }
-//   }
-// }
-
 void Map::Draw() {
-  unsigned int x, y;
+  int x, y;
   x = 0;
   y = 0;
   for (auto &tileGID : mapData) {
@@ -113,12 +100,12 @@ void Map::Draw() {
 
     int localID, srcX, srcY;
     localID = tileGID - tileSet->firstGID;
-    srcX = (localID % tileSet->columns) * tileSet->tileWidth;
-    srcY = (localID / tileSet->columns) * tileSet->tileHeight;
+    srcX = (localID % tileSet->columns) * tileWidth;
+    srcY = (localID / tileSet->columns) * tileHeight;
 
-    raylib::Texture *texture = tileSet->texture.get();
-    raylib::Rectangle srcRect(srcX, srcY, tileSet->tileWidth, tileSet->tileHeight);
-    raylib::Vector2 pos(x * tileSet->tileWidth, y * tileSet->tileWidth);
+    raylib::Texture *texture = tileSet->texture;
+    raylib::Rectangle srcRect(srcX, srcY, tileWidth, tileHeight);
+    raylib::Vector2 pos(x * tileWidth, y * tileWidth);
 
     texture->Draw(srcRect, pos);
 
@@ -128,20 +115,4 @@ void Map::Draw() {
       y++;
     }
   }
-
-  // for (int y = 0; y < height; ++y) {
-  //     for (int x = 0; x < width; ++x) {
-  //         raylib::Color color;
-  //         TileType type = tiles[GetIndex(x, y)].type;
-  //
-  //         switch (type) {
-  //             case TileType::Floor: color = raylib::Color::Gray(); break;
-  //             case TileType::Wall: color = raylib::Color::DarkGray(); break;
-  //             case TileType::Void: color = raylib::Color::Black(); break;
-  //             default: color = raylib::Color::Magenta(); break;
-  //         }
-  //
-  //         color.DrawRectangle(x * tileWidth, y * tileHeight, tileWidth - 1, tileHeight - 1);
-  //     }
-  // }
 }
