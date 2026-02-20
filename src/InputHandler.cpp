@@ -17,10 +17,10 @@ Command *InputHandler::handleInput() {
   if (IsKeyDown(KEY_MINUS)) { camera->zoom -= deltaInputZoom;} 
 
   // Actions that do affect in-game time
-  if (IsKeyDown(KEY_W)) { return &moveUp; }
-  if (IsKeyDown(KEY_D)) { return &moveRight; }
-  if (IsKeyDown(KEY_S)) { return &moveDown; }
-  if (IsKeyDown(KEY_A)) { return &moveLeft; }
+  if (IsKeyPressed(KEY_W)) { return &moveUp; }
+  if (IsKeyPressed(KEY_D)) { return &moveRight; }
+  if (IsKeyPressed(KEY_S)) { return &moveDown; }
+  if (IsKeyPressed(KEY_A)) { return &moveLeft; }
 
   return nullptr; 
 }

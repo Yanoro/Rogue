@@ -13,6 +13,8 @@ struct Position {
   int x, y;
 };
 
+struct BlocksTile {};
+
 struct Frame {
   raylib::Rectangle frameRect;
   double duration;
@@ -33,8 +35,14 @@ struct CharacterAnimation {
   {
     frames.reserve(frameCount);
   }
-
 };
+
+struct Drawable {
+  raylib::Texture *texture;
+  raylib::Rectangle srcRect;
+};
+
+struct Tile {};
 
 const std::string DEFAULT_PLAYER_ENTITY_NAME = "playerCharacter";
 

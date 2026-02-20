@@ -1,13 +1,9 @@
 #pragma once
 #include <vector>
 #include <nlohmann/json.hpp>
+#include <flecs.h>
 #include <string>
-#include <tuple>
-#include <fstream>
-#include <iostream>
 #include "ResourceManager.h"
-#include "Tile.h"
-#include "raylib-cpp.hpp"
 
 struct TileSet {
   std::string name;
@@ -21,10 +17,7 @@ using ScreenCoords = std::pair<int, int>;
 
 class Map {
 public:
-  Map(std::string jsonPath, ResourceManager &rm);
-
-  //Tile& GetTile(int x, int y);
-  void SetTile(int x, int y, Tile tile);
+  Map(std::string jsonPath, ResourceManager &rm, flecs::world &ecs);
 
   // Coordinate helpers
   int GetWidth() const { return width; }
@@ -33,25 +26,22 @@ public:
 
   ScreenCoords MapCoordsToScreenCoords(int x, int y) const;
 
-  // Logic
-  //void GenerateBasic(int seed);
+  int getTileWidth() const { return tileWidth; }
+  int getTileHeight() const { return tileHeight; } 
+
+
+
 
   // Rendering
-  void Draw();
+  //void Draw();
 
 private:
   ResourceManager &resourceManager;
+  flecs::world &ecs;
+
   int width;
   int height;
   int tileWidth, tileHeight;
-  std::vector<Tile> tiles;
-  std::vector<TileSet> tileSets;
-  
-  std::vector <unsigned int> mapData; // Stores the gids in the order meant to be drawn
-  std::unordered_map<int, TileSet *> gidToTileSetMap; 
-
-  int getTileWidth() const { return tileWidth; }
-  int getTileHeight() const { return tileHeight; }
 
   // Utility for 1D indexing
   int GetIndex(int x, int y) const;

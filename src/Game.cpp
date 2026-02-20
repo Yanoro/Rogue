@@ -1,7 +1,7 @@
 #include "Game.h"
 #include "rlImGui.h"
-#include "imgui.h"
-#include "ResourceManager.h"
+#include <fstream>
+#include <iostream>
 
 Game::Game() {}
 
@@ -21,8 +21,7 @@ std::string findFirstJsonFile(const std::string& directoryPath)  {
       }
     }
   } catch (const std::filesystem::filesystem_error& e) {
-    std::cerr << "Filesystem error: " << e.what() << 
-      std::endl;
+    std::cerr << "Filesystem error: " << e.what() << std::endl;
   }
   return ""; // No JSON file found
 }
@@ -39,7 +38,7 @@ flecs::entity Game::createEntity(const std::string &texturePath, const Position 
     jsonFile.open(jsonPath);
   }
   catch (const std::ifstream::failure &e) {
-    std::cerr << "Game::createEntity: Exception opening/reading file: " << e.what() << std::endl;
+    std::cerr << "Game::createEntity: Exception opening/reading file: " << texturePath << " " << e.what() << std::endl;
     throw;
   }
 
@@ -56,7 +55,8 @@ flecs::entity Game::createEntity(const std::string &texturePath, const Position 
     }
     return ecs.entity(entityName.c_str())
       .set<Position>(pos)
-      .set<CharacterAnimation>(charAnimation);  
+      .set<CharacterAnimation>(charAnimation)
+      .add<BlocksTile>();  
   } catch (const std::exception &e) {
     std::cerr << "JSON Parse Error: " << e.what() << " jsonPath: " << jsonPath << std::endl;
     throw; 
@@ -72,6 +72,15 @@ void Game::ECSInit() {
     .with<Render>()
     .build();
 
+  ecs.system<Drawable, Position>()
+    .kind<Render>()
+    .each([this](const Drawable &draw, const Position &pos) {
+      ScreenCoords screenCoords = map->MapCoordsToScreenCoords(pos.x, pos.y);
+      raylib::Vector2 position(screenCoords.first, screenCoords.second);
+      draw.texture->Draw(draw.srcRect, position);
+    });
+
+  
   ecs.system<Position, CharacterAnimation>()
     .kind<Render>()
     .each([this](const Position &pos, CharacterAnimation &characterAnimation) {
@@ -87,11 +96,13 @@ void Game::ECSInit() {
         characterAnimation.lastFrameTime = currTime;
       }
     });
-    
-  playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png", {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
-}
 
-//TODO: Add checks for cases where there are multiple entities in the same position
+  playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png", {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
+  createEntity("./data/tilesets/Pixel Crawler - Free Pack/Entities/NPCS/Knight/Idle/Idle-Sheet.png", 
+               {20, 1});
+  createEntity("./data/tilesets/Pixel Crawler - Free Pack/Entities/NPCS/Wizzard/Idle/Idle-Sheet.png", 
+               {30, 1});
+}
 
 void Game::Init(std::string mapPath) {
   if (window.IsReady()) return;
@@ -102,22 +113,35 @@ void Game::Init(std::string mapPath) {
   window.Init(0, 0, "AIRogue");
 
   resourceManager = std::make_unique<ResourceManager>();
-  map = std::make_unique<Map>(mapPath, *resourceManager);
-
   ECSInit();
+  map = std::make_unique<Map>(mapPath, *resourceManager, ecs); 
 
-  camera.target = {0, 0};
-  camera.offset = {300, 50};
-  camera.rotation = 0.0f;
-  camera.zoom = 1.0f; 
- 
-  inputHandler = std::make_unique<InputHandler>(camera);
-
-  // Ensure it starts on the primary monitor
+ // Ensure it starts on the primary monitor
   window.SetMonitor(0);
 
   window.SetTargetFPS(60);
 
+  float screenWidth = 1080;
+  float screenHeight = 1920;
+
+  std::cout << screenWidth << " " << screenHeight << std::endl;
+
+  float mapWidthPx = map->GetWidth() * map->getTileWidth();
+  float mapHeightPx = map->GetHeight() * map->getTileHeight();
+
+  float zoomX = screenWidth / mapWidthPx;
+  float zoomY = screenHeight / mapHeightPx;
+
+  // camera.target = { mapWidthPx / 2.0f, mapHeightPx / 2.0f };
+  // camera.offset = { screenWidth / 2.0f, screenHeight / 2.0f} ;
+  camera.target = {0, 0};
+  camera.offset = {0, 0};
+  camera.rotation = 0.0f;
+  camera.zoom = std::min(zoomX, zoomY);
+ 
+  inputHandler = std::make_unique<InputHandler>(camera);
+
+  
   rlImGuiSetup(true);
 
 }
@@ -128,22 +152,27 @@ void Game::Update() {
 
 void Game::Draw() {
   camera.BeginMode();
-  map->Draw();
   ecs.run_pipeline(renderPipeline);
   camera.EndMode();
 }
 
+// TODO: It slightly bothers me that this logic is not inside inputHandler
+// Also executing and then undoing it just sucks
 void Game::handleInput() {
   Command *cmd = inputHandler.get()->handleInput();
   if (cmd != nullptr) {
     flecs::entity playerEntity = ecs.lookup(DEFAULT_PLAYER_ENTITY_NAME.c_str());
+    
     cmd->execute(playerEntity);
     if (auto moveCmd = dynamic_cast<MoveCommand*>(cmd)) {
-      bool invalidMovement = ecs.query<Position>()
-        .find([this](const Position &pos) {
-          return not map.get()->IsInBounds(pos.x, pos.y);
+      const Position *playerPos = playerEntity.get<Position>();
+      bool inBounds = map.get()->IsInBounds(playerPos->x, playerPos->y);
+      bool blockedTile = ecs.filter<Position, BlocksTile>()
+        .find([&playerEntity, playerPos](flecs::entity entity, const Position &pos, BlocksTile bT) {
+          if (entity.id() == playerEntity.id()) { return false; }
+          return playerPos->x == pos.x and playerPos->y == pos.y;
         });
-      if (invalidMovement) { moveCmd->undo(playerEntity); }
+      if (!inBounds or blockedTile) { moveCmd->undo(playerEntity); }
     } 
   }
 }                                                                               ;
