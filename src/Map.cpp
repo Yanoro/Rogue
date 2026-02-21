@@ -22,41 +22,62 @@ Map::Map(std::string jsonPath, ResourceManager &rm, flecs::world &ecs) : resourc
     tileWidth = json["tilewidth"];
     tileHeight = json["tileheight"];
 
-    //TODO: Try to make this less deeply nested
     for (const auto &layer: json["layers"]) {
-      if (layer["type"] == "tilelayer") {
-        int x = 0;
-        int y = 0;
-        for (const unsigned int &tileGID : layer["data"]) {
-          for (const auto &tileSetJson : json["tilesets"]) {
-            unsigned int firstGID = tileSetJson["firstgid"];
-            unsigned int tileCount = tileSetJson["tilecount"];
-            if (tileGID >= firstGID and tileGID < (firstGID + tileCount)) {
-              raylib::Texture *texture = resourceManager.GetTexture(tileSetJson["image"]);
-              int localID, srcX, srcY, columns;
-              columns = tileSetJson["columns"];
-              localID = tileGID - firstGID;
-              srcX = (localID % columns) * tileWidth;
-              srcY = (localID / columns) * tileHeight;
+      if (layer["type"] != "tilelayer") {
+        continue;
+      }
 
-              raylib::Rectangle srcRect(srcX, srcY, tileWidth, tileHeight);
-              raylib::Vector2 pos(x * tileWidth, y * tileHeight);
+      int x = 0;
+      int y = 0;
+      for (const unsigned int &tileGID : layer["data"]) {
+        for (const auto &tileSetJson : json["tilesets"]) {
+          unsigned int firstGID = tileSetJson["firstgid"];
+          unsigned int tileCount = tileSetJson["tilecount"];
 
-              ecs.entity()
-                .add<Tile>()
-                .set<Drawable>({texture, srcRect})
-                .set<Position>({x, y});
-
-              x++;
-              if (x >= width) {
-                x = 0;
-                y++;
-              } 
-              break;
-            } 
+          if (tileGID < firstGID || tileGID >= (firstGID + tileCount)) {
+            continue;
           }
+
+          raylib::Texture *texture = resourceManager.GetTexture(tileSetJson["image"]);
+          int columns = tileSetJson["columns"];
+          int localID = tileGID - firstGID;
+          int srcX = (localID % columns) * tileWidth;
+          int srcY = (localID / columns) * tileHeight;
+
+          raylib::Rectangle srcRect(srcX, srcY, tileWidth, tileHeight);
+          raylib::Vector2 pos(x * tileWidth, y * tileHeight);
+
+          auto entity = ecs.entity()
+            .add<Tile>()
+            .set<Drawable>({texture, srcRect})
+            .set<Position>({x, y});
+
+          if (tileSetJson.contains("tiles")) {
+            for (const auto& tileDef : tileSetJson["tiles"]) {
+              if (tileDef.contains("id") && tileDef["id"] == localID) {
+                if (tileDef.contains("properties")) {
+                  for (const auto& prop : tileDef["properties"]) {
+                    if (prop.contains("name") && prop["name"] == "BlocksTile" &&
+                        prop.contains("value") && prop["value"] == true) {
+                      entity.add<BlocksTile>();
+                      break;
+                    }
+                  }
+                }
+                break; // Found the specific tile definition, no need to keep searching tiles
+              }
+            }
+          }
+
+          break;
         }
-      }  
+
+        x++;
+        if (x >= width) {
+          x = 0;
+          y++;
+        }
+      }
     }
   }
   catch (const std::exception& e) {

@@ -167,6 +167,7 @@ void Game::handleInput() {
     if (auto moveCmd = dynamic_cast<MoveCommand*>(cmd)) {
       const Position *playerPos = playerEntity.get<Position>();
       bool inBounds = map.get()->IsInBounds(playerPos->x, playerPos->y);
+      // TODO: Check if there is a way to make this lambda not receive BlocksTile
       bool blockedTile = ecs.filter<Position, BlocksTile>()
         .find([&playerEntity, playerPos](flecs::entity entity, const Position &pos, BlocksTile bT) {
           if (entity.id() == playerEntity.id()) { return false; }
