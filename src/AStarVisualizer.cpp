@@ -15,10 +15,6 @@ struct Position {
     }
 };
 
-bool samePosition(const Position &pos1, const Position &pos2) {
-    return pos1.x == pos2.x and pos1.y == pos2.y; 
-}
-
 struct Node {
   Position position;
   unsigned int fCost;
@@ -132,7 +128,7 @@ unsigned int GetPathLength(const Node *currNode) {
 
 Node *nodeHasPosition(const std::vector<Node*> &nodeVector, const Position &pos) {
   for (Node* currNode : nodeVector) {
-    if (samePosition(currNode->position, pos)) { return currNode; }
+    if (currNode->position == pos) { return currNode; }
   }
   return nullptr;
 }
@@ -185,7 +181,7 @@ void RunAStarSimulation(MockWorld &ecs, const Position &startPos, const Position
   g_endPos = endPos;
   g_history.clear();
   
-  if (samePosition(startPos, endPos)) return;
+  if (startPos == endPos) return;
 
   std::vector<Node*> openNodes;
   std::vector<Node*> closedNodes;
@@ -217,7 +213,7 @@ void RunAStarSimulation(MockWorld &ecs, const Position &startPos, const Position
     step.capture(openNodes, closedNodes, currNode);
     g_history.push_back(step);
 
-    if (samePosition(currNode->position, endPos)) { break; }
+    if (currNode->position == endPos) { break; }
 
     std::vector<Position> possiblePositions = GetNeighbours(currNode->position);
     std::vector<Position> neighbourPositions;
