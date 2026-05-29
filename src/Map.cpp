@@ -90,12 +90,12 @@ int Map::GetIndex(int x, int y) const {
   return y * width + x;
 }
 
-bool Map::IsInBounds(int x, int y) const {
+bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);
 }
 
-ScreenCoords Map::MapCoordsToScreenCoords(int x, int y) const {
-  return std::make_pair(x * tileWidth, y * tileHeight);    
+ScreenCoords Map::MapCoordsToScreenCoords(float x, float y) const {
+  return std::make_pair(static_cast<int>(x * tileWidth), static_cast<int>(y * tileHeight));    
 }
 
 // void Map::Draw() {

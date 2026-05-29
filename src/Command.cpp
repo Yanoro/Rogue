@@ -24,3 +24,22 @@ void MoveCommand::undo(flecs::entity e) {
   p->x -= dx;
   p->y -= dy;
 }
+
+ChangeVelocityCommand::ChangeVelocityCommand(float x, float y) : dx(x), dy(y) {}
+
+void ChangeVelocityCommand::execute(flecs::entity e) {
+  if (!e.has<Velocity>()) {
+    e.set<Velocity>(Velocity{0.0f, 0.0f});
+  }
+  auto v = e.get_mut<Velocity>();
+  v->x += dx;
+  v->y += dy;
+}
+
+void ChangeVelocityCommand::undo(flecs::entity e) {
+  if (e.has<Velocity>()) {
+    auto v = e.get_mut<Velocity>();
+    v->x -= dx;
+    v->y -= dy;
+  }
+}

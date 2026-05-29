@@ -5,16 +5,29 @@
 #include "Map.h"
 #include "InputHandler.h"
 
-
 // TODO: Place these structs into appropriate places
 struct Render {};
 
-struct Position {
-  int x, y;
+struct Position : public raylib::Vector2 {
+  Position(float x = 0.0f, float y = 0.0f) : raylib::Vector2(x, y) {}
+  Position(const raylib::Vector2& v) : raylib::Vector2(v) {}
 
   bool operator==(const Position &other) const {
     return x == other.x and y == other.y;
   }
+};
+
+struct MaxSpeed {
+  float value;
+};
+
+struct Velocity : public raylib::Vector2 {
+  Velocity(float x = 0.0f, float y = 0.0f) : raylib::Vector2(x, y) {}
+  Velocity(const raylib::Vector2& v) : raylib::Vector2(v) {}
+
+  bool operator==(const Velocity &other) const {
+    return x == other.x and y == other.y;
+  } 
 };
 
 struct BlocksTile {};

@@ -22,9 +22,9 @@ public:
   // Coordinate helpers
   int GetWidth() const { return width; }
   int GetHeight() const { return height; }
-  bool IsInBounds(int x, int y) const;
+  bool IsInBounds(float x, float y) const;
 
-  ScreenCoords MapCoordsToScreenCoords(int x, int y) const;
+  ScreenCoords MapCoordsToScreenCoords(float x, float y) const;
 
   int getTileWidth() const { return tileWidth; }
   int getTileHeight() const { return tileHeight; } 

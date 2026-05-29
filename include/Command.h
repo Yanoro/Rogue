@@ -33,3 +33,14 @@ public:
 private:
   int dx, dy;
 };
+
+class ChangeVelocityCommand : public Command {
+public:
+  ChangeVelocityCommand(float x, float y);
+
+  void execute(flecs::entity e) override;
+  void undo(flecs::entity e) override;
+
+private:
+  float dx, dy;
+};
