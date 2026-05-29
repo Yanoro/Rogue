@@ -5,65 +5,7 @@
 #include "Map.h"
 #include "InputHandler.h"
 
-// TODO: Place these structs into appropriate places
-struct Render {};
-
-struct Position : public raylib::Vector2 {
-  Position(float x = 0.0f, float y = 0.0f) : raylib::Vector2(x, y) {}
-  Position(const raylib::Vector2& v) : raylib::Vector2(v) {}
-
-  bool operator==(const Position &other) const {
-    return x == other.x and y == other.y;
-  }
-};
-
-struct MaxSpeed {
-  float value;
-};
-
-struct Velocity : public raylib::Vector2 {
-  Velocity(float x = 0.0f, float y = 0.0f) : raylib::Vector2(x, y) {}
-  Velocity(const raylib::Vector2& v) : raylib::Vector2(v) {}
-
-  bool operator==(const Velocity &other) const {
-    return x == other.x and y == other.y;
-  } 
-};
-
-struct Friction {
-  float value;
-};
-
-struct BlocksTile {};
-
-struct Frame {
-  raylib::Rectangle frameRect;
-  double duration;
-};
-
-struct CharacterAnimation {
-  raylib::Texture *texture;
-  unsigned int frameCount;
-  std::vector<Frame> frames;
-  unsigned int currentFrame = 0;
-  double lastFrameTime = 0;
-
-  CharacterAnimation(raylib::Texture *tex = nullptr, unsigned int frameCount = 1)
-    : texture(tex), 
-    frameCount(frameCount), 
-    currentFrame(0), 
-    lastFrameTime(0.0) 
-  {
-    frames.reserve(frameCount);
-  }
-};
-
-struct Drawable {
-  raylib::Texture *texture;
-  raylib::Rectangle srcRect;
-};
-
-struct Tile {};
+#include "Components.h"
 
 const std::string DEFAULT_PLAYER_ENTITY_NAME = "playerCharacter";
 
@@ -77,11 +19,15 @@ public:
   void Init(std::string mapPath);
   void handleInput();
   void Update();
+
+  void DrawGameWindows();
+  void DrawPlayerInfoWindow();
   void Draw(); 
+
   void Shutdown();
 
-  flecs::entity createEntity(const std::string &texturePath, const Position &pos, 
-                             std::string entityName);
+  flecs::entity createEntity(const std::string &texturePath, const GamePosition &gamePos,
+                             std::string entityName = "");
 
   bool shouldClose() const;
 
@@ -100,5 +46,5 @@ private:
   std::unique_ptr<InputHandler> inputHandler;
   std::unique_ptr<ResourceManager> resourceManager;
   
-  void ECSInit();
+  void ECSInit(std::string mapPath);
 };

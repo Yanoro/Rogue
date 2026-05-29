@@ -1,9 +1,8 @@
 #include "InputHandler.h"
-#include <iostream>
 
 InputHandler::InputHandler(raylib::Camera2D &gameCamera) : camera(&gameCamera) {};
 
-Command *InputHandler::handleInput() {
+std::vector<Command*> InputHandler::handleInput() {
   const int deltaInputMovement = 10;
   const float deltaInputZoom = 0.05f; 
 
@@ -16,11 +15,13 @@ Command *InputHandler::handleInput() {
   if (IsKeyDown(KEY_EQUAL)) { camera->zoom += deltaInputZoom;}
   if (IsKeyDown(KEY_MINUS)) { camera->zoom -= deltaInputZoom;} 
 
-  // Actions that affect game state
-  if (IsKeyDown(KEY_W)) return &velUp;
-  if (IsKeyDown(KEY_A)) return &velLeft;
-  if (IsKeyDown(KEY_S)) return &velDown;
-  if (IsKeyDown(KEY_D)) return &velRight;
+  std::vector<Command*> commands;
 
-  return nullptr; 
+  // Actions that affect game state
+  if (IsKeyDown(KEY_W)) commands.push_back(&velUp);
+  if (IsKeyDown(KEY_A)) commands.push_back(&velLeft);
+  if (IsKeyDown(KEY_S)) commands.push_back(&velDown);
+  if (IsKeyDown(KEY_D)) commands.push_back(&velRight);
+
+  return commands; 
 }

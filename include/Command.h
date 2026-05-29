@@ -2,7 +2,7 @@
 #include <flecs.h>
 #include <functional>
 
-struct Position;
+struct GamePosition;
 
 class Command {
 public:

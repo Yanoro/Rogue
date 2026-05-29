@@ -1,9 +1,9 @@
 #pragma once
-#include <vector>
 #include <nlohmann/json.hpp>
 #include <flecs.h>
 #include <string>
 #include "ResourceManager.h"
+#include "Components.h"
 
 struct TileSet {
   std::string name;
@@ -12,8 +12,6 @@ struct TileSet {
   unsigned int tileCount;
   unsigned int columns;
 };
-
-using ScreenCoords = std::pair<int, int>;
 
 class Map {
 public:
@@ -24,13 +22,11 @@ public:
   int GetHeight() const { return height; }
   bool IsInBounds(float x, float y) const;
 
-  ScreenCoords MapCoordsToScreenCoords(float x, float y) const;
+  ScreenPosition GameCoordsToScreenCoords(float x, float y) const;
+  GamePosition ScreenCoordsToGameCoords(float x, float y) const;
 
   int getTileWidth() const { return tileWidth; }
   int getTileHeight() const { return tileHeight; } 
-
-
-
 
   // Rendering
   //void Draw();

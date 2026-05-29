@@ -1,9 +1,10 @@
 #include "Game.h"
+#include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <algorithm>
 
 Game::Game() {}
 
@@ -31,8 +32,8 @@ std::string findFirstJsonFile(const std::string &directoryPath) {
 // TODO: Function either works or throws an exception,
 // Probably a better way to do this
 flecs::entity Game::createEntity(const std::string &texturePath,
-                                 const Position &pos,
-                                 std::string entityName = "") {
+                                 const GamePosition &pos,
+                                 std::string entityName) {
   std::string jsonPath = findFirstJsonFile(
       std::filesystem::path(texturePath).parent_path().string());
   std::ifstream jsonFile;
@@ -61,7 +62,8 @@ flecs::entity Game::createEntity(const std::string &texturePath,
       charAnimation.frames.emplace_back(Frame{frameRect, duration});
     }
     return ecs.entity(entityName.c_str())
-        .set<Position>(pos)
+        .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
+        .set<GamePosition>(pos)
         .set<CharacterAnimation>(charAnimation)
         .add<BlocksTile>();
   } catch (const std::exception &e) {
@@ -71,75 +73,84 @@ flecs::entity Game::createEntity(const std::string &texturePath,
   }
 }
 
-void Game::ECSInit() {
+void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
 
+  map = std::make_unique<Map>(mapPath, *resourceManager, ecs);
+
   renderPipeline = ecs.pipeline().with(flecs::System).with<Render>().build();
 
-  ecs.system<Drawable, Position>().kind<Render>().each(
-      [this](const Drawable &draw, const Position &pos) {
-        ScreenCoords screenCoords = map->MapCoordsToScreenCoords(pos.x, pos.y);
-        raylib::Vector2 position(screenCoords.first, screenCoords.second);
-        draw.texture->Draw(draw.srcRect, position);
+  ecs.system<Drawable, ScreenPosition>().kind<Render>().each(
+      [](const Drawable &draw, const ScreenPosition &pos) {
+        draw.texture->Draw(draw.srcRect, pos);
       });
 
-  ecs.system<Position, const Velocity>().each([](Position &pos, const Velocity &vel) {
-    pos.x += vel.x * GetFrameTime();
-    pos.y += vel.y * GetFrameTime();
-  });
+  ecs.system<ScreenPosition, const Velocity>().each(
+      [](ScreenPosition &pos, const Velocity &vel) {
+        pos.x += vel.x * GetFrameTime();
+        pos.y += vel.y * GetFrameTime();
+      });
 
-  ecs.system<Position, CharacterAnimation>()
-    .kind<Render>()
-    .each([this](const Position &pos, CharacterAnimation &characterAnimation) {
-      unsigned int currFrame = characterAnimation.currentFrame;
-      ScreenCoords screenCoords = map->MapCoordsToScreenCoords(pos.x, pos.y);
-      raylib::Vector2 position(screenCoords.first, screenCoords.second);
-      DrawCircleV(position, 7.5f, BLUE);
-      // texture->Draw(characterAnimation.frames[currFrame].frameRect, position);
-      double currTime = GetTime();
-      if (currTime - characterAnimation.lastFrameTime > characterAnimation.frames[currFrame].duration) {
-        characterAnimation.currentFrame = (currFrame + 1) % characterAnimation.frameCount;
-        characterAnimation.lastFrameTime = currTime;
-      }
-    });
-  
+  ecs.system<ScreenPosition, CharacterAnimation>().kind<Render>().each(
+      [](const ScreenPosition &pos, CharacterAnimation &characterAnimation) {
+        unsigned int currFrame = characterAnimation.currentFrame;
+        DrawCircleV(pos, 7.5f, BLUE);
+        double currTime = GetTime();
+        if (currTime - characterAnimation.lastFrameTime >
+            characterAnimation.frames[currFrame].duration) {
+          characterAnimation.currentFrame =
+              (currFrame + 1) % characterAnimation.frameCount;
+          characterAnimation.lastFrameTime = currTime;
+        }
+      });
+
   ecs.system<Velocity, const MaxSpeed>().each(
-    [](Velocity &vel, const MaxSpeed &maxSpeed) {
-      float velocityMagnitude = std::sqrt(vel.x * vel.x + vel.y * vel.y);
-
-      if (maxSpeed.value < velocityMagnitude) {
-        vel.x = (vel.x / velocityMagnitude) * maxSpeed.value;
-        vel.y = (vel.y / velocityMagnitude) * maxSpeed.value;
-      }
-    });
-
+      [](Velocity &vel, const MaxSpeed &maxSpeed) {
+        vel.x = std::clamp(vel.x, -maxSpeed.maxX, maxSpeed.maxX);
+        vel.y = std::clamp(vel.y, -maxSpeed.maxY, maxSpeed.maxY);
+      });
 
   ecs.system<Velocity, Friction>().each(
-    [](Velocity &vel, const Friction &friction) {
+      [](Velocity &vel, const Friction &friction) {
+        if (vel.x > 0) {
+          vel.x = std::max(0.0f, vel.x - friction.value);
+        } else if (vel.x < 0) {
+          vel.x = std::min(0.0f, vel.x + friction.value);
+        }
+        if (vel.y >= 0) {
+          vel.y = std::max(0.0f, vel.y - friction.value);
+        } else if (vel.y < 0) {
+          vel.y = std::min(0.0f, vel.y + friction.value);
+        }
+      });
 
+  std::vector<GamePosition> tilesBlocked;
+  ecs.filter<GamePosition, BlocksTile>().each(
+      [&tilesBlocked](const GamePosition &pos, const BlocksTile bt) {
+        tilesBlocked.push_back(pos);
+      });
 
-      if (vel.x >= 0 ) {
-        vel.x = std::max(0.0f, vel.x - friction.value);
-      }
-      else if (vel.x < 0) {
-        vel.x = std::min(0.0f, vel.x + friction.value);
-      } 
-      if (vel.y >= 0) {
-        vel.y = std::max(0.0f, vel.y - friction.value);
-      }
-      else if (vel.y < 0) {
-        vel.y = std::min(0.0f, vel.y + friction.value);
-      } 
-    }
-  );
+  // Add tangible tag
+  // ecs.system<Velocity, ScreenPosition>().each(
+  //     [&tilesBlocked](Velocity &vel, const ScreenPosition &pos) {
+  //       Position newPos{pos.x + vel.x, pos.y + vel.y};
+  //       if (std::find(tilesBlocked.begin(), tilesBlocked.end(), newPos) !=
+  //           tilesBlocked.end()) {
+  //         if (pos.x != newPos.x) {
+  //           vel.x = 0;
+  //         }
+  //         if (pos.y != newPos.y) {
+  //           vel.y = 0;
+  //         }
+  //       }
+  //     });
 
   playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free "
                               "Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png",
                               {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
-  playerEntity.set<MaxSpeed>({5.0f}); 
-  playerEntity.set<Friction>({0.3f}); 
-
+  playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED_X, DEFAULT_MAXSPEED_Y});
+  playerEntity.set<Friction>({DEFAULT_FRICTION});
 
   createEntity("./data/tilesets/Pixel Crawler - Free "
                "Pack/Entities/NPCS/Knight/Idle/Idle-Sheet.png",
@@ -161,8 +172,7 @@ void Game::Init(std::string mapPath) {
   window.Init(100, 100, "AIRogue");
 
   resourceManager = std::make_unique<ResourceManager>();
-  ECSInit();
-  map = std::make_unique<Map>(mapPath, *resourceManager, ecs);
+  ECSInit(mapPath);
 
   // Ensure it starts on the current monitor
   int currentMonitor = GetCurrentMonitor();
@@ -214,6 +224,30 @@ void Game::Init(std::string mapPath) {
 
 void Game::Update() { ecs.progress(); }
 
+void Game::DrawPlayerInfoWindow() {
+  ImGui::Begin("Player Entity");
+  if (playerEntity.is_alive()) {
+    if (const GamePosition *gPos = playerEntity.get<GamePosition>()) {
+      ImGui::Text("Game Position: (%d, %d)", gPos->x, gPos->y);
+    }
+    if (const ScreenPosition *sPos = playerEntity.get<ScreenPosition>()) {
+      ImGui::Text("Screen Position: (%.2f, %.2f)", sPos->x, sPos->y);
+    }
+    if (const Velocity *vel = playerEntity.get<Velocity>()) {
+      ImGui::Text("Velocity: (%.2f, %.2f)", vel->x, vel->y);
+    } else {
+      ImGui::Text("Velocity: (0.00, 0.00)");
+    }
+  } else {
+    ImGui::Text("Player entity not alive.");
+  }
+  ImGui::End();
+}
+
+void Game::DrawGameWindows() {
+  DrawPlayerInfoWindow();
+}
+
 void Game::Draw() {
   camera.BeginMode();
   ecs.run_pipeline(renderPipeline);
@@ -221,9 +255,11 @@ void Game::Draw() {
 }
 
 void Game::handleInput() {
-  Command *cmd = inputHandler->handleInput();
-  if (cmd) {
-    cmd->execute(playerEntity);
+  std::vector<Command *> commands = inputHandler->handleInput();
+  for (Command *cmd : commands) {
+    if (cmd) {
+      cmd->execute(playerEntity);
+    }
   }
 }
 

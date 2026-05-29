@@ -6,23 +6,23 @@ const unsigned int DIAGONAL_COST = 14;
 const unsigned int ORTHOGONAL_COST = 10; 
 
 struct Node {
-  Position position;
+  GamePosition position;
   unsigned int fCost;
   Node *parent;
 };
 
-std::vector<Position> GetNeighbours(Position p) {
+std::vector<GamePosition> GetNeighbours(GamePosition p) {
   static const int dx[] = {-1,  0,  1, -1, 1, -1, 0, 1};
   static const int dy[] = {-1, -1, -1,  0, 0,  1, 1, 1};
 
-  std::vector<Position> neighbors;
+  std::vector<GamePosition> neighbors;
   for(int i = 0; i < 8; ++i) {
     neighbors.push_back({p.x + dx[i], p.y + dy[i]});
   }
   return neighbors;
 }
 
-bool isDiagonal(const Position &pos1, const Position &pos2) {
+bool isDiagonal(const GamePosition &pos1, const GamePosition &pos2) {
   return abs(pos1.x - pos2.x) == 1 && abs(pos1.y - pos2.y);
 }
 
@@ -32,20 +32,20 @@ unsigned int GetPathLength(const Node *currNode) {
   return cost + GetPathLength(currNode->parent);
 }
 
-Node *nodeHasPosition(const std::vector<Node*> &nodeVector, const Position &pos) {
+Node *nodeHasPosition(const std::vector<Node*> &nodeVector, const GamePosition &pos) {
   for (Node* currNode : nodeVector) {
     if (currNode->position == pos) { return currNode; }
   }
   return nullptr;
 }
 
-unsigned int OctileDistance(const Position &pos1, const Position &pos2) {
+unsigned int OctileDistance(const GamePosition &pos1, const GamePosition &pos2) {
   int dx = abs(pos1.x - pos2.x);
   int dy = abs(pos1.y - pos2.y);
   return (ORTHOGONAL_COST * abs(dx - dy)) + (DIAGONAL_COST * std::min(dx, dy));
 }
 
-unsigned int getFCost(const Node &node, const Position &endPos) {
+unsigned int getFCost(const Node &node, const GamePosition &endPos) {
   unsigned int hCost = OctileDistance(node.position, endPos);
   unsigned int gCost = GetPathLength(&node);
 
@@ -55,7 +55,7 @@ unsigned int getFCost(const Node &node, const Position &endPos) {
 //TODO: Currently calling GetPathLength is way inneficient (Quadratic), it's better if i
 // had stored gCost on Node  
 
-Position AStar(flecs::world &ecs, const Position &startPos, const Position &endPos) {
+GamePosition AStar(flecs::world &ecs, const GamePosition &startPos, const GamePosition &endPos) {
   if (startPos == endPos) { return startPos; }
 
   std::vector<Node*> openNodes;
@@ -80,13 +80,13 @@ Position AStar(flecs::world &ecs, const Position &startPos, const Position &endP
 
     if (currNode->position == endPos) { break; }
 
-    std::vector<Position> possiblePositions = GetNeighbours(currNode->position);
-    std::vector<Position> neighbourPositions;
+    std::vector<GamePosition> possiblePositions = GetNeighbours(currNode->position);
+    std::vector<GamePosition> neighbourPositions;
 
-    ecs.filter_builder<Tile, Position>()
+    ecs.filter_builder<Tile, GamePosition>()
       .without<BlocksTile>()
       .build()
-      .each([&possiblePositions, &closedNodes, &neighbourPositions](const Tile &t, const Position &pos) {
+      .each([&possiblePositions, &closedNodes, &neighbourPositions](const Tile &t, const GamePosition &pos) {
         if (std::ranges::find(possiblePositions, pos) != possiblePositions.end() and
           nodeHasPosition(closedNodes, pos) == nullptr) {
           neighbourPositions.push_back(pos);
@@ -112,7 +112,7 @@ Position AStar(flecs::world &ecs, const Position &startPos, const Position &endP
     }
   }
 
-  Position resPos;
+  GamePosition resPos;
   while (currNode->parent->parent != nullptr) { currNode = currNode->parent; }
   resPos = currNode->position;
 

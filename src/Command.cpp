@@ -14,13 +14,13 @@ void FunctionCommand::undo(flecs::entity e) {
 MoveCommand::MoveCommand(int x, int y) : dx(x), dy(y) {}
 
 void MoveCommand::execute(flecs::entity e) {
-  auto p = e.get_mut<Position>();
+  auto p = e.get_mut<GamePosition>();
   p->x += dx;
   p->y += dy;
 }
 
 void MoveCommand::undo(flecs::entity e) {
-  auto p = e.get_mut<Position>();
+  auto p = e.get_mut<GamePosition>();
   p->x -= dx;
   p->y -= dy;
 }

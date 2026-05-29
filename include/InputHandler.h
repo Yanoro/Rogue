@@ -1,6 +1,7 @@
 #pragma once
+#include "Camera2D.hpp"
 #include "Command.h"
-#include "raylib-cpp.hpp"
+#include <vector>
 
 const float DEFAULT_VELOCITY = 1.0f;
 
@@ -8,7 +9,7 @@ class InputHandler {
 public:
   InputHandler(raylib::Camera2D &gameCamera);
 
-  Command *handleInput();
+  std::vector<Command*> handleInput();
 
 
 private:

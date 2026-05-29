@@ -7,21 +7,21 @@
 #include <thread>
 #include <chrono>
 
-struct Position {
+struct GamePosition {
     int x, y;
     
-    bool operator==(const Position& other) const {
+    bool operator==(const GamePosition& other) const {
         return x == other.x && y == other.y;
     }
 };
 
 struct Node {
-  Position position;
+  GamePosition position;
   unsigned int fCost;
   Node *parent;
   
   Node() : position{0,0}, fCost(0), parent(nullptr) {}
-  Node(Position p, unsigned int f, Node* par) : position(p), fCost(f), parent(par) {}
+  Node(GamePosition p, unsigned int f, Node* par) : position(p), fCost(f), parent(par) {}
   
   // Helper to clone a node deeply enough for snapshots (parent is just a reference, that's okay for now)
   Node* clone() const {
@@ -73,7 +73,7 @@ struct MockWorld {
             for(int y=0; y<world->height; y++) {
                 for(int x=0; x<world->width; x++) {
                     if (excludeBlocked && world->isBlocked(x, y)) continue;
-                    f(Position{x, y});
+                    f(GamePosition{x, y});
                 }
             }
         }
@@ -102,18 +102,18 @@ struct MockWorld {
 
 MockWorld* g_world = nullptr;
 
-std::vector<Position> GetNeighbours(Position p) {
+std::vector<GamePosition> GetNeighbours(GamePosition p) {
   static const int dx[] = {-1,  0,  1, -1, 1, -1, 0, 1};
   static const int dy[] = {-1, -1, -1,  0, 0,  1, 1, 1};
 
-  std::vector<Position> neighbors;
+  std::vector<GamePosition> neighbors;
   for(int i = 0; i < 8; ++i) {
     neighbors.push_back({p.x + dx[i], p.y + dy[i]});
   }
   return neighbors;
 }
 
-bool isDiagonal(const Position &pos1, const Position &pos2) {
+bool isDiagonal(const GamePosition &pos1, const GamePosition &pos2) {
   return abs(pos1.x - pos2.x) == 1 && abs(pos1.y - pos2.y);
 }
 
@@ -126,20 +126,20 @@ unsigned int GetPathLength(const Node *currNode) {
   return cost + GetPathLength(currNode->parent);
 }
 
-Node *nodeHasPosition(const std::vector<Node*> &nodeVector, const Position &pos) {
+Node *nodeHasPosition(const std::vector<Node*> &nodeVector, const GamePosition &pos) {
   for (Node* currNode : nodeVector) {
     if (currNode->position == pos) { return currNode; }
   }
   return nullptr;
 }
 
-unsigned int OctileDistance(const Position &pos1, const Position &pos2) {
+unsigned int OctileDistance(const GamePosition &pos1, const GamePosition &pos2) {
   int dx = abs(pos1.x - pos2.x);
   int dy = abs(pos1.y - pos2.y);
   return (ORTHOGONAL_COST * abs(dx - dy)) + (DIAGONAL_COST * std::min(dx, dy));
 }
 
-unsigned int getFCost(const Node &node, const Position &endPos) {
+unsigned int getFCost(const Node &node, const GamePosition &endPos) {
   unsigned int hCost = OctileDistance(node.position, endPos);
   unsigned int gCost = GetPathLength(&node);
 
@@ -173,10 +173,10 @@ struct AStarSnapshot {
 std::vector<AStarSnapshot> g_history;
 int g_currentStep = 0;
 bool g_simulationComplete = false;
-Position g_startPos;
-Position g_endPos;
+GamePosition g_startPos;
+GamePosition g_endPos;
 
-void RunAStarSimulation(MockWorld &ecs, const Position &startPos, const Position &endPos) {
+void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const GamePosition &endPos) {
   g_startPos = startPos;
   g_endPos = endPos;
   g_history.clear();
@@ -215,13 +215,13 @@ void RunAStarSimulation(MockWorld &ecs, const Position &startPos, const Position
 
     if (currNode->position == endPos) { break; }
 
-    std::vector<Position> possiblePositions = GetNeighbours(currNode->position);
-    std::vector<Position> neighbourPositions;
+    std::vector<GamePosition> possiblePositions = GetNeighbours(currNode->position);
+    std::vector<GamePosition> neighbourPositions;
 
-    ecs.filter_builder<Tile, Position>()
+    ecs.filter_builder<Tile, GamePosition>()
       .without<BlocksTile>()
       .build()
-      .each([&possiblePositions, &closedNodes, &neighbourPositions](const Position &pos) {
+      .each([&possiblePositions, &closedNodes, &neighbourPositions](const GamePosition &pos) {
         if (std::ranges::find(possiblePositions, pos) != possiblePositions.end() and
           nodeHasPosition(closedNodes, pos) == nullptr) {
           neighbourPositions.push_back(pos);
@@ -310,15 +310,15 @@ void DrawAStarState(const AStarSnapshot& state) {
 
 struct TestCase {
     std::string name;
-    Position start;
-    Position end;
+    GamePosition start;
+    GamePosition end;
     std::function<void(MockWorld&)> setup;
 };
 
 std::vector<TestCase> g_testCases;
 int g_currentCaseIndex = 0;
 
-void RunAStarSimulation(MockWorld &ecs, const Position &startPos, const Position &endPos);
+void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const GamePosition &endPos);
 
 void InitTestCases() {
     g_testCases.push_back({

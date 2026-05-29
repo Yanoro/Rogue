@@ -19,19 +19,21 @@ int main() {
   // Detect window close button or ESC key
   while (!game.shouldClose()) {    
     game.Update();
+    game.handleInput();
   
     window->BeginDrawing();
-    game.handleInput();
-    rlImGuiBegin();
     window->ClearBackground(raylib::Color::RayWhite());
 
+    // Draw world
     game.Draw();
 
+    // Draw UI
+    rlImGuiBegin();
+    game.DrawGameWindows();
     ImGui::ShowDemoWindow();
     chatWindow.Draw();
-
     rlImGuiEnd();
-    EndMode2D();
+
     window->EndDrawing();
   }
 
