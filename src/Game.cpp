@@ -3,6 +3,7 @@
 #include "rlImGui.h"
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 
 Game::Game() {}
 
@@ -114,10 +115,30 @@ void Game::ECSInit() {
     });
 
 
+  ecs.system<Velocity, Friction>().each(
+    [](Velocity &vel, const Friction &friction) {
+
+
+      if (vel.x >= 0 ) {
+        vel.x = std::max(0.0f, vel.x - friction.value);
+      }
+      else if (vel.x < 0) {
+        vel.x = std::min(0.0f, vel.x + friction.value);
+      } 
+      if (vel.y >= 0) {
+        vel.y = std::max(0.0f, vel.y - friction.value);
+      }
+      else if (vel.y < 0) {
+        vel.y = std::min(0.0f, vel.y + friction.value);
+      } 
+    }
+  );
+
   playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free "
                               "Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png",
                               {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
   playerEntity.set<MaxSpeed>({5.0f}); 
+  playerEntity.set<Friction>({0.3f}); 
 
 
   createEntity("./data/tilesets/Pixel Crawler - Free "

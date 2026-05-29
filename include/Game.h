@@ -30,6 +30,10 @@ struct Velocity : public raylib::Vector2 {
   } 
 };
 
+struct Friction {
+  float value;
+};
+
 struct BlocksTile {};
 
 struct Frame {
