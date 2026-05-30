@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "PathFinding.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -256,17 +257,30 @@ void Game::Update() {
     Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
     GamePosition gPos =
         map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
-    lastClickedPos = gPos;
-    hasClicked = true;
-    validTileSelected = false;
 
-    ecs.filter<Tile, const GamePosition>().each(
-        [this, gPos](flecs::entity e, const Tile &, const GamePosition &p) {
-          if (p.x == gPos.x && p.y == gPos.y) {
-            selectedTile = e;
-            validTileSelected = true;
-          }
-        });
+    if (isSelectingAStarPath) {
+      if (astarClickCount == 0) {
+        astarStartPos = gPos;
+        astarClickCount++;
+      } else if (astarClickCount == 1) {
+        astarEndPos = gPos;
+        astarClickCount = 0;
+        isSelectingAStarPath = false;
+        astarPath = AStar(ecs, astarStartPos, astarEndPos);
+      }
+    } else {
+      lastClickedPos = gPos;
+      hasClicked = true;
+      validTileSelected = false;
+
+      ecs.filter<Tile, const GamePosition>().each(
+          [this, gPos](flecs::entity e, const Tile &, const GamePosition &p) {
+            if (p.x == gPos.x && p.y == gPos.y) {
+              selectedTile = e;
+              validTileSelected = true;
+            }
+          });
+    }
   }
 
   ecs.progress();
@@ -393,16 +407,50 @@ void Game::DrawTileInfoWindow() {
   ImGui::End();
 }
 
+void Game::DrawAStarWindow() {
+  ImGui::Begin("A*");
+
+  if (isSelectingAStarPath) {
+    if (ImGui::Button("Cancel Selection")) {
+      isSelectingAStarPath = false;
+      astarClickCount = 0;
+    }
+    ImGui::Text("Click %d/2 on map", astarClickCount + 1);
+  } else {
+    if (ImGui::Button("Select Path")) {
+      isSelectingAStarPath = true;
+      astarClickCount = 0;
+      astarStartPos = {0, 0};
+      astarEndPos = {0, 0};
+      astarPath.clear();
+    }
+  }
+
+  ImGui::End();
+}
+
 void Game::DrawGameWindows() {
 
   DrawPlayerInfoWindow();
 
   DrawTileInfoWindow();
+
+  DrawAStarWindow();
 }
 
 void Game::Draw() {
   camera.BeginMode();
   ecs.run_pipeline(renderPipeline);
+
+  if (!astarPath.empty() && map) {
+    int tileW = map->getTileWidth();
+    int tileH = map->getTileHeight();
+    for (const auto& pos : astarPath) {
+      ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
+      DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, RED);
+    }
+  }
+
   camera.EndMode();
 }
 

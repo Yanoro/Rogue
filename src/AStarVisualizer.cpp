@@ -18,14 +18,15 @@ struct GamePosition {
 struct Node {
   GamePosition position;
   unsigned int fCost;
+  unsigned int gCost;
   Node *parent;
   
-  Node() : position{0,0}, fCost(0), parent(nullptr) {}
-  Node(GamePosition p, unsigned int f, Node* par) : position(p), fCost(f), parent(par) {}
+  Node() : position{0,0}, fCost(0), gCost(0), parent(nullptr) {}
+  Node(GamePosition p, unsigned int f, unsigned int g, Node* par) : position(p), fCost(f), gCost(g), parent(par) {}
   
   // Helper to clone a node deeply enough for snapshots (parent is just a reference, that's okay for now)
   Node* clone() const {
-      return new Node(position, fCost, parent);
+      return new Node(position, fCost, gCost, parent);
   }
 };
 
@@ -73,7 +74,7 @@ struct MockWorld {
             for(int y=0; y<world->height; y++) {
                 for(int x=0; x<world->width; x++) {
                     if (excludeBlocked && world->isBlocked(x, y)) continue;
-                    f(GamePosition{x, y});
+                    f(Tile{}, GamePosition{x, y});
                 }
             }
         }
@@ -141,7 +142,7 @@ unsigned int OctileDistance(const GamePosition &pos1, const GamePosition &pos2) 
 
 unsigned int getFCost(const Node &node, const GamePosition &endPos) {
   unsigned int hCost = OctileDistance(node.position, endPos);
-  unsigned int gCost = GetPathLength(&node);
+  unsigned int gCost = node.gCost;
 
   return hCost + gCost;
 }
@@ -176,37 +177,51 @@ bool g_simulationComplete = false;
 GamePosition g_startPos;
 GamePosition g_endPos;
 
+std::vector<Node*> g_allocatedNodes;
+
 void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const GamePosition &endPos) {
   g_startPos = startPos;
   g_endPos = endPos;
   g_history.clear();
+  
+  for (Node* n : g_allocatedNodes) delete n;
+  g_allocatedNodes.clear();
   
   if (startPos == endPos) return;
 
   std::vector<Node*> openNodes;
   std::vector<Node*> closedNodes;
   
-  Node *startNode = new Node(startPos, 0, nullptr);
+  // O(1) lookup grids for performance
+  std::vector<bool> closedGrid(ecs.width * ecs.height, false);
+  std::vector<Node*> openGrid(ecs.width * ecs.height, nullptr);
+  
+  Node *startNode = new Node(startPos, 0, 0, nullptr);
+  g_allocatedNodes.push_back(startNode);
   Node *currNode = nullptr;
 
   openNodes.push_back(startNode);
+  openGrid[startPos.y * ecs.width + startPos.x] = startNode;
 
   // Initial Snapshot
   AStarSnapshot initial;
   initial.capture(openNodes, closedNodes, currNode);
   g_history.push_back(initial);
 
-  while (true) {
+  while (!openNodes.empty()) {
     
+    // Using min_element is acceptable here as N is small (visualizer).
+    // A real game would use a std::priority_queue.
     auto it = std::min_element(openNodes.begin(), openNodes.end(), 
                                [](const Node *nodeA, const Node *nodeB) 
                                { return nodeA->fCost < nodeB->fCost; });
     
-    if (it == openNodes.end()) break; 
-
     currNode = *it;
     openNodes.erase(it);
+    openGrid[currNode->position.y * ecs.width + currNode->position.x] = nullptr;
+    
     closedNodes.push_back(currNode);
+    closedGrid[currNode->position.y * ecs.width + currNode->position.x] = true;
     
     // Snapshot at start of processing this node
     AStarSnapshot step;
@@ -216,34 +231,32 @@ void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const Game
     if (currNode->position == endPos) { break; }
 
     std::vector<GamePosition> possiblePositions = GetNeighbours(currNode->position);
-    std::vector<GamePosition> neighbourPositions;
 
-    ecs.filter_builder<Tile, GamePosition>()
-      .without<BlocksTile>()
-      .build()
-      .each([&possiblePositions, &closedNodes, &neighbourPositions](const GamePosition &pos) {
-        if (std::ranges::find(possiblePositions, pos) != possiblePositions.end() and
-          nodeHasPosition(closedNodes, pos) == nullptr) {
-          neighbourPositions.push_back(pos);
-        }
-      });
+    for (const auto &neighbourPos : possiblePositions) {
+        // Bounds check
+        if (neighbourPos.x < 0 || neighbourPos.x >= ecs.width || neighbourPos.y < 0 || neighbourPos.y >= ecs.height) continue;
+        
+        // Blocked check (O(1) instead of ECS query loop)
+        if (ecs.isBlocked(neighbourPos.x, neighbourPos.y)) continue;
+        
+        // Closed list check (O(1))
+        if (closedGrid[neighbourPos.y * ecs.width + neighbourPos.x]) continue;
 
-    for (const auto &neighbourPos : neighbourPositions) {
-      Node *neighbourNode = nodeHasPosition(openNodes, neighbourPos);
-      Node *newNode = new Node(neighbourPos, 0, currNode); 
-      
-      newNode->fCost = getFCost(*newNode, endPos); 
-      if (neighbourNode == nullptr) {
-        openNodes.push_back(newNode);
-      }
-      else {
-        unsigned int newDistance = GetPathLength(newNode);
-        unsigned int oldDistance = GetPathLength(neighbourNode);
-        if (newDistance < oldDistance) {
-          neighbourNode->parent = currNode;
-          neighbourNode->fCost = newNode->fCost;
+        Node *neighbourNode = openGrid[neighbourPos.y * ecs.width + neighbourPos.x];
+        
+        unsigned int newGCost = currNode->gCost + OctileDistance(currNode->position, neighbourPos);
+        
+        if (neighbourNode == nullptr) {
+            Node *newNode = new Node(neighbourPos, 0, newGCost, currNode);
+            newNode->fCost = getFCost(*newNode, endPos);
+            openNodes.push_back(newNode);
+            openGrid[neighbourPos.y * ecs.width + neighbourPos.x] = newNode;
+            g_allocatedNodes.push_back(newNode);
+        } else if (newGCost < neighbourNode->gCost) {
+            neighbourNode->parent = currNode;
+            neighbourNode->gCost = newGCost;
+            neighbourNode->fCost = getFCost(*neighbourNode, endPos);
         }
-      }
     }
   }
   
@@ -321,6 +334,13 @@ int g_currentCaseIndex = 0;
 void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const GamePosition &endPos);
 
 void InitTestCases() {
+    g_testCases.push_back({
+        "0. Infinite Loop Trap", {2, 5}, {18, 5},
+        [](MockWorld& w) {
+             for(int y=0; y<w.height; y++) w.AddWall(10, y);  // A solid wall blocking the entire path
+        }
+    });
+
     g_testCases.push_back({
         "1. Wall Gap", {2, 10}, {18, 10}, 
         [](MockWorld& w) {

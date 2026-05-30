@@ -23,6 +23,7 @@ public:
   void DrawGameWindows();
   void DrawPlayerInfoWindow();
   void DrawTileInfoWindow();
+  void DrawAStarWindow();
   void Draw(); 
 
   void Shutdown();
@@ -46,6 +47,13 @@ private:
   bool hasClicked = false;
   bool validTileSelected = false;
   GamePosition lastClickedPos{0, 0};
+  
+  // Astar related variables (Mainly drawing related)
+  GamePosition astarStartPos{0, 0};
+  GamePosition astarEndPos{0, 0};
+  std::vector<GamePosition> astarPath;
+  bool isSelectingAStarPath = false;
+  int astarClickCount = 0;
 
   raylib::Camera2D camera;
 
