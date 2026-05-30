@@ -22,6 +22,7 @@ public:
 
   void DrawGameWindows();
   void DrawPlayerInfoWindow();
+  void DrawTileInfoWindow();
   void Draw(); 
 
   void Shutdown();
@@ -40,6 +41,11 @@ private:
   flecs::world ecs;
   flecs::entity renderPipeline;
   flecs::entity playerEntity;
+
+  flecs::entity selectedTile;
+  bool hasClicked = false;
+  bool validTileSelected = false;
+  GamePosition lastClickedPos{0, 0};
 
   raylib::Camera2D camera;
 

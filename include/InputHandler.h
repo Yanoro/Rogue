@@ -3,7 +3,7 @@
 #include "Command.h"
 #include <vector>
 
-const float DEFAULT_VELOCITY = 1.0f;
+const float DEFAULT_VELOCITY = 50.0f;
 
 class InputHandler {
 public:

@@ -1,15 +1,13 @@
 #include "Command.h"
 #include "Game.h"
 
-FunctionCommand::FunctionCommand(std::function<void(flecs::entity)> a, std::function<void(flecs::entity)> u) : action(a), undoAction(u) {}
+FunctionCommand::FunctionCommand(std::function<void(flecs::entity)> a,
+                                 std::function<void(flecs::entity)> u)
+    : action(a), undoAction(u) {}
 
-void FunctionCommand::execute(flecs::entity e) {
-  action(e);
-}
+void FunctionCommand::execute(flecs::entity e) { action(e); }
 
-void FunctionCommand::undo(flecs::entity e) {
-  undoAction(e);
-} 
+void FunctionCommand::undo(flecs::entity e) { undoAction(e); }
 
 MoveCommand::MoveCommand(int x, int y) : dx(x), dy(y) {}
 
@@ -32,8 +30,14 @@ void ChangeVelocityCommand::execute(flecs::entity e) {
     e.set<Velocity>(Velocity{0.0f, 0.0f});
   }
   auto v = e.get_mut<Velocity>();
-  v->x += dx;
-  v->y += dy;
+  if (e.has<MaxSpeed>()) {
+    auto maxSpeed = e.get_ref<MaxSpeed>();
+    v->x = std::clamp(v->x + dx, -maxSpeed->maxX, maxSpeed->maxX);
+    v->y = std::clamp(v->y + dy, -maxSpeed->maxY, maxSpeed->maxY);
+  } else {
+    v->x += dx;
+    v->y += dy;
+  }
 }
 
 void ChangeVelocityCommand::undo(flecs::entity e) {

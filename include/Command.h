@@ -1,6 +1,7 @@
 #pragma once
 #include <flecs.h>
 #include <functional>
+#include <algorithm>
 
 struct GamePosition;
 
