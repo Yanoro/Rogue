@@ -47,12 +47,10 @@ struct GamePosition {
   }
 };
 
-const float DEFAULT_MAXSPEEDX = 100.0f;
-const float DEFAULT_MAXSPEEDY = 100.0f;
+const float DEFAULT_MAXSPEED = 100.0f;
 
 struct MaxSpeed {
-  float maxX;
-  float maxY;
+  float value;
 };
 
 struct Velocity : public raylib::Vector2 {
@@ -75,7 +73,7 @@ struct Acceleration : public raylib::Vector2 {
   }
 };
 
-const float DEFAULT_FRICTION = 50.0f;
+const float DEFAULT_FRICTION = 10.0f;
 
 struct Friction {
   float value;

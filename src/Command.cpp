@@ -30,10 +30,11 @@ void ChangeVelocityCommand::execute(flecs::entity e) {
     e.set<Velocity>(Velocity{0.0f, 0.0f});
   }
   auto v = e.get_mut<Velocity>();
+  //TODO: Can probably clean this up
   if (e.has<MaxSpeed>()) {
     auto maxSpeed = e.get_ref<MaxSpeed>();
-    v->x = std::clamp(v->x + dx, -maxSpeed->maxX, maxSpeed->maxX);
-    v->y = std::clamp(v->y + dy, -maxSpeed->maxY, maxSpeed->maxY);
+    v->x = std::clamp(v->x + dx, -maxSpeed->value, maxSpeed->value);
+    v->y = std::clamp(v->y + dy, -maxSpeed->value, maxSpeed->value);
   } else {
     v->x += dx;
     v->y += dy;

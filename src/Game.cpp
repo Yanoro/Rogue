@@ -107,10 +107,32 @@ void Game::ECSInit(std::string mapPath) {
         gamePos = map->ScreenCoordsToGameCoords(screenPos.x, screenPos.y);
       });
 
-  ecs.system<Velocity, const MaxSpeed>().each(
-      [](Velocity &vel, const MaxSpeed &maxSpeed) {
-        vel.x = std::clamp(vel.x, -maxSpeed.maxX, maxSpeed.maxX);
-        vel.y = std::clamp(vel.y, -maxSpeed.maxY, maxSpeed.maxY);
+  ecs.system<Velocity, Acceleration, Friction>().each(
+      [](Velocity &vel, Acceleration &accel, const Friction &friction) {
+        if (vel.Length() > 1.0f) {
+          float gravity = 9.8f;
+          accel += vel.Normalize().Scale(-gravity * friction.value);
+        } else {
+          vel = {};
+        }
+      });
+
+  ecs.system<Velocity, Acceleration, GamePosition, TargetPath>().each(
+      [](flecs::entity entity, const Velocity &vel, Acceleration &accel,
+         const GamePosition &currPos, TargetPath &tPath) {
+        if (tPath.path.empty()) {
+          entity.remove<TargetPath>();
+          return;
+        }
+        GamePosition currWaypoint = tPath.path[0];
+        Velocity desiredVelocity =
+            static_cast<raylib::Vector2>(currWaypoint - currPos).Normalize();
+
+        desiredVelocity *= DEFAULT_MAXSPEED;
+        accel += desiredVelocity - vel;
+        if (currWaypoint.x == currPos.x && currWaypoint.y == currPos.y) {
+          tPath.path.erase(tPath.path.begin());
+        }
       });
 
   ecs.system<Velocity, Acceleration>().each(
@@ -118,19 +140,9 @@ void Game::ECSInit(std::string mapPath) {
         vel += accel * GetFrameTime();
       });
 
-  ecs.system<Acceleration, Friction>().each(
-      [](Acceleration &accel, const Friction &friction) {
-        float drop = friction.value * GetFrameTime();
-        if (accel.x > 0) {
-          accel.x = std::max(0.0f, accel.x - drop);
-        } else if (accel.x < 0) {
-          accel.x = std::min(0.0f, accel.x + drop);
-        }
-        if (accel.y >= 0) {
-          accel.y = std::max(0.0f, accel.y - drop);
-        } else if (accel.y < 0) {
-          accel.y = std::min(0.0f, accel.y + drop);
-        }
+  ecs.system<Velocity, const MaxSpeed>().each(
+      [](Velocity &vel, const MaxSpeed &maxSpeed) {
+        vel = vel.Clamp(0.0f, maxSpeed.value);
       });
 
   ecs.system<Velocity, ScreenPosition, Intangible>().each(
@@ -138,11 +150,7 @@ void Game::ECSInit(std::string mapPath) {
         pos += vel * GetFrameTime();
       });
 
-  std::vector<GamePosition> tilesBlocked;
-  ecs.filter<GamePosition, BlocksTile>().each(
-      [&tilesBlocked](const GamePosition &pos, const BlocksTile) {
-        tilesBlocked.push_back(pos);
-      });
+  ecs.system<Acceleration>().each([](Acceleration &accel) { accel = {}; });
 
   auto collisionFilter = ecs.filter<GamePosition, BlocksTile>();
 
@@ -174,30 +182,10 @@ void Game::ECSInit(std::string mapPath) {
         }
       });
 
-  ecs.system<Velocity, Acceleration, GamePosition, TargetPath>().each(
-      [](flecs::entity entity, const Velocity &vel, Acceleration &accel,
-         const GamePosition &currPos, TargetPath &tPath) {
-        std::cout << "HERE\n";
-        if (tPath.path.empty()) {
-          entity.remove<TargetPath>();
-          return;
-        }
-        GamePosition currWaypoint = tPath.path[0];
-        Velocity desiredVelocity =
-            static_cast<raylib::Vector2>(currWaypoint - currPos).Normalize();
-
-        desiredVelocity.x *= DEFAULT_MAXSPEEDX;
-        desiredVelocity.y *= DEFAULT_MAXSPEEDY;
-        accel = desiredVelocity - vel;
-        if (currWaypoint.x == currPos.x && currWaypoint.y == currPos.y) {
-          tPath.path.erase(tPath.path.begin());
-        }
-      });
-
   playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free "
                               "Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png",
                               {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
-  playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEEDX, DEFAULT_MAXSPEEDY});
+  playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   playerEntity.set<Acceleration>({0, 0});
@@ -345,7 +333,7 @@ void Game::DrawPlayerInfoWindow() {
       ImGui::Text("Acceleration: (0.00, 0.00)");
     }
     if (const MaxSpeed *speed = playerEntity.get<MaxSpeed>()) {
-      ImGui::Text("Max Speed: (%.2f, %.2f)", speed->maxX, speed->maxY);
+      ImGui::Text("Max Speed: %.2f", speed->value);
     }
     if (const Friction *friction = playerEntity.get<Friction>()) {
       ImGui::Text("Friction: %.2f", friction->value);
@@ -389,10 +377,10 @@ void Game::DrawPlayerInfoWindow() {
     const Velocity *vel = playerEntity.get<Velocity>();
     const MaxSpeed *maxSpeed = playerEntity.get<MaxSpeed>();
 
-    if (vel && maxSpeed && maxSpeed->maxX > 0.0f && maxSpeed->maxY > 0.0f) {
+    if (vel && maxSpeed && maxSpeed->value > 0.0f) {
       // Calculate scaled endpoint
-      float scaleX = maxRadius / maxSpeed->maxX;
-      float scaleY = maxRadius / maxSpeed->maxY;
+      float scaleX = maxRadius / maxSpeed->value;
+      float scaleY = maxRadius / maxSpeed->value;
       ImVec2 velEnd(center.x + vel->x * scaleX, center.y + vel->y * scaleY);
 
       // Draw velocity vector line and arrowhead/dot
@@ -402,6 +390,52 @@ void Game::DrawPlayerInfoWindow() {
 
     // Center point
     drawList->AddCircleFilled(center, 2.0f, IM_COL32(255, 255, 255, 255));
+
+    ImGui::Separator();
+    ImGui::Text("Acceleration Vector:");
+
+    ImVec2 accelCanvasSize(120.0f, 120.0f);
+    ImVec2 accelCanvasPos = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##accel_canvas", accelCanvasSize);
+
+    ImVec2 accelCenter(accelCanvasPos.x + accelCanvasSize.x * 0.5f,
+                       accelCanvasPos.y + accelCanvasSize.y * 0.5f);
+    float accelMaxRadius = accelCanvasSize.x * 0.45f;
+
+    // Draw background circle
+    drawList->AddCircleFilled(accelCenter, accelMaxRadius,
+                              IM_COL32(40, 40, 40, 255));
+    drawList->AddCircle(accelCenter, accelMaxRadius,
+                        IM_COL32(100, 100, 100, 255));
+
+    // Draw crosshair axes
+    drawList->AddLine(
+        ImVec2(accelCenter.x, accelCanvasPos.y + 5),
+        ImVec2(accelCenter.x, accelCanvasPos.y + accelCanvasSize.y - 5),
+        IM_COL32(80, 80, 80, 255));
+    drawList->AddLine(
+        ImVec2(accelCanvasPos.x + 5, accelCenter.y),
+        ImVec2(accelCanvasPos.x + accelCanvasSize.x - 5, accelCenter.y),
+        IM_COL32(80, 80, 80, 255));
+
+    const Acceleration *accel = playerEntity.get<Acceleration>();
+
+    if (accel && maxSpeed && maxSpeed->value > 0.0f) {
+      // Scale relative to max speed (can be tuned later if acceleration exceeds
+      // this)
+      float scaleX = accelMaxRadius / (maxSpeed->value * 5.0f);
+      float scaleY = accelMaxRadius / (maxSpeed->value * 5.0f);
+      ImVec2 accelEnd(accelCenter.x + accel->x * scaleX,
+                      accelCenter.y + accel->y * scaleY);
+
+      // Draw acceleration vector line and arrowhead/dot (Red instead of Green)
+      drawList->AddLine(accelCenter, accelEnd, IM_COL32(255, 50, 50, 255),
+                        2.0f);
+      drawList->AddCircleFilled(accelEnd, 3.0f, IM_COL32(255, 50, 50, 255));
+    }
+
+    // Center point
+    drawList->AddCircleFilled(accelCenter, 2.0f, IM_COL32(255, 255, 255, 255));
   } else {
     ImGui::Text("Player entity not alive.");
   }
