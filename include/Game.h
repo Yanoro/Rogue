@@ -54,6 +54,7 @@ private:
   std::vector<GamePosition> astarPath;
   bool isSelectingAStarPath = false;
   int astarClickCount = 0;
+  bool isSettingPlayerTarget = false;
 
   raylib::Camera2D camera;
 

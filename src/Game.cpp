@@ -1,4 +1,5 @@
 #include "Game.h"
+#include "Components.h"
 #include "PathFinding.h"
 #include "imgui.h"
 #include "raylib.h"
@@ -88,12 +89,6 @@ void Game::ECSInit(std::string mapPath) {
         draw.texture->Draw(draw.srcRect, pos);
       });
 
-  // ecs.system<ScreenPosition, const Velocity>().each(
-  //     [](ScreenPosition &pos, const Velocity &vel) {
-  //       pos.x += vel.x * GetFrameTime();
-  //       pos.y += vel.y * GetFrameTime();
-  //     });
-
   ecs.system<ScreenPosition, CharacterAnimation>().kind<Render>().each(
       [](const ScreenPosition &pos, CharacterAnimation &characterAnimation) {
         unsigned int currFrame = characterAnimation.currentFrame;
@@ -118,18 +113,29 @@ void Game::ECSInit(std::string mapPath) {
         vel.y = std::clamp(vel.y, -maxSpeed.maxY, maxSpeed.maxY);
       });
 
-  ecs.system<Velocity, Friction>().each(
-      [](Velocity &vel, const Friction &friction) {
-        if (vel.x > 0) {
-          vel.x = std::max(0.0f, vel.x - friction.value);
-        } else if (vel.x < 0) {
-          vel.x = std::min(0.0f, vel.x + friction.value);
+  ecs.system<Velocity, Acceleration>().each(
+      [](Velocity &vel, const Acceleration &accel) {
+        vel += accel * GetFrameTime();
+      });
+
+  ecs.system<Acceleration, Friction>().each(
+      [](Acceleration &accel, const Friction &friction) {
+        float drop = friction.value * GetFrameTime();
+        if (accel.x > 0) {
+          accel.x = std::max(0.0f, accel.x - drop);
+        } else if (accel.x < 0) {
+          accel.x = std::min(0.0f, accel.x + drop);
         }
-        if (vel.y >= 0) {
-          vel.y = std::max(0.0f, vel.y - friction.value);
-        } else if (vel.y < 0) {
-          vel.y = std::min(0.0f, vel.y + friction.value);
+        if (accel.y >= 0) {
+          accel.y = std::max(0.0f, accel.y - drop);
+        } else if (accel.y < 0) {
+          accel.y = std::min(0.0f, accel.y + drop);
         }
+      });
+
+  ecs.system<Velocity, ScreenPosition, Intangible>().each(
+      [](const Velocity &vel, ScreenPosition &pos, const Intangible) {
+        pos += vel * GetFrameTime();
       });
 
   std::vector<GamePosition> tilesBlocked;
@@ -140,9 +146,10 @@ void Game::ECSInit(std::string mapPath) {
 
   auto collisionFilter = ecs.filter<GamePosition, BlocksTile>();
 
-  //TODO: This wall seems to be really inneficient, probably easy optimization gains
+  // TODO: This seems to be really inneficient, probably easy optimization gains
   ecs.system<Velocity, ScreenPosition>().without<Intangible>().each(
-      [collisionFilter, this](flecs::entity currentEntity, Velocity &vel,
+      [collisionFilter, this](const flecs::entity currentEntity,
+                              const Velocity &vel,
                               ScreenPosition &origScreenPos) {
         ScreenPosition newScreenPos{origScreenPos.x + (vel.x * GetFrameTime()),
                                     origScreenPos.y + (vel.y * GetFrameTime())};
@@ -167,10 +174,24 @@ void Game::ECSInit(std::string mapPath) {
         }
       });
 
-  ecs.system<Velocity, ScreenPosition, Intangible>().each(
-      [](const Velocity &vel, ScreenPosition &pos, const Intangible) {
-        pos.x += vel.x * GetFrameTime();
-        pos.y += vel.y * GetFrameTime();
+  ecs.system<Velocity, Acceleration, GamePosition, TargetPath>().each(
+      [](flecs::entity entity, const Velocity &vel, Acceleration &accel,
+         const GamePosition &currPos, TargetPath &tPath) {
+        std::cout << "HERE\n";
+        if (tPath.path.empty()) {
+          entity.remove<TargetPath>();
+          return;
+        }
+        GamePosition currWaypoint = tPath.path[0];
+        Velocity desiredVelocity =
+            static_cast<raylib::Vector2>(currWaypoint - currPos).Normalize();
+
+        desiredVelocity.x *= DEFAULT_MAXSPEEDX;
+        desiredVelocity.y *= DEFAULT_MAXSPEEDY;
+        accel = desiredVelocity - vel;
+        if (currWaypoint.x == currPos.x && currWaypoint.y == currPos.y) {
+          tPath.path.erase(tPath.path.begin());
+        }
       });
 
   playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free "
@@ -178,6 +199,8 @@ void Game::ECSInit(std::string mapPath) {
                               {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEEDX, DEFAULT_MAXSPEEDY});
   playerEntity.set<Friction>({DEFAULT_FRICTION});
+  playerEntity.set<Velocity>({0, 0});
+  playerEntity.set<Acceleration>({0, 0});
 
   createEntity("./data/tilesets/Pixel Crawler - Free "
                "Pack/Entities/NPCS/Knight/Idle/Idle-Sheet.png",
@@ -268,6 +291,15 @@ void Game::Update() {
         isSelectingAStarPath = false;
         astarPath = AStar(ecs, astarStartPos, astarEndPos);
       }
+    } else if (isSettingPlayerTarget) {
+      if (playerEntity.is_alive()) {
+        if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
+          std::vector<GamePosition> path = AStar(ecs, *pPos, gPos);
+          playerEntity.set<TargetPath>({path});
+        }
+      }
+      isSettingPlayerTarget =
+          false; // Disable the mode after setting the target
     } else {
       lastClickedPos = gPos;
       hasClicked = true;
@@ -286,6 +318,7 @@ void Game::Update() {
   ecs.progress();
 }
 
+// TODO: Put the dearimgui windows in their separate file
 void Game::DrawPlayerInfoWindow() {
   ImGui::Begin("Player Entity");
   if (playerEntity.is_alive()) {
@@ -295,10 +328,21 @@ void Game::DrawPlayerInfoWindow() {
     if (const ScreenPosition *sPos = playerEntity.get<ScreenPosition>()) {
       ImGui::Text("Screen Position: (%.2f, %.2f)", sPos->x, sPos->y);
     }
+    if (const TargetPath *targetPath = playerEntity.get<TargetPath>()) {
+      if (!targetPath->path.empty()) {
+        const GamePosition &lastPos = targetPath->path.back();
+        ImGui::Text("Moving to: (%d, %d)", lastPos.x, lastPos.y);
+      }
+    }
     if (const Velocity *vel = playerEntity.get<Velocity>()) {
       ImGui::Text("Velocity: (%.2f, %.2f)", vel->x, vel->y);
     } else {
       ImGui::Text("Velocity: (0.00, 0.00)");
+    }
+    if (const Acceleration *accel = playerEntity.get<Acceleration>()) {
+      ImGui::Text("Acceleration: (%.2f, %.2f)", accel->x, accel->y);
+    } else {
+      ImGui::Text("Acceleration: (0.00, 0.00)");
     }
     if (const MaxSpeed *speed = playerEntity.get<MaxSpeed>()) {
       ImGui::Text("Max Speed: (%.2f, %.2f)", speed->maxX, speed->maxY);
@@ -416,6 +460,11 @@ void Game::DrawAStarWindow() {
       astarClickCount = 0;
     }
     ImGui::Text("Click %d/2 on map", astarClickCount + 1);
+  } else if (isSettingPlayerTarget) {
+    if (ImGui::Button("Cancel Player Target")) {
+      isSettingPlayerTarget = false;
+    }
+    ImGui::Text("Click on map to set target");
   } else {
     if (ImGui::Button("Select Path")) {
       isSelectingAStarPath = true;
@@ -423,6 +472,9 @@ void Game::DrawAStarWindow() {
       astarStartPos = {0, 0};
       astarEndPos = {0, 0};
       astarPath.clear();
+    }
+    if (ImGui::Button("Set Player Target")) {
+      isSettingPlayerTarget = true;
     }
   }
 
@@ -442,13 +494,24 @@ void Game::Draw() {
   camera.BeginMode();
   ecs.run_pipeline(renderPipeline);
 
-  if (!astarPath.empty() && map) {
+  if (map) {
     int tileW = map->getTileWidth();
     int tileH = map->getTileHeight();
-    for (const auto& pos : astarPath) {
-      ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
-      DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, RED);
+
+    if (!astarPath.empty()) {
+      for (const auto &pos : astarPath) {
+        ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
+        DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, RED);
+      }
     }
+
+    ecs.filter<const TargetPath>().each(
+        [this, tileW, tileH](const TargetPath &targetPath) {
+          for (const auto &pos : targetPath.path) {
+            ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
+            DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, BLUE);
+          }
+        });
   }
 
   camera.EndMode();
