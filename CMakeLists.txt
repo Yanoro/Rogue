@@ -102,6 +102,7 @@ add_subdirectory(raylib-cpp)
 set(SOURCES
     src/main.cpp
     src/Game.cpp
+    src/GameDraw.cpp
     src/Map.cpp
     src/AI.cpp
     src/Character.cpp

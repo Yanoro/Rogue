@@ -101,7 +101,7 @@ ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
 }
 
 GamePosition Map::ScreenCoordsToGameCoords(float x, float y) const {
-  return GamePosition(static_cast<int>(x / tileWidth),
-                      static_cast<int>(y / tileHeight));
+  return GamePosition(std::floor(x / tileWidth),
+                      std::floor(y / tileHeight));
 }
 

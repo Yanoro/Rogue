@@ -18,6 +18,8 @@ public:
 
   void Init(std::string mapPath);
   void handleInput();
+
+  void UpdateGUI();
   void Update();
 
   void DrawGameWindows();
@@ -62,4 +64,7 @@ private:
   std::unique_ptr<ResourceManager> resourceManager;
   
   void ECSInit(std::string mapPath);
+  void ECSInitRenderSystems();
+  void ECSInitPhysicsSystems();
+  void ECSInitLogicSystems();
 };
