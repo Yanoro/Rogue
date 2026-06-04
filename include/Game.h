@@ -68,6 +68,7 @@ private:
   Acceleration lastAccel = {};
 
   raylib::Camera2D camera;
+  GameCameraMode cameraMode;
 
   std::unique_ptr<InputHandler> inputHandler;
   std::unique_ptr<ResourceManager> resourceManager;

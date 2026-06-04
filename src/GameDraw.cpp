@@ -1,4 +1,5 @@
 #include "Components.h"
+#include "Defaults.h"
 #include "Game.h"
 #include "PathFinding.h"
 #include "imgui.h"
@@ -370,36 +371,22 @@ void Game::Draw() {
 
   camera.BeginMode();
 
-  const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
-  camera.target.x = playerPos->x;
-  camera.target.y = playerPos->y;
-  int screenWidth = GetScreenWidth();
-  int screenHeight = GetScreenHeight();
-  int screenWidthPx = map->GetMapWidthPx();
-  int screenHeightPx = map->GetMapHeightPx();
-  float centeringX = static_cast<float>(screenWidth) / 2;
-  float centeringY = static_cast<float>(screenHeight) / 2;
+  if (cameraMode == GameCameraMode::FollowMode) {
+    const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
+    int screenWidth = GetScreenWidth();
+    int screenHeight = GetScreenHeight();
+    int mapWidthPx = map->GetMapWidthPx();
+    int mapHeightPx = map->GetMapHeightPx();
 
-  float offsetX;
-  float offsetY;
-  if (playerPos->x - centeringX < 0) {
-    offsetX = playerPos->x;
-  } else if (playerPos->x + centeringX > screenWidthPx) {
-    offsetX = screenWidth + playerPos->x - screenWidthPx;
-  } else {
-    offsetX = centeringX;
+    camera.offset = {screenWidth / 2.0f, screenHeight / 2.0f};
+    camera.target = {playerPos->x, playerPos->y};
+
+    camera.target.x = std::clamp(camera.target.x, camera.offset.x / camera.zoom,
+                                mapWidthPx - (camera.offset.x / camera.zoom));
+
+    camera.target.y = std::clamp(camera.target.y, camera.offset.y / camera.zoom,
+                                mapHeightPx - (camera.offset.y / camera.zoom));
   }
-  if (playerPos->y - centeringY < 0) {
-    offsetY = playerPos->y;
-  } else if (playerPos->y + centeringY > screenHeightPx) {
-    offsetY = screenHeight + playerPos->y - screenHeightPx;
-  } else {
-    offsetY = centeringY;
-  }
-
-
-  camera.offset.x = offsetX;
-  camera.offset.y = offsetY;
 
   ecs.run_pipeline(renderPipeline);
 
@@ -433,17 +420,11 @@ void Game::Draw() {
     scale = 1.0f;
   }
 
-  // float offsetX =
-  //     ((float)GetScreenWidth() - ((float)virtualWidth * scale)) * 0.5f;
-  // float offsetY =
-  //     ((float)GetScreenHeight() - ((float)virtualHeight * scale)) * 0.5f;
   // Source rectangle (Note the negative height to flip it right-side up!)
   Rectangle sourceRec = {0.0f, 0.0f, (float)gameTexture.texture.width,
                          -(float)gameTexture.texture.height};
 
   Rectangle destRec = {0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()};
-
-  // Draw the completed frame
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 }
 

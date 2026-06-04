@@ -289,14 +289,15 @@ void Game::Init(std::string mapPath) {
   float zoomX = screenWidth / mapWidthPx;
   float zoomY = screenHeight / mapHeightPx;
 
-  // camera.target = { mapWidthPx / 2.0f, mapHeightPx / 2.0f };
-  // camera.offset = { screenWidth / 2.0f, screenHeight / 2.0f} ;
+
+  cameraMode = GameCameraMode::FollowMode;
+  
   camera.target = {0, 0};
   camera.offset = {0, 0};
   camera.rotation = 0.0f;
   camera.zoom = std::max(1.0f, std::floor(std::min(zoomX, zoomY)));
 
-  inputHandler = std::make_unique<InputHandler>(camera, mapWidthPx, mapHeightPx);
+  inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx, mapHeightPx);
 
   rlImGuiSetup(true);
 }

@@ -6,13 +6,14 @@
 
 class InputHandler {
 public:
-  InputHandler(raylib::Camera2D &gameCamera, size_t mapWidthPx, size_t mapHeightPx);
+  InputHandler(raylib::Camera2D &gameCamera, GameCameraMode &cameraMode, size_t mapWidthPx, size_t mapHeightPx);
 
   std::vector<Command*> handleInput();
 
 
 private:
   raylib::Camera2D *camera;
+  GameCameraMode *cameraMode;
 
   size_t mapWidthPx;
   size_t mapHeightPx;
