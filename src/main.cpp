@@ -6,9 +6,12 @@
 #include "imgui.h"
 #include "rlImGui.h"
 
+//TODO: Move this to a better place
+raylib::Color DEFAULT_BACKGROUND_COLOR = raylib::Color::Black();
+
 int main() {
   Game game;
-  game.Init("./testMap.json");
+  game.Init("./Map.json");
 
   OllamaAI AI("llama3");
   
@@ -22,7 +25,7 @@ int main() {
     game.handleInput();
   
     window->BeginDrawing();
-    window->ClearBackground(raylib::Color::RayWhite());
+    window->ClearBackground(DEFAULT_BACKGROUND_COLOR);
 
     // Draw world
     game.Draw();
@@ -30,8 +33,7 @@ int main() {
     // Draw UI
     rlImGuiBegin();
     game.DrawGameWindows();
-    ImGui::ShowDemoWindow();
-    chatWindow.Draw();
+    //chatWindow.Draw();
     rlImGuiEnd();
 
     window->EndDrawing();

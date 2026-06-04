@@ -1,5 +1,6 @@
-#include "Game.h"
+#include <iostream>
 #include "Components.h"
+#include "Game.h"
 #include "PathFinding.h"
 #include "imgui.h"
 #include "raylib.h"
@@ -9,10 +10,19 @@ void Game::DrawPlayerInfoWindow() {
   ImGui::Begin("Player Entity");
   if (playerEntity.is_alive()) {
     if (const GamePosition *gPos = playerEntity.get<GamePosition>()) {
-      ImGui::Text("Game Position: (%d, %d)", gPos->x, gPos->y);
+      int pos[2] = {gPos->x, gPos->y};
+      if (ImGui::InputInt2("Game Position", pos)) {
+        playerEntity.set<GamePosition>({pos[0], pos[1]});
+        if (map) {
+           playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos[0], pos[1]));
+        }
+      }
     }
     if (const ScreenPosition *sPos = playerEntity.get<ScreenPosition>()) {
-      ImGui::Text("Screen Position: (%.2f, %.2f)", sPos->x, sPos->y);
+      float pos[2] = {sPos->x, sPos->y};
+      if (ImGui::DragFloat2("Screen Position", pos)) {
+        playerEntity.set<ScreenPosition>({pos[0], pos[1]});
+      }
     }
     if (const TargetPath *targetPath = playerEntity.get<TargetPath>()) {
       if (!targetPath->path.empty()) {
@@ -21,20 +31,30 @@ void Game::DrawPlayerInfoWindow() {
       }
     }
     if (const Velocity *vel = playerEntity.get<Velocity>()) {
-      ImGui::Text("Velocity: (%.2f, %.2f)", vel->x, vel->y);
+      float v[2] = {vel->x, vel->y};
+      if (ImGui::DragFloat2("Velocity", v)) {
+        playerEntity.set<Velocity>({v[0], v[1]});
+      }
     } else {
       ImGui::Text("Velocity: (0.00, 0.00)");
     }
-    if (const Acceleration *accel = playerEntity.get<Acceleration>()) {
-      ImGui::Text("Acceleration: (%.2f, %.2f)", accel->x, accel->y);
-    } else {
-      ImGui::Text("Acceleration: (0.00, 0.00)");
+
+    float a[2] = {lastAccel.x, lastAccel.y};
+    if (ImGui::DragFloat2("Acceleration", a)) {
+      playerEntity.set<Acceleration>({a[0], a[1]});
     }
+
     if (const MaxSpeed *speed = playerEntity.get<MaxSpeed>()) {
-      ImGui::Text("Max Speed: %.2f", speed->value);
+      float s = speed->value;
+      if (ImGui::DragFloat("Max Speed", &s)) {
+        playerEntity.set<MaxSpeed>({s});
+      }
     }
     if (const Friction *friction = playerEntity.get<Friction>()) {
-      ImGui::Text("Friction: %.2f", friction->value);
+      float f = friction->value;
+      if (ImGui::DragFloat("Friction", &f)) {
+        playerEntity.set<Friction>({f});
+      }
     }
 
     ImGui::Separator();
@@ -116,15 +136,13 @@ void Game::DrawPlayerInfoWindow() {
         ImVec2(accelCanvasPos.x + accelCanvasSize.x - 5, accelCenter.y),
         IM_COL32(80, 80, 80, 255));
 
-    const Acceleration *accel = playerEntity.get<Acceleration>();
-
-    if (accel && maxSpeed && maxSpeed->value > 0.0f) {
+    if (maxSpeed && maxSpeed->value > 0.0f) {
       // Scale relative to max speed (can be tuned later if acceleration exceeds
       // this)
       float scaleX = accelMaxRadius / (maxSpeed->value * 5.0f);
       float scaleY = accelMaxRadius / (maxSpeed->value * 5.0f);
-      ImVec2 accelEnd(accelCenter.x + accel->x * scaleX,
-                      accelCenter.y + accel->y * scaleY);
+      ImVec2 accelEnd(accelCenter.x + lastAccel.x * scaleX,
+                      accelCenter.y + lastAccel.y * scaleY);
 
       // Draw acceleration vector line and arrowhead/dot (Red instead of Green)
       drawList->AddLine(accelCenter, accelEnd, IM_COL32(255, 50, 50, 255),
@@ -213,6 +231,117 @@ void Game::DrawAStarWindow() {
   ImGui::End();
 }
 
+void Game::DrawEntityOverviewWindow() {
+  struct OpenComponentWindow {
+      flecs::entity entity;
+      flecs::id id;
+  };
+  static std::vector<OpenComponentWindow> openComponentWindows;
+
+  ImGui::Begin("Entity Overview");
+
+  // Optional: Add a text filter
+  static ImGuiTextFilter filter;
+  filter.Draw("Filter");
+
+  ImGui::Separator();
+
+  // Begin a table for better formatting
+  if (ImGui::BeginTable("EntitiesTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+    ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+    ImGui::TableSetupColumn("Name");
+    ImGui::TableSetupColumn("Position");
+    ImGui::TableSetupColumn("Components");
+    ImGui::TableHeadersRow();
+
+    ecs.filter_builder().term(flecs::Any).build().each([&](flecs::entity e) {
+      // Skip internal Flecs entities
+      std::string path = e.path().c_str() ? e.path().c_str() : "";
+      if (path.find("::flecs") == 0) {
+          return;
+      }
+
+      // Get the name or ID string for filtering and display
+      std::string name = e.name().c_str() ? e.name().c_str() : "Unnamed";
+      std::string idStr = std::to_string(e.id());
+      
+      // Combine name and ID for the filter
+      std::string searchString = name + " " + idStr;
+      
+      if (filter.PassFilter(searchString.c_str())) {
+        ImGui::TableNextRow();
+
+        // 1. ID Column
+        ImGui::TableNextColumn();
+        ImGui::Text("%lu", e.id());
+
+        // 2. Name Column
+        ImGui::TableNextColumn();
+        ImGui::Text("%s", name.c_str());
+
+        // 3. Position Column
+        ImGui::TableNextColumn();
+        if (const GamePosition* pos = e.get<GamePosition>()) {
+          ImGui::Text("(%d, %d)", pos->x, pos->y);
+        } else if (const ScreenPosition* sPos = e.get<ScreenPosition>()) {
+          ImGui::Text("Screen(%.1f, %.1f)", sPos->x, sPos->y);
+        } else {
+          ImGui::Text("-");
+        }
+
+        // 4. Components Column
+        ImGui::TableNextColumn();
+        
+        e.each([&](flecs::id id) {
+            std::string label = std::string(id.str().c_str()) + "##" + std::to_string(e.id()) + "_" + std::to_string(id.raw_id());
+            if (ImGui::SmallButton(label.c_str())) {
+                openComponentWindows.push_back({e, id});
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("ID: %lu", id.raw_id());
+            }
+            ImGui::SameLine();
+        });
+        ImGui::Text(" "); // End of line for the table cell
+      }
+    });
+
+    ImGui::EndTable();
+  }
+
+  ImGui::End();
+
+  // Draw open component windows
+  for (auto it = openComponentWindows.begin(); it != openComponentWindows.end(); ) {
+      bool open = true;
+      std::string winName = "Component: " + std::string(it->id.str().c_str()) + " (" + std::string(it->entity.name().c_str() ? it->entity.name().c_str() : "Unnamed") + ")##" + std::to_string(it->entity.id()) + "_" + std::to_string(it->id.raw_id());
+      
+      ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+      if (ImGui::Begin(winName.c_str(), &open)) {
+          const void* ptr = it->entity.get(it->id.raw_id());
+          if (ptr) {
+              char* json = ecs_ptr_to_json(ecs.c_ptr(), it->id.raw_id(), ptr);
+              if (json) {
+                  ImGui::TextWrapped("%s", json);
+                  ecs_os_free(json);
+              } else {
+                  ImGui::TextDisabled("No JSON representation available.");
+              }
+          }
+          else {
+              ImGui::TextDisabled("No data for this component (might be a tag).");
+          }
+      }
+      ImGui::End();
+
+      if (!open) {
+          it = openComponentWindows.erase(it);
+      } else {
+          ++it;
+      }
+  }
+}
+
 void Game::DrawGameWindows() {
 
   DrawPlayerInfoWindow();
@@ -220,6 +349,8 @@ void Game::DrawGameWindows() {
   DrawTileInfoWindow();
 
   DrawAStarWindow();
+
+  DrawEntityOverviewWindow();
 }
 
 void Game::Draw() {

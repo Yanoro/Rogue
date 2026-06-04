@@ -1,9 +1,8 @@
 #pragma once
 #include "Camera2D.hpp"
 #include "Command.h"
+#include "Defaults.h"
 #include <vector>
-
-const float DEFAULT_VELOCITY = 50.0f;
 
 class InputHandler {
 public:

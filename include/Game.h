@@ -6,8 +6,7 @@
 #include "InputHandler.h"
 
 #include "Components.h"
-
-const std::string DEFAULT_PLAYER_ENTITY_NAME = "playerCharacter";
+#include "Defaults.h"
 
 class ResourceManager;
 
@@ -26,6 +25,7 @@ public:
   void DrawPlayerInfoWindow();
   void DrawTileInfoWindow();
   void DrawAStarWindow();
+  void DrawEntityOverviewWindow();
   void Draw(); 
 
   void Shutdown();
@@ -57,6 +57,7 @@ private:
   bool isSelectingAStarPath = false;
   int astarClickCount = 0;
   bool isSettingPlayerTarget = false;
+  Acceleration lastAccel = {};
 
   raylib::Camera2D camera;
 

@@ -1,9 +1,9 @@
 #pragma once
-#include <nlohmann/json.hpp>
-#include <flecs.h>
-#include <string>
-#include "ResourceManager.h"
 #include "Components.h"
+#include "ResourceManager.h"
+#include <flecs.h>
+#include <nlohmann/json.hpp>
+#include <string>
 
 struct TileSet {
   std::string name;
@@ -13,9 +13,13 @@ struct TileSet {
   unsigned int columns;
 };
 
+
+// TODO: For easy of development the map uses the ecs,
+// but an easy speed up would make it into a static variable
+// to avoid expensive lookups and make tile access constant
 class Map {
 public:
-  Map(std::string jsonPath, ResourceManager &rm, flecs::world &ecs);
+  Map(std::string jsonPath, flecs::world &ecs);
 
   // Coordinate helpers
   int GetWidth() const { return width; }
@@ -26,13 +30,12 @@ public:
   GamePosition ScreenCoordsToGameCoords(float x, float y) const;
 
   int getTileWidth() const { return tileWidth; }
-  int getTileHeight() const { return tileHeight; } 
+  int getTileHeight() const { return tileHeight; }
 
   // Rendering
-  //void Draw();
+  // void Draw();
 
 private:
-  ResourceManager &resourceManager;
   flecs::world &ecs;
 
   int width;
@@ -42,5 +45,4 @@ private:
   // Utility for 1D indexing
   int GetIndex(int x, int y) const;
   TileSet *gidToTileSet(unsigned int gid);
-
 };

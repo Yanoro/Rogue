@@ -3,8 +3,17 @@
 #include <fstream>
 #include <iostream>
 
-Map::Map(std::string jsonPath, ResourceManager &rm, flecs::world &ecs)
-    : resourceManager(rm), ecs(ecs) {
+inline void from_json(const nlohmann::json &j, Color &c) {
+  if (j.is_array() && j.size() >= 3) {
+    c.r = j[0];
+    c.g = j[1];
+    c.b = j[2];
+    c.a = j.size() > 3 ? j[3].get<unsigned char>() : (unsigned char)255;
+  }
+}
+
+Map::Map(std::string jsonPath, flecs::world &ecs)
+    : ecs(ecs) {
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
@@ -17,71 +26,46 @@ Map::Map(std::string jsonPath, ResourceManager &rm, flecs::world &ecs)
 
   try {
     auto json = nlohmann::json::parse(jsonFile);
-    width = json["width"];
-    height = json["height"];
-    tileWidth = json["tilewidth"];
-    tileHeight = json["tileheight"];
+    width = json["mapWidth"];
+    height = json["mapHeight"];
+    tileWidth = json["tileWidth"];
+    tileHeight = json["tileHeight"];
 
-    for (const auto &layer : json["layers"]) {
-      if (layer["type"] != "tilelayer") {
-        continue;
+
+    // This implicitily forces the tileInfo given to be given with contiguous
+    // IDS,
+    std::vector<nlohmann::json> tiles = json["tileInfo"];
+    GamePosition currPos = {0, 0};
+    
+    for (const int pos : json["positions"]) {
+      Tile newTile;
+      ScreenPosition newScreenPosition =
+          GameCoordsToScreenCoords(currPos.x, currPos.y);
+      int tileId = pos;
+      auto &currTileInfo = tiles[tileId];
+
+      newTile.name = currTileInfo.value("name", "Unknown name");
+      newTile.ch = currTileInfo.value("character", "?").at(0);
+      newTile.characterColor = currTileInfo["characterColor"];
+      newTile.backgroundColor = currTileInfo["backgroundColor"];
+      
+      auto blocksTile = (currTileInfo.value("blocksTile", false));
+
+      auto entity = ecs.entity()
+          .set<Tile>(newTile)
+          .set<GamePosition>(currPos)
+          .set<ScreenPosition>(newScreenPosition);
+
+      if (blocksTile) {
+        entity.add<BlocksTile>();
       }
 
-      int x = 0;
-      int y = 0;
-      for (const unsigned int &tileGID : layer["data"]) {
-        for (const auto &tileSetJson : json["tilesets"]) {
-          unsigned int firstGID = tileSetJson["firstgid"];
-          unsigned int tileCount = tileSetJson["tilecount"];
-
-          if (tileGID < firstGID || tileGID >= (firstGID + tileCount)) {
-            continue;
-          }
-
-          raylib::Texture *texture =
-              resourceManager.GetTexture(tileSetJson["image"]);
-          int columns = tileSetJson["columns"];
-          int localID = tileGID - firstGID;
-          int srcX = (localID % columns) * tileWidth;
-          int srcY = (localID / columns) * tileHeight;
-
-          raylib::Rectangle srcRect(srcX, srcY, tileWidth, tileHeight);
-          raylib::Vector2 pos(x * tileWidth, y * tileHeight);
-
-          auto entity = ecs.entity()
-                            .add<Tile>()
-                            .set<Drawable>({texture, srcRect})
-                            .set<ScreenPosition>({pos.x, pos.y})
-                            .set<GamePosition>({x, y});
-
-          if (tileSetJson.contains("tiles")) {
-            for (const auto &tileDef : tileSetJson["tiles"]) {
-              if (tileDef.contains("id") && tileDef["id"] == localID) {
-                if (tileDef.contains("properties")) {
-                  for (const auto &prop : tileDef["properties"]) {
-                    if (prop.contains("name") && prop["name"] == "BlocksTile" &&
-                        prop.contains("value") && prop["value"] == true) {
-                      entity.add<BlocksTile>();
-                      break;
-                    }
-                  }
-                }
-                break; // Found the specific tile definition, no need to keep
-                       // searching tiles
-              }
-            }
-          }
-
-          break;
-        }
-
-        x++;
-        if (x >= width) {
-          x = 0;
-          y++;
-        }
+      if (++currPos.y == height) {
+        currPos.y = 0;
+        currPos.x++;
       }
     }
+
   } catch (const std::exception &e) {
     std::cerr << "JSON Parse Error: " << e.what() << " jsonPath: " << jsonPath
               << std::endl;
@@ -95,13 +79,12 @@ bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);
 }
 
+//TODO: I have no idea why both functions take floats
 ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
   return ScreenPosition(static_cast<int>(x * tileWidth),
                         static_cast<int>(y * tileHeight));
 }
 
 GamePosition Map::ScreenCoordsToGameCoords(float x, float y) const {
-  return GamePosition(std::floor(x / tileWidth),
-                      std::floor(y / tileHeight));
+  return GamePosition(std::floor(x / tileWidth), std::floor(y / tileHeight));
 }
-

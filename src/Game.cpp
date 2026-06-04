@@ -2,6 +2,7 @@
 #include "Components.h"
 #include "PathFinding.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "raylib.h"
 #include "rlImGui.h"
 #include <algorithm>
@@ -83,6 +84,25 @@ void Game::ECSInitRenderSystems() {
         draw.texture->Draw(draw.srcRect, pos);
       });
 
+  ecs.system<Tile, ScreenPosition>().kind<Render>().each(
+      [this](const Tile &tile, const ScreenPosition screenPos) {
+        // DrawRectangleLines(screenPos.x, screenPos.y, 32, 32,
+        //                tile.backgroundColor);
+        float width = map->getTileWidth();
+        float height = map->getTileHeight();
+        DrawRectangleV({screenPos.x, screenPos.y}, {width, height},
+                       tile.backgroundColor);
+
+        const char buf[2] = {tile.ch, '\0'};
+        Vector2 textSize = MeasureTextEx(GetFontDefault(), buf, std::min(width, height), 0);
+        Vector2 textPos = {screenPos.x + (width - textSize.x) / 2.0f,
+                           screenPos.y + (height - textSize.y) / 2.0f - 6.0f};
+
+        DrawTextCodepoint(GetFontDefault(), (int)tile.ch, textPos, 32.0f,
+                          tile.characterColor);
+      });
+
+  // TODO: Probably can remove this
   ecs.system<ScreenPosition, CharacterAnimation>().kind<Render>().each(
       [](const ScreenPosition &pos, CharacterAnimation &characterAnimation) {
         unsigned int currFrame = characterAnimation.currentFrame;
@@ -136,14 +156,14 @@ void Game::ECSInitPhysicsSystems() {
         vel = vel.Clamp(0.0f, maxSpeed.value);
       });
 
-  // ecs.system<Velocity, ScreenPosition, Intangible>().each(
-  //     [](const Velocity &vel, ScreenPosition &pos, const Intangible) {
-  //       pos += vel * GetFrameTime();
-  //     });
-
-  ecs.system<Acceleration>().each([](Acceleration &accel) { accel = {}; });
+  // Save and reset variables used in the physics simulation
+  ecs.system<Acceleration>().each([this](Acceleration &accel) {
+    lastAccel = accel;
+    accel = {};
+  });
 
   // TODO: This seems to be really inneficient, probably easy optimization gains
+  // Bounds Checking
   auto collisionFilter = ecs.filter<GamePosition, BlocksTile>();
   ecs.system<Velocity, ScreenPosition>().without<Intangible>().each(
       [collisionFilter, this](const flecs::entity currentEntity,
@@ -174,11 +194,6 @@ void Game::ECSInitPhysicsSystems() {
           origScreenPos = newScreenPos;
         }
       });
-
-  // ecs.system<ScreenPosition, GamePosition>.each(
-  //     [](ScreenPosition &screenPos, const GamePosition &gamePos) {
-  //
-  //     });
 }
 
 void Game::ECSInitLogicSystems() {
@@ -192,7 +207,9 @@ void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
 
-  map = std::make_unique<Map>(mapPath, *resourceManager, ecs);
+  map = std::make_unique<Map>(mapPath, ecs);
+
+  RegisterComponents(ecs);
 
   ECSInitPhysicsSystems();
   ECSInitLogicSystems();
@@ -331,31 +348,6 @@ void Game::handleInput() {
     }
   }
 }
-
-// =========== Old Input Handling, will probably use this later ===========
-// TODO: It slightly bothers me that this logic is not inside inputHandler
-// Also executing and then undoing it just sucks
-// void Game::handleInput() {
-//   Command *cmd = inputHandler.get()->handleInput();
-//   if (cmd != nullptr) {
-//     flecs::entity playerEntity =
-//     ecs.lookup(DEFAULT_PLAYER_ENTITY_NAME.c_str());
-//
-//     cmd->execute(playerEntity);
-//     if (auto moveCmd = dynamic_cast<MoveCommand*>(cmd)) {
-//       const Position *playerPos = playerEntity.get<Position>();
-//       bool inBounds = map.get()->IsInBounds(playerPos->x, playerPos->y);
-//       // TODO: Check if there is a way to make this lambda not receive
-//       BlocksTile bool blockedTile = ecs.filter<Position, BlocksTile>()
-//         .find([&playerEntity, playerPos](flecs::entity entity, const Position
-//         &pos, BlocksTile bT) {
-//           if (entity.id() == playerEntity.id()) { return false; }
-//           return playerPos->x == pos.x and playerPos->y == pos.y;
-//         });
-//       if (!inBounds or blockedTile) { moveCmd->undo(playerEntity); }
-//     }
-//   }
-// } ;
 
 void Game::Shutdown() {
   if (!window.IsReady())
