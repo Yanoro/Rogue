@@ -6,13 +6,16 @@
 
 class InputHandler {
 public:
-  InputHandler(raylib::Camera2D &gameCamera);
+  InputHandler(raylib::Camera2D &gameCamera, size_t mapWidthPx, size_t mapHeightPx);
 
   std::vector<Command*> handleInput();
 
 
 private:
   raylib::Camera2D *camera;
+
+  size_t mapWidthPx;
+  size_t mapHeightPx;
 
   ChangeVelocityCommand velUp{0.0f, -DEFAULT_VELOCITY};
   ChangeVelocityCommand velDown{0.0f, DEFAULT_VELOCITY};

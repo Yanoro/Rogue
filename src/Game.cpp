@@ -86,19 +86,18 @@ void Game::ECSInitRenderSystems() {
 
   ecs.system<Tile, ScreenPosition>().kind<Render>().each(
       [this](const Tile &tile, const ScreenPosition screenPos) {
-        // DrawRectangleLines(screenPos.x, screenPos.y, 32, 32,
-        //                tile.backgroundColor);
-        float width = map->getTileWidth();
-        float height = map->getTileHeight();
+        float width = map->GetTileWidth();
+        float height = map->GetTileHeight();
         DrawRectangleV({screenPos.x, screenPos.y}, {width, height},
                        tile.backgroundColor);
 
+        float fontSize = std::min(width, height);
         const char buf[2] = {tile.ch, '\0'};
-        Vector2 textSize = MeasureTextEx(GetFontDefault(), buf, std::min(width, height), 0);
-        Vector2 textPos = {screenPos.x + (width - textSize.x) / 2.0f,
-                           screenPos.y + (height - textSize.y) / 2.0f - 6.0f};
+        Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
+        Vector2 textPos = {std::round(screenPos.x + (width - textSize.x) / 2.0f),
+                           std::round(screenPos.y + (height - textSize.y) / 2.0f - 6.0f)};
 
-        DrawTextCodepoint(GetFontDefault(), (int)tile.ch, textPos, 32.0f,
+        DrawTextCodepoint(gameFont, (int)tile.ch, textPos, fontSize,
                           tile.characterColor);
       });
 
@@ -120,7 +119,7 @@ void Game::ECSInitRenderSystems() {
 void Game::ECSInitPhysicsSystems() {
   ecs.system<Velocity, Acceleration, Friction>().each(
       [](Velocity &vel, Acceleration &accel, const Friction &friction) {
-        if (vel.Length() > 1.0f) {
+        if (vel.Length() > 3.0f) {
           float gravity = 9.8f;
           accel += vel.Normalize().Scale(-gravity * friction.value);
         } else {
@@ -239,11 +238,22 @@ void Game::Init(std::string mapPath) {
   // monitor positioning
   raylib::Window::SetConfigFlags(FLAG_VSYNC_HINT);
 
-  // Initialize with a default small size, it will be resized immediately
-  window.Init(100, 100, "AIRogue");
+  // TODO: Make this general
+  window.Init(1920, 1080, "AIRogue");
+
+  // Remember that our font MUST be monofont
+  gameFont = GetFontDefault();
+
+  gameTexture = raylib::RenderTexture2D(1920, 1080);
+  SetTextureFilter(gameTexture.texture, TEXTURE_FILTER_POINT);
 
   resourceManager = std::make_unique<ResourceManager>();
+  //TODO: Feels weird that map initialization occurs here
   ECSInit(mapPath);
+  // virtualWidth = gameFont.baseSize * map->GetWidth();
+  // virtualHeight = gameFont.baseSize * map->GetHeight();
+  virtualWidth = 640;
+  virtualHeight = 512;
 
   // Ensure it starts on the main monitor
   int currentMonitor = 0;
@@ -273,10 +283,8 @@ void Game::Init(std::string mapPath) {
     screenWidth = 1080;
   }
 
-  std::cout << screenWidth << " " << screenHeight << std::endl;
-
-  float mapWidthPx = map->GetWidth() * map->getTileWidth();
-  float mapHeightPx = map->GetHeight() * map->getTileHeight();
+  float mapWidthPx = map->GetMapWidthPx();
+  float mapHeightPx = map->GetMapHeightPx();
 
   float zoomX = screenWidth / mapWidthPx;
   float zoomY = screenHeight / mapHeightPx;
@@ -286,9 +294,9 @@ void Game::Init(std::string mapPath) {
   camera.target = {0, 0};
   camera.offset = {0, 0};
   camera.rotation = 0.0f;
-  camera.zoom = std::min(zoomX, zoomY);
+  camera.zoom = std::max(1.0f, std::floor(std::min(zoomX, zoomY)));
 
-  inputHandler = std::make_unique<InputHandler>(camera);
+  inputHandler = std::make_unique<InputHandler>(camera, mapWidthPx, mapHeightPx);
 
   rlImGuiSetup(true);
 }

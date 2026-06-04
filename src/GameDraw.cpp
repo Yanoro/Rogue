@@ -1,10 +1,10 @@
-#include <iostream>
 #include "Components.h"
 #include "Game.h"
 #include "PathFinding.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
+#include <iostream>
 
 void Game::DrawPlayerInfoWindow() {
   ImGui::Begin("Player Entity");
@@ -14,7 +14,8 @@ void Game::DrawPlayerInfoWindow() {
       if (ImGui::InputInt2("Game Position", pos)) {
         playerEntity.set<GamePosition>({pos[0], pos[1]});
         if (map) {
-           playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos[0], pos[1]));
+          playerEntity.set<ScreenPosition>(
+              map->GameCoordsToScreenCoords(pos[0], pos[1]));
         }
       }
     }
@@ -233,8 +234,8 @@ void Game::DrawAStarWindow() {
 
 void Game::DrawEntityOverviewWindow() {
   struct OpenComponentWindow {
-      flecs::entity entity;
-      flecs::id id;
+    flecs::entity entity;
+    flecs::id id;
   };
   static std::vector<OpenComponentWindow> openComponentWindows;
 
@@ -247,7 +248,10 @@ void Game::DrawEntityOverviewWindow() {
   ImGui::Separator();
 
   // Begin a table for better formatting
-  if (ImGui::BeginTable("EntitiesTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchProp)) {
+  if (ImGui::BeginTable("EntitiesTable", 4,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                            ImGuiTableFlags_Resizable |
+                            ImGuiTableFlags_SizingStretchProp)) {
     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
     ImGui::TableSetupColumn("Name");
     ImGui::TableSetupColumn("Position");
@@ -258,16 +262,16 @@ void Game::DrawEntityOverviewWindow() {
       // Skip internal Flecs entities
       std::string path = e.path().c_str() ? e.path().c_str() : "";
       if (path.find("::flecs") == 0) {
-          return;
+        return;
       }
 
       // Get the name or ID string for filtering and display
       std::string name = e.name().c_str() ? e.name().c_str() : "Unnamed";
       std::string idStr = std::to_string(e.id());
-      
+
       // Combine name and ID for the filter
       std::string searchString = name + " " + idStr;
-      
+
       if (filter.PassFilter(searchString.c_str())) {
         ImGui::TableNextRow();
 
@@ -281,9 +285,9 @@ void Game::DrawEntityOverviewWindow() {
 
         // 3. Position Column
         ImGui::TableNextColumn();
-        if (const GamePosition* pos = e.get<GamePosition>()) {
+        if (const GamePosition *pos = e.get<GamePosition>()) {
           ImGui::Text("(%d, %d)", pos->x, pos->y);
-        } else if (const ScreenPosition* sPos = e.get<ScreenPosition>()) {
+        } else if (const ScreenPosition *sPos = e.get<ScreenPosition>()) {
           ImGui::Text("Screen(%.1f, %.1f)", sPos->x, sPos->y);
         } else {
           ImGui::Text("-");
@@ -291,16 +295,18 @@ void Game::DrawEntityOverviewWindow() {
 
         // 4. Components Column
         ImGui::TableNextColumn();
-        
+
         e.each([&](flecs::id id) {
-            std::string label = std::string(id.str().c_str()) + "##" + std::to_string(e.id()) + "_" + std::to_string(id.raw_id());
-            if (ImGui::SmallButton(label.c_str())) {
-                openComponentWindows.push_back({e, id});
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("ID: %lu", id.raw_id());
-            }
-            ImGui::SameLine();
+          std::string label = std::string(id.str().c_str()) + "##" +
+                              std::to_string(e.id()) + "_" +
+                              std::to_string(id.raw_id());
+          if (ImGui::SmallButton(label.c_str())) {
+            openComponentWindows.push_back({e, id});
+          }
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("ID: %lu", id.raw_id());
+          }
+          ImGui::SameLine();
         });
         ImGui::Text(" "); // End of line for the table cell
       }
@@ -312,33 +318,38 @@ void Game::DrawEntityOverviewWindow() {
   ImGui::End();
 
   // Draw open component windows
-  for (auto it = openComponentWindows.begin(); it != openComponentWindows.end(); ) {
-      bool open = true;
-      std::string winName = "Component: " + std::string(it->id.str().c_str()) + " (" + std::string(it->entity.name().c_str() ? it->entity.name().c_str() : "Unnamed") + ")##" + std::to_string(it->entity.id()) + "_" + std::to_string(it->id.raw_id());
-      
-      ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
-      if (ImGui::Begin(winName.c_str(), &open)) {
-          const void* ptr = it->entity.get(it->id.raw_id());
-          if (ptr) {
-              char* json = ecs_ptr_to_json(ecs.c_ptr(), it->id.raw_id(), ptr);
-              if (json) {
-                  ImGui::TextWrapped("%s", json);
-                  ecs_os_free(json);
-              } else {
-                  ImGui::TextDisabled("No JSON representation available.");
-              }
-          }
-          else {
-              ImGui::TextDisabled("No data for this component (might be a tag).");
-          }
-      }
-      ImGui::End();
+  for (auto it = openComponentWindows.begin();
+       it != openComponentWindows.end();) {
+    bool open = true;
+    std::string winName =
+        "Component: " + std::string(it->id.str().c_str()) + " (" +
+        std::string(it->entity.name().c_str() ? it->entity.name().c_str()
+                                              : "Unnamed") +
+        ")##" + std::to_string(it->entity.id()) + "_" +
+        std::to_string(it->id.raw_id());
 
-      if (!open) {
-          it = openComponentWindows.erase(it);
+    ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(winName.c_str(), &open)) {
+      const void *ptr = it->entity.get(it->id.raw_id());
+      if (ptr) {
+        char *json = ecs_ptr_to_json(ecs.c_ptr(), it->id.raw_id(), ptr);
+        if (json) {
+          ImGui::TextWrapped("%s", json);
+          ecs_os_free(json);
+        } else {
+          ImGui::TextDisabled("No JSON representation available.");
+        }
       } else {
-          ++it;
+        ImGui::TextDisabled("No data for this component (might be a tag).");
       }
+    }
+    ImGui::End();
+
+    if (!open) {
+      it = openComponentWindows.erase(it);
+    } else {
+      ++it;
+    }
   }
 }
 
@@ -354,12 +365,47 @@ void Game::DrawGameWindows() {
 }
 
 void Game::Draw() {
+  BeginDrawingGame();
+  ClearBackground(GRAY); // Clear the render texture
+
   camera.BeginMode();
+
+  const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
+  camera.target.x = playerPos->x;
+  camera.target.y = playerPos->y;
+  int screenWidth = GetScreenWidth();
+  int screenHeight = GetScreenHeight();
+  int screenWidthPx = map->GetMapWidthPx();
+  int screenHeightPx = map->GetMapHeightPx();
+  float centeringX = static_cast<float>(screenWidth) / 2;
+  float centeringY = static_cast<float>(screenHeight) / 2;
+
+  float offsetX;
+  float offsetY;
+  if (playerPos->x - centeringX < 0) {
+    offsetX = playerPos->x;
+  } else if (playerPos->x + centeringX > screenWidthPx) {
+    offsetX = screenWidth + playerPos->x - screenWidthPx;
+  } else {
+    offsetX = centeringX;
+  }
+  if (playerPos->y - centeringY < 0) {
+    offsetY = playerPos->y;
+  } else if (playerPos->y + centeringY > screenHeightPx) {
+    offsetY = screenHeight + playerPos->y - screenHeightPx;
+  } else {
+    offsetY = centeringY;
+  }
+
+
+  camera.offset.x = offsetX;
+  camera.offset.y = offsetY;
+
   ecs.run_pipeline(renderPipeline);
 
   if (map) {
-    int tileW = map->getTileWidth();
-    int tileH = map->getTileHeight();
+    int tileW = map->GetTileWidth();
+    int tileH = map->GetTileHeight();
 
     if (!astarPath.empty()) {
       for (const auto &pos : astarPath) {
@@ -378,4 +424,29 @@ void Game::Draw() {
   }
 
   camera.EndMode();
+  EndDrawingGame();
+
+  float scale = floorf(fminf((float)GetScreenWidth() / virtualWidth,
+                             (float)GetScreenHeight() / virtualHeight));
+
+  if (scale < 1.0f) {
+    scale = 1.0f;
+  }
+
+  // float offsetX =
+  //     ((float)GetScreenWidth() - ((float)virtualWidth * scale)) * 0.5f;
+  // float offsetY =
+  //     ((float)GetScreenHeight() - ((float)virtualHeight * scale)) * 0.5f;
+  // Source rectangle (Note the negative height to flip it right-side up!)
+  Rectangle sourceRec = {0.0f, 0.0f, (float)gameTexture.texture.width,
+                         -(float)gameTexture.texture.height};
+
+  Rectangle destRec = {0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()};
+
+  // Draw the completed frame
+  DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 }
+
+void Game::BeginDrawingGame() { BeginTextureMode(gameTexture); }
+
+void Game::EndDrawingGame() { EndTextureMode(); }

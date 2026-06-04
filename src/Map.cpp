@@ -1,5 +1,6 @@
 #include "Map.h"
 #include "Game.h"
+#include "raylib.h"
 #include <fstream>
 #include <iostream>
 
@@ -30,7 +31,6 @@ Map::Map(std::string jsonPath, flecs::world &ecs)
     height = json["mapHeight"];
     tileWidth = json["tileWidth"];
     tileHeight = json["tileHeight"];
-
 
     // This implicitily forces the tileInfo given to be given with contiguous
     // IDS,

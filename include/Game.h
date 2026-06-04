@@ -28,6 +28,9 @@ public:
   void DrawEntityOverviewWindow();
   void Draw(); 
 
+  void BeginDrawingGame(); 
+  void EndDrawingGame(); 
+
   void Shutdown();
 
   flecs::entity createEntity(const std::string &texturePath, const GamePosition &gamePos,
@@ -49,7 +52,12 @@ private:
   bool hasClicked = false;
   bool validTileSelected = false;
   GamePosition lastClickedPos{0, 0};
-  
+
+  raylib::RenderTexture2D gameTexture;
+
+  Font gameFont;
+  size_t virtualWidth;
+  size_t virtualHeight;
   // Astar related variables (Mainly drawing related)
   GamePosition astarStartPos{0, 0};
   GamePosition astarEndPos{0, 0};

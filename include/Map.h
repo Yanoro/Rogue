@@ -1,5 +1,6 @@
 #pragma once
 #include "Components.h"
+#include "RenderTexture.hpp"
 #include "ResourceManager.h"
 #include <flecs.h>
 #include <nlohmann/json.hpp>
@@ -29,8 +30,11 @@ public:
   ScreenPosition GameCoordsToScreenCoords(float x, float y) const;
   GamePosition ScreenCoordsToGameCoords(float x, float y) const;
 
-  int getTileWidth() const { return tileWidth; }
-  int getTileHeight() const { return tileHeight; }
+  int GetTileWidth() const { return tileWidth; }
+  int GetTileHeight() const { return tileHeight; }
+
+  int GetMapWidthPx() const { return GetWidth() * GetTileWidth();}
+  int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
 
   // Rendering
   // void Draw();
