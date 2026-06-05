@@ -32,7 +32,7 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
     tileWidth = json["tileWidth"];
     tileHeight = json["tileHeight"];
 
-    tileMap.reserve(width * height);
+    tileMap.resize(width * height);
 
     // This implicitily forces the tileInfo given to be given with contiguous
     // IDS,

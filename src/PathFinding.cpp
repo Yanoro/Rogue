@@ -1,5 +1,6 @@
 #include "PathFinding.h"
 #include "Game.h"
+#include "Map.h"
 #include <algorithm>
 #include <cmath>
 
@@ -66,7 +67,7 @@ unsigned int getFCost(const Node &node, const GamePosition &endPos) {
 // The ECS lookup in the middle of the code is really slow, placing it before the loop
 // will make it much faster
 
-std::vector<GamePosition> AStar(flecs::world &ecs, const GamePosition &startPos,
+std::vector<GamePosition> AStar(Map *map, const GamePosition &startPos,
                                 const GamePosition &endPos) {
   if (startPos == endPos) {
     return {};
@@ -111,15 +112,14 @@ std::vector<GamePosition> AStar(flecs::world &ecs, const GamePosition &startPos,
         GetNeighbours(currNode->position);
     std::vector<GamePosition> neighbourPositions;
 
-    ecs.filter_builder<Tile, GamePosition>().without<BlocksTile>().build().each(
-        [&possiblePositions, &closedNodes,
-         &neighbourPositions](const Tile &t, const GamePosition &pos) {
-          if (std::ranges::find(possiblePositions, pos) !=
-                  possiblePositions.end() and
-              nodeHasPosition(closedNodes, pos) == nullptr) {
-            neighbourPositions.push_back(pos);
-          }
-        });
+    for (const GamePosition& pos : possiblePositions) {
+      if (map->IsInBounds(pos.x, pos.y)) {
+        Tile* t = map->GetTile(pos.x, pos.y);
+        if (t && !t->blocksTile && nodeHasPosition(closedNodes, pos) == nullptr) {
+          neighbourPositions.push_back(pos);
+        }
+      }
+    }
 
     for (const auto &neighbourPos : neighbourPositions) {
       Node *neighbourNode = nodeHasPosition(openNodes, neighbourPos);

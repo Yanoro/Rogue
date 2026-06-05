@@ -287,12 +287,12 @@ void Game::UpdateGUI() {
         astarEndPos = gPos;
         astarClickCount = 0;
         isSelectingAStarPath = false;
-        astarPath = AStar(ecs, astarStartPos, astarEndPos);
+        astarPath = AStar(map.get(), astarStartPos, astarEndPos);
       }
     } else if (isSettingPlayerTarget) {
       if (playerEntity.is_alive()) {
         if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
-          std::vector<GamePosition> path = AStar(ecs, *pPos, gPos);
+          std::vector<GamePosition> path = AStar(map.get(), *pPos, gPos);
           playerEntity.set<TargetPath>({path});
         }
       }
