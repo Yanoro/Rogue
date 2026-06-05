@@ -6,9 +6,108 @@
 #include "raylib.h"
 #include "rlImGui.h"
 #include <iostream>
+#include <sstream>
+
+// Helper function to format JSON with indentation for pretty printing
+static std::string PrettyPrintJson(const char *json) {
+  if (!json) return "";
+
+  std::string result;
+  int indent = 0;
+  bool inString = false;
+  bool escapeNext = false;
+
+  for (size_t i = 0; i < strlen(json); ++i) {
+    char c = json[i];
+
+    if (escapeNext) {
+      result += c;
+      escapeNext = false;
+      continue;
+    }
+
+    if (c == '\\' && inString) {
+      result += c;
+      escapeNext = true;
+      continue;
+    }
+
+    if (c == '"') {
+      inString = !inString;
+      result += c;
+      continue;
+    }
+
+    if (inString) {
+      result += c;
+      continue;
+    }
+
+    switch (c) {
+    case '{':
+    case '[':
+      result += c;
+      result += '\n';
+      indent++;
+      for (int j = 0; j < indent * 2; ++j) result += ' ';
+      break;
+    case '}':
+    case ']':
+      result += '\n';
+      indent--;
+      for (int j = 0; j < indent * 2; ++j) result += ' ';
+      result += c;
+      break;
+    case ',':
+      result += c;
+      result += '\n';
+      for (int j = 0; j < indent * 2; ++j) result += ' ';
+      break;
+    case ':':
+      result += c;
+      result += ' ';
+      break;
+    case ' ':
+    case '\n':
+    case '\t':
+      // Skip whitespace (we're adding our own)
+      break;
+    default:
+      result += c;
+    }
+  }
+
+  return result;
+}
+
+void Game::DrawDebugConsoleWindow() {
+  ImGui::Begin("Debug Console", &showDebugConsole,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("Debug Windows");
+  ImGui::Separator();
+
+  if (ImGui::Checkbox("Player Entity Window", &showPlayerInfoWindow)) {
+  }
+  ImGui::SameLine();
+  if (ImGui::Checkbox("Tile Info Window", &showTileInfoWindow)) {
+  }
+
+  if (ImGui::Checkbox("A* Window", &showAStarWindow)) {
+  }
+  ImGui::SameLine();
+  if (ImGui::Checkbox("Entity Overview", &showEntityOverviewWindow)) {
+  }
+
+  ImGui::Separator();
+  ImGui::Text("All debug windows can be closed by clicking the X button.");
+
+  ImGui::End();
+}
+
 
 void Game::DrawPlayerInfoWindow() {
-  ImGui::Begin("Player Entity");
+  ImGui::Begin("Player Entity", &showPlayerInfoWindow);
   if (playerEntity.is_alive()) {
     if (const GamePosition *gPos = playerEntity.get<GamePosition>()) {
       int pos[2] = {gPos->x, gPos->y};
@@ -156,7 +255,7 @@ void Game::DrawPlayerInfoWindow() {
 
 void Game::DrawTileInfoWindow() {
 
-  ImGui::Begin("Tile Info");
+  ImGui::Begin("Tile Info", &showTileInfoWindow);
 
   if (hasClicked) {
 
@@ -198,7 +297,7 @@ void Game::DrawTileInfoWindow() {
 }
 
 void Game::DrawAStarWindow() {
-  ImGui::Begin("A*");
+  ImGui::Begin("A*", &showAStarWindow);
 
   if (isSelectingAStarPath) {
     if (ImGui::Button("Cancel Selection")) {
@@ -234,7 +333,7 @@ void Game::DrawEntityOverviewWindow() {
   };
   static std::vector<OpenComponentWindow> openComponentWindows;
 
-  ImGui::Begin("Entity Overview");
+  ImGui::Begin("Entity Overview", &showEntityOverviewWindow);
 
   // Optional: Add a text filter
   static ImGuiTextFilter filter;
@@ -329,7 +428,8 @@ void Game::DrawEntityOverviewWindow() {
       if (ptr) {
         char *json = ecs_ptr_to_json(ecs.c_ptr(), it->id.raw_id(), ptr);
         if (json) {
-          ImGui::TextWrapped("%s", json);
+          std::string prettyJson = PrettyPrintJson(json);
+          ImGui::TextWrapped("%s", prettyJson.c_str());
           ecs_os_free(json);
         } else {
           ImGui::TextDisabled("No JSON representation available.");
@@ -349,14 +449,25 @@ void Game::DrawEntityOverviewWindow() {
 }
 
 void Game::DrawGameWindows() {
+  // Always draw the debug console to control other windows
+  DrawDebugConsoleWindow();
 
-  DrawPlayerInfoWindow();
+  // Draw individual debug windows only if enabled
+  if (showPlayerInfoWindow) {
+    DrawPlayerInfoWindow();
+  }
 
-  DrawTileInfoWindow();
+  if (showTileInfoWindow) {
+    DrawTileInfoWindow();
+  }
 
-  DrawAStarWindow();
+  if (showAStarWindow) {
+    DrawAStarWindow();
+  }
 
-  DrawEntityOverviewWindow();
+  if (showEntityOverviewWindow) {
+    DrawEntityOverviewWindow();
+  }
 }
 
 void Game::Draw() {
