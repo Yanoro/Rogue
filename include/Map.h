@@ -26,6 +26,7 @@ public:
   int GetWidth() const { return width; }
   int GetHeight() const { return height; }
   bool IsInBounds(float x, float y) const;
+  bool InsideScreenMap(Rectangle rect) const;
 
   ScreenPosition GameCoordsToScreenCoords(float x, float y) const;
   GamePosition ScreenCoordsToGameCoords(float x, float y) const;

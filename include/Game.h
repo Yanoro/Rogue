@@ -1,9 +1,9 @@
 #pragma once
-#include <flecs.h>
-#include <filesystem>
-#include "raylib-cpp.hpp"
-#include "Map.h"
 #include "InputHandler.h"
+#include "Map.h"
+#include "raylib-cpp.hpp"
+#include <filesystem>
+#include <flecs.h>
 
 #include "Components.h"
 #include "Defaults.h"
@@ -26,14 +26,14 @@ public:
   void DrawTileInfoWindow();
   void DrawAStarWindow();
   void DrawEntityOverviewWindow();
-  void Draw(); 
+  void Draw();
 
-  void BeginDrawingGame(); 
-  void EndDrawingGame(); 
+  void BeginDrawingGame();
+  void EndDrawingGame();
 
   void Shutdown();
 
-  flecs::entity createEntity(const std::string &texturePath, const GamePosition &gamePos,
+  flecs::entity createEntity(const GamePosition &gamePos,
                              std::string entityName = "");
 
   bool shouldClose() const;
@@ -66,13 +66,14 @@ private:
   int astarClickCount = 0;
   bool isSettingPlayerTarget = false;
   Acceleration lastAccel = {};
+  Velocity lastVel = {};
 
   raylib::Camera2D camera;
   GameCameraMode cameraMode;
 
   std::unique_ptr<InputHandler> inputHandler;
   std::unique_ptr<ResourceManager> resourceManager;
-  
+
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();
   void ECSInitPhysicsSystems();

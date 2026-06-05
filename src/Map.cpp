@@ -1,4 +1,5 @@
 #include "Map.h"
+#include "Defaults.h"
 #include "Game.h"
 #include "raylib.h"
 #include <fstream>
@@ -13,8 +14,7 @@ inline void from_json(const nlohmann::json &j, Color &c) {
   }
 }
 
-Map::Map(std::string jsonPath, flecs::world &ecs)
-    : ecs(ecs) {
+Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
 
@@ -36,25 +36,29 @@ Map::Map(std::string jsonPath, flecs::world &ecs)
     // IDS,
     std::vector<nlohmann::json> tiles = json["tileInfo"];
     GamePosition currPos = {0, 0};
-    
+
     for (const int pos : json["positions"]) {
       Tile newTile;
+      DrawAscii newAscii;
       ScreenPosition newScreenPosition =
           GameCoordsToScreenCoords(currPos.x, currPos.y);
       int tileId = pos;
       auto &currTileInfo = tiles[tileId];
 
       newTile.name = currTileInfo.value("name", "Unknown name");
-      newTile.ch = currTileInfo.value("character", "?").at(0);
-      newTile.characterColor = currTileInfo["characterColor"];
-      newTile.backgroundColor = currTileInfo["backgroundColor"];
-      
+      newAscii.ch = currTileInfo.value("character", "?").at(0);
+      newAscii.characterColor = currTileInfo["characterColor"];
+      newAscii.backgroundColor = currTileInfo["backgroundColor"];
+      newAscii.width = tileWidth;
+      newAscii.height = tileHeight;
+
       auto blocksTile = (currTileInfo.value("blocksTile", false));
 
       auto entity = ecs.entity()
-          .set<Tile>(newTile)
-          .set<GamePosition>(currPos)
-          .set<ScreenPosition>(newScreenPosition);
+                        .set<Tile>(newTile)
+                        .set<DrawAscii>(newAscii)
+                        .set<GamePosition>(currPos)
+                        .set<ScreenPosition>(newScreenPosition);
 
       if (blocksTile) {
         entity.add<BlocksTile>();
@@ -79,7 +83,13 @@ bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);
 }
 
-//TODO: I have no idea why both functions take floats
+bool Map::InsideScreenMap(Rectangle rect) const {
+  return (rect.x >= 0) && (rect.y >= 0) &&
+         ((rect.x + rect.width) <= GetMapWidthPx()) &&
+         ((rect.y + rect.height) <= GetMapHeightPx());
+}
+
+// TODO: I have no idea why both functions take floats
 ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
   return ScreenPosition(static_cast<int>(x * tileWidth),
                         static_cast<int>(y * tileHeight));

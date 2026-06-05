@@ -11,7 +11,7 @@ raylib::Color DEFAULT_BACKGROUND_COLOR = raylib::Color::Black();
 
 int main() {
   Game game;
-  game.Init("./Map.json");
+  game.Init("./Map2.json");
 
   OllamaAI AI("llama3");
   

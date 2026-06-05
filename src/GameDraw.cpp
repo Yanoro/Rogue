@@ -32,15 +32,11 @@ void Game::DrawPlayerInfoWindow() {
         ImGui::Text("Moving to: (%d, %d)", lastPos.x, lastPos.y);
       }
     }
-    if (const Velocity *vel = playerEntity.get<Velocity>()) {
-      float v[2] = {vel->x, vel->y};
-      if (ImGui::DragFloat2("Velocity", v)) {
-        playerEntity.set<Velocity>({v[0], v[1]});
-      }
-    } else {
-      ImGui::Text("Velocity: (0.00, 0.00)");
-    }
 
+    float v[2] = {lastVel.x, lastVel.y};
+    if (ImGui::DragFloat2("Velocity", v)) {
+      playerEntity.set<Velocity>({v[0], v[1]});
+    }
     float a[2] = {lastAccel.x, lastAccel.y};
     if (ImGui::DragFloat2("Acceleration", a)) {
       playerEntity.set<Acceleration>({a[0], a[1]});
@@ -93,15 +89,13 @@ void Game::DrawPlayerInfoWindow() {
                       ImVec2(canvasPos.x + canvasSize.x - 5, center.y),
                       IM_COL32(80, 80, 80, 255));
 
-    // Get current velocity and max speed
-    const Velocity *vel = playerEntity.get<Velocity>();
     const MaxSpeed *maxSpeed = playerEntity.get<MaxSpeed>();
 
-    if (vel && maxSpeed && maxSpeed->value > 0.0f) {
+    if (maxSpeed && maxSpeed->value > 0.0f) {
       // Calculate scaled endpoint
       float scaleX = maxRadius / maxSpeed->value;
       float scaleY = maxRadius / maxSpeed->value;
-      ImVec2 velEnd(center.x + vel->x * scaleX, center.y + vel->y * scaleY);
+      ImVec2 velEnd(center.x + lastVel.x * scaleX, center.y + lastVel.y * scaleY);
 
       // Draw velocity vector line and arrowhead/dot
       drawList->AddLine(center, velEnd, IM_COL32(50, 255, 50, 255), 2.0f);
@@ -426,6 +420,8 @@ void Game::Draw() {
 
   Rectangle destRec = {0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()};
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
+
+  DrawFPS(10, 10);
 }
 
 void Game::BeginDrawingGame() { BeginTextureMode(gameTexture); }

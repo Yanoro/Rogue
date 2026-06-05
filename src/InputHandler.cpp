@@ -11,10 +11,11 @@ InputHandler::InputHandler(raylib::Camera2D &gameCamera,
 std::vector<Command *> InputHandler::handleInput() {
   // Actions that do not affect in game 16:19
   // Camera movement, zooming, etc.
-  
+
   // Toggle camera modes
-  if (IsKeyPressed(KEY_H)) { 
-    GameCameraMode nextMode = static_cast<GameCameraMode>((static_cast<int>(*cameraMode) + 1) % 2);
+  if (IsKeyPressed(KEY_H)) {
+    GameCameraMode nextMode =
+        static_cast<GameCameraMode>((static_cast<int>(*cameraMode) + 1) % 2);
     if (nextMode == GameCameraMode::FreeRoamMode) {
       camera->target.x -= camera->offset.x;
       camera->target.y -= camera->offset.y;
@@ -45,15 +46,16 @@ std::vector<Command *> InputHandler::handleInput() {
           static_cast<float>(mapHeightPx - (GetScreenHeight() / camera->zoom)));
     }
   }
-  if (IsKeyPressed((KEY_EQUAL))) {
-    camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
-                              camera->zoom + DEFAULT_INPUT_ZOOM,
-                              DEFAULT_MAXIMUM_INPUT_ZOOM);
-  }
-  if (IsKeyPressed(KEY_MINUS)) {
-    camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
-                              camera->zoom - DEFAULT_INPUT_ZOOM,
-                              DEFAULT_MAXIMUM_INPUT_ZOOM);
+  if (IsKeyPressed((KEY_Z))) {
+    if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
+      camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
+                                camera->zoom - DEFAULT_INPUT_ZOOM,
+                                DEFAULT_MAXIMUM_INPUT_ZOOM);
+    } else {
+      camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
+                                camera->zoom + DEFAULT_INPUT_ZOOM,
+                                DEFAULT_MAXIMUM_INPUT_ZOOM);
+    }
   }
 
   std::vector<Command *> commands;

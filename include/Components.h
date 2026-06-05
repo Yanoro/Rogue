@@ -94,31 +94,16 @@ struct TargetPath {
   std::vector<GamePosition> path;
 };
 
-struct CharacterAnimation {
-  raylib::Texture *texture;
-  unsigned int frameCount;
-  std::vector<Frame> frames;
-  unsigned int currentFrame = 0;
-  double lastFrameTime = 0;
-
-  CharacterAnimation(raylib::Texture *tex = nullptr,
-                     unsigned int frameCount = 1)
-      : texture(tex), frameCount(frameCount), currentFrame(0),
-        lastFrameTime(0.0) {
-    frames.reserve(frameCount);
-  }
-};
-
-struct Drawable {
-  raylib::Texture *texture;
-  raylib::Rectangle srcRect;
+struct DrawAscii {
+  char ch;
+  Color characterColor;
+  Color backgroundColor; 
+  size_t width;
+  size_t height;
 };
 
 struct Tile {
   std::string name;
-  char ch;
-  Color characterColor;
-  Color backgroundColor;
 };
 
 // Reusable reflection support for std::vector
@@ -196,15 +181,6 @@ inline void RegisterComponents(flecs::world& ecs) {
 
     ecs.component<std::vector<Frame>>()
         .opaque(std_vector_support<Frame>);
-
-    ecs.component<CharacterAnimation>()
-        .member<unsigned int>("frameCount")
-        .member<std::vector<Frame>>("frames")
-        .member<unsigned int>("currentFrame")
-        .member<double>("lastFrameTime");
-
-    ecs.component<Drawable>()
-        .member<raylib::Rectangle>("srcRect");
 
     ecs.component<Color>()
         .member<unsigned char>("r")

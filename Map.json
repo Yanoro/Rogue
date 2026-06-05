@@ -9,6 +9,7 @@
       "character": ".",
       "characterColor": [255, 255, 255, 255],
       "backgroundColor": [128, 128, 128, 128],
+      "fontSize": 32,
       "blocksTile": false
     }
   ],

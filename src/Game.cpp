@@ -1,5 +1,6 @@
 #include "Game.h"
 #include "Components.h"
+#include "Defaults.h"
 #include "PathFinding.h"
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -13,106 +14,43 @@ Game::Game() {}
 
 Game::~Game() { Shutdown(); }
 
-std::string findFirstJsonFile(const std::string &directoryPath) {
-  try {
-    if (!std::filesystem::exists(directoryPath) or
-        !std::filesystem::is_directory(directoryPath)) {
-      return ""; // Directory doesn't exist
-    }
-
-    for (const auto &entry :
-         std::filesystem::directory_iterator(directoryPath)) {
-      if (entry.is_regular_file() && entry.path().extension() == ".json") {
-        return entry.path().string();
-      }
-    }
-  } catch (const std::filesystem::filesystem_error &e) {
-    std::cerr << "Filesystem error: " << e.what() << std::endl;
-  }
-  return ""; // No JSON file found
-}
-
-// TODO: Function either works or throws an exception,
-// Probably a better way to do this
-flecs::entity Game::createEntity(const std::string &texturePath,
-                                 const GamePosition &pos,
+flecs::entity Game::createEntity(const GamePosition &pos,
                                  std::string entityName) {
-  std::string jsonPath = findFirstJsonFile(
-      std::filesystem::path(texturePath).parent_path().string());
-  std::ifstream jsonFile;
-  jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
-  try {
-    jsonFile.open(jsonPath);
-  } catch (const std::ifstream::failure &e) {
-    std::cerr << "Game::createEntity: Exception opening/reading file: "
-              << texturePath << " " << e.what() << std::endl;
-    throw;
-  }
-
-  try {
-    auto json = nlohmann::json::parse(jsonFile);
-    unsigned int frameCount = json["frames"].size();
-    raylib::Texture *characterTexture =
-        resourceManager->GetTexture(texturePath);
-    CharacterAnimation charAnimation(characterTexture, frameCount);
-    for (const auto &currFrame : json["frames"]) {
-      double duration = currFrame.value("duration", 100.0) /
-                        1000; // From seconds to miliseconds
-      auto currRect = currFrame["frame"];
-      raylib::Rectangle frameRect = {currRect["x"], currRect["y"],
-                                     currRect["w"], currRect["h"]};
-      charAnimation.frames.emplace_back(Frame{frameRect, duration});
-    }
-    return ecs.entity(entityName.c_str())
-        .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
-        .set<GamePosition>(pos)
-        .set<CharacterAnimation>(charAnimation)
-        .add<BlocksTile>();
-  } catch (const std::exception &e) {
-    std::cerr << "JSON Parse Error: " << e.what() << " jsonPath: " << jsonPath
-              << std::endl;
-    throw;
-  }
+  return ecs.entity(entityName.c_str())
+      .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
+      .set<GamePosition>(pos)
+      .add<BlocksTile>();
 }
 
 void Game::ECSInitRenderSystems() {
   renderPipeline = ecs.pipeline().with(flecs::System).with<Render>().build();
 
-  ecs.system<Drawable, ScreenPosition>().kind<Render>().each(
-      [](const Drawable &draw, const ScreenPosition &pos) {
-        draw.texture->Draw(draw.srcRect, pos);
-      });
+  ecs.system<DrawAscii, ScreenPosition>().kind<Render>().each(
+      [this](const DrawAscii &ascii, const ScreenPosition screenPos) {
+        DrawRectangleV(
+            {screenPos.x, screenPos.y},
+            {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
+            ascii.backgroundColor);
 
-  ecs.system<Tile, ScreenPosition>().kind<Render>().each(
-      [this](const Tile &tile, const ScreenPosition screenPos) {
-        float width = map->GetTileWidth();
-        float height = map->GetTileHeight();
-        DrawRectangleV({screenPos.x, screenPos.y}, {width, height},
-                       tile.backgroundColor);
-
-        float fontSize = std::min(width, height);
-        const char buf[2] = {tile.ch, '\0'};
+        const char buf[2] = {ascii.ch, '\0'};
+        size_t fontSize = std::min(ascii.width, ascii.height);
         Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
-        Vector2 textPos = {std::round(screenPos.x + (width - textSize.x) / 2.0f),
-                           std::round(screenPos.y + (height - textSize.y) / 2.0f - 6.0f)};
+        Vector2 textPos = {
+            std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
+            std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f)};
 
-        DrawTextCodepoint(gameFont, (int)tile.ch, textPos, fontSize,
-                          tile.characterColor);
-      });
+        // raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
+        //                             ascii.height);
+        // raylib::Rectangle innerRect(
+        //     std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
+        //     std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f),
+        //     textSize.x, textSize.y);
+        //
+        // outerRect.DrawLines(RED, 1.0f);
+        // innerRect.DrawLines(BLUE, 1.0f);
 
-  // TODO: Probably can remove this
-  ecs.system<ScreenPosition, CharacterAnimation>().kind<Render>().each(
-      [](const ScreenPosition &pos, CharacterAnimation &characterAnimation) {
-        unsigned int currFrame = characterAnimation.currentFrame;
-        DrawCircleV(pos, 7.5f, BLUE);
-        double currTime = GetTime();
-        if (currTime - characterAnimation.lastFrameTime >
-            characterAnimation.frames[currFrame].duration) {
-          characterAnimation.currentFrame =
-              (currFrame + 1) % characterAnimation.frameCount;
-          characterAnimation.lastFrameTime = currTime;
-        }
+        DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
+                          ascii.characterColor);
       });
 }
 
@@ -155,44 +93,76 @@ void Game::ECSInitPhysicsSystems() {
         vel = vel.Clamp(0.0f, maxSpeed.value);
       });
 
+  // TODO: This seems to be really inneficient, probably easy optimization gains
+  // Bounds Checking
+  auto collisionFilter = ecs.filter<ScreenPosition, BlocksTile>();
+  ecs.system<Velocity, DrawAscii, ScreenPosition>().without<Intangible>().each(
+      [collisionFilter, this](const flecs::entity currentEntity, Velocity &vel,
+                              const DrawAscii &ascii,
+                              const ScreenPosition &origScreenPos) {
+        ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
+
+        float tWidth = map->GetTileWidth();
+        float tHeight = map->GetTileWidth();
+        size_t fontSize = std::min(ascii.width, ascii.height);
+
+        bool nullXVector = false;
+        bool nullYVector = false;
+
+        if ((newScreenPos.x + fontSize < 0) ||
+            (newScreenPos.x + map->GetTileWidth() > map->GetMapWidthPx())) {
+          nullXVector = true;
+        }
+        if ((newScreenPos.y + fontSize < 0) ||
+            (newScreenPos.y + map->GetTileHeight() > map->GetMapHeightPx())) {
+          nullYVector = true;
+        }
+
+        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
+                                     fontSize, fontSize);
+        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
+                                     fontSize, fontSize);
+        collisionFilter.find([&](flecs::entity blockEntity,
+                                 const ScreenPosition &pos, const BlocksTile) {
+          if (blockEntity == currentEntity) {
+            return false;
+          }
+
+          raylib::Rectangle currRect(pos.x, pos.y, tWidth, tHeight);
+
+          if (deltaXRect.CheckCollision(currRect)) {
+            nullXVector = true;
+          }
+          if (deltaYRect.CheckCollision(currRect)) {
+            nullYVector = true;
+          }
+
+          if (nullXVector && nullYVector) {
+            return true;
+          }
+          return false;
+        });
+
+        if (nullXVector) {
+          vel.x = 0;
+        }
+        if (nullYVector) {
+          vel.y = 0;
+        }
+      });
+
+  ecs.system<Velocity, ScreenPosition>().each(
+      [](const Velocity &vel, ScreenPosition &pos) {
+        pos += vel * GetFrameTime();
+      });
+
   // Save and reset variables used in the physics simulation
   ecs.system<Acceleration>().each([this](Acceleration &accel) {
     lastAccel = accel;
     accel = {};
   });
 
-  // TODO: This seems to be really inneficient, probably easy optimization gains
-  // Bounds Checking
-  auto collisionFilter = ecs.filter<GamePosition, BlocksTile>();
-  ecs.system<Velocity, ScreenPosition>().without<Intangible>().each(
-      [collisionFilter, this](const flecs::entity currentEntity,
-                              const Velocity &vel,
-                              ScreenPosition &origScreenPos) {
-        ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-        GamePosition newGamePos =
-            map->ScreenCoordsToGameCoords(newScreenPos.x, newScreenPos.y);
-
-        if (!map.get()->IsInBounds(newGamePos.x, newGamePos.y)) {
-          return;
-        }
-
-        bool isBlocked = false;
-        collisionFilter.find([&](flecs::entity blockEntity,
-                                 const GamePosition &pos, const BlocksTile) {
-          if (blockEntity == currentEntity) {
-            return false;
-          }
-          if (pos.x == newGamePos.x && pos.y == newGamePos.y) {
-            isBlocked = true;
-            return true;
-          }
-          return false;
-        });
-
-        if (!isBlocked) {
-          origScreenPos = newScreenPos;
-        }
-      });
+  ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
 }
 
 void Game::ECSInitLogicSystems() {
@@ -214,20 +184,21 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  playerEntity = createEntity("./data/tilesets/Pixel Crawler - Free "
-                              "Pack/Entities/NPCS/Rogue/Idle/Idle-Sheet.png",
-                              {1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
+  playerEntity = createEntity({1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   playerEntity.set<Acceleration>({0, 0});
+  playerEntity.set<DrawAscii>({
+      '@',
+      {128, 0, 128, 255},
+      {128, 128, 128, 0},
+      DEFAULT_PLAYER_WIDTH,
+      DEFAULT_PLAYER_HEIGHT,
+  });
 
-  createEntity("./data/tilesets/Pixel Crawler - Free "
-               "Pack/Entities/NPCS/Knight/Idle/Idle-Sheet.png",
-               {20, 1});
-  createEntity("./data/tilesets/Pixel Crawler - Free "
-               "Pack/Entities/NPCS/Wizzard/Idle/Idle-Sheet.png",
-               {30, 1});
+  createEntity({20, 1});
+  createEntity({30, 1});
 }
 
 void Game::Init(std::string mapPath) {
@@ -242,13 +213,14 @@ void Game::Init(std::string mapPath) {
   window.Init(1920, 1080, "AIRogue");
 
   // Remember that our font MUST be monofont
-  gameFont = GetFontDefault();
+  gameFont = LoadFontEx(DEFAULT_FONT_PATH, DEFAULT_FONTSIZE, NULL, 0);
+  SetTextureFilter(gameFont.texture, TEXTURE_FILTER_POINT);
 
   gameTexture = raylib::RenderTexture2D(1920, 1080);
   SetTextureFilter(gameTexture.texture, TEXTURE_FILTER_POINT);
 
   resourceManager = std::make_unique<ResourceManager>();
-  //TODO: Feels weird that map initialization occurs here
+  // TODO: Feels weird that map initialization occurs here
   ECSInit(mapPath);
   // virtualWidth = gameFont.baseSize * map->GetWidth();
   // virtualHeight = gameFont.baseSize * map->GetHeight();
@@ -264,8 +236,8 @@ void Game::Init(std::string mapPath) {
   window.SetSize(GetMonitorWidth(currentMonitor),
                  GetMonitorHeight(currentMonitor));
 
-  // Actually go fullscreen (locks correctly on the targeted monitor in most X11
-  // setups)
+  // Actually go fullscreen (locks correctly on the targeted monitor in most
+  // X11 setups)
   ToggleFullscreen();
 
   window.SetTargetFPS(60);
@@ -277,8 +249,8 @@ void Game::Init(std::string mapPath) {
   float screenHeight = GetScreenHeight();
 
   // If the reported screen width is unusually large (e.g. dual monitors
-  // spanning), clamp it for the sake of the zoom calculation so the game isn't
-  // zoomed out/in too far.
+  // spanning), clamp it for the sake of the zoom calculation so the game
+  // isn't zoomed out/in too far.
   if (screenWidth > 2560) {
     screenWidth = 1080;
   }
@@ -289,15 +261,15 @@ void Game::Init(std::string mapPath) {
   float zoomX = screenWidth / mapWidthPx;
   float zoomY = screenHeight / mapHeightPx;
 
-
   cameraMode = GameCameraMode::FollowMode;
-  
+
   camera.target = {0, 0};
   camera.offset = {0, 0};
   camera.rotation = 0.0f;
   camera.zoom = std::max(1.0f, std::floor(std::min(zoomX, zoomY)));
 
-  inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx, mapHeightPx);
+  inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx,
+                                                mapHeightPx);
 
   rlImGuiSetup(true);
 }
