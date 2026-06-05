@@ -22,6 +22,7 @@ public:
   void Update();
 
   void DrawGameWindows();
+  void DrawDebugConsoleWindow();
   void DrawPlayerInfoWindow();
   void DrawTileInfoWindow();
   void DrawAStarWindow();
@@ -70,6 +71,13 @@ private:
 
   raylib::Camera2D camera;
   GameCameraMode cameraMode;
+
+  // Debug window visibility state
+  bool showDebugConsole = true;  // Console always visible
+  bool showPlayerInfoWindow = false;
+  bool showTileInfoWindow = false;
+  bool showAStarWindow = false;
+  bool showEntityOverviewWindow = false;
 
   std::unique_ptr<InputHandler> inputHandler;
   std::unique_ptr<ResourceManager> resourceManager;
