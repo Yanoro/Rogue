@@ -3,12 +3,9 @@
 #include "Defaults.h"
 #include "PathFinding.h"
 #include "imgui.h"
-#include "imgui_internal.h"
 #include "raylib.h"
 #include "rlImGui.h"
 #include <algorithm>
-#include <fstream>
-#include <iostream>
 
 Game::Game() {}
 
@@ -76,7 +73,7 @@ void Game::ECSInitPhysicsSystems() {
         Velocity desiredVelocity =
             static_cast<raylib::Vector2>(currWaypoint - currPos).Normalize();
 
-        desiredVelocity *= DEFAULT_MAXSPEED;
+        desiredVelocity *= DEFAULT_WAYPOINT_ACCEL;
         accel += desiredVelocity - vel;
         if (currWaypoint.x == currPos.x && currWaypoint.y == currPos.y) {
           tPath.path.erase(tPath.path.begin());
@@ -93,62 +90,63 @@ void Game::ECSInitPhysicsSystems() {
         vel = vel.Clamp(0.0f, maxSpeed.value);
       });
 
-  // TODO: This seems to be really inneficient, probably easy optimization gains
-  // Bounds Checking
-  auto collisionFilter = ecs.filter<ScreenPosition, BlocksTile>();
   ecs.system<Velocity, DrawAscii, ScreenPosition>().without<Intangible>().each(
-      [collisionFilter, this](const flecs::entity currentEntity, Velocity &vel,
-                              const DrawAscii &ascii,
-                              const ScreenPosition &origScreenPos) {
+      [this](Velocity &vel, const DrawAscii &ascii,
+             const ScreenPosition &origScreenPos) {
         ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-
-        float tWidth = map->GetTileWidth();
-        float tHeight = map->GetTileWidth();
         size_t fontSize = std::min(ascii.width, ascii.height);
 
         bool nullXVector = false;
         bool nullYVector = false;
 
-        if ((newScreenPos.x + fontSize < 0) ||
-            (newScreenPos.x + map->GetTileWidth() > map->GetMapWidthPx())) {
+        if ((newScreenPos.x < 0) ||
+            (newScreenPos.x + ascii.width > map->GetMapWidthPx())) {
           nullXVector = true;
         }
-        if ((newScreenPos.y + fontSize < 0) ||
-            (newScreenPos.y + map->GetTileHeight() > map->GetMapHeightPx())) {
+        if ((newScreenPos.y < 0) ||
+            (newScreenPos.y + ascii.height > map->GetMapHeightPx())) {
           nullYVector = true;
         }
 
-        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
-                                     fontSize, fontSize);
-        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
-                                     fontSize, fontSize);
-        collisionFilter.find([&](flecs::entity blockEntity,
-                                 const ScreenPosition &pos, const BlocksTile) {
-          if (blockEntity == currentEntity) {
-            return false;
+        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y, fontSize,
+                                     fontSize);
+        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y, fontSize,
+                                     fontSize);
+
+        GamePosition gamePos =
+            map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
+        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+        std::vector<Tile *> neighbors;
+        for (int i = 0; i < 8; ++i) {
+          if (nullXVector && nullYVector) {
+            break;
           }
 
-          raylib::Rectangle currRect(pos.x, pos.y, tWidth, tHeight);
-
+          int currX = gamePos.x + dx[i];
+          int currY = gamePos.y + dy[i];
+          Tile *currTile = map->GetTile(currX, currY);
+          if (!currTile->blocksTile) {
+            continue;
+          }
+          ScreenPosition currTileScreenPos =
+              map->GameCoordsToScreenCoords(currX, currY);
+          raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
+                                     currTile->ascii->width,
+                                     currTile->ascii->height);
           if (deltaXRect.CheckCollision(currRect)) {
             nullXVector = true;
           }
           if (deltaYRect.CheckCollision(currRect)) {
             nullYVector = true;
           }
-
-          if (nullXVector && nullYVector) {
-            return true;
-          }
-          return false;
-        });
-
-        if (nullXVector) {
-          vel.x = 0;
         }
-        if (nullYVector) {
-          vel.y = 0;
-        }
+
+       vel.x =  (nullXVector) ? 0 : vel.x;
+       vel.y =  (nullYVector) ? 0 : vel.y;
+
+
       });
 
   ecs.system<Velocity, ScreenPosition>().each(
@@ -184,7 +182,7 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  playerEntity = createEntity({1, 1}, DEFAULT_PLAYER_ENTITY_NAME);
+  playerEntity = createEntity({23, 15}, DEFAULT_PLAYER_ENTITY_NAME);
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_FRICTION});
   playerEntity.set<Velocity>({0, 0});

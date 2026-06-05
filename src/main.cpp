@@ -9,9 +9,16 @@
 //TODO: Move this to a better place
 raylib::Color DEFAULT_BACKGROUND_COLOR = raylib::Color::Black();
 
-int main() {
+#include <string>
+
+int main(int argc, char* argv[]) {
+  std::string mapPath = "./Map2.json";
+  if (argc > 1) {
+    mapPath = argv[1];
+  }
+
   Game game;
-  game.Init("./Map2.json");
+  game.Init(mapPath);
 
   OllamaAI AI("llama3");
   

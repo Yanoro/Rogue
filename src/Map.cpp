@@ -32,37 +32,35 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
     tileWidth = json["tileWidth"];
     tileHeight = json["tileHeight"];
 
+    tileMap.reserve(width * height);
+
     // This implicitily forces the tileInfo given to be given with contiguous
     // IDS,
-    std::vector<nlohmann::json> tiles = json["tileInfo"];
+    std::vector<Tile *> tiles;
+
+    for (const auto &tileInfo : json["tileInfo"]) {
+      Tile *newTile = new Tile();
+      DrawAscii *newAscii = new DrawAscii();
+      newAscii->ch = tileInfo.value("character", "?").at(0);
+      newAscii->characterColor = tileInfo["characterColor"];
+      newAscii->backgroundColor = tileInfo["backgroundColor"];
+      newAscii->width = tileWidth;
+      newAscii->height = tileHeight;
+
+      newTile->name = tileInfo.value("name", "Unknown name");
+      newTile->blocksTile = tileInfo.value("blocksTile", false);
+      newTile->ascii = newAscii;
+      tiles.push_back(newTile);
+    }
+
     GamePosition currPos = {0, 0};
 
     for (const int pos : json["positions"]) {
-      Tile newTile;
-      DrawAscii newAscii;
-      ScreenPosition newScreenPosition =
-          GameCoordsToScreenCoords(currPos.x, currPos.y);
-      int tileId = pos;
-      auto &currTileInfo = tiles[tileId];
+      addTileToMap(tiles[pos], currPos.x, currPos.y);
 
-      newTile.name = currTileInfo.value("name", "Unknown name");
-      newAscii.ch = currTileInfo.value("character", "?").at(0);
-      newAscii.characterColor = currTileInfo["characterColor"];
-      newAscii.backgroundColor = currTileInfo["backgroundColor"];
-      newAscii.width = tileWidth;
-      newAscii.height = tileHeight;
-
-      auto blocksTile = (currTileInfo.value("blocksTile", false));
-
-      auto entity = ecs.entity()
-                        .set<Tile>(newTile)
-                        .set<DrawAscii>(newAscii)
-                        .set<GamePosition>(currPos)
-                        .set<ScreenPosition>(newScreenPosition);
-
-      if (blocksTile) {
-        entity.add<BlocksTile>();
-      }
+      ecs.entity()
+          .set<DrawAscii>(*tiles[pos]->ascii)
+          .set<ScreenPosition>(GameCoordsToScreenCoords(currPos.x, currPos.y));
 
       if (++currPos.y == height) {
         currPos.y = 0;
@@ -77,7 +75,22 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
   }
 }
 
+void Map::addTileToMap(Tile *newTile, int x, int y) {
+  tileMap[x + (y * width)] = newTile;
+}
+
 int Map::GetIndex(int x, int y) const { return y * width + x; }
+ 
+std::vector<Tile*> Map::GetNeighbours(GamePosition p) {
+  static const int dx[] = {-1,  0,  1, -1, 1, -1, 0, 1};
+  static const int dy[] = {-1, -1, -1,  0, 0,  1, 1, 1};
+
+  std::vector<Tile*> neighbors;
+  for(int i = 0; i < 8; ++i) {
+    neighbors.push_back(GetTile(p.x + dx[i], p.y + dy[i]));
+  }
+  return neighbors;
+} 
 
 bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);

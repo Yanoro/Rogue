@@ -104,6 +104,8 @@ struct DrawAscii {
 
 struct Tile {
   std::string name;
+  bool blocksTile;
+  DrawAscii *ascii;
 };
 
 // Reusable reflection support for std::vector

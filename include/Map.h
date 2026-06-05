@@ -37,11 +37,14 @@ public:
   int GetMapWidthPx() const { return GetWidth() * GetTileWidth();}
   int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
 
-  // Rendering
-  // void Draw();
+  void addTileToMap(Tile *newTile, int x, int y);
+  Tile *GetTile(int x, int y) { return tileMap[x + (width * y)]; }
+  std::vector<Tile*> GetNeighbours(GamePosition p); 
 
 private:
   flecs::world &ecs;
+
+  std::vector<Tile*> tileMap;
 
   int width;
   int height;
