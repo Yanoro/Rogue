@@ -38,9 +38,6 @@ public:
   
   bool GetShowDrawAsciiToggleWindow() const { return showDrawAsciiToggleWindow; }
   void SetShowDrawAsciiToggleWindow(bool value) { showDrawAsciiToggleWindow = value; }
-  
-  bool GetShowCameraFixWindow() const { return showCameraFixWindow; }
-  void SetShowCameraFixWindow(bool value) { showCameraFixWindow = value; }
 
 private:
   bool showDebugConsole;
@@ -51,7 +48,6 @@ private:
   bool showDebugLogWindow;
   bool showMapReloadWindow;
   bool showDrawAsciiToggleWindow;
-  bool showCameraFixWindow;
   
   static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";
 };

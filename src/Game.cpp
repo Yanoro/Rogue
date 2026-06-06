@@ -4,7 +4,6 @@
 #include "PathFinding.h"
 #include "DebugWindowState.h"
 #include "DebugLog.h"
-#include "CameraFix.h"
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
 #include "imgui.h"
@@ -376,7 +375,6 @@ void Game::Init(std::string mapPath) {
   debugWindowState = std::make_unique<DebugWindowState>();
   debugLog = std::make_unique<DebugLog>();
   mapReloader = std::make_unique<MapReloader>("./");
-  cameraFixMode = CameraFixMode::Normal;
 
   // Load debug window state if it exists
   debugWindowState->LoadState("./debug_windows_state.json");
@@ -390,7 +388,6 @@ void Game::Init(std::string mapPath) {
   showDebugLogWindow = debugWindowState->GetShowDebugLogWindow();
   showMapReloadWindow = debugWindowState->GetShowMapReloadWindow();
   showDrawAsciiToggleWindow = debugWindowState->GetShowDrawAsciiToggleWindow();
-  showCameraFixWindow = debugWindowState->GetShowCameraFixWindow();
 
   debugLog->LogInfo("Game initialized successfully");
 
@@ -456,6 +453,22 @@ void Game::handleInput() {
 void Game::Shutdown() {
   if (!window.IsReady())
     return;
+
+  if (debugWindowState) {
+    debugWindowState->SetShowDebugConsole(showDebugConsole);
+    debugWindowState->SetShowPlayerInfoWindow(showPlayerInfoWindow);
+    debugWindowState->SetShowTileInfoWindow(showTileInfoWindow);
+    debugWindowState->SetShowAStarWindow(showAStarWindow);
+    debugWindowState->SetShowEntityOverviewWindow(showEntityOverviewWindow);
+    debugWindowState->SetShowDebugLogWindow(showDebugLogWindow);
+    debugWindowState->SetShowMapReloadWindow(showMapReloadWindow);
+    debugWindowState->SetShowDrawAsciiToggleWindow(showDrawAsciiToggleWindow);
+    
+    debugWindowState->SaveState("./debug_windows_state.json");
+    if (debugLog) {
+      debugLog->LogInfo("Debug window state saved on shutdown");
+    }
+  }
 
   rlImGuiShutdown();
   window.Close();

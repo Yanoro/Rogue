@@ -113,7 +113,6 @@ set(SOURCES
     src/PathFinding.cpp
     src/DebugWindowState.cpp
     src/DebugLog.cpp
-    src/CameraFix.cpp
     src/MapReloader.cpp
     src/DrawAsciiDebug.cpp
 )

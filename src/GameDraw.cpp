@@ -4,7 +4,6 @@
 #include "PathFinding.h"
 #include "DebugLog.h"
 #include "DrawAsciiDebug.h"
-#include "CameraFix.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -110,32 +109,9 @@ void Game::DrawDebugConsoleWindow() {
 
   if (ImGui::Checkbox("DrawAscii Toggle", &showDrawAsciiToggleWindow)) {
   }
-  ImGui::SameLine();
-  if (ImGui::Checkbox("Camera Fix Window", &showCameraFixWindow)) {
-  }
 
   ImGui::Separator();
   ImGui::Text("All debug windows can be closed by clicking the X button.");
-
-  ImGui::Separator();
-  ImGui::Text("Save/Load State");
-  if (ImGui::Button("Save Debug State")) {
-    // Update the debug window state with current visibility values
-    debugWindowState->SetShowDebugConsole(showDebugConsole);
-    debugWindowState->SetShowPlayerInfoWindow(showPlayerInfoWindow);
-    debugWindowState->SetShowTileInfoWindow(showTileInfoWindow);
-    debugWindowState->SetShowAStarWindow(showAStarWindow);
-    debugWindowState->SetShowEntityOverviewWindow(showEntityOverviewWindow);
-    debugWindowState->SetShowDebugLogWindow(showDebugLogWindow);
-    debugWindowState->SetShowMapReloadWindow(showMapReloadWindow);
-    debugWindowState->SetShowDrawAsciiToggleWindow(showDrawAsciiToggleWindow);
-    debugWindowState->SetShowCameraFixWindow(showCameraFixWindow);
-    
-    debugWindowState->SaveState("./debug_windows_state.json");
-    if (debugLog) {
-      debugLog->LogInfo("Debug window state saved");
-    }
-  }
 
   ImGui::End();
 }
@@ -495,7 +471,7 @@ void Game::DrawDebugLogWindow() {
   }
 
   ImGui::BeginChild("##LogContent", ImVec2(500, 300),
-                    ImGuiChildFlags_Border);
+                    ImGuiChildFlags_Borders);
 
   const auto &entries = debugLog->GetEntries();
   for (const auto &entry : entries) {
@@ -597,31 +573,6 @@ void Game::DrawDrawAsciiToggleWindow() {
   ImGui::End();
 }
 
-void Game::DrawCameraFixWindow() {
-  ImGui::Begin("Camera Fix", &showCameraFixWindow,
-               ImGuiWindowFlags_AlwaysAutoResize);
-
-  ImGui::Text("Camera Control for Small Maps");
-  ImGui::Separator();
-
-  static int currentMode = 0;
-  const char *cameraModes[] = {"Normal", "Centered", "Birds Eye View"};
-
-  if (ImGui::Combo("Camera Mode", &currentMode, cameraModes, 3)) {
-    CameraFixMode newMode = static_cast<CameraFixMode>(currentMode);
-    cameraFixMode = newMode;
-    CameraFix::SetCurrentMode(newMode);
-    debugLog->LogInfo("Camera mode changed");
-  }
-
-  ImGui::Separator();
-  ImGui::Text("Map Size: %d x %d pixels", map->GetMapWidthPx(),
-             map->GetMapHeightPx());
-  ImGui::Text("Current Zoom: %.2f", camera.zoom);
-
-  ImGui::End();
-}
-
 void Game::DrawGameWindows() {
   // Always draw the debug console to control other windows
   DrawDebugConsoleWindow();
@@ -653,10 +604,6 @@ void Game::DrawGameWindows() {
 
   if (showDrawAsciiToggleWindow) {
     DrawDrawAsciiToggleWindow();
-  }
-
-  if (showCameraFixWindow) {
-    DrawCameraFixWindow();
   }
 }
 

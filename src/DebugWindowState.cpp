@@ -8,8 +8,7 @@ DebugWindowState::DebugWindowState()
     : showDebugConsole(true), showPlayerInfoWindow(false),
       showTileInfoWindow(false), showAStarWindow(false),
       showEntityOverviewWindow(false), showDebugLogWindow(false),
-      showMapReloadWindow(false), showDrawAsciiToggleWindow(false),
-      showCameraFixWindow(false) {}
+      showMapReloadWindow(false), showDrawAsciiToggleWindow(false) {}
 
 void DebugWindowState::SaveState(const std::string &filePath) const {
   json state;
@@ -21,7 +20,6 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["debugLog"] = showDebugLogWindow;
   state["mapReload"] = showMapReloadWindow;
   state["drawAsciiToggle"] = showDrawAsciiToggleWindow;
-  state["cameraFix"] = showCameraFixWindow;
 
   std::ofstream file(filePath);
   if (file.is_open()) {
@@ -54,7 +52,6 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showDebugLogWindow = state.value("debugLog", false);
       showMapReloadWindow = state.value("mapReload", false);
       showDrawAsciiToggleWindow = state.value("drawAsciiToggle", false);
-      showCameraFixWindow = state.value("cameraFix", false);
 
       std::cout << "Debug window state loaded from: " << filePath << std::endl;
     } catch (const std::exception &e) {

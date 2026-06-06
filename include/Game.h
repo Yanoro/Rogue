@@ -9,7 +9,6 @@
 #include "Defaults.h"
 #include "DebugWindowState.h"
 #include "DebugLog.h"
-#include "CameraFix.h"
 #include "MapReloader.h"
 
 class ResourceManager;
@@ -34,7 +33,6 @@ public:
   void DrawDebugLogWindow();
   void DrawMapReloadWindow();
   void DrawDrawAsciiToggleWindow();
-  void DrawCameraFixWindow();
   void Draw();
 
   void BeginDrawingGame();
@@ -89,13 +87,11 @@ private:
   bool showDebugLogWindow = false;
   bool showMapReloadWindow = false;
   bool showDrawAsciiToggleWindow = false;
-  bool showCameraFixWindow = false;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;
   std::unique_ptr<DebugLog> debugLog;
   std::unique_ptr<MapReloader> mapReloader;
-  CameraFixMode cameraFixMode = CameraFixMode::Normal;
 
   std::unique_ptr<InputHandler> inputHandler;
   std::unique_ptr<ResourceManager> resourceManager;
