@@ -38,7 +38,7 @@ public:
   int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
 
   void addTileToMap(Tile *newTile, int x, int y);
-  Tile *GetTile(int x, int y) { return tileMap[x + (width * y)]; }
+  Tile *GetTile(int x, int y); 
   std::vector<Tile*> GetNeighbours(GamePosition p); 
 
 private:

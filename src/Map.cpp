@@ -57,6 +57,7 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 
     for (const int pos : json["positions"]) {
       addTileToMap(tiles[pos], currPos.x, currPos.y);
+      ScreenPosition screenPos = GameCoordsToScreenCoords(currPos.x, currPos.y);
 
       ecs.entity()
           .set<DrawAscii>(*tiles[pos]->ascii)
@@ -78,7 +79,13 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 void Map::addTileToMap(Tile *newTile, int x, int y) {
   tileMap[x + (y * width)] = newTile;
 }
-
+                              
+Tile *Map::GetTile(int x, int y) {
+  if (!IsInBounds(x, y)) {
+    return nullptr;
+  }
+  return tileMap[GetIndex(x, y)];
+}
 int Map::GetIndex(int x, int y) const { return y * width + x; }
  
 std::vector<Tile*> Map::GetNeighbours(GamePosition p) {
@@ -104,10 +111,11 @@ bool Map::InsideScreenMap(Rectangle rect) const {
 
 // TODO: I have no idea why both functions take floats
 ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
-  return ScreenPosition(static_cast<int>(x * tileWidth),
-                        static_cast<int>(y * tileHeight));
+  return ScreenPosition(std::floor(static_cast<int>(x * tileWidth)),
+                        std::floor(static_cast<int>(y * tileHeight)));
 }
 
 GamePosition Map::ScreenCoordsToGameCoords(float x, float y) const {
   return GamePosition(std::floor(x / tileWidth), std::floor(y / tileHeight));
 }
+
