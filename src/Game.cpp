@@ -2,6 +2,11 @@
 #include "Components.h"
 #include "Defaults.h"
 #include "PathFinding.h"
+#include "DebugWindowState.h"
+#include "DebugLog.h"
+#include "CameraFix.h"
+#include "MapReloader.h"
+#include "DrawAsciiDebug.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -36,15 +41,20 @@ void Game::ECSInitRenderSystems() {
             std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
             std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f)};
 
-        // raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
-        //                             ascii.height);
-        // raylib::Rectangle innerRect(
-        //     std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
-        //     std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f),
-        //     textSize.x, textSize.y);
-        //
-        // outerRect.DrawLines(RED, 1.0f);
-        // innerRect.DrawLines(BLUE, 1.0f);
+        // Debug rectangles - now togglable
+        if (DrawAsciiDebug::GetShowOuterRectangles()) {
+          raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
+                                      ascii.height);
+          outerRect.DrawLines(RED, 1.0f);
+        }
+
+        if (DrawAsciiDebug::GetShowInnerRectangles()) {
+          raylib::Rectangle innerRect(
+              std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
+              std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f),
+              textSize.x, textSize.y);
+          innerRect.DrawLines(BLUE, 1.0f);
+        }
 
         DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
                           ascii.characterColor);
@@ -268,6 +278,28 @@ void Game::Init(std::string mapPath) {
 
   inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx,
                                                 mapHeightPx);
+
+  // Initialize debug systems
+  debugWindowState = std::make_unique<DebugWindowState>();
+  debugLog = std::make_unique<DebugLog>();
+  mapReloader = std::make_unique<MapReloader>("./");
+  cameraFixMode = CameraFixMode::Normal;
+
+  // Load debug window state if it exists
+  debugWindowState->LoadState("./debug_windows_state.json");
+  
+  // Apply loaded state to the game
+  showDebugConsole = debugWindowState->GetShowDebugConsole();
+  showPlayerInfoWindow = debugWindowState->GetShowPlayerInfoWindow();
+  showTileInfoWindow = debugWindowState->GetShowTileInfoWindow();
+  showAStarWindow = debugWindowState->GetShowAStarWindow();
+  showEntityOverviewWindow = debugWindowState->GetShowEntityOverviewWindow();
+  showDebugLogWindow = debugWindowState->GetShowDebugLogWindow();
+  showMapReloadWindow = debugWindowState->GetShowMapReloadWindow();
+  showDrawAsciiToggleWindow = debugWindowState->GetShowDrawAsciiToggleWindow();
+  showCameraFixWindow = debugWindowState->GetShowCameraFixWindow();
+
+  debugLog->LogInfo("Game initialized successfully");
 
   rlImGuiSetup(true);
 }

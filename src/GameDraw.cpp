@@ -2,6 +2,9 @@
 #include "Defaults.h"
 #include "Game.h"
 #include "PathFinding.h"
+#include "DebugLog.h"
+#include "DrawAsciiDebug.h"
+#include "CameraFix.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -99,8 +102,40 @@ void Game::DrawDebugConsoleWindow() {
   if (ImGui::Checkbox("Entity Overview", &showEntityOverviewWindow)) {
   }
 
+  if (ImGui::Checkbox("Debug Log Window", &showDebugLogWindow)) {
+  }
+  ImGui::SameLine();
+  if (ImGui::Checkbox("Map Reload Window", &showMapReloadWindow)) {
+  }
+
+  if (ImGui::Checkbox("DrawAscii Toggle", &showDrawAsciiToggleWindow)) {
+  }
+  ImGui::SameLine();
+  if (ImGui::Checkbox("Camera Fix Window", &showCameraFixWindow)) {
+  }
+
   ImGui::Separator();
   ImGui::Text("All debug windows can be closed by clicking the X button.");
+
+  ImGui::Separator();
+  ImGui::Text("Save/Load State");
+  if (ImGui::Button("Save Debug State")) {
+    // Update the debug window state with current visibility values
+    debugWindowState->SetShowDebugConsole(showDebugConsole);
+    debugWindowState->SetShowPlayerInfoWindow(showPlayerInfoWindow);
+    debugWindowState->SetShowTileInfoWindow(showTileInfoWindow);
+    debugWindowState->SetShowAStarWindow(showAStarWindow);
+    debugWindowState->SetShowEntityOverviewWindow(showEntityOverviewWindow);
+    debugWindowState->SetShowDebugLogWindow(showDebugLogWindow);
+    debugWindowState->SetShowMapReloadWindow(showMapReloadWindow);
+    debugWindowState->SetShowDrawAsciiToggleWindow(showDrawAsciiToggleWindow);
+    debugWindowState->SetShowCameraFixWindow(showCameraFixWindow);
+    
+    debugWindowState->SaveState("./debug_windows_state.json");
+    if (debugLog) {
+      debugLog->LogInfo("Debug window state saved");
+    }
+  }
 
   ImGui::End();
 }
@@ -448,6 +483,145 @@ void Game::DrawEntityOverviewWindow() {
   }
 }
 
+void Game::DrawDebugLogWindow() {
+  ImGui::Begin("Debug Log", &showDebugLogWindow,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("Debug Log (Latest %zu entries)", debugLog->GetMaxEntries());
+  ImGui::Separator();
+
+  if (ImGui::Button("Clear Log")) {
+    debugLog->Clear();
+  }
+
+  ImGui::BeginChild("##LogContent", ImVec2(500, 300),
+                    ImGuiChildFlags_Border);
+
+  const auto &entries = debugLog->GetEntries();
+  for (const auto &entry : entries) {
+    ImVec4 color;
+    switch (entry.level) {
+    case DebugLog::LogLevel::INFO:
+      color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+      break;
+    case DebugLog::LogLevel::WARNING:
+      color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+      break;
+    case DebugLog::LogLevel::ERROR:
+      color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+      break;
+    case DebugLog::LogLevel::DEBUG:
+      color = ImVec4(0.0f, 1.0f, 1.0f, 1.0f);
+      break;
+    }
+    ImGui::TextColored(color, "[%s] %s", entry.timestamp.c_str(),
+                      entry.message.c_str());
+  }
+
+  // Auto-scroll to bottom when new entries are added
+  if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetItemRectSize().y) {
+    ImGui::SetScrollHereY(1.0f);
+  }
+
+  ImGui::EndChild();
+  ImGui::End();
+}
+
+void Game::DrawMapReloadWindow() {
+  ImGui::Begin("Map Reload", &showMapReloadWindow,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("Available Maps");
+  ImGui::Separator();
+
+  if (ImGui::Button("Refresh Map List")) {
+    mapReloader->RefreshMapList();
+    debugLog->LogInfo("Map list refreshed");
+  }
+
+  ImGui::Separator();
+
+  const auto &mapList = mapReloader->GetMapList();
+  if (mapList.empty()) {
+    ImGui::TextDisabled("No maps found in: %s",
+                       mapReloader->GetDirectory().c_str());
+  } else {
+    static int selectedMapIndex = 0;
+
+    if (ImGui::BeginListBox("##MapList", ImVec2(-1, 200))) {
+      for (size_t i = 0; i < mapList.size(); i++) {
+        bool isSelected = (selectedMapIndex == (int)i);
+        if (ImGui::Selectable(mapList[i].c_str(), isSelected)) {
+          selectedMapIndex = i;
+        }
+        if (isSelected) {
+          ImGui::SetItemDefaultFocus();
+        }
+      }
+      ImGui::EndListBox();
+    }
+
+    if (selectedMapIndex >= 0 && selectedMapIndex < (int)mapList.size()) {
+      std::string mapPath = mapReloader->GetMapPath(selectedMapIndex);
+      ImGui::Text("Selected: %s", mapList[selectedMapIndex].c_str());
+      ImGui::Text("Path: %s", mapPath.c_str());
+    }
+  }
+
+  ImGui::End();
+}
+
+void Game::DrawDrawAsciiToggleWindow() {
+  ImGui::Begin("DrawAscii Debug", &showDrawAsciiToggleWindow,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("DrawAscii Rectangle Toggles");
+  ImGui::Separator();
+
+  bool showOuter = DrawAsciiDebug::GetShowOuterRectangles();
+  if (ImGui::Checkbox("Show Outer Rectangles (RED)", &showOuter)) {
+    DrawAsciiDebug::SetShowOuterRectangles(showOuter);
+    debugLog->LogInfo(showOuter ? "Outer rectangles enabled" : "Outer rectangles disabled");
+  }
+
+  bool showInner = DrawAsciiDebug::GetShowInnerRectangles();
+  if (ImGui::Checkbox("Show Inner Rectangles (BLUE)", &showInner)) {
+    DrawAsciiDebug::SetShowInnerRectangles(showInner);
+    debugLog->LogInfo(showInner ? "Inner rectangles enabled" : "Inner rectangles disabled");
+  }
+
+  ImGui::Separator();
+  ImGui::Text("Red: Tile boundaries");
+  ImGui::Text("Blue: Text boundaries");
+
+  ImGui::End();
+}
+
+void Game::DrawCameraFixWindow() {
+  ImGui::Begin("Camera Fix", &showCameraFixWindow,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("Camera Control for Small Maps");
+  ImGui::Separator();
+
+  static int currentMode = 0;
+  const char *cameraModes[] = {"Normal", "Centered", "Birds Eye View"};
+
+  if (ImGui::Combo("Camera Mode", &currentMode, cameraModes, 3)) {
+    CameraFixMode newMode = static_cast<CameraFixMode>(currentMode);
+    cameraFixMode = newMode;
+    CameraFix::SetCurrentMode(newMode);
+    debugLog->LogInfo("Camera mode changed");
+  }
+
+  ImGui::Separator();
+  ImGui::Text("Map Size: %d x %d pixels", map->GetMapWidthPx(),
+             map->GetMapHeightPx());
+  ImGui::Text("Current Zoom: %.2f", camera.zoom);
+
+  ImGui::End();
+}
+
 void Game::DrawGameWindows() {
   // Always draw the debug console to control other windows
   DrawDebugConsoleWindow();
@@ -467,6 +641,22 @@ void Game::DrawGameWindows() {
 
   if (showEntityOverviewWindow) {
     DrawEntityOverviewWindow();
+  }
+
+  if (showDebugLogWindow) {
+    DrawDebugLogWindow();
+  }
+
+  if (showMapReloadWindow) {
+    DrawMapReloadWindow();
+  }
+
+  if (showDrawAsciiToggleWindow) {
+    DrawDrawAsciiToggleWindow();
+  }
+
+  if (showCameraFixWindow) {
+    DrawCameraFixWindow();
   }
 }
 
