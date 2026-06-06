@@ -81,10 +81,9 @@ void Game::ECSInitPhysicsSystems() {
 
   ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, DrawAscii,
              TargetPath>()
-      .each([this](flecs::entity entity, const Velocity &vel,
-                   Acceleration &accel, const GamePosition &currPos,
-                   const ScreenPosition &screenPos, const DrawAscii &ascii,
-                   TargetPath &tPath) {
+      .each([this](flecs::entity entity, Velocity &vel, Acceleration &accel,
+                   const GamePosition &currPos, const ScreenPosition &screenPos,
+                   const DrawAscii &ascii, TargetPath &tPath) {
         if (tPath.path.empty()) {
           entity.remove<TargetPath>();
           return;
@@ -104,34 +103,46 @@ void Game::ECSInitPhysicsSystems() {
         ScreenPosition entCenterScreenPos =
             screenPos + (raylib::Vector2(ascii.width, ascii.height) / 2.0f);
 
-        float targetDistance = entCenterScreenPos.Distance(targetScreenPos);
+        float finalTargetDistance =
+            entCenterScreenPos.Distance(targetScreenPos);
 
         const int slowingRadius = std::min(tWidth, tHeight) * 1.5f;
         float slowFactor = 1;
-        if (targetDistance < slowingRadius && vel.Length() > DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS) {
-          slowFactor = targetDistance / slowingRadius;
+        if (finalTargetDistance < slowingRadius) {
+          slowFactor = finalTargetDistance / slowingRadius;
         }
-        std::cout << slowFactor << std::endl;
 
         ScreenPosition currWaypointScreenPos =
             map->GameCoordsToScreenCoords(currWaypoint.x, currWaypoint.y);
         currWaypointScreenPos += centerTile;
 
-        Velocity desiredVelocity =
-            static_cast<raylib::Vector2>(currWaypointScreenPos -
-                                         entCenterScreenPos)
-                .Normalize();
+        Velocity desiredVelocity = static_cast<raylib::Vector2>(
+            currWaypointScreenPos - entCenterScreenPos);
+        if (desiredVelocity.LengthSqr() > 0) {
+          desiredVelocity = desiredVelocity.Normalize();
+        }
+
+        float targetDistance =
+            entCenterScreenPos.Distance(currWaypointScreenPos);
+
+        if (vel.Length() > 0 && vel.Length() < DEFAULT_MINIMUM_WAYPOINT_SPEED &&
+            targetDistance > DEFAULT_MINIMUM_WAYPOINT_SPEED) {
+          vel = vel.Normalize() * DEFAULT_MINIMUM_WAYPOINT_SPEED;
+        } else if (vel.Length() == 0) {
+          vel = DEFAULT_MINIMUM_WAYPOINT_SPEED;
+        }
+
         desiredVelocity *= DEFAULT_WAYPOINT_ACCEL * slowFactor;
         accel += desiredVelocity - vel;
 
         static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 10};
 
         // Entity might get stuck or unnnecesarily hug walls unless
         // we add a force repelling them
         // We only do this if the velocity has a certain magnitude, otherwise
         // the entity would "Bounce" around the wall when slow
-        if (vel.Length() > 5.0f) {
+        if (vel.Length() > DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL) {
           for (int i = 0; i < 8; i++) {
             int currX = currPos.x + dx[i];
             int currY = currPos.y + dy[i];
@@ -139,12 +150,13 @@ void Game::ECSInitPhysicsSystems() {
             if (currNeighbour == nullptr || !currNeighbour->blocksTile) {
               continue;
             }
-            GamePosition neighbourPos = {currX, currY};
-            Velocity wallRepelDirection =
-                static_cast<raylib::Vector2>(currPos - neighbourPos);
 
             ScreenPosition neighbourScreenPos =
                 map->GameCoordsToScreenCoords(currX, currY);
+
+            Velocity wallRepelDirection = static_cast<raylib::Vector2>(
+                entCenterScreenPos - (neighbourScreenPos + centerTile));
+
             raylib::Rectangle entRect(screenPos.x, screenPos.y, ascii.width,
                                       ascii.height);
             raylib::Rectangle neighbourRect(
@@ -157,11 +169,8 @@ void Game::ECSInitPhysicsSystems() {
             accel += wallRepelDirection;
           }
         }
-        std::cout << targetDistance << std::endl;
-        if ((tPath.path.size() == 1 &&
-             targetDistance < DEFAULT_FINAL_TARGET_DISTANCE) or
-            (tPath.path.size() > 1 && currWaypoint.x == currPos.x &&
-             currWaypoint.y == currPos.y)) {
+
+        if (targetDistance < DEFAULT_MINIMUM_WAYPOINT_DISTANCE) {
           tPath.path.erase(tPath.path.begin());
         }
       });
