@@ -85,155 +85,166 @@ void Game::ECSInitPhysicsSystems() {
                    Acceleration &accel, const GamePosition &currPos,
                    const ScreenPosition &screenPos, const DrawAscii &ascii,
                    TargetPath &tPath) {
-    if (tPath.path.empty()) {
-      entity.remove<TargetPath>();
-      return;
-    }
-    GamePosition currWaypoint = tPath.path[0];
-    size_t tWidth = map->GetTileWidth();
-    size_t tHeight = map->GetTileHeight();
-
-    Velocity desiredVelocity =
-        static_cast<raylib::Vector2>(currWaypoint - currPos).Normalize();
-
-    // If we are getting close to our target we start slowing down
-    GamePosition target = tPath.path.back();
-    ScreenPosition targetScreenPos =
-        map->GameCoordsToScreenCoords(target.x, target.y);
-
-    // Centralize both screen postiions
-    targetScreenPos += raylib::Vector2(tWidth, tHeight) / 2.0f;
-    ScreenPosition entCenterScreenPos = screenPos + (raylib::Vector2(ascii.width, ascii.height) / 2.0f);
-
-    float targetDistance = entCenterScreenPos.Distance(targetScreenPos);
-
-    const int slowingRadius = std::min(tWidth, tHeight);
-    float slowFactor = 1;
-    if (CheckCollisionPointCircle(screenPos, targetScreenPos, slowingRadius)) {
-      slowFactor = targetDistance / slowingRadius;
-    }
-    std::cout << slowFactor << std::endl;
-
-    desiredVelocity *= DEFAULT_WAYPOINT_ACCEL * slowFactor;
-    accel += desiredVelocity - vel;
-
-    static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-    static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-    // Entity might get stuck or unnnecesarily hug walls unless
-    // we add a force repelling them
-    for (int i = 0; i < 8; i++) {
-      int currX = currPos.x + dx[i];
-      int currY = currPos.y + dy[i];
-      Tile *currNeighbour = map->GetTile(currX, currY);
-      if (currNeighbour == nullptr || !currNeighbour->blocksTile) {
-        continue;
-      }
-      GamePosition neighbourPos = {currX, currY};
-      Velocity wallRepelDirection =
-          static_cast<raylib::Vector2>(currPos - neighbourPos);
-
-      ScreenPosition neighbourScreenPos =
-          map->GameCoordsToScreenCoords(currX, currY);
-      raylib::Rectangle entRect(screenPos.x, screenPos.y, ascii.width,
-                                ascii.height);
-      raylib::Rectangle neighbourRect(neighbourScreenPos.x,
-                                      neighbourScreenPos.y, tWidth, tHeight);
-
-      float distance = GetDistanceRecs(entRect, neighbourRect);
-      distance = std::max(distance, DEFAULT_WALL_REPEL_FORCE);
-
-      wallRepelDirection *= 1 / (std::pow(distance, 2));
-      accel += wallRepelDirection;
-    }
-    std::cout << targetDistance << std::endl;
-    if ((tPath.path.size() == 1 && targetDistance < 5.0f) or
-        (tPath.path.size() > 1 && currWaypoint.x == currPos.x &&
-         currWaypoint.y == currPos.y)) {
-      tPath.path.erase(tPath.path.begin());
-  }
-
-});
-
-ecs.system<Velocity, Acceleration>().each([](Velocity &vel,
-                                             const Acceleration &accel) {
-  vel += accel * GetFrameTime();
-});
-
-ecs.system<Velocity, const MaxSpeed>().each([](Velocity &vel,
-                                               const MaxSpeed &maxSpeed) {
-  vel = vel.Clamp(0.0f, maxSpeed.value);
-});
-
-ecs.system<Velocity, DrawAscii, ScreenPosition>().without<Intangible>().each(
-    [this](Velocity &vel, const DrawAscii &ascii,
-           const ScreenPosition &origScreenPos) {
-      ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-      size_t fontSize = std::min(ascii.width, ascii.height);
-
-      bool nullXVector = false;
-      bool nullYVector = false;
-
-      if ((newScreenPos.x < 0) ||
-          (newScreenPos.x + ascii.width > map->GetMapWidthPx())) {
-        nullXVector = true;
-      }
-      if ((newScreenPos.y < 0) ||
-          (newScreenPos.y + ascii.height > map->GetMapHeightPx())) {
-        nullYVector = true;
-      }
-
-      raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y, fontSize,
-                                   fontSize);
-      raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y, fontSize,
-                                   fontSize);
-
-      GamePosition gamePos =
-          map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
-      static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-      static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-      for (int i = 0; i < 8; ++i) {
-        if (nullXVector && nullYVector) {
-          break;
+        if (tPath.path.empty()) {
+          entity.remove<TargetPath>();
+          return;
         }
+        GamePosition currWaypoint = tPath.path[0];
+        size_t tWidth = map->GetTileWidth();
+        size_t tHeight = map->GetTileHeight();
 
-        int currX = gamePos.x + dx[i];
-        int currY = gamePos.y + dy[i];
-        Tile *currTile = map->GetTile(currX, currY);
+        // If we are getting close to our target we start slowing down
+        GamePosition target = tPath.path.back();
+        ScreenPosition targetScreenPos =
+            map->GameCoordsToScreenCoords(target.x, target.y);
+        raylib::Vector2 centerTile = raylib::Vector2(tWidth, tHeight) / 2.0f;
+        // Centralize both screen postiions
 
-        if (currTile == NULL || !currTile->blocksTile) {
-          continue;
+        targetScreenPos += centerTile;
+        ScreenPosition entCenterScreenPos =
+            screenPos + (raylib::Vector2(ascii.width, ascii.height) / 2.0f);
+
+        float targetDistance = entCenterScreenPos.Distance(targetScreenPos);
+
+        const int slowingRadius = std::min(tWidth, tHeight) * 1.5f;
+        float slowFactor = 1;
+        if (targetDistance < slowingRadius && vel.Length() > DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS) {
+          slowFactor = targetDistance / slowingRadius;
         }
-        ScreenPosition currTileScreenPos =
-            map->GameCoordsToScreenCoords(currX, currY);
-        raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
-                                   currTile->ascii->width,
-                                   currTile->ascii->height);
-        if (deltaXRect.CheckCollision(currRect)) {
+        std::cout << slowFactor << std::endl;
+
+        ScreenPosition currWaypointScreenPos =
+            map->GameCoordsToScreenCoords(currWaypoint.x, currWaypoint.y);
+        currWaypointScreenPos += centerTile;
+
+        Velocity desiredVelocity =
+            static_cast<raylib::Vector2>(currWaypointScreenPos -
+                                         entCenterScreenPos)
+                .Normalize();
+        desiredVelocity *= DEFAULT_WAYPOINT_ACCEL * slowFactor;
+        accel += desiredVelocity - vel;
+
+        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+        // Entity might get stuck or unnnecesarily hug walls unless
+        // we add a force repelling them
+        // We only do this if the velocity has a certain magnitude, otherwise
+        // the entity would "Bounce" around the wall when slow
+        if (vel.Length() > 5.0f) {
+          for (int i = 0; i < 8; i++) {
+            int currX = currPos.x + dx[i];
+            int currY = currPos.y + dy[i];
+            Tile *currNeighbour = map->GetTile(currX, currY);
+            if (currNeighbour == nullptr || !currNeighbour->blocksTile) {
+              continue;
+            }
+            GamePosition neighbourPos = {currX, currY};
+            Velocity wallRepelDirection =
+                static_cast<raylib::Vector2>(currPos - neighbourPos);
+
+            ScreenPosition neighbourScreenPos =
+                map->GameCoordsToScreenCoords(currX, currY);
+            raylib::Rectangle entRect(screenPos.x, screenPos.y, ascii.width,
+                                      ascii.height);
+            raylib::Rectangle neighbourRect(
+                neighbourScreenPos.x, neighbourScreenPos.y, tWidth, tHeight);
+
+            float distance = GetDistanceRecs(entRect, neighbourRect);
+            distance = std::max(distance, DEFAULT_WALL_REPEL_FORCE);
+
+            wallRepelDirection *= 1 / (std::pow(distance, 2));
+            accel += wallRepelDirection;
+          }
+        }
+        std::cout << targetDistance << std::endl;
+        if ((tPath.path.size() == 1 &&
+             targetDistance < DEFAULT_FINAL_TARGET_DISTANCE) or
+            (tPath.path.size() > 1 && currWaypoint.x == currPos.x &&
+             currWaypoint.y == currPos.y)) {
+          tPath.path.erase(tPath.path.begin());
+        }
+      });
+
+  ecs.system<Velocity, Acceleration>().each(
+      [](Velocity &vel, const Acceleration &accel) {
+        vel += accel * GetFrameTime();
+      });
+
+  ecs.system<Velocity, const MaxSpeed>().each(
+      [](Velocity &vel, const MaxSpeed &maxSpeed) {
+        vel = vel.Clamp(0.0f, maxSpeed.value);
+      });
+
+  ecs.system<Velocity, DrawAscii, ScreenPosition>().without<Intangible>().each(
+      [this](Velocity &vel, const DrawAscii &ascii,
+             const ScreenPosition &origScreenPos) {
+        ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
+        size_t fontSize = std::min(ascii.width, ascii.height);
+
+        bool nullXVector = false;
+        bool nullYVector = false;
+
+        if ((newScreenPos.x < 0) ||
+            (newScreenPos.x + ascii.width > map->GetMapWidthPx())) {
           nullXVector = true;
         }
-        if (deltaYRect.CheckCollision(currRect)) {
+        if ((newScreenPos.y < 0) ||
+            (newScreenPos.y + ascii.height > map->GetMapHeightPx())) {
           nullYVector = true;
         }
-      }
 
-      vel.x = (nullXVector) ? 0 : vel.x;
-      vel.y = (nullYVector) ? 0 : vel.y;
-    });
+        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y, fontSize,
+                                     fontSize);
+        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y, fontSize,
+                                     fontSize);
 
-ecs.system<Velocity, ScreenPosition>().each([](const Velocity &vel,
-                                               ScreenPosition &pos) {
-  pos += vel * GetFrameTime();
-});
+        GamePosition gamePos =
+            map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
+        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
 
-// Save and reset variables used in the physics simulation
-ecs.system<Acceleration>().each([this](Acceleration &accel) {
-  lastAccel = accel;
-  accel = {};
-});
+        for (int i = 0; i < 8; ++i) {
+          if (nullXVector && nullYVector) {
+            break;
+          }
 
-ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
+          int currX = gamePos.x + dx[i];
+          int currY = gamePos.y + dy[i];
+          Tile *currTile = map->GetTile(currX, currY);
+
+          if (currTile == NULL || !currTile->blocksTile) {
+            continue;
+          }
+          ScreenPosition currTileScreenPos =
+              map->GameCoordsToScreenCoords(currX, currY);
+          raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
+                                     currTile->ascii->width,
+                                     currTile->ascii->height);
+          if (deltaXRect.CheckCollision(currRect)) {
+            nullXVector = true;
+          }
+          if (deltaYRect.CheckCollision(currRect)) {
+            nullYVector = true;
+          }
+        }
+
+        vel.x = (nullXVector) ? 0 : vel.x;
+        vel.y = (nullYVector) ? 0 : vel.y;
+      });
+
+  ecs.system<Velocity, ScreenPosition>().each(
+      [](const Velocity &vel, ScreenPosition &pos) {
+        pos += vel * GetFrameTime();
+      });
+
+  // Save and reset variables used in the physics simulation
+  ecs.system<Acceleration>().each([this](Acceleration &accel) {
+    lastAccel = accel;
+    accel = {};
+  });
+
+  ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
 }
 
 void Game::ECSInitLogicSystems() {
