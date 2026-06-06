@@ -111,6 +111,11 @@ set(SOURCES
     src/Command.cpp
     src/InputHandler.cpp
     src/PathFinding.cpp
+    src/DebugWindowState.cpp
+    src/DebugLog.cpp
+    src/CameraFix.cpp
+    src/MapReloader.cpp
+    src/DrawAsciiDebug.cpp
 )
 
 add_executable(AIRogue ${SOURCES})
