@@ -1,5 +1,0 @@
-Make debug window manager state carry over 
-Camera system is not properly handling the case when the map is too small. Ideally it should center on the map and give a bird's eyes view of the entire map.
-Add a debug window that allows one to reload the current map with one of the different Json map files on the directory
-Create a window that enables toggling two flags for drawing the outer and inner rectangles of DrawAscii objects (Drawn in Game::ECSInitRenderSystems)
-Create a debug window that shows logs as well as all the associated helper functions(writeToLog, clearLog, etc)

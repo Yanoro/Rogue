@@ -3,6 +3,8 @@
 #include "Map.h"
 #include "raylib-cpp.hpp"
 #include <filesystem>
+#include <vector>
+#include <string>
 #include <flecs.h>
 
 #include "Components.h"
@@ -33,6 +35,7 @@ public:
   void DrawDebugLogWindow();
   void DrawMapReloadWindow();
   void DrawDrawAsciiToggleWindow();
+  void DrawFontSelectionWindow();
   void Draw();
 
   void BeginDrawingGame();
@@ -65,6 +68,9 @@ private:
   Font gameFont;
   size_t virtualWidth;
   size_t virtualHeight;
+  // Available fonts for selection
+  std::vector<std::string> availableFontPaths;
+  int selectedFontIndex = 0;
   // Astar related variables (Mainly drawing related)
   GamePosition astarStartPos{0, 0};
   GamePosition astarEndPos{0, 0};
@@ -87,6 +93,7 @@ private:
   bool showDebugLogWindow = false;
   bool showMapReloadWindow = false;
   bool showDrawAsciiToggleWindow = false;
+  bool showFontSelectionWindow = false;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

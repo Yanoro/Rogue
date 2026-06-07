@@ -9,6 +9,8 @@
 #include "rlImGui.h"
 #include <iostream>
 #include <sstream>
+#include <filesystem>
+#include <algorithm>
 
 // Helper function to format JSON with indentation for pretty printing
 static std::string PrettyPrintJson(const char *json) {
@@ -109,6 +111,9 @@ void Game::DrawDebugConsoleWindow() {
 
   if (ImGui::Checkbox("DrawAscii Toggle", &showDrawAsciiToggleWindow)) {
   }
+  ImGui::SameLine();
+  if (ImGui::Checkbox("Font Selection", &showFontSelectionWindow)) {
+  }
 
   ImGui::Separator();
   ImGui::Text("All debug windows can be closed by clicking the X button.");
@@ -176,9 +181,16 @@ void Game::DrawPlayerInfoWindow() {
     }
 
     ImGui::Separator();
-    ImGui::Text("Velocity Vector:");
+    ImGui::Text("Velocity & Acceleration Vectors:");
 
+    // Layout the velocity and acceleration vectors side by side
     ImVec2 canvasSize(120.0f, 120.0f);
+    
+    // Velocity Vector (left side)
+    ImGui::Text("Velocity:");
+    ImGui::SameLine(150.0f);
+    ImGui::Text("Acceleration:");
+    
     ImVec2 canvasPos = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton("##vel_canvas", canvasSize);
 
@@ -215,8 +227,8 @@ void Game::DrawPlayerInfoWindow() {
     // Center point
     drawList->AddCircleFilled(center, 2.0f, IM_COL32(255, 255, 255, 255));
 
-    ImGui::Separator();
-    ImGui::Text("Acceleration Vector:");
+    // Draw acceleration vector on the same line, to the right
+    ImGui::SameLine();
 
     ImVec2 accelCanvasSize(120.0f, 120.0f);
     ImVec2 accelCanvasPos = ImGui::GetCursorScreenPos();
@@ -605,6 +617,10 @@ void Game::DrawGameWindows() {
   if (showDrawAsciiToggleWindow) {
     DrawDrawAsciiToggleWindow();
   }
+
+  if (showFontSelectionWindow) {
+    DrawFontSelectionWindow();
+  }
 }
 
 void Game::Draw() {
@@ -670,6 +686,70 @@ void Game::Draw() {
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 
   DrawFPS(10, 10);
+}
+
+void Game::DrawFontSelectionWindow() {
+  ImGui::Begin("Font Selection", &showFontSelectionWindow,
+               ImGuiWindowFlags_AlwaysAutoResize);
+
+  ImGui::Text("Available Fonts");
+  ImGui::Separator();
+
+  // Display combo box with available fonts
+  if (!availableFontPaths.empty()) {
+    // Create a display names vector for the combo box
+    static std::vector<std::string> fontDisplayNames;
+    
+    if (fontDisplayNames.empty()) {
+      for (const auto &path : availableFontPaths) {
+        // Extract just the filename from the full path
+        size_t lastSlash = path.find_last_of("/\\");
+        std::string filename = (lastSlash == std::string::npos) 
+                               ? path 
+                               : path.substr(lastSlash + 1);
+        fontDisplayNames.push_back(filename);
+      }
+    }
+
+    // Create array of C-strings for ImGui::Combo
+    std::vector<const char *> items;
+    for (const auto &name : fontDisplayNames) {
+      items.push_back(name.c_str());
+    }
+
+    if (ImGui::Combo("##FontList", &selectedFontIndex, items.data(),
+                     items.size())) {
+      // Font selection changed
+      if (selectedFontIndex >= 0 && selectedFontIndex < (int)availableFontPaths.size()) {
+        // Unload the old font if it was loaded
+        if (gameFont.glyphCount > 0) {
+          UnloadFont(gameFont);
+        }
+        
+        // Load the new font
+        const std::string &fontPath = availableFontPaths[selectedFontIndex];
+        gameFont = LoadFontEx(fontPath.c_str(), DEFAULT_FONTSIZE, NULL, 0);
+        SetTextureFilter(gameFont.texture, TEXTURE_FILTER_POINT);
+        
+        debugLog->LogInfo("Font loaded: " + fontPath);
+      }
+    }
+
+    ImGui::Separator();
+
+    // Display font preview
+    if (selectedFontIndex >= 0 && selectedFontIndex < (int)fontDisplayNames.size()) {
+      ImGui::Text("Preview:");
+      ImGui::Text("%s", "The quick brown fox jumps over the lazy dog.");
+      ImGui::Text("%s", "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+      ImGui::Text("%s", "abcdefghijklmnopqrstuvwxyz");
+      ImGui::Text("%s", "0123456789 !@#$^&*()");
+    }
+  } else {
+    ImGui::TextDisabled("No fonts found in ./fonts directory");
+  }
+
+  ImGui::End();
 }
 
 void Game::BeginDrawingGame() { BeginTextureMode(gameTexture); }

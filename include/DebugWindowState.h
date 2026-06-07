@@ -39,6 +39,9 @@ public:
   bool GetShowDrawAsciiToggleWindow() const { return showDrawAsciiToggleWindow; }
   void SetShowDrawAsciiToggleWindow(bool value) { showDrawAsciiToggleWindow = value; }
 
+  bool GetShowFontSelectionWindow() const { return showFontSelectionWindow; }
+  void SetShowFontSelectionWindow(bool value) { showFontSelectionWindow = value; }
+
 private:
   bool showDebugConsole;
   bool showPlayerInfoWindow;
@@ -48,6 +51,7 @@ private:
   bool showDebugLogWindow;
   bool showMapReloadWindow;
   bool showDrawAsciiToggleWindow;
+  bool showFontSelectionWindow;
   
   static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";
 };

@@ -11,6 +11,7 @@
 #include "rlImGui.h"
 #include <algorithm>
 #include <iostream>
+#include <filesystem>
 
 Game::Game() {}
 
@@ -376,6 +377,34 @@ void Game::Init(std::string mapPath) {
   debugLog = std::make_unique<DebugLog>();
   mapReloader = std::make_unique<MapReloader>("./");
 
+  // Discover available fonts in the ./fonts directory
+  const std::string fontsDir = "./fonts";
+  if (std::filesystem::exists(fontsDir) && std::filesystem::is_directory(fontsDir)) {
+    for (const auto &entry : std::filesystem::recursive_directory_iterator(fontsDir)) {
+      if (entry.is_regular_file()) {
+        std::string path = entry.path().string();
+        std::string extension = path.substr(path.find_last_of(".") + 1);
+        
+        // Convert extension to lowercase for comparison
+        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
+        
+        // Look for .ttf files
+        if (extension == "ttf") {
+          availableFontPaths.push_back(path);
+          debugLog->LogInfo("Font discovered: " + path);
+        }
+      }
+    }
+    
+    // Sort the font paths for consistent ordering
+    std::sort(availableFontPaths.begin(), availableFontPaths.end());
+    
+    if (!availableFontPaths.empty()) {
+      debugLog->LogInfo("Total fonts discovered: " + std::to_string(availableFontPaths.size()));
+      selectedFontIndex = 0; // Start with the first font
+    }
+  }
+
   // Load debug window state if it exists
   debugWindowState->LoadState("./debug_windows_state.json");
   
@@ -453,6 +482,11 @@ void Game::handleInput() {
 void Game::Shutdown() {
   if (!window.IsReady())
     return;
+
+  // Unload the game font before closing
+  if (gameFont.glyphCount > 0) {
+    UnloadFont(gameFont);
+  }
 
   if (debugWindowState) {
     debugWindowState->SetShowDebugConsole(showDebugConsole);
