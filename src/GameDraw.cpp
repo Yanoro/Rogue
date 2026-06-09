@@ -285,6 +285,12 @@ void Game::DrawTileInfoWindow() {
     ImGui::Text("Map Coordinates: (%d, %d)", lastClickedPos.x,
                 lastClickedPos.y);
 
+    if (Location *loc = map->GetLocation(lastClickedPos)) {
+      ImGui::Separator();
+      ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Location: %s", loc->name.c_str());
+      ImGui::TextWrapped("%s", loc->description.c_str());
+    }
+
     ImGui::Separator();
 
     if (validTileSelected && selectedTile.is_alive()) {

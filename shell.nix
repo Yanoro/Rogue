@@ -8,6 +8,7 @@ pkgs.mkShell {
     gcc
     git
     aseprite
+    clang-tools
   ];
 
   # Libraries the project depends on

@@ -2,9 +2,9 @@
 #include "Defaults.h"
 #include "Game.h"
 #include "raylib.h"
-#include <memory>
 #include <fstream>
 #include <iostream>
+#include <memory>
 
 inline void from_json(const nlohmann::json &j, Color &c) {
   if (j.is_array() && j.size() >= 3) {
@@ -35,10 +35,11 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 
     tileMap.resize(width * height);
 
-    // This implicitily forces the tileInfo given to be given with contiguous IDS
+    // This implicitily forces the tileInfo given to be given with contiguous
+    // IDS
 
     for (const auto &tileInfo : json["tileInfo"]) {
-      auto newTile =  std::make_unique<Tile>();
+      auto newTile = std::make_unique<Tile>();
       // TODO: Memory leak here
       DrawAscii *newAscii = new DrawAscii();
       newAscii->ch = tileInfo.value("character", "?").at(0);
@@ -54,12 +55,24 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
       uniqueTiles.push_back(std::move(newTile));
     }
 
+    for (const auto &currLoc : json["locations"]) {
+      auto location = std::make_unique<Location>();
+      location->name = currLoc.value("name", "Unknown location name");
+      location->description =
+          currLoc.value("description", "Unknown location Description");
+      auto locPos = currLoc["position"];
+      location->pos = {locPos[0], locPos[1]};
+      location->width = currLoc["width"];
+      location->height = currLoc["height"];
+
+      mapLocations.push_back(std::move(location));
+    }
+
     GamePosition currPos = {0, 0};
 
     for (const int pos : json["positions"]) {
       Tile *currentTile = uniqueTiles[pos].get();
       addTileToMap(currentTile, currPos.x, currPos.y);
-      ScreenPosition screenPos = GameCoordsToScreenCoords(currPos.x, currPos.y);
 
       ecs.entity()
           .set<DrawAscii>(*currentTile->ascii)
@@ -81,7 +94,17 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 void Map::addTileToMap(Tile *newTile, int x, int y) {
   tileMap[x + (y * width)] = newTile;
 }
-                              
+
+Location *Map::GetLocation(GamePosition pos) {
+  for (const auto &currLoc : mapLocations) {
+    if (pos.x >= currLoc->pos.x && pos.x <= currLoc->pos.x + currLoc->width &&
+        pos.y >= currLoc->pos.y && currLoc->height + currLoc->pos.y >= pos.y) {
+      return currLoc.get();
+    }
+  }
+  return nullptr;
+}
+
 Tile *Map::GetTile(int x, int y) {
   if (!IsInBounds(x, y)) {
     return nullptr;
@@ -89,17 +112,17 @@ Tile *Map::GetTile(int x, int y) {
   return tileMap[GetIndex(x, y)];
 }
 int Map::GetIndex(int x, int y) const { return y * width + x; }
- 
-std::vector<Tile*> Map::GetNeighbours(GamePosition p) {
-  static const int dx[] = {-1,  0,  1, -1, 1, -1, 0, 1};
-  static const int dy[] = {-1, -1, -1,  0, 0,  1, 1, 1};
 
-  std::vector<Tile*> neighbors;
-  for(int i = 0; i < 8; ++i) {
+std::vector<Tile *> Map::GetNeighbours(GamePosition p) {
+  static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+  static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+  std::vector<Tile *> neighbors;
+  for (int i = 0; i < 8; ++i) {
     neighbors.push_back(GetTile(p.x + dx[i], p.y + dy[i]));
   }
   return neighbors;
-} 
+}
 
 bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);

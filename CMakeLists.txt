@@ -15,7 +15,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(CURL REQUIRED libcurl)
 
 # JSON (Header only)
-find_package(nlohmann_json REQUIRED)
+pkg_check_modules(NLOHMANN_JSON REQUIRED nlohmann_json)
 
 # ------------------------------------------------------------------------------
 # Dependencies (FetchContent)
@@ -125,6 +125,7 @@ target_include_directories(AIRogue PRIVATE
     raylib-cpp/include
     ${flecs_SOURCE_DIR}
     ${CURL_INCLUDE_DIRS}
+    ${NLOHMANN_JSON_INCLUDE_DIRS}
     ${imgui_SOURCE_DIR}
     ${rlimgui_SOURCE_DIR}
 )
@@ -133,7 +134,7 @@ target_include_directories(AIRogue PRIVATE
 target_link_libraries(AIRogue PRIVATE 
     flecs
     ${CURL_LIBRARIES}
-    nlohmann_json::nlohmann_json
+    ${NLOHMANN_JSON_LIBRARIES}
     rlimgui
     raylib_cpp
     raylib # Ensure main raylib is linked if raylib-cpp doesn't propagate it fully
