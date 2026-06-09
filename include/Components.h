@@ -102,6 +102,8 @@ struct DrawAscii {
   size_t height;
 };
 
+// TODO: Right now it's not evry clear who owns drawAscii,
+// probably should create a resourceManager class in the future
 struct Tile {
   std::string name;
   bool blocksTile;

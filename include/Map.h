@@ -2,6 +2,7 @@
 #include "Components.h"
 #include "RenderTexture.hpp"
 #include "ResourceManager.h"
+#include <memory>
 #include <flecs.h>
 #include <nlohmann/json.hpp>
 #include <string>
@@ -44,7 +45,8 @@ public:
 private:
   flecs::world &ecs;
 
-  std::vector<Tile*> tileMap;
+  std::vector<std::unique_ptr<Tile>> uniqueTiles; 
+  std::vector<Tile *> tileMap;
 
   int width;
   int height;

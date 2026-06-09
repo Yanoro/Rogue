@@ -6,10 +6,11 @@
 #include "imgui.h"
 #include "rlImGui.h"
 
+#include <string>
 //TODO: Move this to a better place
 raylib::Color DEFAULT_BACKGROUND_COLOR = raylib::Color::Black();
 
-#include <string>
+
 
 int main(int argc, char* argv[]) {
   std::string mapPath = "./Map2.json";

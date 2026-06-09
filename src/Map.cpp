@@ -2,6 +2,7 @@
 #include "Defaults.h"
 #include "Game.h"
 #include "raylib.h"
+#include <memory>
 #include <fstream>
 #include <iostream>
 
@@ -34,12 +35,11 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 
     tileMap.resize(width * height);
 
-    // This implicitily forces the tileInfo given to be given with contiguous
-    // IDS,
-    std::vector<Tile *> tiles;
+    // This implicitily forces the tileInfo given to be given with contiguous IDS
 
     for (const auto &tileInfo : json["tileInfo"]) {
-      Tile *newTile = new Tile();
+      auto newTile =  std::make_unique<Tile>();
+      // TODO: Memory leak here
       DrawAscii *newAscii = new DrawAscii();
       newAscii->ch = tileInfo.value("character", "?").at(0);
       newAscii->characterColor = tileInfo["characterColor"];
@@ -50,17 +50,19 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
       newTile->name = tileInfo.value("name", "Unknown name");
       newTile->blocksTile = tileInfo.value("blocksTile", false);
       newTile->ascii = newAscii;
-      tiles.push_back(newTile);
+
+      uniqueTiles.push_back(std::move(newTile));
     }
 
     GamePosition currPos = {0, 0};
 
     for (const int pos : json["positions"]) {
-      addTileToMap(tiles[pos], currPos.x, currPos.y);
+      Tile *currentTile = uniqueTiles[pos].get();
+      addTileToMap(currentTile, currPos.x, currPos.y);
       ScreenPosition screenPos = GameCoordsToScreenCoords(currPos.x, currPos.y);
 
       ecs.entity()
-          .set<DrawAscii>(*tiles[pos]->ascii)
+          .set<DrawAscii>(*currentTile->ascii)
           .set<ScreenPosition>(GameCoordsToScreenCoords(currPos.x, currPos.y));
 
       if (++currPos.y == height) {
@@ -118,4 +120,3 @@ ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
 GamePosition Map::ScreenCoordsToGameCoords(float x, float y) const {
   return GamePosition(std::floor(x / tileWidth), std::floor(y / tileHeight));
 }
-
