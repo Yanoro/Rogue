@@ -42,6 +42,9 @@ public:
   bool GetShowFontSelectionWindow() const { return showFontSelectionWindow; }
   void SetShowFontSelectionWindow(bool value) { showFontSelectionWindow = value; }
 
+  std::string GetDefaultFontPath() const { return defaultFontPath; }
+  void SetDefaultFontPath(const std::string& path) { defaultFontPath = path; }
+
 private:
   bool showDebugConsole;
   bool showPlayerInfoWindow;
@@ -49,9 +52,9 @@ private:
   bool showAStarWindow;
   bool showEntityOverviewWindow;
   bool showDebugLogWindow;
-  bool showMapReloadWindow;
-  bool showDrawAsciiToggleWindow;
-  bool showFontSelectionWindow;
+    bool showMapReloadWindow;
+    bool showDrawAsciiToggleWindow;
+    bool showFontSelectionWindow;
+    std::string defaultFontPath;
   
-  static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";
-};
+    static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";};

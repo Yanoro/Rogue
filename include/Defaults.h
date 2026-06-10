@@ -31,5 +31,7 @@ constexpr GameCameraMode DEFAULT_STARTING_CAMERA_MODE = GameCameraMode::FollowMo
 
 constexpr const char *DEFAULT_FONT_PATH = "./fonts/oldschool/otb - Bm (linux bitmap)/BmPlus_IBM_CGA.otb";
 constexpr size_t DEFAULT_FONTSIZE = 32;
-constexpr size_t DEFAULT_PLAYER_WIDTH = 16;
-constexpr size_t DEFAULT_PLAYER_HEIGHT = 16;
+constexpr size_t DEFAULT_PLAYER_HITBOX_WIDTH = 16;
+constexpr size_t DEFAULT_PLAYER_HITBOX_HEIGHT = 16; 
+constexpr size_t DEFAULT_PLAYER_VISUAL_WIDTH = 16;
+constexpr size_t DEFAULT_PLAYER_VISUAL_HEIGHT = 16;

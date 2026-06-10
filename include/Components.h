@@ -100,12 +100,19 @@ struct DrawAscii {
   size_t height;
 };
 
+// Whats actually taken into account when handling collision
+struct Hitbox {
+  size_t width;
+  size_t height;
+};
+
 // TODO: Right now it's not very clear who owns drawAscii,
 // probably should create a resourceManager class in the future
 struct Tile {
   std::string name;
   bool blocksTile;
   DrawAscii *ascii;
+  Hitbox hitbox;
 };
 
 struct Location {

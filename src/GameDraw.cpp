@@ -750,6 +750,15 @@ void Game::DrawFontSelectionWindow() {
       ImGui::Text("%s", "ABCDEFGHIJKLMNOPQRSTUVWXYZ");
       ImGui::Text("%s", "abcdefghijklmnopqrstuvwxyz");
       ImGui::Text("%s", "0123456789 !@#$^&*()");
+
+      ImGui::Separator();
+      if (ImGui::Button("Set to default")) {
+        debugWindowState->SetDefaultFontPath(availableFontPaths[selectedFontIndex]);
+        debugWindowState->SaveState("./debug_windows_state.json");
+        if (debugLog) {
+          debugLog->LogInfo("Default font set to: " + availableFontPaths[selectedFontIndex]);
+        }
+      }
     }
   } else {
     ImGui::TextDisabled("No fonts found in ./fonts directory");

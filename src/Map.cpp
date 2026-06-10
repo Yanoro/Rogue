@@ -51,6 +51,8 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
       newTile->name = tileInfo.value("name", "Unknown name");
       newTile->blocksTile = tileInfo.value("blocksTile", false);
       newTile->ascii = newAscii;
+      newTile->hitbox.width = tileInfo.value("hitboxWidth", tileWidth);
+      newTile->hitbox.height = tileInfo.value("hitboxHeight", tileHeight);
 
       uniqueTiles.push_back(std::move(newTile));
     }

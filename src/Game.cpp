@@ -1,17 +1,17 @@
 #include "Game.h"
 #include "Components.h"
-#include "Defaults.h"
-#include "PathFinding.h"
-#include "DebugWindowState.h"
 #include "DebugLog.h"
-#include "MapReloader.h"
+#include "DebugWindowState.h"
+#include "Defaults.h"
 #include "DrawAsciiDebug.h"
+#include "MapReloader.h"
+#include "PathFinding.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
 #include <algorithm>
-#include <iostream>
 #include <filesystem>
+#include <iostream>
 
 Game::Game() {}
 
@@ -89,11 +89,12 @@ void Game::ECSInitPhysicsSystems() {
         }
       });
 
-  ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, DrawAscii,
+  // Steer system through a path
+  ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, Hitbox,
              TargetPath>()
       .each([this](flecs::entity entity, Velocity &vel, Acceleration &accel,
                    const GamePosition &currPos, const ScreenPosition &screenPos,
-                   const DrawAscii &ascii, TargetPath &tPath) {
+                   const Hitbox &hitbox, TargetPath &tPath) {
         if (tPath.path.empty()) {
           entity.remove<TargetPath>();
           return;
@@ -111,7 +112,7 @@ void Game::ECSInitPhysicsSystems() {
 
         targetScreenPos += centerTile;
         ScreenPosition entCenterScreenPos =
-            screenPos + (raylib::Vector2(ascii.width, ascii.height) / 2.0f);
+            screenPos + (raylib::Vector2(hitbox.width, hitbox.height) / 2.0f);
 
         float finalTargetDistance =
             entCenterScreenPos.Distance(targetScreenPos);
@@ -167,8 +168,8 @@ void Game::ECSInitPhysicsSystems() {
             Velocity wallRepelDirection = static_cast<raylib::Vector2>(
                 entCenterScreenPos - (neighbourScreenPos + centerTile));
 
-            raylib::Rectangle entRect(screenPos.x, screenPos.y, ascii.width,
-                                      ascii.height);
+            raylib::Rectangle entRect(screenPos.x, screenPos.y, hitbox.width,
+                                      hitbox.height);
             raylib::Rectangle neighbourRect(
                 neighbourScreenPos.x, neighbourScreenPos.y, tWidth, tHeight);
 
@@ -195,28 +196,30 @@ void Game::ECSInitPhysicsSystems() {
         vel = vel.Clamp(0.0f, maxSpeed.value);
       });
 
-  ecs.system<Velocity, DrawAscii, ScreenPosition>().without<Intangible>().each(
-      [this](Velocity &vel, const DrawAscii &ascii,
+  // Collision system
+  ecs.system<Velocity, Hitbox, ScreenPosition>().without<Intangible>().each(
+      [this](Velocity &vel, const Hitbox &hitbox,
              const ScreenPosition &origScreenPos) {
         ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-        size_t fontSize = std::min(ascii.width, ascii.height);
+        // TODO: Why are we taking the min here?
+        size_t hitboxSize = std::min(hitbox.width, hitbox.height);
 
         bool nullXVector = false;
         bool nullYVector = false;
 
         if ((newScreenPos.x < 0) ||
-            (newScreenPos.x + ascii.width > map->GetMapWidthPx())) {
+            (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
           nullXVector = true;
         }
         if ((newScreenPos.y < 0) ||
-            (newScreenPos.y + ascii.height > map->GetMapHeightPx())) {
+            (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
           nullYVector = true;
         }
 
-        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y, fontSize,
-                                     fontSize);
-        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y, fontSize,
-                                     fontSize);
+        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
+                                     hitboxSize, hitboxSize);
+        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
+                                     hitboxSize, hitboxSize);
 
         GamePosition gamePos =
             map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
@@ -238,8 +241,8 @@ void Game::ECSInitPhysicsSystems() {
           ScreenPosition currTileScreenPos =
               map->GameCoordsToScreenCoords(currX, currY);
           raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
-                                     currTile->ascii->width,
-                                     currTile->ascii->height);
+                                     currTile->hitbox.width,
+                                     currTile->hitbox.height);
           if (deltaXRect.CheckCollision(currRect)) {
             nullXVector = true;
           }
@@ -290,12 +293,14 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<Friction>({DEFAULT_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   playerEntity.set<Acceleration>({0, 0});
+  playerEntity.set<Hitbox>(
+      {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT});
   playerEntity.set<DrawAscii>({
       '@',
       {128, 0, 128, 255},
       {128, 128, 128, 0},
-      DEFAULT_PLAYER_WIDTH,
-      DEFAULT_PLAYER_HEIGHT,
+      DEFAULT_PLAYER_VISUAL_WIDTH,
+      DEFAULT_PLAYER_VISUAL_HEIGHT,
   });
 
   createEntity({20, 1});
@@ -313,8 +318,22 @@ void Game::Init(std::string mapPath) {
   // TODO: Make this general
   window.Init(1920, 1080, "AIRogue");
 
+  // Initialize debug systems early to read state
+  debugWindowState = std::make_unique<DebugWindowState>();
+  debugLog = std::make_unique<DebugLog>();
+  mapReloader = std::make_unique<MapReloader>("./");
+
+  // Load debug window state if it exists
+  debugWindowState->LoadState("./debug_windows_state.json");
+
   // Remember that our font MUST be monofont
-  gameFont = LoadFontEx(DEFAULT_FONT_PATH, DEFAULT_FONTSIZE, NULL, 0);
+  std::string fontPathToLoad = DEFAULT_FONT_PATH;
+  if (!debugWindowState->GetDefaultFontPath().empty() &&
+      std::filesystem::exists(debugWindowState->GetDefaultFontPath())) {
+    fontPathToLoad = debugWindowState->GetDefaultFontPath();
+  }
+
+  gameFont = LoadFontEx(fontPathToLoad.c_str(), DEFAULT_FONTSIZE, NULL, 0);
   SetTextureFilter(gameFont.texture, TEXTURE_FILTER_POINT);
 
   gameTexture = raylib::RenderTexture2D(1920, 1080);
@@ -372,22 +391,20 @@ void Game::Init(std::string mapPath) {
   inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx,
                                                 mapHeightPx);
 
-  // Initialize debug systems
-  debugWindowState = std::make_unique<DebugWindowState>();
-  debugLog = std::make_unique<DebugLog>();
-  mapReloader = std::make_unique<MapReloader>("./");
-
   // Discover available fonts in the ./fonts directory
   const std::string fontsDir = "./fonts";
-  if (std::filesystem::exists(fontsDir) && std::filesystem::is_directory(fontsDir)) {
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(fontsDir)) {
+  if (std::filesystem::exists(fontsDir) &&
+      std::filesystem::is_directory(fontsDir)) {
+    for (const auto &entry :
+         std::filesystem::recursive_directory_iterator(fontsDir)) {
       if (entry.is_regular_file()) {
         std::string path = entry.path().string();
         std::string extension = path.substr(path.find_last_of(".") + 1);
-        
+
         // Convert extension to lowercase for comparison
-        std::transform(extension.begin(), extension.end(), extension.begin(), ::tolower);
-        
+        std::transform(extension.begin(), extension.end(), extension.begin(),
+                       ::tolower);
+
         // Look for .ttf files
         if (extension == "ttf") {
           availableFontPaths.push_back(path);
@@ -395,19 +412,17 @@ void Game::Init(std::string mapPath) {
         }
       }
     }
-    
+
     // Sort the font paths for consistent ordering
     std::sort(availableFontPaths.begin(), availableFontPaths.end());
-    
+
     if (!availableFontPaths.empty()) {
-      debugLog->LogInfo("Total fonts discovered: " + std::to_string(availableFontPaths.size()));
+      debugLog->LogInfo("Total fonts discovered: " +
+                        std::to_string(availableFontPaths.size()));
       selectedFontIndex = 0; // Start with the first font
     }
   }
 
-  // Load debug window state if it exists
-  debugWindowState->LoadState("./debug_windows_state.json");
-  
   // Apply loaded state to the game
   showDebugConsole = debugWindowState->GetShowDebugConsole();
   showPlayerInfoWindow = debugWindowState->GetShowPlayerInfoWindow();
@@ -497,7 +512,7 @@ void Game::Shutdown() {
     debugWindowState->SetShowDebugLogWindow(showDebugLogWindow);
     debugWindowState->SetShowMapReloadWindow(showMapReloadWindow);
     debugWindowState->SetShowDrawAsciiToggleWindow(showDrawAsciiToggleWindow);
-    
+
     debugWindowState->SaveState("./debug_windows_state.json");
     if (debugLog) {
       debugLog->LogInfo("Debug window state saved on shutdown");
