@@ -1,10 +1,14 @@
 #pragma once
 
+#include "AI.h"
 #include "Defaults.h"
 #include "raylib-cpp.hpp"
 #include <flecs.h>
+#include <memory>
 #include <string>
 #include <vector>
+
+#include "Window.h"
 
 struct Render {};
 
@@ -123,6 +127,27 @@ struct Location {
   int height;
 };
 
+enum class WindowType {
+
+  AIChatWindowType,
+
+  EntityInfoWindowType
+
+};
+
+struct WindowOnClick {
+  bool toggled;
+  WindowType type;
+};
+
+struct ActiveWindow {
+  std::shared_ptr<Window> ptr;
+};
+
+struct AIBackend {
+  std::shared_ptr<AI> ptr;
+};
+
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>
 inline flecs::opaque<Vector, Elem> std_vector_support(flecs::world &world) {
@@ -186,6 +211,8 @@ inline void RegisterComponents(flecs::world &ecs) {
       .member<unsigned char>("g")
       .member<unsigned char>("b")
       .member<unsigned char>("a");
+
+  ecs.component<ActiveWindow>();
 
   ecs.component<std::string>()
       .opaque(flecs::String)

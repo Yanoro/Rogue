@@ -10,10 +10,12 @@
 
 const size_t DEFAULT_DELAY_AI_TEXT_MS = 90;
 
-AIChatWindow::AIChatWindow(AI* aiInstance, const std::string& startPrompt) 
-    : ai(aiInstance), prompt(startPrompt) {
-    generateResponse(prompt);
+AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance, const std::string& startPrompt) 
+    : ai(aiInstance), context(startPrompt) {
+    generateResponse(context);
 }
+
+AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance) : ai(aiInstance) {}
 
 void AIChatWindow::Draw() {
     ImGui::Begin("AI Chat", nullptr, ImGuiWindowFlags_AlwaysAutoResize); 
@@ -24,7 +26,7 @@ void AIChatWindow::Draw() {
         }
         else {
           std::lock_guard<std::mutex> lock(promptMutex);
-          ImGui::TextWrapped("%s", prompt.c_str());
+          ImGui::TextWrapped("%s", context.c_str());
         }
     }
     ImGui::EndChild();
@@ -45,10 +47,10 @@ void AIChatWindow::Draw() {
         if (!isGenerating) {
             {
                 std::lock_guard<std::mutex> lock(promptMutex);
-                prompt += "\nUser: " + inputBuffer + "\nYou: ";
+                context += "\nUser: " + inputBuffer + "\nYou: ";
             }
             
-            generateResponse(prompt);
+            generateResponse(context);
             
             inputBuffer.clear();
             ImGui::SetKeyboardFocusHere(-1);
@@ -82,7 +84,7 @@ void AIChatWindow::generateResponse(std::string currentPrompt) {
             for (const char c : token) {
                 {
                     std::lock_guard<std::mutex> lock(promptMutex);
-                    prompt += c;  
+                    context += c;  
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(DEFAULT_DELAY_AI_TEXT_MS));
             }

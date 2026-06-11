@@ -5,7 +5,7 @@
 using json = nlohmann::json;
 
 DebugWindowState::DebugWindowState()
-    : showDebugConsole(true), showPlayerInfoWindow(false),
+    : showDebugConsole(true), showEntityInfoWindow(false),
       showTileInfoWindow(false), showAStarWindow(false),
       showEntityOverviewWindow(false), showDebugLogWindow(false),
       showMapReloadWindow(false), showDrawAsciiToggleWindow(false),
@@ -14,7 +14,7 @@ DebugWindowState::DebugWindowState()
 void DebugWindowState::SaveState(const std::string &filePath) const {
   json state;
   state["debugConsole"] = showDebugConsole;
-  state["playerInfo"] = showPlayerInfoWindow;
+  state["entityInfo"] = showEntityInfoWindow;
   state["tileInfo"] = showTileInfoWindow;
   state["aStar"] = showAStarWindow;
   state["entityOverview"] = showEntityOverviewWindow;
@@ -48,7 +48,7 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       file.close();
 
       showDebugConsole = state.value("debugConsole", true);
-      showPlayerInfoWindow = state.value("playerInfo", false);
+      showEntityInfoWindow = state.value("entityInfo", false);
       showTileInfoWindow = state.value("tileInfo", false);
       showAStarWindow = state.value("aStar", false);
       showEntityOverviewWindow = state.value("entityOverview", false);

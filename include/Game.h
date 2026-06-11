@@ -7,13 +7,12 @@
 #include <string>
 #include <flecs.h>
 
+#include "Agent.h"
 #include "Components.h"
 #include "Defaults.h"
 #include "DebugWindowState.h"
 #include "DebugLog.h"
 #include "MapReloader.h"
-
-class ResourceManager;
 
 class Game {
 public:
@@ -28,7 +27,7 @@ public:
 
   void DrawGameWindows();
   void DrawDebugConsoleWindow();
-  void DrawPlayerInfoWindow();
+//  void DrawEntityInfoWindow(flecs::entity entity);
   void DrawTileInfoWindow();
   void DrawAStarWindow();
   void DrawEntityOverviewWindow();
@@ -86,7 +85,7 @@ private:
 
   // Debug window visibility state
   bool showDebugConsole = true;  // Console always visible
-  bool showPlayerInfoWindow = false;
+  bool showEntityInfoWindow = false;
   bool showTileInfoWindow = false;
   bool showAStarWindow = false;
   bool showEntityOverviewWindow = false;
@@ -95,13 +94,14 @@ private:
   bool showDrawAsciiToggleWindow = false;
   bool showFontSelectionWindow = false;
 
+  std::vector<std::unique_ptr<Agent>> agents;
+
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;
   std::unique_ptr<DebugLog> debugLog;
   std::unique_ptr<MapReloader> mapReloader;
 
   std::unique_ptr<InputHandler> inputHandler;
-  std::unique_ptr<ResourceManager> resourceManager;
 
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();

@@ -21,9 +21,9 @@ int main(int argc, char* argv[]) {
   Game game;
   game.Init(mapPath);
 
-  OllamaAI AI("llama3");
+  auto ai = std::make_shared<OllamaAI>("llama3");
   
-  AIChatWindow chatWindow(&AI, 
+  AIChatWindow chatWindow(ai, 
       "You are an adventurer enjoying a drink at the bar, when a stranger approaches you.\nYou: ");
   raylib::Window *window = game.getWindow();
 

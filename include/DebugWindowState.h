@@ -18,8 +18,8 @@ public:
   bool GetShowDebugConsole() const { return showDebugConsole; }
   void SetShowDebugConsole(bool value) { showDebugConsole = value; }
   
-  bool GetShowPlayerInfoWindow() const { return showPlayerInfoWindow; }
-  void SetShowPlayerInfoWindow(bool value) { showPlayerInfoWindow = value; }
+  bool GetShowEntityInfoWindow() const { return showEntityInfoWindow; }
+  void SetShowEntityInfoWindow(bool value) { showEntityInfoWindow = value; }
   
   bool GetShowTileInfoWindow() const { return showTileInfoWindow; }
   void SetShowTileInfoWindow(bool value) { showTileInfoWindow = value; }
@@ -47,7 +47,7 @@ public:
 
 private:
   bool showDebugConsole;
-  bool showPlayerInfoWindow;
+  bool showEntityInfoWindow;
   bool showTileInfoWindow;
   bool showAStarWindow;
   bool showEntityOverviewWindow;

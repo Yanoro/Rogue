@@ -103,11 +103,12 @@ set(SOURCES
     src/main.cpp
     src/Game.cpp
     src/GameDraw.cpp
+    src/GameECS.cpp
     src/Map.cpp
     src/AI.cpp
     src/Character.cpp
     src/AIChatWindow.cpp
-    src/ResourceManager.cpp
+    src/EntityInfoWindow.cpp
     src/Command.cpp
     src/InputHandler.cpp
     src/PathFinding.cpp

@@ -3,18 +3,21 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <memory>
+
+#include "Window.h"
 #include "AI.h"
 
-//TODO: Make trying to connect to AI Backend if it fails
-class AIChatWindow {
+class AIChatWindow : public Window {
 public:
-    AIChatWindow(AI* aiInstance, const std::string& startPrompt);
+    AIChatWindow(std::shared_ptr<AI> aiInstance, const std::string& startPrompt);
+    AIChatWindow(std::shared_ptr<AI> aiInstance);
     void Draw();
 
 private:
-    AI* ai;
+    std::shared_ptr<AI> ai;
     bool couldConnect = true;
-    std::string prompt;
+    std::string context;
     std::string inputBuffer;
     std::mutex promptMutex;
     std::atomic<bool> isGenerating{false};
