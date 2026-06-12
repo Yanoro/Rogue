@@ -176,6 +176,16 @@ void Game::UpdateGUI() {
               if (clickWin.toggled && entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
+                this->ecs.filter<WindowOnClick, ActiveWindow>().each(
+                    [entity](flecs::entity other, WindowOnClick &otherWin,
+                             ActiveWindow &) {
+                      if (otherWin.type == ::WindowType::EntityInfoWindowType &&
+                          other != entity) {
+                        other.remove<ActiveWindow>();
+                        otherWin.toggled = false;
+                      }
+                    });
+
                 entity.set<ActiveWindow>(
                     {std::make_shared<EntityInfoWindow>(entity, map.get())});
               }

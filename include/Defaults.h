@@ -35,3 +35,8 @@ constexpr size_t DEFAULT_PLAYER_HITBOX_WIDTH = 16;
 constexpr size_t DEFAULT_PLAYER_HITBOX_HEIGHT = 16; 
 constexpr size_t DEFAULT_PLAYER_VISUAL_WIDTH = 16;
 constexpr size_t DEFAULT_PLAYER_VISUAL_HEIGHT = 16;
+
+constexpr size_t DEFAULT_ENTITY_HITBOX_WIDTH = 16;
+constexpr size_t DEFAULT_ENTITY_HITBOX_HEIGHT = 16; 
+constexpr size_t DEFAULT_ENTITY_VISUAL_WIDTH = 16;
+constexpr size_t DEFAULT_ENTITY_VISUAL_HEIGHT = 16; 

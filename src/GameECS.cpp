@@ -14,6 +14,16 @@ flecs::entity Game::createEntity(const GamePosition &pos,
       .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
       .set<GamePosition>(pos)
       //.set<WindowOnClick>({false, })
+      .set<Hitbox>({DEFAULT_ENTITY_HITBOX_WIDTH, DEFAULT_ENTITY_HITBOX_HEIGHT})
+      .set<DrawAscii>({
+          '@',
+          {128, 0, 0, 255},
+          {128, 128, 128, 0},
+          DEFAULT_ENTITY_VISUAL_WIDTH,
+          DEFAULT_ENTITY_VISUAL_HEIGHT,
+
+      })
+      .set<WindowOnClick>({false, WindowType::EntityInfoWindowType})
       .add<BlocksTile>();
 }
 
@@ -52,8 +62,6 @@ void Game::ECSInitRenderSystems() {
         DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
                           ascii.characterColor);
       });
-
-
 }
 
 float GetDistanceRecs(Rectangle rec1, Rectangle rec2) {
