@@ -10,7 +10,8 @@ void Character::addToPrompt(std::string prompt) {
 
 std::string Character::sendPrompt() {
   std::string res;
-  AIBackend->generateStream(currPrompt, [&res](const std::string& token) {
+  std::string contextId = std::to_string(reinterpret_cast<uintptr_t>(this));
+  AIBackend->generateStream(contextId, currPrompt, [&res](const std::string& token) {
     std::cout << token << std::flush;
     res += token;
   });

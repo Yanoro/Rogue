@@ -10,8 +10,6 @@
 //TODO: Move this to a better place
 raylib::Color DEFAULT_BACKGROUND_COLOR = raylib::Color::Black();
 
-
-
 int main(int argc, char* argv[]) {
   std::string mapPath = "./Map2.json";
   if (argc > 1) {

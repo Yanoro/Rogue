@@ -5,6 +5,8 @@
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "AgentContextWindow.h"
+#include "AIChatWindow.h"
 #include "MapReloader.h"
 #include "PathFinding.h"
 #include "imgui.h"
@@ -162,7 +164,7 @@ void Game::UpdateGUI() {
           if (gPos == pos) {
             switch (clickWin.type) {
             case ::WindowType::AIChatWindowType:
-              if (clickWin.toggled && entity.has<ActiveWindow>()) {
+              if (entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
                 const AIBackend *backend = entity.get<AIBackend>();
@@ -173,8 +175,8 @@ void Game::UpdateGUI() {
               }
               break;
             case ::WindowType::EntityInfoWindowType:
-              if (clickWin.toggled && entity.has<ActiveWindow>()) {
-                entity.remove<ActiveWindow>();
+              if (entity.has<ActiveWindow>()) {
+                entity.remove<ActiveWindow>();  
               } else {
                 this->ecs.filter<WindowOnClick, ActiveWindow>().each(
                     [entity](flecs::entity other, WindowOnClick &otherWin,
@@ -182,7 +184,6 @@ void Game::UpdateGUI() {
                       if (otherWin.type == ::WindowType::EntityInfoWindowType &&
                           other != entity) {
                         other.remove<ActiveWindow>();
-                        otherWin.toggled = false;
                       }
                     });
 
@@ -190,10 +191,19 @@ void Game::UpdateGUI() {
                     {std::make_shared<EntityInfoWindow>(entity, map.get())});
               }
               break;
+            case ::WindowType::NPCContextWindowType:
+              if (entity.has<ActiveWindow>()) {
+                entity.remove<ActiveWindow>();
+              } else {
+                const NPC *npc = entity.get<NPCComponent>()->ptr.get();
+                entity.set<ActiveWindow>(
+                    {std::make_shared<NPCContextWindow>(npc->getContextID())});
+              }
+              break;
             default:
               break;
             }
-            clickWin.toggled = !clickWin.toggled;
+
           }
         });
     ecs.defer_end();

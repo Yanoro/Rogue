@@ -11,11 +11,11 @@
 const size_t DEFAULT_DELAY_AI_TEXT_MS = 90;
 
 AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance, const std::string& startPrompt) 
-    : ai(aiInstance), context(startPrompt) {
+    : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))), context(startPrompt) {
     generateResponse(context);
 }
 
-AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance) : ai(aiInstance) {}
+AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance) : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))) {}
 
 void AIChatWindow::Draw() {
     ImGui::Begin("AI Chat", nullptr, ImGuiWindowFlags_AlwaysAutoResize); 
@@ -32,7 +32,7 @@ void AIChatWindow::Draw() {
     ImGui::EndChild();
 
     
-    if (isGenerating and couldConnect) {
+    if (ai->isBusy(contextId) and couldConnect) {
         ImGui::Text("AI is thinking...");
         ImGui::SameLine();
         DrawSpinner();
@@ -44,13 +44,14 @@ void AIChatWindow::Draw() {
     ImGui::SetNextItemWidth(-1.0f);
     
     if (ImGui::InputText("##Input", &inputBuffer, ImGuiInputTextFlags_EnterReturnsTrue)) {
-        if (!isGenerating) {
+        if (!ai->isBusy(contextId)) {
+            std::string currentInput = inputBuffer;
             {
                 std::lock_guard<std::mutex> lock(promptMutex);
                 context += "\nUser: " + inputBuffer + "\nYou: ";
             }
             
-            generateResponse(context);
+            generateResponse(currentInput);
             
             inputBuffer.clear();
             ImGui::SetKeyboardFocusHere(-1);
@@ -78,9 +79,8 @@ void AIChatWindow::DrawSpinner() {
 }
 
 void AIChatWindow::generateResponse(std::string currentPrompt) {
-    isGenerating = true;
     std::thread([this, currentPrompt]() {
-        bool res = ai->generateStream(currentPrompt, [this](const std::string &token) {
+        bool res = ai->generateStream(contextId, currentPrompt, [this](const std::string &token) {
             for (const char c : token) {
                 {
                     std::lock_guard<std::mutex> lock(promptMutex);
@@ -93,7 +93,6 @@ void AIChatWindow::generateResponse(std::string currentPrompt) {
           couldConnect = false;
         }
         else {
-          isGenerating = false;
           couldConnect = true;
         }
     }).detach();

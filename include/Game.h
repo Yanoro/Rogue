@@ -3,16 +3,16 @@
 #include "Map.h"
 #include "raylib-cpp.hpp"
 #include <filesystem>
-#include <vector>
-#include <string>
 #include <flecs.h>
+#include <string>
+#include <vector>
 
-#include "Agent.h"
 #include "Components.h"
-#include "Defaults.h"
-#include "DebugWindowState.h"
 #include "DebugLog.h"
+#include "DebugWindowState.h"
+#include "Defaults.h"
 #include "MapReloader.h"
+#include "NPC.h"
 
 class Game {
 public:
@@ -27,7 +27,7 @@ public:
 
   void DrawGameWindows();
   void DrawDebugConsoleWindow();
-//  void DrawEntityInfoWindow(flecs::entity entity);
+  //  void DrawEntityInfoWindow(flecs::entity entity);
   void DrawTileInfoWindow();
   void DrawAStarWindow();
   void DrawEntityOverviewWindow();
@@ -42,8 +42,8 @@ public:
 
   void Shutdown();
 
-  flecs::entity createEntity(const GamePosition &gamePos,
-                             std::string entityName = "");
+  NPC *createNPC(std::shared_ptr<AI> ai, const GamePosition &gamePos,
+                 std::string prompt = "");
 
   bool shouldClose() const;
 
@@ -84,7 +84,7 @@ private:
   GameCameraMode cameraMode;
 
   // Debug window visibility state
-  bool showDebugConsole = true;  // Console always visible
+  bool showDebugConsole = true; // Console always visible
   bool showEntityInfoWindow = false;
   bool showTileInfoWindow = false;
   bool showAStarWindow = false;
@@ -93,8 +93,6 @@ private:
   bool showMapReloadWindow = false;
   bool showDrawAsciiToggleWindow = false;
   bool showFontSelectionWindow = false;
-
-  std::vector<std::unique_ptr<Agent>> agents;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

@@ -1,30 +1,38 @@
 #include "Components.h"
 #include "DebugLog.h"
+#include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "Game.h"
+#include "NPC.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
 #include <algorithm>
 #include <cmath>
+#include <iostream>
 
 // TODO: Should fail if entity spawns inside a block tile
-flecs::entity Game::createEntity(const GamePosition &pos,
-                                 std::string entityName) {
-  return ecs.entity(entityName.c_str())
-      .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
-      .set<GamePosition>(pos)
-      //.set<WindowOnClick>({false, })
-      .set<Hitbox>({DEFAULT_ENTITY_HITBOX_WIDTH, DEFAULT_ENTITY_HITBOX_HEIGHT})
-      .set<DrawAscii>({
-          '@',
-          {128, 0, 0, 255},
-          {128, 128, 128, 0},
-          DEFAULT_ENTITY_VISUAL_WIDTH,
-          DEFAULT_ENTITY_VISUAL_HEIGHT,
+NPC *Game::createNPC(std::shared_ptr<AI> ai, const GamePosition &pos,
+                     std::string prompt) {
+  flecs::entity entity =
+      ecs.entity()
+          .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
+          .set<GamePosition>(pos)
+          .set<Hitbox>(
+              {DEFAULT_ENTITY_HITBOX_WIDTH, DEFAULT_ENTITY_HITBOX_HEIGHT})
+          .set<DrawAscii>({
+              '@',
+              {128, 0, 0, 255},
+              {128, 128, 128, 0},
+              DEFAULT_ENTITY_VISUAL_WIDTH,
+              DEFAULT_ENTITY_VISUAL_HEIGHT,
 
-      })
-      .set<WindowOnClick>({false, WindowType::EntityInfoWindowType})
-      .add<BlocksTile>();
+          })
+          .set<WindowOnClick>({WindowType::EntityInfoWindowType})
+          .add<BlocksTile>();
+  auto npc = std::make_unique<NPC>(entity, prompt, map.get(), ai);
+  NPC *rawPtr = npc.get();
+  entity.set<NPCComponent>({std::move(npc)});
+  return rawPtr;
 }
 
 void Game::ECSInitRenderSystems() {
@@ -283,13 +291,17 @@ void Game::ECSInit(std::string mapPath) {
 
   map = std::make_unique<Map>(mapPath, ecs);
 
+
   RegisterComponents(ecs);
 
   ECSInitPhysicsSystems();
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  playerEntity = createEntity({5, 15}, DEFAULT_PLAYER_ENTITY_NAME);
+  GamePosition startPlayerPos = {5,15};
+  playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
+  playerEntity.set<GamePosition>(startPlayerPos);
+  playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_FRICTION});
   playerEntity.set<Velocity>({0, 0});
@@ -304,7 +316,9 @@ void Game::ECSInit(std::string mapPath) {
       DEFAULT_PLAYER_VISUAL_HEIGHT,
 
   });
-  playerEntity.set<WindowOnClick>({false, WindowType::EntityInfoWindowType});
-  createEntity({20, 1});
-  createEntity({30, 1});
+  playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
+
+  auto ai = std::make_shared<OllamaAI>("llama3");
+  createNPC(ai, {20, 1}, "Your name is John, you like staying at thelibrary"); 
+  createNPC(ai, {30, 1}, "Your name is Carl, you like walking around town");
 }

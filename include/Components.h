@@ -2,6 +2,7 @@
 
 #include "AI.h"
 #include "Defaults.h"
+#include "NPC.h"
 #include "raylib-cpp.hpp"
 #include <flecs.h>
 #include <memory>
@@ -131,13 +132,18 @@ enum class WindowType {
 
   AIChatWindowType,
 
-  EntityInfoWindowType
+  EntityInfoWindowType,
+
+  NPCContextWindowType
 
 };
 
 struct WindowOnClick {
-  bool toggled;
   WindowType type;
+};
+
+struct NPCComponent {
+  std::unique_ptr<NPC> ptr;
 };
 
 struct ActiveWindow {

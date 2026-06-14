@@ -25,6 +25,8 @@ public:
   int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
 
   Location *GetLocation(GamePosition pos);
+  Location *GetLocation(const std::string& name);
+  std::vector<std::string> GetAllLocationNames(); 
 
   void addTileToMap(Tile *newTile, int x, int y);
   Tile *GetTile(int x, int y); 

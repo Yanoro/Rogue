@@ -106,8 +106,10 @@ set(SOURCES
     src/GameECS.cpp
     src/Map.cpp
     src/AI.cpp
+    src/NPC.cpp
     src/Character.cpp
     src/AIChatWindow.cpp
+    src/AgentContextWindow.cpp
     src/EntityInfoWindow.cpp
     src/Command.cpp
     src/InputHandler.cpp

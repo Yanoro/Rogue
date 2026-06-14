@@ -18,13 +18,13 @@ inline void from_json(const nlohmann::json &j, Color &c) {
 Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
-
   try {
     jsonFile.open(jsonPath);
   } catch (const std::ifstream::failure &e) {
     std::cerr << "Exception opening/reading file: " << e.what() << std::endl;
     throw;
   }
+
 
   try {
     auto json = nlohmann::json::parse(jsonFile);
@@ -56,6 +56,7 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
 
       uniqueTiles.push_back(std::move(newTile));
     }
+
 
     for (const auto &currLoc : json["locations"]) {
       auto location = std::make_unique<Location>();
@@ -105,6 +106,23 @@ Location *Map::GetLocation(GamePosition pos) {
     }
   }
   return nullptr;
+}
+
+Location *Map::GetLocation(const std::string& name) {
+  for (const auto &currLoc : mapLocations) {
+    if (currLoc->name == name) {
+      return currLoc.get();
+    }
+  }
+  return nullptr;
+}
+
+std::vector<std::string> Map::GetAllLocationNames() {
+  std::vector<std::string> locations;
+  for (const auto &currLoc : mapLocations) {
+    locations.push_back(currLoc.get()->name);
+  }
+  return locations;
 }
 
 Tile *Map::GetTile(int x, int y) {

@@ -16,11 +16,11 @@ public:
 
 private:
     std::shared_ptr<AI> ai;
+    std::string contextId;
     bool couldConnect = true;
     std::string context;
     std::string inputBuffer;
     std::mutex promptMutex;
-    std::atomic<bool> isGenerating{false};
 
     void DrawSpinner();
     void generateResponse(std::string currentPrompt);
