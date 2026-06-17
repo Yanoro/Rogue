@@ -139,8 +139,12 @@ struct WindowOnClick {
   WindowType type;
 };
 
+struct DisplayName {
+  std::string name;
+};
+
 struct NPCComponent {
-  std::unique_ptr<NPC> ptr;
+  std::shared_ptr<NPC> ptr;
 };
 
 struct ActiveWindow {

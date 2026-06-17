@@ -13,7 +13,8 @@ public:
   using StreamCallback = std::function<void(const std::string &)>;
 
   virtual std::string generate(const std::string &contextId,
-                               const std::string &prompt) = 0;
+                               const std::string &prompt,
+                               std::stop_token stoken = {}) = 0;
   virtual bool generateStream(const std::string &contextId,
                               const std::string &prompt,
                               StreamCallback callback,
@@ -56,7 +57,8 @@ public:
   void setOption(const std::string &key, const nlohmann::json &value);
 
   std::string generate(const std::string &contextId,
-                       const std::string &prompt) override;
+                       const std::string &prompt,
+                       std::stop_token stoken = {}) override;
   bool generateStream(const std::string &contextId, const std::string &prompt,
                       StreamCallback callback,
                       std::stop_token stoken = {}) override;

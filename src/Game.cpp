@@ -1,12 +1,12 @@
 #include "Game.h"
+#include "AIChatWindow.h"
+#include "AgentContextWindow.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
-#include "AgentContextWindow.h"
-#include "AIChatWindow.h"
 #include "MapReloader.h"
 #include "PathFinding.h"
 #include "imgui.h"
@@ -176,7 +176,7 @@ void Game::UpdateGUI() {
               break;
             case ::WindowType::EntityInfoWindowType:
               if (entity.has<ActiveWindow>()) {
-                entity.remove<ActiveWindow>();  
+                entity.remove<ActiveWindow>();
               } else {
                 this->ecs.filter<WindowOnClick, ActiveWindow>().each(
                     [entity](flecs::entity other, WindowOnClick &otherWin,
@@ -195,16 +195,14 @@ void Game::UpdateGUI() {
               if (entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
-                NPC *npc = entity.get<NPCComponent>()->ptr.get();
-                std::string context = npc->getAI()->getContext(npc->getContextID());
+                std::shared_ptr<NPC> npc = entity.get<NPCComponent>()->ptr;
                 entity.set<ActiveWindow>(
-                    {std::make_shared<NPCContextWindow>(context)});
+                    {std::make_shared<NPCContextWindow>(std::weak_ptr<NPC>(npc))});
               }
               break;
             default:
               break;
             }
-
           }
         });
     ecs.defer_end();
@@ -285,7 +283,8 @@ void Game::Shutdown() {
 
   // Gracefully stop all NPC threads before destroying the flecs world.
   // This prevents race conditions where NPC threads might query flecs
-  // components (like TargetPath) while flecs is in the middle of being torn down.
+  // components (like TargetPath) while flecs is in the middle of being torn
+  // down.
   ecs.filter<NPCComponent>().each([](flecs::entity, NPCComponent &npc) {
     if (npc.ptr) {
       npc.ptr.reset();

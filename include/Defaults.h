@@ -12,7 +12,8 @@ enum class GameCameraMode {
 inline const std::string DEFAULT_PLAYER_ENTITY_NAME = "playerCharacter";
 constexpr float DEFAULT_MAXSPEED = 150.0f;
 constexpr float DEFAULT_WAYPOINT_ACCEL = 200.0f;
-constexpr float DEFAULT_FRICTION = 10.0f;
+constexpr float DEFAULT_PLAYER_FRICTION = 10.0f;
+constexpr float DEFAULT_ENTITY_FRICTION = 10.0f;
 constexpr float DEFAULT_VELOCITY = 50.0f;
 constexpr float DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL = 5.0f;
 constexpr float DEFAULT_WALL_REPEL_FORCE = 0.1f;

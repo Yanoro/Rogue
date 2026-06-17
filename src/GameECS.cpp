@@ -11,8 +11,10 @@
 #include <iostream>
 
 // TODO: Should fail if entity spawns inside a block tile
-NPC *Game::createNPC(std::shared_ptr<AI> ai, const GamePosition &pos,
-                     std::string prompt) {
+std::shared_ptr<NPC> Game::createNPC(std::shared_ptr<AI> ai,
+                                     const GamePosition &pos, std::string name,
+                                     std::string prompt) {
+
   flecs::entity entity =
       ecs.entity()
           .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
@@ -28,11 +30,19 @@ NPC *Game::createNPC(std::shared_ptr<AI> ai, const GamePosition &pos,
 
           })
           .set<WindowOnClick>({WindowType::EntityInfoWindowType})
+          .set<Velocity>({0, 0})
+          .set<Acceleration>({0, 0})
+          .set<Friction>({DEFAULT_ENTITY_FRICTION})
           .add<BlocksTile>();
-  auto npc = std::make_unique<NPC>(entity, prompt, map.get(), ai);
-  NPC *rawPtr = npc.get();
-  entity.set<NPCComponent>({std::move(npc)});
-  return rawPtr;
+
+  if (name == "") {
+    flecs::entity_t id = entity.id();
+    name = "NPC " + std::to_string(id);
+  }
+  entity.set<DisplayName>({name});
+  auto npc = std::make_shared<NPC>(entity, prompt, map.get(), ai);
+  entity.set<NPCComponent>({npc});
+  return npc;
 }
 
 void Game::ECSInitRenderSystems() {
@@ -69,6 +79,12 @@ void Game::ECSInitRenderSystems() {
 
         DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
                           ascii.characterColor);
+      });
+
+  ecs.system<ScreenPosition, DisplayName>().kind<Render>().each(
+      [](const ScreenPosition &pos, const DisplayName &displayName) {
+        ScreenPosition TextPos = {pos.x, pos.y - 25};
+        DrawText(displayName.name.c_str(), TextPos.x, TextPos.y, 12, BLACK);
       });
 }
 
@@ -291,19 +307,19 @@ void Game::ECSInit(std::string mapPath) {
 
   map = std::make_unique<Map>(mapPath, ecs);
 
-
   RegisterComponents(ecs);
 
   ECSInitPhysicsSystems();
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  GamePosition startPlayerPos = {20,15};
+  GamePosition startPlayerPos = {20, 15};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
-  playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
+  playerEntity.set<ScreenPosition>(
+      map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
-  playerEntity.set<Friction>({DEFAULT_FRICTION});
+  playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   playerEntity.set<Acceleration>({0, 0});
   playerEntity.set<Hitbox>(
@@ -319,6 +335,8 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
 
   auto ai = std::make_shared<OllamaAI>("llama3");
-  createNPC(ai, {20, 1}, "Your name is John, you like staying at thelibrary"); 
-  createNPC(ai, {30, 1}, "Your name is Carl, you like walking around town");
+  createNPC(ai, {20, 1}, "John",
+            "Your name is John, you like staying at thelibrary");
+  createNPC(ai, {30, 1}, "Carl",
+            "Your name is Carl, you like walking around town");
 }

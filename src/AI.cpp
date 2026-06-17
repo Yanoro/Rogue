@@ -47,15 +47,6 @@ size_t OllamaAI::WriteCallbackStream(void *contents, size_t size, size_t nmemb,
   return real_size;
 }
 
-int StreamProgressCallback(void *clientp, curl_off_t dltotal, curl_off_t dlnow,
-                     curl_off_t ultotal, curl_off_t ulnow) {
-  auto *stoken = static_cast<std::stop_token *>(clientp);
-  if (stoken->stop_requested()) {
-    return 1;
-  }
-  return 0;
-}
-
 OllamaAI::OllamaAI(const std::string &model, const std::string &url)
     : modelName(model), endpoint(url) {}
 
@@ -64,14 +55,14 @@ void OllamaAI::setOption(const std::string &key, const nlohmann::json &value) {
 }
 
 std::string OllamaAI::generate(const std::string &contextId,
-                               const std::string &prompt) {
+                               const std::string &prompt,
+                               std::stop_token stoken) {
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
 
   CURL *curl;
-  CURLcode res;
   std::string readBuffer;
 
   curl = curl_easy_init();
@@ -99,13 +90,38 @@ std::string OllamaAI::generate(const std::string &contextId,
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
 
-    res = curl_easy_perform(curl);
+    CURLM *multi_handle = curl_multi_init();
+    curl_multi_add_handle(multi_handle, curl);
 
-    if (res != CURLE_OK) {
-      std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res)
-                << std::endl;
+    int still_running = 1;
+    while (still_running && !stoken.stop_requested()) {
+      curl_multi_perform(multi_handle, &still_running);
+      if (still_running) {
+        curl_multi_wait(multi_handle, NULL, 0, 10, NULL);
+      }
     }
 
+    if (stoken.stop_requested()) {
+      curl_multi_remove_handle(multi_handle, curl);
+      curl_multi_cleanup(multi_handle);
+      curl_slist_free_all(headers);
+      curl_easy_cleanup(curl);
+      std::lock_guard<std::mutex> lock(busyMutex);
+      busyContexts.erase(contextId);
+      return "";
+    }
+
+    int msgs_left;
+    CURLMsg *msg;
+    while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
+      if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK) {
+        std::cerr << "curl_multi failed: "
+                  << curl_easy_strerror(msg->data.result) << std::endl;
+      }
+    }
+
+    curl_multi_remove_handle(multi_handle, curl);
+    curl_multi_cleanup(multi_handle);
     curl_slist_free_all(headers);
     curl_easy_cleanup(curl);
   }
@@ -155,7 +171,6 @@ bool OllamaAI::generateStream(const std::string &contextId,
   }
 
   CURL *curl;
-  CURLcode res;
   StreamContext ctx;
   ctx.callback = callback;
   ctx.contextId = contextId;
@@ -192,26 +207,45 @@ bool OllamaAI::generateStream(const std::string &contextId,
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallbackStream);
-  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &stoken);
-  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, StreamProgressCallback);
-  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
 
-  res = curl_easy_perform(curl);
+  CURLM *multi_handle = curl_multi_init();
+  curl_multi_add_handle(multi_handle, curl);
 
-  if (res != CURLE_OK) {
-    std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res)
-              << std::endl;
-    curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+  int still_running = 1;
+  while (still_running && !stoken.stop_requested()) {
+    curl_multi_perform(multi_handle, &still_running);
+    if (still_running) {
+      curl_multi_wait(multi_handle, NULL, 0, 10, NULL);
+    }
+  }
 
+  bool success = false;
+  if (!stoken.stop_requested()) {
+    int msgs_left;
+    CURLMsg *msg;
+    while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
+      if (msg->msg == CURLMSG_DONE) {
+        if (msg->data.result == CURLE_OK) {
+          success = true;
+        } else {
+          std::cerr << "curl stream failed: "
+                    << curl_easy_strerror(msg->data.result) << std::endl;
+        }
+      }
+    }
+  }
+
+  curl_multi_remove_handle(multi_handle, curl);
+  curl_multi_cleanup(multi_handle);
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
+
+  if (!success) {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.erase(contextId);
     return false;
   }
-
-  curl_slist_free_all(headers);
-  curl_easy_cleanup(curl);
 
   {
     std::lock_guard<std::mutex> lock(messagesMutex);

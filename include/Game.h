@@ -42,8 +42,10 @@ public:
 
   void Shutdown();
 
-  NPC *createNPC(std::shared_ptr<AI> ai, const GamePosition &gamePos,
-                 std::string prompt = "");
+  std::shared_ptr<NPC> createNPC(std::shared_ptr<AI> ai,
+                                 const GamePosition &gamePos,
+                                 std::string name = "", 
+                                 std::string prompt = "");
 
   bool shouldClose() const;
 

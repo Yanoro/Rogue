@@ -39,6 +39,8 @@ public:
   void Loop(std::stop_token stoken);
 
   std::string getContextID() const { return contextId; }
+  std::string getContext() const;
+  void appendContext(const std::string& text);
   std::shared_ptr<AI> getAI() const { return ai; }
 
 private:
@@ -46,6 +48,7 @@ private:
   std::shared_ptr<AI> ai;
   std::string contextId;
   std::string context;
+  mutable std::mutex contextMutex;
   std::string characterBackground;
 
   std::condition_variable_any sleepCV;

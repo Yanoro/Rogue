@@ -1,8 +1,13 @@
 #include "AgentContextWindow.h"
+#include "NPC.h"
 #include "imgui.h"
 
-NPCContextWindow::NPCContextWindow(std::string context)
-    : contextText(context) {}
+NPCContextWindow::NPCContextWindow(std::weak_ptr<NPC> npc)
+    : npc(npc) {
+  if (auto locked = npc.lock()) {
+    fallbackContext = locked->getContext();
+  }
+}
 
 void NPCContextWindow::Draw() {
   char window_name[64];
@@ -12,10 +17,15 @@ void NPCContextWindow::Draw() {
   ImGui::Checkbox("Auto-scroll", &autoScroll);
   ImGui::Separator();
 
+  std::string currentContext = fallbackContext;
+  if (auto locked = npc.lock()) {
+    currentContext = locked->getContext();
+    fallbackContext = currentContext;
+  }
+
   if (ImGui::BeginChild("ContextScroll", ImVec2(500, 300),
                         ImGuiChildFlags_Borders)) {
-    std::lock_guard<std::mutex> lock(textMutex);
-    ImGui::TextWrapped("%s", contextText.c_str());
+    ImGui::TextWrapped("%s", currentContext.c_str());
 
     if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
       ImGui::SetScrollHereY(1.0f);
@@ -24,11 +34,4 @@ void NPCContextWindow::Draw() {
   ImGui::EndChild();
 
   ImGui::End();
-}
-
-AI::StreamCallback NPCContextWindow::getStreamCallback() {
-  return [this](const std::string &token) {
-    std::lock_guard<std::mutex> lock(textMutex);
-    contextText += token;
-  };
 }

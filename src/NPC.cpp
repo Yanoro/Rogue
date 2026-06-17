@@ -20,8 +20,12 @@ NPC::NPC(flecs::entity entity, std::string characterBackground, Map *map,
 }
 
 MessageCommand NPC::ParseMessageCommand(std::string msg) {
-  std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])");
-  std::regex nothingRegex(R"(\[DO_NOTHING\])");
+  // Static means that we don't have to recompile every time
+  // this function gets run
+  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
+                              std::regex_constants::icase);
+  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
+                                 std::regex_constants::icase);
   std::smatch match;
 
   if (std::regex_search(msg, match, moveRegex)) {
@@ -33,19 +37,23 @@ MessageCommand NPC::ParseMessageCommand(std::string msg) {
   return {NPCCommandType::NONE, ""};
 }
 
+std::string NPC::getContext() const {
+  std::lock_guard<std::mutex> lock(contextMutex);
+  return context;
+}
+
+void NPC::appendContext(const std::string &text) {
+  std::lock_guard<std::mutex> lock(contextMutex);
+  context += text;
+}
+
 AI::StreamCallback NPC::getStreamCallback() {
-  return [this](const std::string &token) { context += token; };
+  return [this](const std::string &token) { appendContext(token); };
 }
 
 void NPC::sendToAI(std::string msg, std::stop_token stoken) {
   // TODO: Handle the case where the calls to AI fail
-  if (entity.has<ActiveWindow>()) {
-    NPCContextWindow *win =
-        static_cast<NPCContextWindow *>(entity.get<ActiveWindow>()->ptr.get());
-    ai->generateStream(contextId, msg, win->getStreamCallback(), stoken);
-  } else {
-    ai->generateStream(contextId, msg, getStreamCallback(), stoken);
-  }
+  ai->generateStream(contextId, msg, getStreamCallback(), stoken);
 }
 
 void NPC::Loop(std::stop_token stoken) {
@@ -64,6 +72,7 @@ void NPC::Loop(std::stop_token stoken) {
   std::string startingPrompt =
       std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
+  appendContext(startingPrompt);
 
   sendToAI(startingPrompt, stoken);
   std::string contextId = getContextID();
@@ -79,7 +88,7 @@ void NPC::Loop(std::stop_token stoken) {
 
     MessageCommand msgCmd = ParseMessageCommand(lastMsg);
 
-    std::string response;
+    std::string response = "\n";
 
     switch (msgCmd.type) {
     case (NPCCommandType::DO_NOTHING): {
@@ -89,7 +98,7 @@ void NPC::Loop(std::stop_token stoken) {
           std::chrono::seconds(DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS),
           [] { return false; });
 
-      response = "WORLD: You have awaited for a while, what's next?\n";
+      response += "WORLD: You have awaited for a while, what's next?\n";
       break;
     }
     case (NPCCommandType::MOVE_TO): {
@@ -106,10 +115,10 @@ void NPC::Loop(std::stop_token stoken) {
           sleepCV.wait_for(lock, stoken, std::chrono::seconds(1),
                            [] { return false; });
         }
-        response =
+        response +=
             "WORLD: You have arrived at your destination, what's next?\n";
       } else {
-        response = "WORLD: You tried to move to an unknown location.\n";
+        response += "WORLD: You tried to move to an unknown location.\n";
       }
       break;
     }
@@ -119,6 +128,8 @@ void NPC::Loop(std::stop_token stoken) {
     default:
       break;
     }
+
+    appendContext(response);
 
     if (!stoken.stop_requested()) {
       sendToAI(response, stoken);

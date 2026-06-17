@@ -1,21 +1,19 @@
 #pragma once
 
 #include <string>
-#include <mutex>
+#include <memory>
 
 #include "Window.h"
-#include "AI.h"
+
+class NPC;
 
 class NPCContextWindow : public Window {
 public:
-    NPCContextWindow(std::string context);
+    NPCContextWindow(std::weak_ptr<NPC> npc);
     void Draw() override;
-    
-    // Returns a callback that can be passed to AI::generateStream
-    AI::StreamCallback getStreamCallback();
 
 private:
-    std::string contextText;
-    std::mutex textMutex;
+    std::weak_ptr<NPC> npc;
+    std::string fallbackContext;
     bool autoScroll = true;
 };
