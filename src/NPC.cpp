@@ -1,0 +1,127 @@
+#include "NPC.h"
+#include "AI.h"
+#include "AgentContextWindow.h"
+#include "Components.h"
+#include "Map.h"
+#include "PathFinding.h"
+#include "flecs.h"
+
+#include <regex>
+#include <thread>
+
+// TODO: Feels weird that the npc has to receive a map
+NPC::NPC(flecs::entity entity, std::string characterBackground, Map *map,
+         std::shared_ptr<AI> ai)
+    : entity(entity), ai(std::move(ai)),
+      contextId(std::to_string(reinterpret_cast<uintptr_t>(this))),
+      characterBackground(characterBackground), map(map) {
+  entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
+  loopThread = std::jthread(&NPC::Loop, this);
+}
+
+MessageCommand NPC::ParseMessageCommand(std::string msg) {
+  std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])");
+  std::regex nothingRegex(R"(\[DO_NOTHING\])");
+  std::smatch match;
+
+  if (std::regex_search(msg, match, moveRegex)) {
+    return {NPCCommandType::MOVE_TO, match[1].str()};
+  } else if (std::regex_search(msg, match, nothingRegex)) {
+    return {NPCCommandType::DO_NOTHING, ""};
+  }
+
+  return {NPCCommandType::NONE, ""};
+}
+
+AI::StreamCallback NPC::getStreamCallback() {
+  return [this](const std::string &token) { context += token; };
+}
+
+void NPC::sendToAI(std::string msg, std::stop_token stoken) {
+  // TODO: Handle the case where the calls to AI fail
+  if (entity.has<ActiveWindow>()) {
+    NPCContextWindow *win =
+        static_cast<NPCContextWindow *>(entity.get<ActiveWindow>()->ptr.get());
+    ai->generateStream(contextId, msg, win->getStreamCallback(), stoken);
+  } else {
+    ai->generateStream(contextId, msg, getStreamCallback(), stoken);
+  }
+}
+
+void NPC::Loop(std::stop_token stoken) {
+  std::string locations = "";
+  for (const auto &currName : map->GetAllLocationNames()) {
+    locations += currName + ", ";
+  }
+
+  if (!locations.empty()) {
+    locations.pop_back();
+  }
+
+  std::regex re1("%LOCATIONS%");
+  std::regex re2("%BACKGROUND%");
+
+  std::string startingPrompt =
+      std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
+  startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
+
+  sendToAI(startingPrompt, stoken);
+  std::string contextId = getContextID();
+  while (!stoken.stop_requested()) {
+    if (ai->isBusy(contextId)) {
+      std::unique_lock<std::mutex> lock(sleepMutex);
+      sleepCV.wait_for(lock, stoken, std::chrono::milliseconds(10),
+                       [] { return false; });
+      continue;
+    }
+
+    std::string lastMsg = ai->getLastMessage(contextId);
+
+    MessageCommand msgCmd = ParseMessageCommand(lastMsg);
+
+    std::string response;
+
+    switch (msgCmd.type) {
+    case (NPCCommandType::DO_NOTHING): {
+      std::unique_lock<std::mutex> lock(sleepMutex);
+      sleepCV.wait_for(
+          lock, stoken,
+          std::chrono::seconds(DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS),
+          [] { return false; });
+
+      response = "WORLD: You have awaited for a while, what's next?\n";
+      break;
+    }
+    case (NPCCommandType::MOVE_TO): {
+      Location *loc = map->GetLocation(msgCmd.target);
+      if (loc != nullptr) {
+        const GamePosition start = *entity.get<GamePosition>();
+        const GamePosition target = loc->pos;
+        entity.set<TargetPath>({AStar(map, start, target)});
+        while (!stoken.stop_requested()) {
+          if (!entity.has<TargetPath>()) {
+            break;
+          }
+          std::unique_lock<std::mutex> lock(sleepMutex);
+          sleepCV.wait_for(lock, stoken, std::chrono::seconds(1),
+                           [] { return false; });
+        }
+        response =
+            "WORLD: You have arrived at your destination, what's next?\n";
+      } else {
+        response = "WORLD: You tried to move to an unknown location.\n";
+      }
+      break;
+    }
+    case (NPCCommandType::NONE): {
+      break;
+    }
+    default:
+      break;
+    }
+
+    if (!stoken.stop_requested()) {
+      sendToAI(response, stoken);
+    }
+  }
+}

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AI.h"
+#include <condition_variable>
 #include <flecs.h>
 #include <memory>
 #include <thread>
@@ -34,21 +35,24 @@ public:
       std::shared_ptr<AI> ai);
 
   MessageCommand ParseMessageCommand(std::string msg);
-  void sendToAI(std::string msg);
-  void Loop();
+  void sendToAI(std::string msg, std::stop_token stoken);
+  void Loop(std::stop_token stoken);
 
   std::string getContextID() const { return contextId; }
-
-  ~NPC();
+  std::shared_ptr<AI> getAI() const { return ai; }
 
 private:
   flecs::entity entity;
   std::shared_ptr<AI> ai;
   std::string contextId;
+  std::string context;
   std::string characterBackground;
 
-  std::atomic<bool> keepRunning{true};
+  std::condition_variable_any sleepCV;
+  std::mutex sleepMutex;
   std::jthread loopThread;
+
+  AI::StreamCallback getStreamCallback();
 
   Map *map;
 };

@@ -8,8 +8,8 @@
       "name": "Florest",
       "description": "A calm and beautiful florest",
       "position": [0, 0],
-      "hitboxWidth": 32,
-      "hitboxHeight": 32
+      "width": 32,
+      "height": 32
     }
   ],
   "tileInfo": [

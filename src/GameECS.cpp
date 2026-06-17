@@ -298,7 +298,7 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  GamePosition startPlayerPos = {5,15};
+  GamePosition startPlayerPos = {20,15};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
   playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));

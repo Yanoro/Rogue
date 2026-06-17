@@ -129,11 +129,8 @@ struct Location {
 };
 
 enum class WindowType {
-
   AIChatWindowType,
-
   EntityInfoWindowType,
-
   NPCContextWindowType
 
 };

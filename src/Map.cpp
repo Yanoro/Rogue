@@ -65,8 +65,8 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
           currLoc.value("description", "Unknown location Description");
       auto locPos = currLoc["position"];
       location->pos = {locPos[0], locPos[1]};
-      location->width = currLoc["width"];
-      location->height = currLoc["height"];
+      location->width = currLoc.value("width", width);
+      location->height = currLoc.value("height", height);
 
       mapLocations.push_back(std::move(location));
     }

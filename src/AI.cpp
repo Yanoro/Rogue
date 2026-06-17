@@ -47,6 +47,15 @@ size_t OllamaAI::WriteCallbackStream(void *contents, size_t size, size_t nmemb,
   return real_size;
 }
 
+int StreamProgressCallback(void *clientp, curl_off_t dltotal, curl_off_t dlnow,
+                     curl_off_t ultotal, curl_off_t ulnow) {
+  auto *stoken = static_cast<std::stop_token *>(clientp);
+  if (stoken->stop_requested()) {
+    return 1;
+  }
+  return 0;
+}
+
 OllamaAI::OllamaAI(const std::string &model, const std::string &url)
     : modelName(model), endpoint(url) {}
 
@@ -119,7 +128,8 @@ std::string OllamaAI::generate(const std::string &contextId,
       {
         std::lock_guard<std::mutex> lock(messagesMutex);
         lastMessages[contextId] = resp;
-        fullContexts[contextId] += "\nPrompt: " + prompt + "\nResponse: " + resp;
+        fullContexts[contextId] +=
+            "\nPrompt: " + prompt + "\nResponse: " + resp;
       }
       return resp;
     }
@@ -138,7 +148,7 @@ bool OllamaAI::isBusy(const std::string &contextId) {
 
 bool OllamaAI::generateStream(const std::string &contextId,
                               const std::string &prompt,
-                              StreamCallback callback) {
+                              StreamCallback callback, std::stop_token stoken) {
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
@@ -182,6 +192,9 @@ bool OllamaAI::generateStream(const std::string &contextId,
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallbackStream);
+  curl_easy_setopt(curl, CURLOPT_XFERINFODATA, &stoken);
+  curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, StreamProgressCallback);
+  curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &ctx);
 
   res = curl_easy_perform(curl);
@@ -203,7 +216,8 @@ bool OllamaAI::generateStream(const std::string &contextId,
   {
     std::lock_guard<std::mutex> lock(messagesMutex);
     lastMessages[contextId] = ctx.fullResponse;
-    fullContexts[contextId] += "\nPrompt: " + prompt + "\nResponse: " + ctx.fullResponse;
+    fullContexts[contextId] +=
+        "\nPrompt: " + prompt + "\nResponse: " + ctx.fullResponse;
   }
 
   {
@@ -214,7 +228,7 @@ bool OllamaAI::generateStream(const std::string &contextId,
   return true;
 }
 
-std::string OllamaAI::getLastMessage(const std::string& contextId) {
+std::string OllamaAI::getLastMessage(const std::string &contextId) {
   std::lock_guard<std::mutex> lock(messagesMutex);
   auto it = lastMessages.find(contextId);
   if (it != lastMessages.end()) {
@@ -223,7 +237,7 @@ std::string OllamaAI::getLastMessage(const std::string& contextId) {
   return "";
 }
 
-std::string OllamaAI::getContext(const std::string& contextId) {
+std::string OllamaAI::getContext(const std::string &contextId) {
   std::lock_guard<std::mutex> lock(messagesMutex);
   auto it = fullContexts.find(contextId);
   if (it != fullContexts.end()) {

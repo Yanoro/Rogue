@@ -195,9 +195,10 @@ void Game::UpdateGUI() {
               if (entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
-                const NPC *npc = entity.get<NPCComponent>()->ptr.get();
+                NPC *npc = entity.get<NPCComponent>()->ptr.get();
+                std::string context = npc->getAI()->getContext(npc->getContextID());
                 entity.set<ActiveWindow>(
-                    {std::make_shared<NPCContextWindow>(npc->getContextID())});
+                    {std::make_shared<NPCContextWindow>(context)});
               }
               break;
             default:
@@ -282,7 +283,17 @@ void Game::Shutdown() {
     }
   }
 
+  // Gracefully stop all NPC threads before destroying the flecs world.
+  // This prevents race conditions where NPC threads might query flecs
+  // components (like TargetPath) while flecs is in the middle of being torn down.
+  ecs.filter<NPCComponent>().each([](flecs::entity, NPCComponent &npc) {
+    if (npc.ptr) {
+      npc.ptr.reset();
+    }
+  });
+
   rlImGuiShutdown();
+  ecs.quit();
   window.Close();
 }
 
