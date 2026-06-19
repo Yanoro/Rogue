@@ -32,8 +32,12 @@ int main(int argc, char *argv[]) {
     window->ClearBackground(BLACK);
 
     // Draw world
-
     game.Draw();
+
+    // Draw UI
+    rlImGuiBegin();
+    game.DrawGameWindows();
+    rlImGuiEnd();
 
     window->EndDrawing();
   }
