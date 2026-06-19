@@ -1,6 +1,7 @@
 #include "InputHandler.h"
 #include "Defaults.h"
 #include "raylib.h"
+#include <algorithm>
 
 InputHandler::InputHandler(raylib::Camera2D &gameCamera,
                            GameCameraMode &cameraMode, size_t mapWidthPx,
@@ -17,8 +18,8 @@ std::vector<Command *> InputHandler::handleInput() {
     GameCameraMode nextMode =
         static_cast<GameCameraMode>((static_cast<int>(*cameraMode) + 1) % 2);
     if (nextMode == GameCameraMode::FreeRoamMode) {
-      camera->target.x -= camera->offset.x;
-      camera->target.y -= camera->offset.y;
+      camera->target.x -= camera->offset.x / camera->zoom;
+      camera->target.y -= camera->offset.y / camera->zoom;
       camera->offset = {0, 0};
     }
     *cameraMode = nextMode;
@@ -26,34 +27,26 @@ std::vector<Command *> InputHandler::handleInput() {
 
   if (*cameraMode == GameCameraMode::FreeRoamMode) {
     if (IsKeyDown(KEY_RIGHT)) {
-      camera->target.x = std::clamp(
-          0.0f, camera->target.x + DEFAULT_INPUT_MOVEMENT,
-          static_cast<float>(mapWidthPx - (GetScreenWidth() / camera->zoom)));
+      camera->target.x += DEFAULT_INPUT_MOVEMENT;
     }
     if (IsKeyDown(KEY_LEFT)) {
-      camera->target.x = std::clamp(
-          0.0f, camera->target.x - DEFAULT_INPUT_MOVEMENT,
-          static_cast<float>(mapWidthPx - (GetScreenWidth() / camera->zoom)));
+      camera->target.x -= DEFAULT_INPUT_MOVEMENT;
     }
     if (IsKeyDown(KEY_DOWN)) {
-      camera->target.y = std::clamp(
-          0.0f, camera->target.y + DEFAULT_INPUT_MOVEMENT,
-          static_cast<float>(mapHeightPx - (GetScreenHeight() / camera->zoom)));
+      camera->target.y += DEFAULT_INPUT_MOVEMENT;
     }
     if (IsKeyDown(KEY_UP)) {
-      camera->target.y = std::clamp(
-          0.0f, camera->target.y - DEFAULT_INPUT_MOVEMENT,
-          static_cast<float>(mapHeightPx - (GetScreenHeight() / camera->zoom)));
+      camera->target.y -= DEFAULT_INPUT_MOVEMENT;
     }
   }
   if (IsKeyPressed((KEY_Z))) {
     if (IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT)) {
-      camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
-                                camera->zoom - DEFAULT_INPUT_ZOOM,
+      camera->zoom = std::clamp(camera->zoom - DEFAULT_INPUT_ZOOM,
+                                DEFAULT_MINIMUM_INPUT_ZOOM,
                                 DEFAULT_MAXIMUM_INPUT_ZOOM);
     } else {
-      camera->zoom = std::clamp(DEFAULT_MINIMUM_INPUT_ZOOM,
-                                camera->zoom + DEFAULT_INPUT_ZOOM,
+      camera->zoom = std::clamp(camera->zoom + DEFAULT_INPUT_ZOOM,
+                                DEFAULT_MINIMUM_INPUT_ZOOM,
                                 DEFAULT_MAXIMUM_INPUT_ZOOM);
     }
   }

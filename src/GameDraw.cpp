@@ -485,27 +485,45 @@ void Game::DrawGameWindows() {
 }
 
 void Game::Draw() {
+  if (cameraMode == GameCameraMode::FollowMode) {
+    const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
+    camera.target = {playerPos->x, playerPos->y};
+  }
+
+  float targetWidth = static_cast<float>(gameTexture.texture.width);
+  float targetHeight = static_cast<float>(gameTexture.texture.height);
+
+  if (cameraMode == GameCameraMode::FollowMode) {
+    camera.offset = {targetWidth / 2.0f, targetHeight / 2.0f};
+  } else {
+    camera.offset = {0.0f, 0.0f};
+  }
+
+  int mapWidthPx = map->GetMapWidthPx();
+  int mapHeightPx = map->GetMapHeightPx();
+
+  float halfVisibleWidth = camera.offset.x / camera.zoom;
+  float maxVisibleWidth = (targetWidth - camera.offset.x) / camera.zoom;
+  if (mapWidthPx * camera.zoom > targetWidth) {
+    camera.target.x = std::clamp(camera.target.x, halfVisibleWidth,
+                                 mapWidthPx - maxVisibleWidth);
+  } else {
+    camera.target.x = mapWidthPx / 2.0f - (targetWidth / 2.0f - camera.offset.x) / camera.zoom;
+  }
+
+  float halfVisibleHeight = camera.offset.y / camera.zoom;
+  float maxVisibleHeight = (targetHeight - camera.offset.y) / camera.zoom;
+  if (mapHeightPx * camera.zoom > targetHeight) {
+    camera.target.y = std::clamp(camera.target.y, halfVisibleHeight,
+                                 mapHeightPx - maxVisibleHeight);
+  } else {
+    camera.target.y = mapHeightPx / 2.0f - (targetHeight / 2.0f - camera.offset.y) / camera.zoom;
+  }
+
   BeginDrawingGame();
   ClearBackground(GRAY); // Clear the render texture
 
   camera.BeginMode();
-
-  if (cameraMode == GameCameraMode::FollowMode) {
-    const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
-    int screenWidth = GetScreenWidth();
-    int screenHeight = GetScreenHeight();
-    int mapWidthPx = map->GetMapWidthPx();
-    int mapHeightPx = map->GetMapHeightPx();
-
-    camera.offset = {screenWidth / 2.0f, screenHeight / 2.0f};
-    camera.target = {playerPos->x, playerPos->y};
-
-    camera.target.x = std::clamp(camera.target.x, camera.offset.x / camera.zoom,
-                                mapWidthPx - (camera.offset.x / camera.zoom));
-
-    camera.target.y = std::clamp(camera.target.y, camera.offset.y / camera.zoom,
-                                mapHeightPx - (camera.offset.y / camera.zoom));
-  }
 
   ecs.run_pipeline(renderPipeline);
 
@@ -543,7 +561,10 @@ void Game::Draw() {
   Rectangle sourceRec = {0.0f, 0.0f, (float)gameTexture.texture.width,
                          -(float)gameTexture.texture.height};
 
-  Rectangle destRec = {0, 0, (float)GetScreenWidth(), (float)GetScreenHeight()};
+  Rectangle destRec = {GetMonitorPosition(currentMonitor).x,
+                       GetMonitorPosition(currentMonitor).y,
+                       1920.0f,
+                       1080.0f};
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 
   DrawFPS(10, 10);

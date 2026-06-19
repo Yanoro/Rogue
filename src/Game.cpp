@@ -59,8 +59,11 @@ void Game::Init(std::string mapPath) {
   virtualWidth = 640;
   virtualHeight = 512;
 
-  // Ensure it starts on the main monitor
-  int currentMonitor = 0;
+  // Target the primary monitor (monitor 1) if there are multiple displays, since monitor 0 is the side monitor
+  currentMonitor = 0;
+  if (GetMonitorCount() > 1) {
+    currentMonitor = 1;
+  }
 
   // Explicitly move the window to the correct monitor's origin before scaling
   window.SetPosition(GetMonitorPosition(currentMonitor).x,
@@ -68,24 +71,19 @@ void Game::Init(std::string mapPath) {
   window.SetSize(GetMonitorWidth(currentMonitor),
                  GetMonitorHeight(currentMonitor));
 
+  // Offset the mouse so clicking maps 1:1 on the primary display coordinates
+  SetMouseOffset(static_cast<int>(-GetMonitorPosition(currentMonitor).x),
+                 static_cast<int>(-GetMonitorPosition(currentMonitor).y));
+
   // Actually go fullscreen (locks correctly on the targeted monitor in most
   // X11 setups)
   ToggleFullscreen();
 
   window.SetTargetFPS(60);
 
-  // Since X11 can treat multi-monitors as a single massive 3000x1920 screen,
-  // GetScreenWidth() might return 3000 even if we only draw to one screen.
-  // We constrain the width to a reasonable maximum for zoom calculations.
-  float screenWidth = GetScreenWidth();
-  float screenHeight = GetScreenHeight();
-
-  // If the reported screen width is unusually large (e.g. dual monitors
-  // spanning), clamp it for the sake of the zoom calculation so the game
-  // isn't zoomed out/in too far.
-  if (screenWidth > 2560) {
-    screenWidth = 1080;
-  }
+  // Set the screen size to match our hardcoded monitor resolution (1920x1080)
+  float screenWidth = 1920.0f;
+  float screenHeight = 1080.0f;
 
   float mapWidthPx = map->GetMapWidthPx();
   float mapHeightPx = map->GetMapHeightPx();

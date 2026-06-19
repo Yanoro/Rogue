@@ -78,6 +78,7 @@ private:
   std::vector<GamePosition> astarPath;
   bool isSelectingAStarPath = false;
   int astarClickCount = 0;
+  int currentMonitor = 0;
   bool isSettingPlayerTarget = false;
   Acceleration lastAccel = {};
   Velocity lastVel = {};
