@@ -26,15 +26,6 @@ public:
   void Update();
 
   void DrawGameWindows();
-  void DrawDebugConsoleWindow();
-  //  void DrawEntityInfoWindow(flecs::entity entity);
-  void DrawTileInfoWindow();
-  void DrawAStarWindow();
-  void DrawEntityOverviewWindow();
-  void DrawDebugLogWindow();
-  void DrawMapReloadWindow();
-  void DrawDrawAsciiToggleWindow();
-  void DrawFontSelectionWindow();
   void Draw();
 
   void BeginDrawingGame();
@@ -86,16 +77,24 @@ private:
   raylib::Camera2D camera;
   GameCameraMode cameraMode;
 
-  // Debug window visibility state
-  bool showDebugConsole = true; // Console always visible
-  bool showEntityInfoWindow = false;
-  bool showTileInfoWindow = false;
-  bool showAStarWindow = false;
-  bool showEntityOverviewWindow = false;
-  bool showDebugLogWindow = false;
-  bool showMapReloadWindow = false;
-  bool showDrawAsciiToggleWindow = false;
-  bool showFontSelectionWindow = false;
+  // Debug window entities in ECS
+  flecs::entity debugConsoleWindowEntity;
+  flecs::entity tileInfoWindowEntity;
+  flecs::entity astarWindowEntity;
+  flecs::entity entityOverviewWindowEntity;
+  flecs::entity debugLogWindowEntity;
+  flecs::entity mapReloadWindowEntity;
+  flecs::entity drawAsciiToggleWindowEntity;
+  flecs::entity fontSelectionWindowEntity;
+
+  friend class DebugConsoleWindow;
+  friend class TileInfoWindow;
+  friend class AStarWindow;
+  friend class EntityOverviewWindow;
+  friend class DebugLogWindow;
+  friend class MapReloadWindow;
+  friend class DrawAsciiDebugWindow;
+  friend class FontSelectionWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

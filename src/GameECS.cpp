@@ -6,6 +6,8 @@
 #include "NPC.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
+#include "DebugWindows.h"
+#include "EntityInfoWindow.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -339,4 +341,43 @@ void Game::ECSInit(std::string mapPath) {
             "Your name is John, you like staying at thelibrary");
   createNPC(ai, {30, 1}, "Carl",
             "Your name is Carl, you like walking around town");
+
+  // Initialize debug window entities
+  debugConsoleWindowEntity = ecs.entity("Debug Console Window");
+  tileInfoWindowEntity = ecs.entity("Tile Info Window");
+  astarWindowEntity = ecs.entity("A* Window");
+  entityOverviewWindowEntity = ecs.entity("Entity Overview Window");
+  debugLogWindowEntity = ecs.entity("Debug Log Window");
+  mapReloadWindowEntity = ecs.entity("Map Reload Window");
+  drawAsciiToggleWindowEntity = ecs.entity("DrawAscii Debug Window");
+  fontSelectionWindowEntity = ecs.entity("Font Selection Window");
+
+  // Apply loaded state to the entities
+  if (debugWindowState->GetShowDebugConsole()) {
+    debugConsoleWindowEntity.set<ActiveWindow>({std::make_shared<DebugConsoleWindow>(this)});
+  }
+  if (debugWindowState->GetShowTileInfoWindow()) {
+    tileInfoWindowEntity.set<ActiveWindow>({std::make_shared<TileInfoWindow>(this)});
+  }
+  if (debugWindowState->GetShowAStarWindow()) {
+    astarWindowEntity.set<ActiveWindow>({std::make_shared<AStarWindow>(this)});
+  }
+  if (debugWindowState->GetShowEntityOverviewWindow()) {
+    entityOverviewWindowEntity.set<ActiveWindow>({std::make_shared<EntityOverviewWindow>(this)});
+  }
+  if (debugWindowState->GetShowDebugLogWindow()) {
+    debugLogWindowEntity.set<ActiveWindow>({std::make_shared<DebugLogWindow>(this)});
+  }
+  if (debugWindowState->GetShowMapReloadWindow()) {
+    mapReloadWindowEntity.set<ActiveWindow>({std::make_shared<MapReloadWindow>(this)});
+  }
+  if (debugWindowState->GetShowDrawAsciiToggleWindow()) {
+    drawAsciiToggleWindowEntity.set<ActiveWindow>({std::make_shared<DrawAsciiDebugWindow>(this)});
+  }
+  if (debugWindowState->GetShowFontSelectionWindow()) {
+    fontSelectionWindowEntity.set<ActiveWindow>({std::make_shared<FontSelectionWindow>(this)});
+  }
+  if (debugWindowState->GetShowEntityInfoWindow()) {
+    playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(playerEntity, map.get())});
+  }
 }

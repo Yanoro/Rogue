@@ -118,6 +118,7 @@ set(SOURCES
     src/DebugLog.cpp
     src/MapReloader.cpp
     src/DrawAsciiDebug.cpp
+    src/DebugWindows.cpp
 )
 
 add_executable(AIRogue ${SOURCES})

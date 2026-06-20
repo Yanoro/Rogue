@@ -133,16 +133,6 @@ void Game::Init(std::string mapPath) {
     }
   }
 
-  // Apply loaded state to the game
-  showDebugConsole = debugWindowState->GetShowDebugConsole();
-  showEntityInfoWindow = debugWindowState->GetShowEntityInfoWindow();
-  showTileInfoWindow = debugWindowState->GetShowTileInfoWindow();
-  showAStarWindow = debugWindowState->GetShowAStarWindow();
-  showEntityOverviewWindow = debugWindowState->GetShowEntityOverviewWindow();
-  showDebugLogWindow = debugWindowState->GetShowDebugLogWindow();
-  showMapReloadWindow = debugWindowState->GetShowMapReloadWindow();
-  showDrawAsciiToggleWindow = debugWindowState->GetShowDrawAsciiToggleWindow();
-
   debugLog->LogInfo("Game initialized successfully");
 
   rlImGuiSetup(true);
@@ -264,14 +254,15 @@ void Game::Shutdown() {
   }
 
   if (debugWindowState) {
-    debugWindowState->SetShowDebugConsole(showDebugConsole);
-    debugWindowState->SetShowEntityInfoWindow(showEntityInfoWindow);
-    debugWindowState->SetShowTileInfoWindow(showTileInfoWindow);
-    debugWindowState->SetShowAStarWindow(showAStarWindow);
-    debugWindowState->SetShowEntityOverviewWindow(showEntityOverviewWindow);
-    debugWindowState->SetShowDebugLogWindow(showDebugLogWindow);
-    debugWindowState->SetShowMapReloadWindow(showMapReloadWindow);
-    debugWindowState->SetShowDrawAsciiToggleWindow(showDrawAsciiToggleWindow);
+    debugWindowState->SetShowDebugConsole(debugConsoleWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowEntityInfoWindow(playerEntity.has<ActiveWindow>());
+    debugWindowState->SetShowTileInfoWindow(tileInfoWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowAStarWindow(astarWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowEntityOverviewWindow(entityOverviewWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDebugLogWindow(debugLogWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowMapReloadWindow(mapReloadWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDrawAsciiToggleWindow(drawAsciiToggleWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowFontSelectionWindow(fontSelectionWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState("./debug_windows_state.json");
     if (debugLog) {
