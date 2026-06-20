@@ -101,7 +101,7 @@ void DebugConsoleWindow::Draw() {
   bool showEntityInfo = game->playerEntity.has<ActiveWindow>();
   if (ImGui::Checkbox("Entity Info Window", &showEntityInfo)) {
     if (showEntityInfo) {
-      game->playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(game->playerEntity, game->map.get())});
+      game->playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(game->playerEntity)});
     } else {
       game->playerEntity.remove<ActiveWindow>();
     }
@@ -460,6 +460,9 @@ void MapReloadWindow::Draw() {
         bool isSelected = (selectedMapIndex == (int)i);
         if (ImGui::Selectable(mapList[i].c_str(), isSelected)) {
           selectedMapIndex = i;
+          std::string mapPath = game->mapReloader->GetMapPath(i);
+          game->LoadMap(mapPath);
+          game->debugLog->LogInfo("Loaded map: " + mapList[i]);
         }
         if (isSelected) {
           ImGui::SetItemDefaultFocus();

@@ -15,7 +15,9 @@ inline void from_json(const nlohmann::json &j, Color &c) {
   }
 }
 
-Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
+Map::Map(flecs::entity mapEntity, std::string jsonPath) {
+  ecs = mapEntity.world();
+
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
   try {
@@ -78,6 +80,7 @@ Map::Map(std::string jsonPath, flecs::world &ecs) : ecs(ecs) {
       addTileToMap(currentTile, currPos.x, currPos.y);
 
       ecs.entity()
+          .child_of(mapEntity)
           .set<DrawAscii>(*currentTile->ascii)
           .set<ScreenPosition>(GameCoordsToScreenCoords(currPos.x, currPos.y));
 

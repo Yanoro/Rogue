@@ -24,5 +24,5 @@ private:
   std::string mapsDirectory;
   std::vector<std::string> mapList;
 
-  bool IsJsonMapFile(const std::string &filename) const;
+  bool IsJsonMapFile(const std::filesystem::path &filePath) const;
 };

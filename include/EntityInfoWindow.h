@@ -2,14 +2,12 @@
 
 #include "Window.h"
 #include <flecs.h>
-#include "Map.h"
 
 class EntityInfoWindow : public Window {
 public:
-  EntityInfoWindow(flecs::entity entity, Map* map);
+  EntityInfoWindow(flecs::entity entity);
   void Draw() override;
 
 private:
   flecs::entity entity;
-  Map* map;
 };

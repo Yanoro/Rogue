@@ -103,6 +103,8 @@ private:
 
   std::unique_ptr<InputHandler> inputHandler;
 
+  void LoadMap(std::string mapPath);
+
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();
   void ECSInitPhysicsSystems();

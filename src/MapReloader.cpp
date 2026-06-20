@@ -1,6 +1,8 @@
 #include "MapReloader.h"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
+#include <nlohmann/json.hpp>
 
 MapReloader::MapReloader(const std::string &mapsDirectory)
     : mapsDirectory(mapsDirectory) {
@@ -18,7 +20,7 @@ void MapReloader::RefreshMapList() {
 
   try {
     for (const auto &entry : std::filesystem::directory_iterator(mapsDirectory)) {
-      if (entry.is_regular_file() && IsJsonMapFile(entry.path().filename().string())) {
+      if (entry.is_regular_file() && IsJsonMapFile(entry.path())) {
         mapList.push_back(entry.path().filename().string());
       }
     }
@@ -37,10 +39,26 @@ std::string MapReloader::GetMapPath(size_t index) const {
   return mapsDirectory + "/" + mapList[index];
 }
 
-bool MapReloader::IsJsonMapFile(const std::string &filename) const {
-  // Check if file ends with .json
-  if (filename.length() < 5) {
+bool MapReloader::IsJsonMapFile(const std::filesystem::path &filePath) const {
+  if (filePath.extension() != ".json") {
     return false;
   }
-  return filename.compare(filename.length() - 5, 5, ".json") == 0;
+
+  std::ifstream file(filePath);
+  if (!file.is_open()) {
+    return false;
+  }
+
+  try {
+    auto j = nlohmann::json::parse(file);
+    return j.contains("mapWidth") &&
+           j.contains("mapHeight") &&
+           j.contains("tileWidth") &&
+           j.contains("tileHeight") &&
+           j.contains("locations") &&
+           j.contains("tileInfo") &&
+           j.contains("positions");
+  } catch (...) {
+    return false;
+  }
 }

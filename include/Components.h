@@ -139,6 +139,11 @@ struct WindowOnClick {
   WindowType type;
 };
 
+class Map;
+struct MapResource {
+  Map* map;
+};
+
 struct DisplayName {
   std::string name;
 };

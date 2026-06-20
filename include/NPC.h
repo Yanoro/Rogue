@@ -1,11 +1,11 @@
 #pragma once
 
 #include "AI.h"
+#include <atomic>
 #include <condition_variable>
 #include <flecs.h>
 #include <memory>
 #include <thread>
-#include <atomic>
 #include <utility>
 
 constexpr unsigned int DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 30;
@@ -31,7 +31,7 @@ const std::string DEFAULT_NPC_PROMPT = R"(
 
 class NPC {
 public:
-  NPC(flecs::entity entity, std::string prompt, Map *map,
+  NPC(flecs::entity entity, std::string characterBackground,
       std::shared_ptr<AI> ai);
 
   MessageCommand ParseMessageCommand(std::string msg);
@@ -40,7 +40,7 @@ public:
 
   std::string getContextID() const { return contextId; }
   std::string getContext() const;
-  void appendContext(const std::string& text);
+  void appendContext(const std::string &text);
   std::shared_ptr<AI> getAI() const { return ai; }
 
 private:
@@ -56,6 +56,5 @@ private:
   std::jthread loopThread;
 
   AI::StreamCallback getStreamCallback();
-
-  Map *map;
 };
+

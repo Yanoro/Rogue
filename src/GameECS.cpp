@@ -42,7 +42,7 @@ std::shared_ptr<NPC> Game::createNPC(std::shared_ptr<AI> ai,
     name = "NPC " + std::to_string(id);
   }
   entity.set<DisplayName>({name});
-  auto npc = std::make_shared<NPC>(entity, prompt, map.get(), ai);
+  auto npc = std::make_shared<NPC>(entity, prompt, ai);
   entity.set<NPCComponent>({npc});
   return npc;
 }
@@ -303,11 +303,22 @@ void Game::ECSInitLogicSystems() {
       });
 }
 
+void Game::LoadMap(std::string mapPath) {
+  flecs::entity mapEntity = ecs.entity("CurrentMap");
+  ecs.defer([&]() {
+    mapEntity.children([](flecs::entity child) {
+      child.destruct();
+    });
+  });
+  map = std::make_unique<Map>(mapEntity, mapPath);
+  ecs.set<MapResource>({map.get()}); 
+}
+
 void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
 
-  map = std::make_unique<Map>(mapPath, ecs);
+  LoadMap(mapPath);
 
   RegisterComponents(ecs);
 
@@ -378,6 +389,6 @@ void Game::ECSInit(std::string mapPath) {
     fontSelectionWindowEntity.set<ActiveWindow>({std::make_shared<FontSelectionWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
-    playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(playerEntity, map.get())});
+    playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(playerEntity)});
   }
 }

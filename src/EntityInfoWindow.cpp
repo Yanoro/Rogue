@@ -1,12 +1,18 @@
 #include "EntityInfoWindow.h"
 #include "Components.h"
 #include "imgui.h"
+#include "Map.h"
 
-EntityInfoWindow::EntityInfoWindow(flecs::entity entity, Map* map) : entity(entity), map(map) {}
+EntityInfoWindow::EntityInfoWindow(flecs::entity entity) : entity(entity) {}
 
 void EntityInfoWindow::Draw() {
   if (!entity.is_alive()) {
     return;
+  }
+
+  Map *map = nullptr;
+  if (auto mapRes = entity.world().get<MapResource>()) {
+    map = mapRes->map;
   }
 
   bool isOpen = true;

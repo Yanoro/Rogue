@@ -176,7 +176,7 @@ void Game::UpdateGUI() {
                     });
 
                 entity.set<ActiveWindow>(
-                    {std::make_shared<EntityInfoWindow>(entity, map.get())});
+                    {std::make_shared<EntityInfoWindow>(entity)});
               }
               break;
             case ::WindowType::NPCContextWindowType:

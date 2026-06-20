@@ -9,12 +9,11 @@
 #include <regex>
 #include <thread>
 
-// TODO: Feels weird that the npc has to receive a map
-NPC::NPC(flecs::entity entity, std::string characterBackground, Map *map,
+NPC::NPC(flecs::entity entity, std::string characterBackground,
          std::shared_ptr<AI> ai)
     : entity(entity), ai(std::move(ai)),
       contextId(std::to_string(reinterpret_cast<uintptr_t>(this))),
-      characterBackground(characterBackground), map(map) {
+      characterBackground(characterBackground) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
   loopThread = std::jthread(&NPC::Loop, this);
 }
@@ -58,7 +57,9 @@ void NPC::sendToAI(std::string msg, std::stop_token stoken) {
 
 void NPC::Loop(std::stop_token stoken) {
   std::string locations = "";
-  for (const auto &currName : map->GetAllLocationNames()) {
+  Map *currMap = entity.world().get<MapResource>()->map;
+
+  for (const auto &currName : currMap->GetAllLocationNames()) {
     locations += currName + ", ";
   }
 
@@ -84,6 +85,8 @@ void NPC::Loop(std::stop_token stoken) {
       continue;
     }
 
+    Map *currMap = entity.world().get<MapResource>()->map;
+
     std::string lastMsg = ai->getLastMessage(contextId);
 
     MessageCommand msgCmd = ParseMessageCommand(lastMsg);
@@ -102,11 +105,11 @@ void NPC::Loop(std::stop_token stoken) {
       break;
     }
     case (NPCCommandType::MOVE_TO): {
-      Location *loc = map->GetLocation(msgCmd.target);
+      Location *loc = currMap->GetLocation(msgCmd.target);
       if (loc != nullptr) {
         const GamePosition start = *entity.get<GamePosition>();
         const GamePosition target = loc->pos;
-        entity.set<TargetPath>({AStar(map, start, target)});
+        entity.set<TargetPath>({AStar(currMap, start, target)});
         while (!stoken.stop_requested()) {
           if (!entity.has<TargetPath>()) {
             break;

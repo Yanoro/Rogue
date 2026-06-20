@@ -7,7 +7,7 @@
 
 class Map {
 public:
-  Map(std::string jsonPath, flecs::world &ecs);
+  Map(flecs::entity mapEntity, std::string jsonPath);
 
   // Coordinate helpers
   int GetWidth() const { return width; }
@@ -33,7 +33,7 @@ public:
   std::vector<Tile*> GetNeighbours(GamePosition p); 
 
 private:
-  flecs::world &ecs;
+  flecs::world ecs;
 
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
   std::vector<std::unique_ptr<Location>> mapLocations; 
