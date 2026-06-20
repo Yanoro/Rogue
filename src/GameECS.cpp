@@ -1,16 +1,18 @@
 #include "Components.h"
 #include "DebugLog.h"
+#include "DebugWindows.h"
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
+#include "EntityInfoWindow.h"
 #include "Game.h"
 #include "NPC.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
-#include "DebugWindows.h"
-#include "EntityInfoWindow.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <queue>
+#include <vector>
 
 // TODO: Should fail if entity spawns inside a block tile
 std::shared_ptr<NPC> Game::createNPC(std::shared_ptr<AI> ai,
@@ -304,14 +306,105 @@ void Game::ECSInitLogicSystems() {
 }
 
 void Game::LoadMap(std::string mapPath) {
+  hasClicked = false;
+  validTileSelected = false;
+
   flecs::entity mapEntity = ecs.entity("CurrentMap");
   ecs.defer([&]() {
-    mapEntity.children([](flecs::entity child) {
-      child.destruct();
-    });
+    mapEntity.children([](flecs::entity child) { child.destruct(); });
   });
   map = std::make_unique<Map>(mapEntity, mapPath);
-  ecs.set<MapResource>({map.get()}); 
+  ecs.set<MapResource>({map.get()});
+
+  Map *currentMap = map.get();
+  // Teleport entities that get stuck to safety
+  // TODO: Maybe have a better tag instead of velocity
+  // to tell when an entity should be teleported out
+  if (currentMap) {
+    ecs.filter<Velocity, Hitbox, GamePosition, ScreenPosition>().each(
+        [currentMap](const Velocity &, const Hitbox &hitbox, GamePosition &gPos,
+                     ScreenPosition &sPos) {
+          auto isCollidingAt = [currentMap, &sPos, &hitbox](const GamePosition &pos) {
+            ScreenPosition screenPos =
+                currentMap->GameCoordsToScreenCoords(pos.x, pos.y);
+            Rectangle rect = {sPos.x, sPos.y, (float)hitbox.width,
+                              (float)hitbox.height};
+
+            struct RelativeTile {
+              int dx;
+              int dy;
+            };
+            RelativeTile offsets[] = {{0, 0}, {0, -1}, {1, 0}, {1, 1}, {0, 1}};
+
+            for (const auto &offset : offsets) {
+              int tx = pos.x + offset.dx;
+              int ty = pos.y + offset.dy;
+              Tile *t = currentMap->GetTile(tx, ty);
+              bool blocks = (!t) || t->blocksTile;
+              if (blocks) {
+
+                ScreenPosition tileSPos =
+                    currentMap->GameCoordsToScreenCoords(tx, ty);
+                Rectangle tileRect = {tileSPos.x, tileSPos.y,
+                                      (float)currentMap->GetTileWidth(),
+                                      (float)currentMap->GetTileHeight()};
+                if (CheckCollisionRecs(rect, tileRect)) {
+                  return true;
+                }
+              }
+            }
+            return false;
+          };
+
+          if (isCollidingAt(gPos)) {
+            int mapWidth = currentMap->GetWidth();
+            int mapHeight = currentMap->GetHeight();
+            std::vector<bool> visited(mapWidth * mapHeight, false);
+            std::queue<GamePosition> q;
+
+            int startX = std::max(0, std::min(gPos.x, mapWidth - 1));
+            int startY = std::max(0, std::min(gPos.y, mapHeight - 1));
+            GamePosition clampedStart = {startX, startY};
+
+            q.push(clampedStart);
+            visited[clampedStart.y * mapWidth + clampedStart.x] = true;
+
+            const int dx[] = {0, 0, -1, 1, -1, -1, 1, 1};
+            const int dy[] = {-1, 1, 0, 0, -1, 1, -1, 1};
+
+            bool found = false;
+            GamePosition safePos = gPos;
+
+            while (!q.empty()) {
+              GamePosition curr = q.front();
+              Tile *currTile = currentMap->GetTile(curr.x, curr.y);
+              q.pop();
+
+              if (currTile && !currTile->blocksTile) {
+                safePos = curr;
+                found = true;
+                break;
+              }
+
+              for (int i = 0; i < 8; ++i) {
+                GamePosition next = {curr.x + dx[i], curr.y + dy[i]};
+                if (currentMap->IsInBounds(next.x, next.y)) {
+                  int index = next.y * mapWidth + next.x;
+                  if (!visited[index]) {
+                    visited[index] = true;
+                    q.push(next);
+                  }
+                }
+              }
+            }
+
+            if (found) {
+              gPos = safePos;
+              sPos = currentMap->GameCoordsToScreenCoords(gPos.x, gPos.y);
+            }
+          }
+        });
+  }
 }
 
 void Game::ECSInit(std::string mapPath) {
@@ -326,11 +419,12 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitLogicSystems();
   ECSInitRenderSystems();
 
-  GamePosition startPlayerPos = {20, 15};
+  GamePosition startPlayerPos = {14, 14};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
-  playerEntity.set<ScreenPosition>(
-      map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
+  playerEntity.set<ScreenPosition>({471.748, 448});
+  // playerEntity.set<ScreenPosition>(
+  //     map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
@@ -365,30 +459,38 @@ void Game::ECSInit(std::string mapPath) {
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
-    debugConsoleWindowEntity.set<ActiveWindow>({std::make_shared<DebugConsoleWindow>(this)});
+    debugConsoleWindowEntity.set<ActiveWindow>(
+        {std::make_shared<DebugConsoleWindow>(this)});
   }
   if (debugWindowState->GetShowTileInfoWindow()) {
-    tileInfoWindowEntity.set<ActiveWindow>({std::make_shared<TileInfoWindow>(this)});
+    tileInfoWindowEntity.set<ActiveWindow>(
+        {std::make_shared<TileInfoWindow>(this)});
   }
   if (debugWindowState->GetShowAStarWindow()) {
     astarWindowEntity.set<ActiveWindow>({std::make_shared<AStarWindow>(this)});
   }
   if (debugWindowState->GetShowEntityOverviewWindow()) {
-    entityOverviewWindowEntity.set<ActiveWindow>({std::make_shared<EntityOverviewWindow>(this)});
+    entityOverviewWindowEntity.set<ActiveWindow>(
+        {std::make_shared<EntityOverviewWindow>(this)});
   }
   if (debugWindowState->GetShowDebugLogWindow()) {
-    debugLogWindowEntity.set<ActiveWindow>({std::make_shared<DebugLogWindow>(this)});
+    debugLogWindowEntity.set<ActiveWindow>(
+        {std::make_shared<DebugLogWindow>(this)});
   }
   if (debugWindowState->GetShowMapReloadWindow()) {
-    mapReloadWindowEntity.set<ActiveWindow>({std::make_shared<MapReloadWindow>(this)});
+    mapReloadWindowEntity.set<ActiveWindow>(
+        {std::make_shared<MapReloadWindow>(this)});
   }
   if (debugWindowState->GetShowDrawAsciiToggleWindow()) {
-    drawAsciiToggleWindowEntity.set<ActiveWindow>({std::make_shared<DrawAsciiDebugWindow>(this)});
+    drawAsciiToggleWindowEntity.set<ActiveWindow>(
+        {std::make_shared<DrawAsciiDebugWindow>(this)});
   }
   if (debugWindowState->GetShowFontSelectionWindow()) {
-    fontSelectionWindowEntity.set<ActiveWindow>({std::make_shared<FontSelectionWindow>(this)});
+    fontSelectionWindowEntity.set<ActiveWindow>(
+        {std::make_shared<FontSelectionWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
-    playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(playerEntity)});
+    playerEntity.set<ActiveWindow>(
+        {std::make_shared<EntityInfoWindow>(playerEntity)});
   }
 }

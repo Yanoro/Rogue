@@ -14,10 +14,12 @@
 
 void Game::DrawGameWindows() {
   // Draw any active component-based UI windows
-  ecs.filter<ActiveWindow>().each([](ActiveWindow &win) {
-    if (win.ptr) {
-      win.ptr->Draw();
-    }
+  ecs.defer([&]() {
+    ecs.filter<ActiveWindow>().each([](ActiveWindow &win) {
+      if (win.ptr) {
+        win.ptr->Draw();
+      }
+    });
   });
 }
 
