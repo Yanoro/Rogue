@@ -10,12 +10,12 @@
 
 class AIChatWindow : public Window {
 public:
-    AIChatWindow(std::shared_ptr<AI> aiInstance, const std::string& startPrompt);
-    AIChatWindow(std::shared_ptr<AI> aiInstance);
+    AIChatWindow(AI *aiInstance, const std::string& startPrompt);
+    AIChatWindow(AI *aiInstance);
     void Draw();
 
 private:
-    std::shared_ptr<AI> ai;
+    AI *ai;
     std::string contextId;
     bool couldConnect = true;
     std::string context;

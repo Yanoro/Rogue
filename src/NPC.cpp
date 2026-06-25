@@ -9,12 +9,13 @@
 #include <regex>
 #include <thread>
 
-NPC::NPC(flecs::entity entity, std::string characterBackground,
-         std::shared_ptr<AI> ai)
+NPC::NPC(flecs::entity entity, std::string name,
+         std::string characterBackground, std::shared_ptr<AI> ai)
     : entity(entity), ai(std::move(ai)),
       contextId(std::to_string(reinterpret_cast<uintptr_t>(this))),
       characterBackground(characterBackground) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
+  entity.set_name(name.c_str());
   loopThread = std::jthread(&NPC::Loop, this);
 }
 
@@ -57,11 +58,22 @@ void NPC::sendToAI(std::string msg, std::stop_token stoken) {
 
 void NPC::Loop(std::stop_token stoken) {
   std::string locations = "";
+  std::string characterNames = "";
   Map *currMap = entity.world().get<MapResource>()->map;
 
   for (const auto &currName : currMap->GetAllLocationNames()) {
     locations += currName + ", ";
   }
+
+  entity.world().filter<NPCComponent>().each(
+    [&characterNames](flecs::entity entity, const NPCComponent &npc) {
+      const char *nameView = entity.name().c_str();
+      std::string name = nameView ? nameView : "";
+      if (name.empty()) {
+        characterNames += name + ", ";
+      }
+    }
+  );
 
   if (!locations.empty()) {
     locations.pop_back();

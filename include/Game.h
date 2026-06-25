@@ -33,10 +33,8 @@ public:
 
   void Shutdown();
 
-  std::shared_ptr<NPC> createNPC(std::shared_ptr<AI> ai,
-                                 const GamePosition &gamePos,
-                                 std::string name = "", 
-                                 std::string prompt = "");
+  flecs::entity createNPC(const GamePosition &gamePos, std::string name = "",
+                          std::string prompt = "");
 
   bool shouldClose() const;
 
@@ -109,4 +107,6 @@ private:
   void ECSInitRenderSystems();
   void ECSInitPhysicsSystems();
   void ECSInitLogicSystems();
+  void ECSInitAgentSystems();
+  void ECSInitActionSystems();
 };

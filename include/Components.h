@@ -132,7 +132,6 @@ enum class WindowType {
   AIChatWindowType,
   EntityInfoWindowType,
   NPCContextWindowType
-
 };
 
 struct WindowOnClick {
@@ -141,7 +140,7 @@ struct WindowOnClick {
 
 class Map;
 struct MapResource {
-  Map* map;
+  Map *map;
 };
 
 struct DisplayName {
@@ -157,8 +156,33 @@ struct ActiveWindow {
 };
 
 struct AIBackend {
-  std::shared_ptr<AI> ptr;
+  std::unique_ptr<AI> ptr;
 };
+
+struct NPCTag {};
+
+struct NPCContext {
+  std::string context;
+  std::string contextID;
+};
+
+struct NPCNewPrompt {
+  std::string msg;
+};
+
+struct AIRequest {
+  std::string prompt;
+  bool finished = false;
+  std::string pendingResponse;
+};
+
+struct DO_NOTHING_ACTION {
+  float time_remaining; // In seconds
+};
+
+struct MOVE_TO_ACTION {
+  Location *location;
+}; 
 
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>

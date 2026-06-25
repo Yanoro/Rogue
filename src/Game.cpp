@@ -59,7 +59,8 @@ void Game::Init(std::string mapPath) {
   virtualWidth = 640;
   virtualHeight = 512;
 
-  // Target the primary monitor (monitor 1) if there are multiple displays, since monitor 0 is the side monitor
+  // Target the primary monitor (monitor 1) if there are multiple displays,
+  // since monitor 0 is the side monitor
   currentMonitor = 0;
   if (GetMonitorCount() > 1) {
     currentMonitor = 1;
@@ -145,21 +146,19 @@ void Game::UpdateGUI() {
     GamePosition gPos =
         map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
 
+    auto ai = ecs.get<AIBackend>();
     ecs.defer_begin();
     ecs.filter<GamePosition, WindowOnClick>().each(
-        [&gPos, this](flecs::entity entity, const GamePosition &pos,
-                      WindowOnClick &clickWin) {
+        [&gPos, ai, this](flecs::entity entity, const GamePosition &pos,
+                          WindowOnClick &clickWin) {
           if (gPos == pos) {
             switch (clickWin.type) {
             case ::WindowType::AIChatWindowType:
               if (entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
-                const AIBackend *backend = entity.get<AIBackend>();
-                if (backend != nullptr && backend->ptr != nullptr) {
-                  entity.set<ActiveWindow>(
-                      {std::make_shared<AIChatWindow>(backend->ptr)});
-                }
+                entity.set<ActiveWindow>(
+                    {std::make_shared<AIChatWindow>(ai->ptr.get())});
               }
               break;
             case ::WindowType::EntityInfoWindowType:
@@ -184,8 +183,8 @@ void Game::UpdateGUI() {
                 entity.remove<ActiveWindow>();
               } else {
                 std::shared_ptr<NPC> npc = entity.get<NPCComponent>()->ptr;
-                entity.set<ActiveWindow>(
-                    {std::make_shared<NPCContextWindow>(std::weak_ptr<NPC>(npc))});
+                entity.set<ActiveWindow>({std::make_shared<NPCContextWindow>(
+                    std::weak_ptr<NPC>(npc))});
               }
               break;
             default:
@@ -254,15 +253,22 @@ void Game::Shutdown() {
   }
 
   if (debugWindowState) {
-    debugWindowState->SetShowDebugConsole(debugConsoleWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDebugConsole(
+        debugConsoleWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowEntityInfoWindow(playerEntity.has<ActiveWindow>());
-    debugWindowState->SetShowTileInfoWindow(tileInfoWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowTileInfoWindow(
+        tileInfoWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowAStarWindow(astarWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowEntityOverviewWindow(entityOverviewWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowDebugLogWindow(debugLogWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowMapReloadWindow(mapReloadWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowDrawAsciiToggleWindow(drawAsciiToggleWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowFontSelectionWindow(fontSelectionWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowEntityOverviewWindow(
+        entityOverviewWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDebugLogWindow(
+        debugLogWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowMapReloadWindow(
+        mapReloadWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDrawAsciiToggleWindow(
+        drawAsciiToggleWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowFontSelectionWindow(
+        fontSelectionWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState("./debug_windows_state.json");
     if (debugLog) {

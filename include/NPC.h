@@ -21,17 +21,19 @@ struct MessageCommand {
 
 const std::string DEFAULT_NPC_PROMPT = R"(
   World: You are an AI controlling an NPC in a game. 
-  World: You are capable of two commands: 
+  World: You are capable of three commands: 
   World: [DO_NOTHING]
   World: [MOVE_TO $LOCATION]
+  World: [TALK_TO $CHARACTER]
   World: Where $LOCATION is one of the following locations: %LOCATIONS%
+  World: Where $CHARACTER is one of the following names: %CHARACTERS%
   World: This is your character background: %BACKGROUND%
   World: What is your first command?
   You: )";
 
 class NPC {
 public:
-  NPC(flecs::entity entity, std::string characterBackground,
+  NPC(flecs::entity entity, std::string name, std::string characterBackground,
       std::shared_ptr<AI> ai);
 
   MessageCommand ParseMessageCommand(std::string msg);
@@ -57,4 +59,3 @@ private:
 
   AI::StreamCallback getStreamCallback();
 };
-

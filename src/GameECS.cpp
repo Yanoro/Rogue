@@ -1,3 +1,4 @@
+#include "AI.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
@@ -6,18 +7,18 @@
 #include "EntityInfoWindow.h"
 #include "Game.h"
 #include "NPC.h"
+#include "PathFinding.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <queue>
+#include <regex>
 #include <vector>
 
-// TODO: Should fail if entity spawns inside a block tile
-std::shared_ptr<NPC> Game::createNPC(std::shared_ptr<AI> ai,
-                                     const GamePosition &pos, std::string name,
-                                     std::string prompt) {
+flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
+                              std::string prompt) {
 
   flecs::entity entity =
       ecs.entity()
@@ -37,16 +38,15 @@ std::shared_ptr<NPC> Game::createNPC(std::shared_ptr<AI> ai,
           .set<Velocity>({0, 0})
           .set<Acceleration>({0, 0})
           .set<Friction>({DEFAULT_ENTITY_FRICTION})
-          .add<BlocksTile>();
+          .add<BlocksTile>()
+          .set<NPCNewPrompt>({prompt});
 
   if (name == "") {
     flecs::entity_t id = entity.id();
     name = "NPC " + std::to_string(id);
   }
   entity.set<DisplayName>({name});
-  auto npc = std::make_shared<NPC>(entity, prompt, ai);
-  entity.set<NPCComponent>({npc});
-  return npc;
+  return entity;
 }
 
 void Game::ECSInitRenderSystems() {
@@ -324,7 +324,8 @@ void Game::LoadMap(std::string mapPath) {
     ecs.filter<Velocity, Hitbox, GamePosition, ScreenPosition>().each(
         [currentMap](const Velocity &, const Hitbox &hitbox, GamePosition &gPos,
                      ScreenPosition &sPos) {
-          auto isCollidingAt = [currentMap, &sPos, &hitbox](const GamePosition &pos) {
+          auto isCollidingAt = [currentMap, &sPos,
+                                &hitbox](const GamePosition &pos) {
             ScreenPosition screenPos =
                 currentMap->GameCoordsToScreenCoords(pos.x, pos.y);
             Rectangle rect = {sPos.x, sPos.y, (float)hitbox.width,
@@ -407,6 +408,133 @@ void Game::LoadMap(std::string mapPath) {
   }
 }
 
+MessageCommand ParseMessageCommand(std::string msg) {
+  // Static means that we don't have to recompile every time
+  // this function gets run
+  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
+                              std::regex_constants::icase);
+  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
+                                 std::regex_constants::icase);
+  std::smatch match;
+
+  if (std::regex_search(msg, match, moveRegex)) {
+    return {NPCCommandType::MOVE_TO, match[1].str()};
+  } else if (std::regex_search(msg, match, nothingRegex)) {
+    return {NPCCommandType::DO_NOTHING, ""};
+  }
+
+  return {NPCCommandType::NONE, ""};
+}
+
+void SendNewPrompt(flecs::entity entity, std::string prompt) {
+  entity.set<NPCNewPrompt>({"\n" + prompt});
+}
+
+void Game::ECSInitActionSystems() {
+  ecs.system<DO_NOTHING_ACTION>().each(
+      [](flecs::entity entity, DO_NOTHING_ACTION &action) {
+        action.time_remaining -= GetTime();
+        if (action.time_remaining > 0) {
+          return;
+        }
+        std::string response =
+            "World: You have awaited for a while, what's next?\n";
+        entity.remove<DO_NOTHING_ACTION>();
+        SendNewPrompt(entity, response);
+      });
+
+  ecs.system<MOVE_TO_ACTION, GamePosition>().each(
+      [this](flecs::entity entity, MOVE_TO_ACTION &action,
+             const GamePosition &gamePos) {
+        Location *loc = action.location;
+        const GamePosition target = loc->pos;
+        if (gamePos == target) {
+          entity.remove<MOVE_TO_ACTION>();
+          std::string response =
+              "WORLD: You have arrived at your destination, what's next?\n";
+          SendNewPrompt(entity, response);
+        } else if (!entity.has<TargetPath>()) {
+          entity.set<TargetPath>({AStar(map.get(), gamePos, target)});
+        }
+      });
+}
+
+void Game::ECSInitAgentSystems() {
+  // TODO: Move this observer to a place just for observers
+  ecs.observer<NPCContext>()
+      .event(flecs::OnSet)
+      .each([](flecs::entity e, NPCContext &ctx) {
+        ctx.contextID = std::to_string(e.id());
+      });
+
+  auto ai = ecs.get<AIBackend>();
+  ecs.system<NPCNewPrompt>().each([this, ai](flecs::entity entity,
+                                             const NPCNewPrompt &prompt) {
+    NPCContext *ctx = entity.get_mut<NPCContext>();
+    AIRequest *request = entity.get_mut<AIRequest>();
+
+    if (!entity.has<AIRequest>()) {
+      flecs::world async_stage = ecs.async_stage();
+      AI *aiPtr = ai->ptr.get();
+
+      auto callBack = [entity, &async_stage](const std::string &token) mutable {
+        if (entity.is_alive()) {
+          async_stage.defer([entity, token]() {
+            AIRequest *newRequest = entity.get_mut<AIRequest>();
+            if (!token.empty()) {
+              newRequest->finished = true;
+            } else {
+              newRequest->pendingResponse += token;
+            }
+          });
+        }
+      };
+
+      ctx->context += prompt.msg;
+      aiPtr->generateStream(ctx->contextID, ctx->context, callBack);
+    } else {
+      if (!request->finished) {
+        return;
+      }
+      ctx->context += request->pendingResponse;
+      MessageCommand msgCmd = ParseMessageCommand(request->pendingResponse);
+
+      entity.set<MessageCommand>(msgCmd);
+      entity.remove<AIRequest>();
+      entity.remove<NPCNewPrompt>();
+    }
+  });
+
+  ecs.system<MessageCommand>().each(
+      [this](flecs::entity entity, const MessageCommand &cmd) {
+        std::string response = "\n";
+
+        switch (cmd.type) {
+        case (NPCCommandType::DO_NOTHING): {
+          entity.set<DO_NOTHING_ACTION>(
+              {DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS});
+          break;
+        }
+        case (NPCCommandType::MOVE_TO): {
+          Location *loc = map->GetLocation(cmd.target);
+          if (loc != nullptr) {
+            entity.set<MOVE_TO_ACTION>({loc});
+          } else {
+            response += "WORLD: You tried to move to an unknown location.\n";
+            SendNewPrompt(entity, response);
+          }
+          break;
+        }
+        case (NPCCommandType::NONE): {
+          SendNewPrompt(entity, "");
+          break;
+        }
+        default:
+          break;
+        }
+      });
+}
+
 void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
@@ -415,16 +543,21 @@ void Game::ECSInit(std::string mapPath) {
 
   RegisterComponents(ecs);
 
+  auto ai = std::make_unique<OllamaAI>("llama3");
+  ecs.set<AIBackend>({std::move(ai)});
+
   ECSInitPhysicsSystems();
   ECSInitLogicSystems();
   ECSInitRenderSystems();
+  ECSInitAgentSystems();
+  ECSInitActionSystems();
 
   GamePosition startPlayerPos = {14, 14};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
-  playerEntity.set<ScreenPosition>({471.748, 448});
-  // playerEntity.set<ScreenPosition>(
-  //     map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
+
+  playerEntity.set<ScreenPosition>(
+      map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
@@ -441,11 +574,9 @@ void Game::ECSInit(std::string mapPath) {
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
 
-  auto ai = std::make_shared<OllamaAI>("llama3");
-  createNPC(ai, {20, 1}, "John",
+  createNPC({20, 1}, "John",
             "Your name is John, you like staying at thelibrary");
-  createNPC(ai, {30, 1}, "Carl",
-            "Your name is Carl, you like walking around town");
+  createNPC({30, 1}, "Carl", "Your name is Carl, you like walking around town");
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");

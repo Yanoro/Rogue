@@ -10,12 +10,12 @@
 
 const size_t DEFAULT_DELAY_AI_TEXT_MS = 90;
 
-AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance, const std::string& startPrompt) 
+AIChatWindow::AIChatWindow(AI* aiInstance, const std::string& startPrompt) 
     : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))), context(startPrompt) {
     generateResponse(context);
 }
 
-AIChatWindow::AIChatWindow(std::shared_ptr<AI> aiInstance) : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))) {}
+AIChatWindow::AIChatWindow(AI *aiInstance) : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))) {}
 
 void AIChatWindow::Draw() {
     ImGui::Begin("AI Chat", nullptr, ImGuiWindowFlags_AlwaysAutoResize); 
