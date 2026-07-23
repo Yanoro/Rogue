@@ -106,7 +106,6 @@ set(SOURCES
     src/GameECS.cpp
     src/Map.cpp
     src/AI.cpp
-    src/NPC.cpp
     src/Character.cpp
     src/AIChatWindow.cpp
     src/AgentContextWindow.cpp
@@ -162,14 +161,12 @@ endif()
 target_compile_options(AIRogue PRIVATE 
     ${CURL_CFLAGS_OTHER}
     ${RAYLIB_CFLAGS_OTHER}
+    -fsanitize=address
+    -g -fno-omit-frame-pointer
+    -Wmaybe-uninitialized
     -Wall
     -Wextra
 )
 
-# Compiler Options
-target_compile_options(AIRogue PRIVATE 
-    ${CURL_CFLAGS_OTHER}
-    ${RAYLIB_CFLAGS_OTHER}
-    -Wall
-    -Wextra
-)
+target_link_options(AIRogue PRIVATE -fsanitize=address)
+

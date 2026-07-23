@@ -6,19 +6,28 @@
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
 #include "Game.h"
+
 #include "NPC.h"
 #include "PathFinding.h"
+#include "StringUtils.hpp"
+#include "flecs.h"
+#include "imgui.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iostream>
+#include <mutex>
 #include <queue>
 #include <regex>
 #include <vector>
 
+// TODO: Adding checks to see if we are not repeating values seems like a good
+// idea for instance we can't have two npcs with the same name
+
 flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
-                              std::string prompt) {
+                              std::string characterBackground) {
 
   flecs::entity entity =
       ecs.entity()
@@ -38,14 +47,42 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
           .set<Velocity>({0, 0})
           .set<Acceleration>({0, 0})
           .set<Friction>({DEFAULT_ENTITY_FRICTION})
-          .add<BlocksTile>()
-          .set<NPCNewPrompt>({prompt});
+          .set<WindowOnClick>({WindowType::NPCContextWindowType})
+          .add<BlocksTile>();
+
+  std::string locations = "";
+  std::string characterNames = "";
+  Map *currMap = entity.world().get<MapResource>()->map;
+
+  for (const auto &currName : currMap->GetAllLocationNames()) {
+    locations += currName + ", ";
+  }
+
+  if (locations.length() >= 2) {
+    locations.erase(locations.length() - 2);
+  }
+
+  if (characterNames.length() >= 2) {
+    characterNames.erase(characterNames.length() - 2);
+  }
+
+  std::regex re1("%LOCATIONS%");
+  std::regex re2("%BACKGROUND%");
+  std::regex re3("%CHARACTERS%");
+
+  std::string startingPrompt =
+      std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
+  startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
+  startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
+  entity.set<NPCNewPrompt>({startingPrompt});
+  entity.set<NPCContext>({"", ""});
 
   if (name == "") {
     flecs::entity_t id = entity.id();
     name = "NPC " + std::to_string(id);
   }
   entity.set<DisplayName>({name});
+  entity.set<NPCName>({name});
   return entity;
 }
 
@@ -118,14 +155,292 @@ void Game::ECSInitPhysicsSystems() {
         }
       });
 
+  ecs.system<Velocity, Acceleration>().each(
+      [](Velocity &vel, const Acceleration &accel) {
+        vel += accel * GetFrameTime();
+      });
+
+  ecs.system<Velocity, const MaxSpeed>().each(
+      [](Velocity &vel, const MaxSpeed &maxSpeed) {
+        vel = vel.Clamp(0.0f, maxSpeed.value);
+      });
+
+  // Collision system
+  ecs.system<Velocity, Hitbox, ScreenPosition>().without<Intangible>().each(
+      [this](Velocity &vel, const Hitbox &hitbox,
+             const ScreenPosition &origScreenPos) {
+        ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
+        // TODO: Why are we taking the min here?
+        size_t hitboxSize = std::min(hitbox.width, hitbox.height);
+
+        bool nullXVector = false;
+        bool nullYVector = false;
+
+        if ((newScreenPos.x < 0) ||
+            (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
+          nullXVector = true;
+        }
+        if ((newScreenPos.y < 0) ||
+            (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
+          nullYVector = true;
+        }
+
+        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
+                                     hitboxSize, hitboxSize);
+        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
+                                     hitboxSize, hitboxSize);
+
+        GamePosition gamePos =
+            map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
+        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
+        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
+
+        for (int i = 0; i < 8; ++i) {
+          if (nullXVector && nullYVector) {
+            break;
+          }
+
+          int currX = gamePos.x + dx[i];
+          int currY = gamePos.y + dy[i];
+          Tile *currTile = map->GetTile(currX, currY);
+
+          if (currTile == NULL || !currTile->blocksTile) {
+            continue;
+          }
+          ScreenPosition currTileScreenPos =
+              map->GameCoordsToScreenCoords(currX, currY);
+          raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
+                                     currTile->hitbox.width,
+                                     currTile->hitbox.height);
+          if (deltaXRect.CheckCollision(currRect)) {
+            nullXVector = true;
+          }
+          if (deltaYRect.CheckCollision(currRect)) {
+            nullYVector = true;
+          }
+        }
+
+        vel.x = (nullXVector) ? 0 : vel.x;
+        vel.y = (nullYVector) ? 0 : vel.y;
+      });
+
+  ecs.system<Velocity, ScreenPosition>().each(
+      [](const Velocity &vel, ScreenPosition &pos) {
+        pos += vel * GetFrameTime();
+      });
+
+  // Save and reset variables used in the physics simulation
+  ecs.system<Acceleration>().each([this](Acceleration &accel) {
+    lastAccel = accel;
+    accel = {};
+  });
+
+  ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
+}
+
+void Game::ECSInitLogicSystems() {
+  ecs.system<GamePosition, ScreenPosition>().each(
+      [this](flecs::entity e, const GamePosition oldGamePos,
+             const ScreenPosition &screenPos) {
+        const GamePosition newGamePos =
+            map->ScreenCoordsToGameCoords(screenPos.x, screenPos.y);
+        if (oldGamePos != newGamePos) {
+          e.set<GamePosition>(newGamePos);
+        }
+      });
+}
+
+void Game::LoadMap(std::string mapPath) {
+  hasClicked = false;
+  validTileSelected = false;
+
+  flecs::entity mapEntity = ecs.entity("CurrentMap");
+  ecs.defer([&]() {
+    mapEntity.children([](flecs::entity child) { child.destruct(); });
+  });
+  map = std::make_unique<Map>(mapEntity, mapPath);
+  ecs.set<MapResource>({map.get()});
+
+  Map *currentMap = map.get();
+  // Teleport entities that get stuck to safety
+  // TODO: Maybe have a better tag instead of velocity
+  // to tell when an entity should be teleported out
+  if (currentMap) {
+    ecs.filter<Velocity, Hitbox, GamePosition, ScreenPosition>().each(
+        [currentMap](const Velocity &, const Hitbox &hitbox, GamePosition &gPos,
+                     ScreenPosition &sPos) {
+          auto isCollidingAt = [currentMap, &sPos,
+                                &hitbox](const GamePosition &pos) {
+            Rectangle rect = {sPos.x, sPos.y, (float)hitbox.width,
+                              (float)hitbox.height};
+
+            struct RelativeTile {
+              int dx;
+              int dy;
+            };
+            RelativeTile offsets[] = {{0, 0}, {0, -1}, {1, 0}, {1, 1}, {0, 1}};
+
+            for (const auto &offset : offsets) {
+              int tx = pos.x + offset.dx;
+              int ty = pos.y + offset.dy;
+              Tile *t = currentMap->GetTile(tx, ty);
+              bool blocks = (!t) || t->blocksTile;
+              if (blocks) {
+
+                ScreenPosition tileSPos =
+                    currentMap->GameCoordsToScreenCoords(tx, ty);
+                Rectangle tileRect = {tileSPos.x, tileSPos.y,
+                                      (float)currentMap->GetTileWidth(),
+                                      (float)currentMap->GetTileHeight()};
+                if (CheckCollisionRecs(rect, tileRect)) {
+                  return true;
+                }
+              }
+            }
+            return false;
+          };
+
+          if (isCollidingAt(gPos)) {
+            int mapWidth = currentMap->GetWidth();
+            int mapHeight = currentMap->GetHeight();
+            std::vector<bool> visited(mapWidth * mapHeight, false);
+            std::queue<GamePosition> q;
+
+            int startX = std::max(0, std::min(gPos.x, mapWidth - 1));
+            int startY = std::max(0, std::min(gPos.y, mapHeight - 1));
+            GamePosition clampedStart = {startX, startY};
+
+            q.push(clampedStart);
+            visited[clampedStart.y * mapWidth + clampedStart.x] = true;
+
+            const int dx[] = {0, 0, -1, 1, -1, -1, 1, 1};
+            const int dy[] = {-1, 1, 0, 0, -1, 1, -1, 1};
+
+            bool found = false;
+            GamePosition safePos = gPos;
+
+            while (!q.empty()) {
+              GamePosition curr = q.front();
+              Tile *currTile = currentMap->GetTile(curr.x, curr.y);
+              q.pop();
+
+              if (currTile && !currTile->blocksTile) {
+                safePos = curr;
+                found = true;
+                break;
+              }
+
+              for (int i = 0; i < 8; ++i) {
+                GamePosition next = {curr.x + dx[i], curr.y + dy[i]};
+                if (currentMap->IsInBounds(next.x, next.y)) {
+                  int index = next.y * mapWidth + next.x;
+                  if (!visited[index]) {
+                    visited[index] = true;
+                    q.push(next);
+                  }
+                }
+              }
+            }
+
+            if (found) {
+              gPos = safePos;
+              sPos = currentMap->GameCoordsToScreenCoords(gPos.x, gPos.y);
+            }
+          }
+        });
+  }
+}
+
+MessageCommand ParseMessageCommand(std::string msg) {
+  // Static means that we don't have to recompile the regex every time
+  // this function gets run
+  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
+                              std::regex_constants::icase);
+  static std::regex talkToRegex(R"(\[TALK_TO\s+(.+?)\s*\])",
+                                std::regex_constants::icase);
+  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
+                                 std::regex_constants::icase);
+  static std::regex charactersRegex(R"(\[CHARACTERS\])",
+                                    std::regex_constants::icase);
+  std::smatch match;
+
+  if (std::regex_search(msg, match, moveRegex)) {
+    return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
+  } else if (std::regex_search(msg, match, talkToRegex)) {
+    return {NPCCommandType::TALK_TO, match[1].str()};
+  } else if (std::regex_search(msg, match, nothingRegex)) {
+    return {NPCCommandType::DO_NOTHING, ""};
+  } else if (std::regex_search(msg, match, charactersRegex)) {
+    return {NPCCommandType::CHARACTERS_QUERY, ""};
+  }
+
+  return {NPCCommandType::INVALID_COMMAND, ""};
+}
+
+void SendNewPrompt(flecs::entity entity, std::string prompt) {
+  entity.set<NPCNewPrompt>({prompt + "\nYou: "});
+}
+
+void Game::ECSInitActionSystems() {
+  ecs.observer<DO_NOTHING_ACTION>()
+      .event(flecs::OnSet)
+      .each([](flecs::entity entity, DO_NOTHING_ACTION &action) {
+        action.time_remaining -= GetTime();
+        if (action.time_remaining > 0) {
+          return;
+        }
+        std::string response =
+            "System: You have awaited for a while, what's next?";
+        entity.remove<DO_NOTHING_ACTION>();
+        SendNewPrompt(entity, response);
+      });
+
+  ecs.observer<MOVE_TO_LOCATION_ACTION>()
+      .event(flecs::OnSet)
+      .each([this](flecs::entity entity, MOVE_TO_LOCATION_ACTION &action) {
+        const GamePosition *pGamePos = entity.get<GamePosition>();
+        if (!pGamePos)
+          return;
+        const GamePosition gamePos = *pGamePos;
+
+        std::string response;
+        Location *loc = action.location;
+        if (loc == nullptr) {
+          entity.remove<MOVE_TO_LOCATION_ACTION>();
+          response = "System: You tried to move to an unknown location.";
+          SendNewPrompt(entity, response);
+          return;
+        }
+        const GamePosition target = loc->pos;
+
+        entity.set<MOVE_THROUGH_PATH_ACTION>(
+            {AStar(map.get(), gamePos, target)});
+
+        ecs.observer<GamePosition>()
+            .with(entity)
+            .event(flecs::OnUpdate)
+            .each([entity, target](flecs::iter &it, size_t,
+                                   const GamePosition &pos) {
+              if (!(target == pos))
+                return;
+              std::string response =
+                  "System: You have arrived at your destination, what's next?";
+              SendNewPrompt(entity, response);
+              it.system().destruct();
+            });
+        entity.remove<MOVE_TO_LOCATION_ACTION>();
+      });
+
   // Steer system through a path
   ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, Hitbox,
-             TargetPath>()
+             MOVE_THROUGH_PATH_ACTION>()
       .each([this](flecs::entity entity, Velocity &vel, Acceleration &accel,
                    const GamePosition &currPos, const ScreenPosition &screenPos,
-                   const Hitbox &hitbox, TargetPath &tPath) {
+                   const Hitbox &hitbox, MOVE_THROUGH_PATH_ACTION &tPath) {
         if (tPath.path.empty()) {
-          entity.remove<TargetPath>();
+          std::string name = entity.name().c_str();
+          debugLog->LogInfo("Entity " + name + " has finished it's path");
+          entity.remove<MOVE_THROUGH_PATH_ACTION>();
           return;
         }
         GamePosition currWaypoint = tPath.path[0];
@@ -215,251 +530,148 @@ void Game::ECSInitPhysicsSystems() {
         }
       });
 
-  ecs.system<Velocity, Acceleration>().each(
-      [](Velocity &vel, const Acceleration &accel) {
-        vel += accel * GetFrameTime();
-      });
+  auto query = ecs.query<NPCName>();
 
-  ecs.system<Velocity, const MaxSpeed>().each(
-      [](Velocity &vel, const MaxSpeed &maxSpeed) {
-        vel = vel.Clamp(0.0f, maxSpeed.value);
-      });
+  // In case someone is moving towards an moving target
+  // update their path whenever the target changes positions
+  ecs.observer<GamePosition>()
+      .event(flecs::OnSet)
+      .each([this](flecs::iter &it, size_t i, GamePosition &target_pos) {
+        flecs::entity target_entity = it.entity(i);
 
-  // Collision system
-  ecs.system<Velocity, Hitbox, ScreenPosition>().without<Intangible>().each(
-      [this](Velocity &vel, const Hitbox &hitbox,
-             const ScreenPosition &origScreenPos) {
-        ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-        // TODO: Why are we taking the min here?
-        size_t hitboxSize = std::min(hitbox.width, hitbox.height);
+        auto chasers = it.world()
+                           .filter_builder<>()
+                           .with<MovingTowards>(target_entity)
+                           .build();
 
-        bool nullXVector = false;
-        bool nullYVector = false;
+        chasers.each([&it, target_pos, this](flecs::entity chaser) {
+          const GamePosition *chaser_pos = chaser.get<GamePosition>();
+          if (!chaser_pos)
+            return;
 
-        if ((newScreenPos.x < 0) ||
-            (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
-          nullXVector = true;
-        }
-        if ((newScreenPos.y < 0) ||
-            (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
-          nullYVector = true;
-        }
-
-        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
-                                     hitboxSize, hitboxSize);
-        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
-                                     hitboxSize, hitboxSize);
-
-        GamePosition gamePos =
-            map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
-        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-        for (int i = 0; i < 8; ++i) {
-          if (nullXVector && nullYVector) {
-            break;
-          }
-
-          int currX = gamePos.x + dx[i];
-          int currY = gamePos.y + dy[i];
-          Tile *currTile = map->GetTile(currX, currY);
-
-          if (currTile == NULL || !currTile->blocksTile) {
-            continue;
-          }
-          ScreenPosition currTileScreenPos =
-              map->GameCoordsToScreenCoords(currX, currY);
-          raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
-                                     currTile->hitbox.width,
-                                     currTile->hitbox.height);
-          if (deltaXRect.CheckCollision(currRect)) {
-            nullXVector = true;
-          }
-          if (deltaYRect.CheckCollision(currRect)) {
-            nullYVector = true;
-          }
-        }
-
-        vel.x = (nullXVector) ? 0 : vel.x;
-        vel.y = (nullYVector) ? 0 : vel.y;
-      });
-
-  ecs.system<Velocity, ScreenPosition>().each(
-      [](const Velocity &vel, ScreenPosition &pos) {
-        pos += vel * GetFrameTime();
-      });
-
-  // Save and reset variables used in the physics simulation
-  ecs.system<Acceleration>().each([this](Acceleration &accel) {
-    lastAccel = accel;
-    accel = {};
-  });
-
-  ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
-}
-
-void Game::ECSInitLogicSystems() {
-  ecs.system<ScreenPosition, GamePosition>().each(
-      [this](const ScreenPosition &screenPos, GamePosition &gamePos) {
-        gamePos = map->ScreenCoordsToGameCoords(screenPos.x, screenPos.y);
-      });
-}
-
-void Game::LoadMap(std::string mapPath) {
-  hasClicked = false;
-  validTileSelected = false;
-
-  flecs::entity mapEntity = ecs.entity("CurrentMap");
-  ecs.defer([&]() {
-    mapEntity.children([](flecs::entity child) { child.destruct(); });
-  });
-  map = std::make_unique<Map>(mapEntity, mapPath);
-  ecs.set<MapResource>({map.get()});
-
-  Map *currentMap = map.get();
-  // Teleport entities that get stuck to safety
-  // TODO: Maybe have a better tag instead of velocity
-  // to tell when an entity should be teleported out
-  if (currentMap) {
-    ecs.filter<Velocity, Hitbox, GamePosition, ScreenPosition>().each(
-        [currentMap](const Velocity &, const Hitbox &hitbox, GamePosition &gPos,
-                     ScreenPosition &sPos) {
-          auto isCollidingAt = [currentMap, &sPos,
-                                &hitbox](const GamePosition &pos) {
-            ScreenPosition screenPos =
-                currentMap->GameCoordsToScreenCoords(pos.x, pos.y);
-            Rectangle rect = {sPos.x, sPos.y, (float)hitbox.width,
-                              (float)hitbox.height};
-
-            struct RelativeTile {
-              int dx;
-              int dy;
-            };
-            RelativeTile offsets[] = {{0, 0}, {0, -1}, {1, 0}, {1, 1}, {0, 1}};
-
-            for (const auto &offset : offsets) {
-              int tx = pos.x + offset.dx;
-              int ty = pos.y + offset.dy;
-              Tile *t = currentMap->GetTile(tx, ty);
-              bool blocks = (!t) || t->blocksTile;
-              if (blocks) {
-
-                ScreenPosition tileSPos =
-                    currentMap->GameCoordsToScreenCoords(tx, ty);
-                Rectangle tileRect = {tileSPos.x, tileSPos.y,
-                                      (float)currentMap->GetTileWidth(),
-                                      (float)currentMap->GetTileHeight()};
-                if (CheckCollisionRecs(rect, tileRect)) {
-                  return true;
-                }
-              }
-            }
-            return false;
-          };
-
-          if (isCollidingAt(gPos)) {
-            int mapWidth = currentMap->GetWidth();
-            int mapHeight = currentMap->GetHeight();
-            std::vector<bool> visited(mapWidth * mapHeight, false);
-            std::queue<GamePosition> q;
-
-            int startX = std::max(0, std::min(gPos.x, mapWidth - 1));
-            int startY = std::max(0, std::min(gPos.y, mapHeight - 1));
-            GamePosition clampedStart = {startX, startY};
-
-            q.push(clampedStart);
-            visited[clampedStart.y * mapWidth + clampedStart.x] = true;
-
-            const int dx[] = {0, 0, -1, 1, -1, -1, 1, 1};
-            const int dy[] = {-1, 1, 0, 0, -1, 1, -1, 1};
-
-            bool found = false;
-            GamePosition safePos = gPos;
-
-            while (!q.empty()) {
-              GamePosition curr = q.front();
-              Tile *currTile = currentMap->GetTile(curr.x, curr.y);
-              q.pop();
-
-              if (currTile && !currTile->blocksTile) {
-                safePos = curr;
-                found = true;
-                break;
-              }
-
-              for (int i = 0; i < 8; ++i) {
-                GamePosition next = {curr.x + dx[i], curr.y + dy[i]};
-                if (currentMap->IsInBounds(next.x, next.y)) {
-                  int index = next.y * mapWidth + next.x;
-                  if (!visited[index]) {
-                    visited[index] = true;
-                    q.push(next);
-                  }
-                }
-              }
-            }
-
-            if (found) {
-              gPos = safePos;
-              sPos = currentMap->GameCoordsToScreenCoords(gPos.x, gPos.y);
-            }
-          }
+          it.world().defer([&] {
+            chaser.set<MOVE_THROUGH_PATH_ACTION>(
+                {AStar(map.get(), *chaser_pos, target_pos)});
+          });
         });
-  }
-}
+      });
 
-MessageCommand ParseMessageCommand(std::string msg) {
-  // Static means that we don't have to recompile every time
-  // this function gets run
-  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
-                              std::regex_constants::icase);
-  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
-                                 std::regex_constants::icase);
-  std::smatch match;
+  ecs.system<GamePosition>()
+      .with<MovingTowards>(flecs::Wildcard)
+      .each([this](flecs::iter &it, size_t i, GamePosition &pos) {
+        // Get the target from the 2nd term
+        flecs::entity target = it.pair(2).second();
+        flecs::entity entity = it.entity(i);
 
-  if (std::regex_search(msg, match, moveRegex)) {
-    return {NPCCommandType::MOVE_TO, match[1].str()};
-  } else if (std::regex_search(msg, match, nothingRegex)) {
-    return {NPCCommandType::DO_NOTHING, ""};
-  }
+        const GamePosition *targetPos = target.get<GamePosition>();
 
-  return {NPCCommandType::NONE, ""};
-}
+        if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
+          entity.set<MOVE_THROUGH_PATH_ACTION>(
+              {AStar(map.get(), pos, *targetPos)});
+        }
 
-void SendNewPrompt(flecs::entity entity, std::string prompt) {
-  entity.set<NPCNewPrompt>({"\n" + prompt});
-}
+        if (Map::AreNeighbours(pos, *targetPos)) {
+          entity.remove<MovingTowards>(target);
+        }
+      });
 
-void Game::ECSInitActionSystems() {
-  ecs.system<DO_NOTHING_ACTION>().each(
-      [](flecs::entity entity, DO_NOTHING_ACTION &action) {
-        action.time_remaining -= GetTime();
-        if (action.time_remaining > 0) {
+  ecs.system<GamePosition, MOVE_TO_CHARACTER_ACTION>().each(
+      [this, query](flecs::entity entity, const GamePosition &gPos,
+                    const MOVE_TO_CHARACTER_ACTION &action) {
+        flecs::entity targetEntity;
+        query.each(
+            [action, &targetEntity](flecs::entity e, const NPCName &npc) {
+              if (StringUtils::EqualsIgnoreCase(npc.name, action.name)) {
+                targetEntity = e;
+              }
+            });
+
+        if (!targetEntity) {
+          entity.remove<MOVE_TO_CHARACTER_ACTION>();
+          entity.add<INVALID_ACTION>();
           return;
         }
-        std::string response =
-            "World: You have awaited for a while, what's next?\n";
-        entity.remove<DO_NOTHING_ACTION>();
-        SendNewPrompt(entity, response);
+
+        targetEntity = entity.world().entity(targetEntity);
+
+        GamePosition targetPos = *targetEntity.get_ref<GamePosition>().get();
+        if (Map::AreNeighbours(gPos, targetPos)) {
+          entity.remove<MOVE_TO_CHARACTER_ACTION>();
+        } else if (!entity.has<MovingTowards>()) {
+          entity.add<MovingTowards>(targetEntity);
+        }
       });
 
-  ecs.system<MOVE_TO_ACTION, GamePosition>().each(
-      [this](flecs::entity entity, MOVE_TO_ACTION &action,
-             const GamePosition &gamePos) {
-        Location *loc = action.location;
-        const GamePosition target = loc->pos;
-        if (gamePos == target) {
-          entity.remove<MOVE_TO_ACTION>();
-          std::string response =
-              "WORLD: You have arrived at your destination, what's next?\n";
-          SendNewPrompt(entity, response);
-        } else if (!entity.has<TargetPath>()) {
-          entity.set<TargetPath>({AStar(map.get(), gamePos, target)});
+  ecs.system<TALK_TO_ACTION, GamePosition>().each(
+      [this, query](flecs::entity entity, const TALK_TO_ACTION &action,
+                    const GamePosition &gamePos) {
+        flecs::entity targetEntity;
+        query.each(
+            [action, &targetEntity](flecs::entity e, const NPCName &npc) {
+              if (StringUtils::EqualsIgnoreCase(npc.name, action.name)) {
+                targetEntity = e;
+              }
+            });
+        if (!targetEntity) {
+          std::string entityName = entity.get_ref<NPCName>().get()->name;
+          debugLog->LogError("NPC " + entityName +
+                             " tried to [TALK_TO] an unknown character " +
+                             action.name);
+          SendNewPrompt(
+              entity,
+              "System: TALK_TO command used with an invalid character. Try the "
+              "[CHARACTERS] command to see a list of valid characters");
+          entity.remove<TALK_TO_ACTION>();
+          return;
         }
+        GamePosition targetPos = *targetEntity.get_ref<GamePosition>().get();
+
+        if (!Map::AreNeighbours(gamePos, targetPos)) {
+          entity.set<MOVE_TO_CHARACTER_ACTION>({action.name});
+        }
+        entity.remove<TALK_TO_ACTION>();
+      });
+
+  auto name_filter = ecs.filter<NPCName>();
+
+  ecs.system<CHARACTERS_QUERY, NPCName>().each(
+      [name_filter](flecs::entity entity, const CHARACTERS_QUERY &q,
+                    const NPCName &entityName) {
+        std::string characterNames;
+        name_filter.each([&characterNames, entityName](const NPCName &npcName) {
+          if (!npcName.name.empty() &&
+              !StringUtils::EqualsIgnoreCase(npcName.name, entityName.name)) {
+            characterNames += npcName.name + ", ";
+          }
+        });
+        if (characterNames.length() >= 2) {
+          characterNames.erase(characterNames.length() - 2);
+        }
+        std::regex re("%CHARACTERS");
+        std::string response =
+            "System: The following characters are nearby: %CHARACTERS";
+        response = std::regex_replace(response, re, characterNames);
+        SendNewPrompt(entity, response);
+        entity.remove<CHARACTERS_QUERY>();
       });
 }
 
+static std::mutex g_AIResponseMutex;
+static std::vector<std::function<void()>> g_AIResponseQueue;
+
 void Game::ECSInitAgentSystems() {
+  // System to flush background AI thread callbacks on the main thread safely
+  ecs.system("AIResponseQueueFlusher").iter([](flecs::iter &) {
+    std::vector<std::function<void()>> queue_copy;
+    {
+      std::lock_guard<std::mutex> lock(g_AIResponseMutex);
+      queue_copy = std::move(g_AIResponseQueue);
+    }
+    for (auto &func : queue_copy) {
+      func();
+    }
+  });
+
   // TODO: Move this observer to a place just for observers
   ecs.observer<NPCContext>()
       .event(flecs::OnSet)
@@ -468,70 +680,89 @@ void Game::ECSInitAgentSystems() {
       });
 
   auto ai = ecs.get<AIBackend>();
-  ecs.system<NPCNewPrompt>().each([this, ai](flecs::entity entity,
-                                             const NPCNewPrompt &prompt) {
-    NPCContext *ctx = entity.get_mut<NPCContext>();
-    AIRequest *request = entity.get_mut<AIRequest>();
+  ecs.system<NPCNewPrompt, NPCContext>().each(
+      [this, ai](flecs::entity entity, const NPCNewPrompt &prompt,
+                 NPCContext &ctx) {
+        if (!entity.has<AIRequest>()) {
+          entity.add<AIRequest>();
+          AI *aiPtr = ai->ptr.get();
 
-    if (!entity.has<AIRequest>()) {
-      flecs::world async_stage = ecs.async_stage();
-      AI *aiPtr = ai->ptr.get();
+          auto callBack = [entity, this](const std::string &token) mutable {
+            // Run safely on background thread, queueing for main thread
+            std::lock_guard<std::mutex> lock(g_AIResponseMutex);
+            g_AIResponseQueue.push_back([entity, token, this]() {
+              if (entity.is_alive()) {
+                if (!entity.has<AIRequest>()) {
+                  debugLog->LogError(
+                      "Callback ran without corresponding AIRequest!");
+                  return;
+                }
 
-      auto callBack = [entity, &async_stage](const std::string &token) mutable {
-        if (entity.is_alive()) {
-          async_stage.defer([entity, token]() {
-            AIRequest *newRequest = entity.get_mut<AIRequest>();
-            if (!token.empty()) {
-              newRequest->finished = true;
-            } else {
-              newRequest->pendingResponse += token;
-            }
-          });
+                AIRequest *newRequest = entity.get_mut<AIRequest>();
+                NPCContext *ctx = entity.get_mut<NPCContext>();
+                if (token.empty()) {
+                  newRequest->finished = true;
+                  if (ctx->context.back() != '\n') {
+                    ctx->context += "\n";
+                  }
+                } else {
+
+                  newRequest->pendingResponse += token;
+                  ctx->context += token;
+                }
+              }
+            });
+          };
+
+          ctx.context += prompt.msg;
+          aiPtr->generateStream(ctx.contextID, ctx.context, callBack);
+        } else {
+          auto request = entity.get_ref<AIRequest>();
+          if (!request->finished) {
+            return;
+          }
+          // ctx.context += request->pendingResponse;
+          MessageCommand msgCmd = ParseMessageCommand(request->pendingResponse);
+
+          entity.set<MessageCommand>(msgCmd);
+          entity.remove<AIRequest>();
+          entity.remove<NPCNewPrompt>();
         }
-      };
+      });
 
-      ctx->context += prompt.msg;
-      aiPtr->generateStream(ctx->contextID, ctx->context, callBack);
-    } else {
-      if (!request->finished) {
-        return;
-      }
-      ctx->context += request->pendingResponse;
-      MessageCommand msgCmd = ParseMessageCommand(request->pendingResponse);
-
-      entity.set<MessageCommand>(msgCmd);
-      entity.remove<AIRequest>();
-      entity.remove<NPCNewPrompt>();
-    }
-  });
-
-  ecs.system<MessageCommand>().each(
-      [this](flecs::entity entity, const MessageCommand &cmd) {
-        std::string response = "\n";
-
+  ecs.observer<MessageCommand>()
+      .event(flecs::OnSet)
+      .each([this](flecs::entity entity, const MessageCommand &cmd) {
         switch (cmd.type) {
+        case (NPCCommandType::MOVE_TO_LOCATION): {
+          Location *loc =
+              map->GetLocation(std::any_cast<std::string>(cmd.params));
+          entity.set<MOVE_TO_LOCATION_ACTION>({loc});
+          break;
+        }
+        case (NPCCommandType::TALK_TO): {
+          entity.set<TALK_TO_ACTION>({std::any_cast<std::string>(cmd.params)});
+          break;
+        }
+        case (NPCCommandType::CHARACTERS_QUERY): {
+          entity.add<CHARACTERS_QUERY>();
+          break;
+        }
         case (NPCCommandType::DO_NOTHING): {
           entity.set<DO_NOTHING_ACTION>(
               {DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS});
           break;
         }
-        case (NPCCommandType::MOVE_TO): {
-          Location *loc = map->GetLocation(cmd.target);
-          if (loc != nullptr) {
-            entity.set<MOVE_TO_ACTION>({loc});
-          } else {
-            response += "WORLD: You tried to move to an unknown location.\n";
-            SendNewPrompt(entity, response);
-          }
-          break;
-        }
-        case (NPCCommandType::NONE): {
-          SendNewPrompt(entity, "");
+        case (NPCCommandType::INVALID_COMMAND): {
+          SendNewPrompt(
+              entity,
+              "System: Your previous action was either invalid or missing.");
           break;
         }
         default:
           break;
         }
+        entity.remove<MessageCommand>();
       });
 }
 
@@ -575,7 +806,8 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
 
   createNPC({20, 1}, "John",
-            "Your name is John, you like staying at thelibrary");
+            "Your name is John, you are an extreme extrovert who always wants "
+            "to talk to someone");
   createNPC({30, 1}, "Carl", "Your name is Carl, you like walking around town");
 
   // Initialize debug window entities

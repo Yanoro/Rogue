@@ -43,7 +43,7 @@ void EntityInfoWindow::Draw() {
       entity.set<ScreenPosition>({pos[0], pos[1]});
     }
   }
-  if (const TargetPath *targetPath = entity.get<TargetPath>()) {
+  if (const MOVE_THROUGH_PATH_ACTION *targetPath = entity.get<MOVE_THROUGH_PATH_ACTION>()) {
     if (!targetPath->path.empty()) {
       const GamePosition &lastPos = targetPath->path.back();
       ImGui::Text("Moving to: (%d, %d)", lastPos.x, lastPos.y);

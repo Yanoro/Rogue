@@ -1,19 +1,19 @@
 #pragma once
 
 #include <string>
-#include <memory>
+#include <flecs.h>
 
 #include "Window.h"
 
-class NPC;
 
 class NPCContextWindow : public Window {
 public:
-    NPCContextWindow(std::weak_ptr<NPC> npc);
+    NPCContextWindow(flecs::entity entity);
     void Draw() override;
 
 private:
-    std::weak_ptr<NPC> npc;
+    flecs::entity entity;
+    std::string name;
     std::string fallbackContext;
     bool autoScroll = true;
 };

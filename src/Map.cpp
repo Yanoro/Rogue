@@ -147,6 +147,16 @@ std::vector<Tile *> Map::GetNeighbours(GamePosition p) {
   return neighbors;
 }
 
+bool Map::AreNeighbours(GamePosition p1, GamePosition p2) {
+  int dx = p1.x - p2.x;
+  if (dx < 0) dx = -dx;
+  
+  int dy = p1.y - p2.y;
+  if (dy < 0) dy = -dy;
+  
+  return (dx <= 1 && dy <= 1) && (dx == 1 || dy == 1);
+}
+
 bool Map::IsInBounds(float x, float y) const {
   return (x >= 0 && x < width && y >= 0 && y < height);
 }
@@ -166,3 +176,5 @@ ScreenPosition Map::GameCoordsToScreenCoords(float x, float y) const {
 GamePosition Map::ScreenCoordsToGameCoords(float x, float y) const {
   return GamePosition(std::floor(x / tileWidth), std::floor(y / tileHeight));
 }
+
+

@@ -103,7 +103,7 @@ std::vector<GamePosition> AStar(Map *map, const GamePosition &startPos,
         path.push_back(currNode->position);
         currNode = currNode->parent;
       }
-      path.push_back(currNode->position);
+      
       std::reverse(path.begin(), path.end());
       break;
     }

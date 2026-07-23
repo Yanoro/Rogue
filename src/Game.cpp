@@ -182,9 +182,8 @@ void Game::UpdateGUI() {
               if (entity.has<ActiveWindow>()) {
                 entity.remove<ActiveWindow>();
               } else {
-                std::shared_ptr<NPC> npc = entity.get<NPCComponent>()->ptr;
-                entity.set<ActiveWindow>({std::make_shared<NPCContextWindow>(
-                    std::weak_ptr<NPC>(npc))});
+                entity.set<ActiveWindow>(
+                    {std::make_shared<NPCContextWindow>(entity)});
               }
               break;
             default:
@@ -208,7 +207,7 @@ void Game::UpdateGUI() {
       if (playerEntity.is_alive()) {
         if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
           std::vector<GamePosition> path = AStar(map.get(), *pPos, gPos);
-          playerEntity.set<TargetPath>({path});
+          playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
         }
       }
       isSettingPlayerTarget =
@@ -280,6 +279,7 @@ void Game::Shutdown() {
   // This prevents race conditions where NPC threads might query flecs
   // components (like TargetPath) while flecs is in the middle of being torn
   // down.
+  // TODO: Probably unnecessary , try removing later
   ecs.filter<NPCComponent>().each([](flecs::entity, NPCComponent &npc) {
     if (npc.ptr) {
       npc.ptr.reset();

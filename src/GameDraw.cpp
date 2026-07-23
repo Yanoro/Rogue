@@ -78,8 +78,8 @@ void Game::Draw() {
       }
     }
 
-    ecs.filter<const TargetPath>().each(
-        [this, tileW, tileH](const TargetPath &targetPath) {
+    ecs.filter<const MOVE_THROUGH_PATH_ACTION>().each(
+        [this, tileW, tileH](const MOVE_THROUGH_PATH_ACTION &targetPath) {
           for (const auto &pos : targetPath.path) {
             ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
             DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, BLUE);

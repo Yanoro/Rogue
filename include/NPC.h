@@ -1,35 +1,48 @@
 #pragma once
 
 #include "AI.h"
-#include <atomic>
+
 #include <condition_variable>
 #include <flecs.h>
 #include <memory>
 #include <thread>
-#include <utility>
 
 constexpr unsigned int DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 30;
 
-enum class NPCCommandType { NONE, DO_NOTHING, MOVE_TO };
+enum class NPCCommandType {
+  INVALID_COMMAND,
+  DO_NOTHING,
+  MOVE_TO_LOCATION,
+  TALK_TO,
+  CHARACTERS_QUERY,
+};
 
 class Map;
 
 struct MessageCommand {
   NPCCommandType type;
-  std::string target;
+  std::any params;
 };
 
 const std::string DEFAULT_NPC_PROMPT = R"(
-  World: You are an AI controlling an NPC in a game. 
-  World: You are capable of three commands: 
-  World: [DO_NOTHING]
-  World: [MOVE_TO $LOCATION]
-  World: [TALK_TO $CHARACTER]
-  World: Where $LOCATION is one of the following locations: %LOCATIONS%
-  World: Where $CHARACTER is one of the following names: %CHARACTERS%
-  World: This is your character background: %BACKGROUND%
-  World: What is your first command?
-  You: )";
+System: You are an AI roleplaying as an NPC in a game. You must respond strictly with a single command bracket. Do not include any conversational text, explanations, or dialogue outside the command.
+
+AVAILABLE COMMANDS:
+[DO_NOTHING]
+[MOVE_TO $LOCATION]
+[TALK_TO $CHARACTER]
+[CHARACTERS]
+
+VARIABLES & RULES:
+- $LOCATION must be chosen from this list: %LOCATIONS%
+- $COMMAND must be chosen from the available commands list.
+- If you need to know who is nearby to talk to, issue the [CHARACTERS] command.
+
+CHARACTER CONTEXT:
+- Background: %BACKGROUND%
+
+Based on your background and current location, what is your first command?
+You: )";
 
 class NPC {
 public:

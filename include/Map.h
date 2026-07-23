@@ -31,6 +31,7 @@ public:
   void addTileToMap(Tile *newTile, int x, int y);
   Tile *GetTile(int x, int y); 
   std::vector<Tile*> GetNeighbours(GamePosition p); 
+  static bool AreNeighbours(GamePosition p1, GamePosition p2);
 
 private:
   flecs::world ecs;

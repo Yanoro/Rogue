@@ -53,6 +53,11 @@ struct GamePosition {
     result -= other;
     return result;
   }
+
+  friend std::ostream &operator<<(std::ostream &os, const GamePosition &pos) {
+    os << "(" << pos.x << ", " << pos.y << ")";
+    return os;
+  }
 };
 
 struct MaxSpeed {
@@ -93,10 +98,6 @@ struct Frame {
   double duration;
 };
 
-struct TargetPath {
-  std::vector<GamePosition> path;
-};
-
 struct DrawAscii {
   char ch;
   Color characterColor;
@@ -126,6 +127,12 @@ struct Location {
   GamePosition pos;
   int width;
   int height;
+
+  friend std::ostream &operator<<(std::ostream &os, const Location &loc) {
+    os << "Location(name: " << loc.name << ", pos: " << loc.pos
+       << ", size: " << loc.width << "x" << loc.height << ")";
+    return os;
+  }
 };
 
 enum class WindowType {
@@ -141,6 +148,10 @@ struct WindowOnClick {
 class Map;
 struct MapResource {
   Map *map;
+};
+
+struct NPCName {
+  std::string name;
 };
 
 struct DisplayName {
@@ -176,13 +187,37 @@ struct AIRequest {
   std::string pendingResponse;
 };
 
+struct MovingTowards {};
+
+struct Action {};
+
 struct DO_NOTHING_ACTION {
   float time_remaining; // In seconds
 };
 
-struct MOVE_TO_ACTION {
-  Location *location;
+struct MOVE_TO_TILE_ACTION {
+  GamePosition target;
+};
+
+struct MOVE_THROUGH_PATH_ACTION {
+  std::vector<GamePosition> path;
 }; 
+
+struct MOVE_TO_CHARACTER_ACTION {
+  std::string name;
+};
+
+struct TALK_TO_ACTION {
+  std::string name;
+};
+
+struct MOVE_TO_LOCATION_ACTION {
+  Location *location;
+};
+
+struct CHARACTERS_QUERY {};
+
+struct INVALID_ACTION {};
 
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>
@@ -238,7 +273,7 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<std::vector<GamePosition>>().opaque(
       std_vector_support<GamePosition>);
 
-  ecs.component<TargetPath>().member<std::vector<GamePosition>>("path");
+  ecs.component<MOVE_THROUGH_PATH_ACTION>().member<std::vector<GamePosition>>("path");
 
   ecs.component<std::vector<Frame>>().opaque(std_vector_support<Frame>);
 
