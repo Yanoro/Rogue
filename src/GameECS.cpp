@@ -576,7 +576,7 @@ void Game::ECSInitActionSystems() {
       });
 
   ecs.system<GamePosition, MOVE_TO_CHARACTER_ACTION>().each(
-      [this, query](flecs::entity entity, const GamePosition &gPos,
+      [query](flecs::entity entity, const GamePosition &gPos,
                     const MOVE_TO_CHARACTER_ACTION &action) {
         flecs::entity targetEntity;
         query.each(
@@ -728,41 +728,6 @@ void Game::ECSInitAgentSystems() {
           entity.remove<AIRequest>();
           entity.remove<NPCNewPrompt>();
         }
-      });
-
-  ecs.observer<MessageCommand>()
-      .event(flecs::OnSet)
-      .each([this](flecs::entity entity, const MessageCommand &cmd) {
-        switch (cmd.type) {
-        case (NPCCommandType::MOVE_TO_LOCATION): {
-          Location *loc =
-              map->GetLocation(std::any_cast<std::string>(cmd.params));
-          entity.set<MOVE_TO_LOCATION_ACTION>({loc});
-          break;
-        }
-        case (NPCCommandType::TALK_TO): {
-          entity.set<TALK_TO_ACTION>({std::any_cast<std::string>(cmd.params)});
-          break;
-        }
-        case (NPCCommandType::CHARACTERS_QUERY): {
-          entity.add<CHARACTERS_QUERY>();
-          break;
-        }
-        case (NPCCommandType::DO_NOTHING): {
-          entity.set<DO_NOTHING_ACTION>(
-              {DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS});
-          break;
-        }
-        case (NPCCommandType::INVALID_COMMAND): {
-          SendNewPrompt(
-              entity,
-              "System: Your previous action was either invalid or missing.");
-          break;
-        }
-        default:
-          break;
-        }
-        entity.remove<MessageCommand>();
       });
 }
 

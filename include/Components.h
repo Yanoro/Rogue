@@ -159,7 +159,7 @@ struct DisplayName {
 };
 
 struct NPCComponent {
-  std::shared_ptr<NPC> ptr;
+  std::shared_ptr<AgentBrain> ptr;
 };
 
 struct ActiveWindow {
@@ -168,6 +168,10 @@ struct ActiveWindow {
 
 struct AIBackend {
   std::unique_ptr<AI> ptr;
+};
+
+struct AgentSleepTimer {
+  float time_remaining_ms;
 };
 
 struct NPCTag {};

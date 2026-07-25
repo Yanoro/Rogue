@@ -1,13 +1,17 @@
 #pragma once
 
 #include "AI.h"
+#include "Components.h"
+#include "Map.h"
+#include "PathFinding.h"
 
 #include <condition_variable>
 #include <flecs.h>
 #include <memory>
+#include <queue>
 #include <thread>
 
-constexpr unsigned int DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 30;
+constexpr float DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 30.0f;
 
 enum class NPCCommandType {
   INVALID_COMMAND,
@@ -44,14 +48,53 @@ CHARACTER CONTEXT:
 Based on your background and current location, what is your first command?
 You: )";
 
-class NPC {
+class AgentAction {
 public:
-  NPC(flecs::entity entity, std::string name, std::string characterBackground,
-      std::shared_ptr<AI> ai);
+  // Returns true when the action is completely finished
+  virtual bool update(float deltaTime, flecs::entity entity) = 0;
+};
+
+class Nothing_Action : public AgentAction {
+public:
+  Nothing_Action(float time) : time(time) {};
+
+  bool update(float deltaTime, flecs::entity) override {
+    time -= deltaTime;
+    return time <= 0.0f;
+  }
+
+private:
+  float time;
+};
+
+class Moveto_Action : public AgentAction {
+public:
+  Moveto_Action(GamePosition target) : targetPos(target) {};
+
+  bool update(float, flecs::entity entity) override {
+    Map *map = entity.world().get<MapResource>()->map;
+    const GamePosition startPos = *entity.get<GamePosition>();
+
+    if (startPos == targetPos or Map::AreNeighbours(startPos, targetPos)) {
+      return true;
+    } else if (entity.get<MOVE_THROUGH_PATH_ACTION>() == nullptr) {
+      entity.set<MOVE_THROUGH_PATH_ACTION>({AStar(map, startPos, targetPos)});
+    }
+  }
+
+private:
+  GamePosition targetPos;
+};
+
+class AgentBrain {
+public:
+  AgentBrain(flecs::entity entity, std::string name,
+             std::string characterBackground, std::shared_ptr<AI> ai);
 
   MessageCommand ParseMessageCommand(std::string msg);
   void sendToAI(std::string msg, std::stop_token stoken);
-  void Loop(std::stop_token stoken);
+  void executeActionQueue(float deltaTime, flecs::entity entity);
+  void update(float deltaTime, flecs::entity entity);
 
   std::string getContextID() const { return contextId; }
   std::string getContext() const;
@@ -66,9 +109,7 @@ private:
   mutable std::mutex contextMutex;
   std::string characterBackground;
 
-  std::condition_variable_any sleepCV;
-  std::mutex sleepMutex;
-  std::jthread loopThread;
+  std::queue<std::unique_ptr<AgentAction>> action_queue;
 
   AI::StreamCallback getStreamCallback();
 };
