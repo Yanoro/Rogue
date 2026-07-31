@@ -1,8 +1,6 @@
 #pragma once
 
 #include "AI.h"
-#include "Defaults.h"
-#include "NPC.h"
 #include "raylib-cpp.hpp"
 #include <flecs.h>
 #include <memory>
@@ -150,16 +148,8 @@ struct MapResource {
   Map *map;
 };
 
-struct NPCName {
-  std::string name;
-};
-
 struct DisplayName {
   std::string name;
-};
-
-struct NPCComponent {
-  std::shared_ptr<AgentBrain> ptr;
 };
 
 struct ActiveWindow {
@@ -181,14 +171,11 @@ struct NPCContext {
   std::string contextID;
 };
 
-struct NPCNewPrompt {
-  std::string msg;
-};
-
 struct AIRequest {
   std::string prompt;
   bool finished = false;
   std::string pendingResponse;
+  bool dispatched = false;
 };
 
 struct MovingTowards {};
@@ -217,6 +204,12 @@ struct TALK_TO_ACTION {
 
 struct MOVE_TO_LOCATION_ACTION {
   Location *location;
+};
+
+class AgentBrain;
+
+struct AgentBrainWrapper {
+  std::unique_ptr<AgentBrain> agBrain;
 };
 
 struct CHARACTERS_QUERY {};

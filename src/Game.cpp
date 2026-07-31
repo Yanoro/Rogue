@@ -280,11 +280,11 @@ void Game::Shutdown() {
   // components (like TargetPath) while flecs is in the middle of being torn
   // down.
   // TODO: Probably unnecessary , try removing later
-  ecs.filter<NPCComponent>().each([](flecs::entity, NPCComponent &npc) {
-    if (npc.ptr) {
-      npc.ptr.reset();
-    }
-  });
+  // ecs.filter<NPCComponent>().each([](flecs::entity, NPCComponent &npc) {
+  //   if (npc.ptr) {
+  //     npc.ptr.reset();
+  //   }
+  // });
 
   rlImGuiShutdown();
   ecs.quit();

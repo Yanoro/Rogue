@@ -5,20 +5,18 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "flecs.h"
+#include "StringUtils.hpp"
 
 #include <any>
+#include <iostream>
 #include <memory>
 #include <regex>
 #include <thread>
 
-AgentBrain::AgentBrain(flecs::entity entity, std::string name,
-                       std::string characterBackground, std::shared_ptr<AI> ai)
-    : entity(entity), ai(std::move(ai)),
-      contextId(std::to_string(reinterpret_cast<uintptr_t>(this))),
-      characterBackground(characterBackground) {
+AgentBrain::AgentBrain(flecs::entity entity, std::string name)
+    : entity(entity) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
   entity.set_name(name.c_str());
-  loopThread = std::jthread(&AgentBrain::Loop, this);
 }
 
 MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
@@ -31,21 +29,17 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
   std::smatch match;
 
   if (std::regex_search(msg, match, moveRegex)) {
-    return {NPCCommandType::MOVE_TO, match[1].str()};
+    return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
   } else if (std::regex_search(msg, match, nothingRegex)) {
     return {NPCCommandType::DO_NOTHING, ""};
   }
 
-  return {NPCCommandType::NONE, ""};
-}
-
-std::string AgentBrain::getContext() const {
-  std::lock_guard<std::mutex> lock(contextMutex);
-  return context;
+  return {NPCCommandType::INVALID_COMMAND, ""};
 }
 
 void AgentBrain::appendContext(const std::string &text) {
-  std::lock_guard<std::mutex> lock(contextMutex);
+  std::cout << "APPEND CONTEXT\n";
+  std::string context = entity.get_mut<NPCContext>()->context;
   context += text;
 }
 
@@ -53,55 +47,73 @@ AI::StreamCallback AgentBrain::getStreamCallback() {
   return [this](const std::string &token) { appendContext(token); };
 }
 
-void AgentBrain::sendToAI(std::string msg, std::stop_token stoken) {
-  // TODO: Handle the case where the calls to AI fail
-  ai->generateStream(contextId, msg, getStreamCallback(), stoken);
-}
-
 void AgentBrain::executeActionQueue(float deltaTime, flecs::entity entity) {
-  if (action_queue.front()->update(deltaTime, entity)) {
+  AgentAction *currAction = action_queue.front().get();
+  switch (currAction->update(deltaTime, entity)) {
+  case (ActionStatus::Done): {
+    appendContext(currAction->getSuccessMessage());
     action_queue.pop();
+    break;
+  }
+  case (ActionStatus::Failed): {
+    appendContext(currAction->getFailureMessage());
+    action_queue.pop();
+    break;
+  }
+  default:
+    action_queue.pop();
+    break;
   }
 }
 
 void AgentBrain::update(float deltaTime, flecs::entity entity) {
-  if (entity.get<AgentSleepTimer>()) { return; }
+  if (entity.get<AgentSleepTimer>()) {
+    entity.get_mut<AgentSleepTimer>()->time_remaining_ms -= deltaTime;
+    return;
+  }
 
   if (!action_queue.empty()) {
     executeActionQueue(deltaTime, entity);
     entity.set<AgentSleepTimer>({10});
     return;
-  } 
- 
-  // AI is generating or executing action queue, wait 10 ms and come back
-  if (ai->isBusy(contextId)) { 
+  }
+
+  const AIRequest *request = entity.get<AIRequest>();
+  const std::string context = entity.get<NPCContext>()->context;
+  if (request == nullptr) {
+    entity.set<AIRequest>({"", false, "", false});
+    entity.set<AgentSleepTimer>({10});
+    return;
+  }
+  if (!request->finished) {
     entity.set<AgentSleepTimer>({10});
     return;
   }
 
   Map *currMap = entity.world().get<MapResource>()->map;
 
-  std::string lastMsg = ai->getLastMessage(contextId);
+  std::string lastMsg = StringUtils::substringAfterLast(context, "System:");
 
   MessageCommand msgCmd = ParseMessageCommand(lastMsg);
 
-
   switch (msgCmd.type) {
   case (NPCCommandType::DO_NOTHING): {
-      action_queue.push(std::make_unique<Nothing_Action>(DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS));
-      break;
-    }
-    case (NPCCommandType::MOVE_TO_LOCATION): {
-      Location *loc =
-          currMap->GetLocation(std::any_cast<std::string>(msgCmd.params));
-      action_queue.push(std::make_unique<Moveto_Action>(loc->pos));
-      break;
-    }
-    case (NPCCommandType::INVALID_COMMAND): {
-      break;
-    }
-    default:
-      break;
-    }
+    action_queue.push(std::make_unique<Nothing_Action>(
+        DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS));
+    break;
+  }
+  case (NPCCommandType::MOVE_TO_LOCATION): {
+    Location *loc =
+        currMap->GetLocation(std::any_cast<std::string>(msgCmd.params));
+    action_queue.push(std::make_unique<Moveto_Action>(loc->pos));
+    break;
+  }
+  case (NPCCommandType::INVALID_COMMAND): {
+    break;
+  }
+  default:
+    break;
+  }
 
+  entity.remove<AIRequest>();
 }

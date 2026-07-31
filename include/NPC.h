@@ -21,6 +21,8 @@ enum class NPCCommandType {
   CHARACTERS_QUERY,
 };
 
+enum class ActionStatus { Doing, Done, Failed};
+
 class Map;
 
 struct MessageCommand {
@@ -51,16 +53,27 @@ You: )";
 class AgentAction {
 public:
   // Returns true when the action is completely finished
-  virtual bool update(float deltaTime, flecs::entity entity) = 0;
+  virtual ActionStatus update(float deltaTime, flecs::entity entity) = 0;
+  virtual std::string getSuccessMessage() = 0;
+  virtual std::string getFailureMessage() {
+    return "System: Your action has failed. What's next?";
+  }
 };
 
 class Nothing_Action : public AgentAction {
 public:
   Nothing_Action(float time) : time(time) {};
 
-  bool update(float deltaTime, flecs::entity) override {
+  ActionStatus update(float deltaTime, flecs::entity) override {
     time -= deltaTime;
-    return time <= 0.0f;
+    if (time <= 0.0f) {
+      return ActionStatus::Done;
+    }
+    return ActionStatus::Doing;
+  }
+
+  std::string getSuccessMessage() override {
+    return "System: You have awaited for a while, what's next?";
   }
 
 private:
@@ -71,15 +84,20 @@ class Moveto_Action : public AgentAction {
 public:
   Moveto_Action(GamePosition target) : targetPos(target) {};
 
-  bool update(float, flecs::entity entity) override {
+  ActionStatus update(float, flecs::entity entity) override {
     Map *map = entity.world().get<MapResource>()->map;
     const GamePosition startPos = *entity.get<GamePosition>();
 
     if (startPos == targetPos or Map::AreNeighbours(startPos, targetPos)) {
-      return true;
-    } else if (entity.get<MOVE_THROUGH_PATH_ACTION>() == nullptr) {
+      return ActionStatus::Done;
+    } else if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
       entity.set<MOVE_THROUGH_PATH_ACTION>({AStar(map, startPos, targetPos)});
     }
+    return ActionStatus::Doing;
+  }
+
+  std::string getSuccessMessage() override {
+    return "System: You have arrived at your destination. What's next?";
   }
 
 private:
@@ -88,28 +106,19 @@ private:
 
 class AgentBrain {
 public:
-  AgentBrain(flecs::entity entity, std::string name,
-             std::string characterBackground, std::shared_ptr<AI> ai);
+  AgentBrain(flecs::entity entity, std::string name);
 
   MessageCommand ParseMessageCommand(std::string msg);
   void sendToAI(std::string msg, std::stop_token stoken);
   void executeActionQueue(float deltaTime, flecs::entity entity);
   void update(float deltaTime, flecs::entity entity);
 
-  std::string getContextID() const { return contextId; }
   std::string getContext() const;
   void appendContext(const std::string &text);
-  std::shared_ptr<AI> getAI() const { return ai; }
 
 private:
   flecs::entity entity;
-  std::shared_ptr<AI> ai;
-  std::string contextId;
-  std::string context;
-  mutable std::mutex contextMutex;
-  std::string characterBackground;
 
   std::queue<std::unique_ptr<AgentAction>> action_queue;
-
   AI::StreamCallback getStreamCallback();
 };

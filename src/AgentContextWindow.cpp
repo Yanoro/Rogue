@@ -8,7 +8,7 @@ NPCContextWindow::NPCContextWindow(flecs::entity entity)
   if (entity.is_alive() && entity.has<NPCContext>()) {
     auto ctx = entity.get_ref<NPCContext>();
     fallbackContext = ctx->context;
-    name = entity.get_ref<NPCName>()->name;
+    name = entity.name();
   } else {
     fallbackContext = "";
     name = "Unknown";

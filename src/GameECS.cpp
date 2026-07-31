@@ -74,15 +74,16 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
       std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
-  entity.set<NPCNewPrompt>({startingPrompt});
-  entity.set<NPCContext>({"", ""});
+  entity.set<NPCContext>({startingPrompt, ""});
 
   if (name == "") {
     flecs::entity_t id = entity.id();
     name = "NPC " + std::to_string(id);
   }
   entity.set<DisplayName>({name});
-  entity.set<NPCName>({name});
+  entity.set_name(name.c_str());
+
+  entity.set<AgentBrainWrapper>({std::make_unique<AgentBrain>(entity, name)});
   return entity;
 }
 
@@ -378,23 +379,10 @@ MessageCommand ParseMessageCommand(std::string msg) {
 }
 
 void SendNewPrompt(flecs::entity entity, std::string prompt) {
-  entity.set<NPCNewPrompt>({prompt + "\nYou: "});
+
 }
 
 void Game::ECSInitActionSystems() {
-  ecs.observer<DO_NOTHING_ACTION>()
-      .event(flecs::OnSet)
-      .each([](flecs::entity entity, DO_NOTHING_ACTION &action) {
-        action.time_remaining -= GetTime();
-        if (action.time_remaining > 0) {
-          return;
-        }
-        std::string response =
-            "System: You have awaited for a while, what's next?";
-        entity.remove<DO_NOTHING_ACTION>();
-        SendNewPrompt(entity, response);
-      });
-
   ecs.observer<MOVE_TO_LOCATION_ACTION>()
       .event(flecs::OnSet)
       .each([this](flecs::entity entity, MOVE_TO_LOCATION_ACTION &action) {
@@ -530,8 +518,6 @@ void Game::ECSInitActionSystems() {
         }
       });
 
-  auto query = ecs.query<NPCName>();
-
   // In case someone is moving towards an moving target
   // update their path whenever the target changes positions
   ecs.observer<GamePosition>()
@@ -575,85 +561,27 @@ void Game::ECSInitActionSystems() {
         }
       });
 
-  ecs.system<GamePosition, MOVE_TO_CHARACTER_ACTION>().each(
-      [query](flecs::entity entity, const GamePosition &gPos,
-                    const MOVE_TO_CHARACTER_ACTION &action) {
-        flecs::entity targetEntity;
-        query.each(
-            [action, &targetEntity](flecs::entity e, const NPCName &npc) {
-              if (StringUtils::EqualsIgnoreCase(npc.name, action.name)) {
-                targetEntity = e;
-              }
-            });
 
-        if (!targetEntity) {
-          entity.remove<MOVE_TO_CHARACTER_ACTION>();
-          entity.add<INVALID_ACTION>();
-          return;
-        }
-
-        targetEntity = entity.world().entity(targetEntity);
-
-        GamePosition targetPos = *targetEntity.get_ref<GamePosition>().get();
-        if (Map::AreNeighbours(gPos, targetPos)) {
-          entity.remove<MOVE_TO_CHARACTER_ACTION>();
-        } else if (!entity.has<MovingTowards>()) {
-          entity.add<MovingTowards>(targetEntity);
-        }
-      });
-
-  ecs.system<TALK_TO_ACTION, GamePosition>().each(
-      [this, query](flecs::entity entity, const TALK_TO_ACTION &action,
-                    const GamePosition &gamePos) {
-        flecs::entity targetEntity;
-        query.each(
-            [action, &targetEntity](flecs::entity e, const NPCName &npc) {
-              if (StringUtils::EqualsIgnoreCase(npc.name, action.name)) {
-                targetEntity = e;
-              }
-            });
-        if (!targetEntity) {
-          std::string entityName = entity.get_ref<NPCName>().get()->name;
-          debugLog->LogError("NPC " + entityName +
-                             " tried to [TALK_TO] an unknown character " +
-                             action.name);
-          SendNewPrompt(
-              entity,
-              "System: TALK_TO command used with an invalid character. Try the "
-              "[CHARACTERS] command to see a list of valid characters");
-          entity.remove<TALK_TO_ACTION>();
-          return;
-        }
-        GamePosition targetPos = *targetEntity.get_ref<GamePosition>().get();
-
-        if (!Map::AreNeighbours(gamePos, targetPos)) {
-          entity.set<MOVE_TO_CHARACTER_ACTION>({action.name});
-        }
-        entity.remove<TALK_TO_ACTION>();
-      });
-
-  auto name_filter = ecs.filter<NPCName>();
-
-  ecs.system<CHARACTERS_QUERY, NPCName>().each(
-      [name_filter](flecs::entity entity, const CHARACTERS_QUERY &q,
-                    const NPCName &entityName) {
-        std::string characterNames;
-        name_filter.each([&characterNames, entityName](const NPCName &npcName) {
-          if (!npcName.name.empty() &&
-              !StringUtils::EqualsIgnoreCase(npcName.name, entityName.name)) {
-            characterNames += npcName.name + ", ";
-          }
-        });
-        if (characterNames.length() >= 2) {
-          characterNames.erase(characterNames.length() - 2);
-        }
-        std::regex re("%CHARACTERS");
-        std::string response =
-            "System: The following characters are nearby: %CHARACTERS";
-        response = std::regex_replace(response, re, characterNames);
-        SendNewPrompt(entity, response);
-        entity.remove<CHARACTERS_QUERY>();
-      });
+  // ecs.system<CHARACTERS_QUERY, NPCName>().each(
+  //     [name_filter](flecs::entity entity, const CHARACTERS_QUERY &q,
+  //                   const NPCName &entityName) {
+  //       std::string characterNames;
+  //       name_filter.each([&characterNames, entityName](const NPCName &npcName) {
+  //         if (!npcName.name.empty() &&
+  //             !StringUtils::EqualsIgnoreCase(npcName.name, entityName.name)) {
+  //           characterNames += npcName.name + ", ";
+  //         }
+  //       });
+  //       if (characterNames.length() >= 2) {
+  //         characterNames.erase(characterNames.length() - 2);
+  //       }
+  //       std::regex re("%CHARACTERS");
+  //       std::string response =
+  //           "System: The following characters are nearby: %CHARACTERS";
+  //       response = std::regex_replace(response, re, characterNames);
+  //       SendNewPrompt(entity, response);
+  //       entity.remove<CHARACTERS_QUERY>();
+  //     });
 }
 
 static std::mutex g_AIResponseMutex;
@@ -680,56 +608,50 @@ void Game::ECSInitAgentSystems() {
       });
 
   auto ai = ecs.get<AIBackend>();
-  ecs.system<NPCNewPrompt, NPCContext>().each(
-      [this, ai](flecs::entity entity, const NPCNewPrompt &prompt,
-                 NPCContext &ctx) {
-        if (!entity.has<AIRequest>()) {
-          entity.add<AIRequest>();
-          AI *aiPtr = ai->ptr.get();
+  ecs.system<AIRequest, NPCContext>().each([this, ai](flecs::entity entity,
+                                                      AIRequest &request,
+                                                      NPCContext &ctx) {
+    if (request.dispatched) return;
+    request.dispatched = true;
 
-          auto callBack = [entity, this](const std::string &token) mutable {
-            // Run safely on background thread, queueing for main thread
-            std::lock_guard<std::mutex> lock(g_AIResponseMutex);
-            g_AIResponseQueue.push_back([entity, token, this]() {
-              if (entity.is_alive()) {
-                if (!entity.has<AIRequest>()) {
-                  debugLog->LogError(
-                      "Callback ran without corresponding AIRequest!");
-                  return;
-                }
-
-                AIRequest *newRequest = entity.get_mut<AIRequest>();
-                NPCContext *ctx = entity.get_mut<NPCContext>();
-                if (token.empty()) {
-                  newRequest->finished = true;
-                  if (ctx->context.back() != '\n') {
-                    ctx->context += "\n";
-                  }
-                } else {
-
-                  newRequest->pendingResponse += token;
-                  ctx->context += token;
-                }
-              }
-            });
-          };
-
-          ctx.context += prompt.msg;
-          aiPtr->generateStream(ctx.contextID, ctx.context, callBack);
-        } else {
-          auto request = entity.get_ref<AIRequest>();
-          if (!request->finished) {
+    AI *aiPtr = ai->ptr.get();
+    auto callBack = [entity, this](const std::string &token) mutable {
+      // Run safely on background thread, queueing for main thread
+      std::lock_guard<std::mutex> lock(g_AIResponseMutex);
+      g_AIResponseQueue.push_back([entity, token, this]() {
+        if (entity.is_alive()) {
+          if (!entity.has<AIRequest>()) {
+            debugLog->LogError("Callback ran without corresponding AIRequest!");
             return;
           }
-          // ctx.context += request->pendingResponse;
-          MessageCommand msgCmd = ParseMessageCommand(request->pendingResponse);
 
-          entity.set<MessageCommand>(msgCmd);
-          entity.remove<AIRequest>();
-          entity.remove<NPCNewPrompt>();
+          AIRequest *newRequest = entity.get_mut<AIRequest>();
+          NPCContext *ctx = entity.get_mut<NPCContext>();
+          if (token.empty()) {
+            newRequest->finished = true;
+            if (ctx->context.back() != '\n') {
+              ctx->context += "\n";
+            }
+          } else {
+            newRequest->pendingResponse += token;
+            ctx->context += token;
+          }
         }
       });
-}
+    };
+
+    ctx.context += request.prompt;
+    aiPtr->generateStream(ctx.contextID, ctx.context, callBack);
+  });
+
+  ecs.system<AgentBrainWrapper>().iter([](flecs::iter &it, AgentBrainWrapper *brains) {
+    float dt = it.delta_time();
+
+    for (auto i : it) {
+      brains[i].agBrain.get()->update(dt, it.entity(i));
+    }
+  });
+};
 
 void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
