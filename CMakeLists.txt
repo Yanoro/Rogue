@@ -118,7 +118,7 @@ set(SOURCES
     src/MapReloader.cpp
     src/DrawAsciiDebug.cpp
     src/DebugWindows.cpp
-    src/NPC.cpp
+    src/AgentBrain.cpp
 )
 
 add_executable(AIRogue ${SOURCES})
@@ -164,8 +164,8 @@ target_compile_options(AIRogue PRIVATE
     ${RAYLIB_CFLAGS_OTHER}
     -fsanitize=address
     -g -fno-omit-frame-pointer
-    -Wmaybe-uninitialized
     -Wall
+    -Wno-maybe-uninitialized
     -Wextra
 )
 

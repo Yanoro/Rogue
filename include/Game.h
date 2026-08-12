@@ -12,7 +12,7 @@
 #include "DebugWindowState.h"
 #include "Defaults.h"
 #include "MapReloader.h"
-#include "NPC.h"
+#include "AgentBrain.h"
 
 class Game {
 public:

@@ -7,7 +7,7 @@
 #include "EntityInfoWindow.h"
 #include "Game.h"
 
-#include "NPC.h"
+#include "AgentBrain.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
 #include "flecs.h"
@@ -562,26 +562,7 @@ void Game::ECSInitActionSystems() {
       });
 
 
-  // ecs.system<CHARACTERS_QUERY, NPCName>().each(
-  //     [name_filter](flecs::entity entity, const CHARACTERS_QUERY &q,
-  //                   const NPCName &entityName) {
-  //       std::string characterNames;
-  //       name_filter.each([&characterNames, entityName](const NPCName &npcName) {
-  //         if (!npcName.name.empty() &&
-  //             !StringUtils::EqualsIgnoreCase(npcName.name, entityName.name)) {
-  //           characterNames += npcName.name + ", ";
-  //         }
-  //       });
-  //       if (characterNames.length() >= 2) {
-  //         characterNames.erase(characterNames.length() - 2);
-  //       }
-  //       std::regex re("%CHARACTERS");
-  //       std::string response =
-  //           "System: The following characters are nearby: %CHARACTERS";
-  //       response = std::regex_replace(response, re, characterNames);
-  //       SendNewPrompt(entity, response);
-  //       entity.remove<CHARACTERS_QUERY>();
-  //     });
+
 }
 
 static std::mutex g_AIResponseMutex;
@@ -645,10 +626,10 @@ void Game::ECSInitAgentSystems() {
   });
 
   ecs.system<AgentBrainWrapper>().iter([](flecs::iter &it, AgentBrainWrapper *brains) {
-    float dt = it.delta_time();
+    float dt = it.delta_time() * 1000.0f;
 
     for (auto i : it) {
-      brains[i].agBrain.get()->update(dt, it.entity(i));
+      brains[i].agBrain.get()->update(dt);
     }
   });
 };
