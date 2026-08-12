@@ -130,20 +130,24 @@ private:
   GamePosition lastKnownTargetPos;
 };
 
+enum class ConversationState {
+  Talking,
+  Listening,
+  Ended
+};
+
 class TalkAction : public AgentAction {
 public:
-  TalkAction(std::string targetName) : targetName(targetName) {};
+  TalkAction(flecs::entity sourceEntity, std::string targetName, ConversationState state = ConversationState::Talking);
 
-  ActionStatus update(float, flecs::entity) override {
-    return ActionStatus::Done;
-  }
+  ActionStatus update(float deltaTime, flecs::entity entity) override;
+  std::string getSuccessMessage() override;
+  std::string getFailureMessage() override;
 
-  std::string getSuccessMessage() override {
-    return "System: You are now talking to " + targetName + ". What do you say?\n";
-  }
-
+  ConversationState state;
 private:
   std::string targetName;
+  flecs::entity targetEntity;
 };
 
 class CharactersAction : public AgentAction {

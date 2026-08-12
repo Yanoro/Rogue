@@ -7,8 +7,9 @@
 
 #include <condition_variable>
 #include <flecs.h>
+#include <deque>
+#include <functional>
 #include <memory>
-#include <queue>
 #include <thread>
 
 constexpr float DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 10.0f;
@@ -22,6 +23,8 @@ enum class NPCCommandType {
 };
 
 #include "AgentActions.h"
+
+using ActionThunk = std::function<std::unique_ptr<AgentAction>(flecs::entity)>;
 
 class Map;
 
@@ -57,16 +60,18 @@ public:
 
   MessageCommand ParseMessageCommand(std::string msg);
   void addCmdToQueue(MessageCommand msgCmd);
+  void injectNextAction(ActionThunk actionThunk);
   void sendToAI(std::string msg, std::stop_token stoken);
   void executeActionQueue(float deltaTime);
   void update(float deltaTime);
+  AgentAction* getCurrentAction() const { return currentAction.get(); }
 
   std::string getContext() const;
   void appendContext(const std::string &text);
 
 private:
   flecs::entity entity;
-
-  std::queue<std::unique_ptr<AgentAction>> action_queue;
+  std::unique_ptr<AgentAction> currentAction;
+  std::deque<ActionThunk> action_queue;
   AI::StreamCallback getStreamCallback();
 };
