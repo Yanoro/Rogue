@@ -1,4 +1,4 @@
-#include "AI.h"
+#include "OllamaAI.h"
 #include <curl/curl.h>
 #include <iostream>
 #include <thread>

@@ -1,6 +1,7 @@
 #include "AgentContextWindow.h"
 
 #include "Components.h"
+#include "AgentBrain.h"
 #include "imgui.h"
 
 NPCContextWindow::NPCContextWindow(flecs::entity entity)
@@ -21,6 +22,13 @@ void NPCContextWindow::Draw() {
   ImGui::Begin(window_name, nullptr, ImGuiWindowFlags_None); 
 
   ImGui::Checkbox("Auto-scroll", &autoScroll);
+  ImGui::SameLine();
+  if (entity.is_alive() && entity.has<AgentBrainWrapper>()) {
+    auto wrapper = entity.get_mut<AgentBrainWrapper>();
+    if (wrapper->agBrain) {
+      ImGui::Checkbox("Stop Brain", &wrapper->agBrain->isStopped);
+    }
+  }
   ImGui::Separator();
 
   std::string currentContext = fallbackContext;

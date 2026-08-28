@@ -1,4 +1,7 @@
 #include "AI.h"
+#include "OllamaAI.h"
+#include "GeminiAI.h"
+#include "OpenRouterAI.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
@@ -18,6 +21,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <fstream>
 #include <mutex>
 #include <queue>
 #include <regex>
@@ -610,6 +614,9 @@ void Game::ECSInitAgentSystems() {
           NPCContext *ctx = entity.get_mut<NPCContext>();
           if (token.empty()) {
             newRequest->finished = true;
+            if (this->debugLog) {
+                this->debugLog->LogInfo(std::string("AI Resp (") + entity.name().c_str() + "): " + newRequest->pendingResponse);
+            }
             if (ctx->context.back() != '\n') {
               ctx->context += "\n";
             }
@@ -642,7 +649,56 @@ void Game::ECSInit(std::string mapPath) {
 
   RegisterComponents(ecs);
 
-  auto ai = std::make_unique<OllamaAI>("llama3");
+  std::unique_ptr<AI> ai;
+  std::ifstream f("model.json");
+  // TODO: Add more options
+  if (!f.is_open()) {
+    std::cerr << "Error: model.json not found! Falling back to default Ollama model." << std::endl;
+    ai = std::make_unique<OllamaAI>("llama3");
+  } else {
+    try {
+      nlohmann::json j;
+      f >> j;
+
+      std::string type = j.value("type", "ollama");
+      std::string model = j.value("model", "llama3");
+
+      if (type == "gemini") {
+        std::string apiKey = j.value("apiKey", "");
+        ai = std::make_unique<GeminiAI>(apiKey, model);
+      } else if (type == "openrouter") {
+        std::string apiKey = j.value("apiKey", "");
+        auto openrouter = std::make_unique<OpenRouterAI>(apiKey, model);
+        if (j.contains("temperature")) {
+          openrouter->setOption("temperature", j["temperature"]);
+        }
+        if (j.contains("max_tokens")) {
+          openrouter->setOption("max_tokens", j["max_tokens"]);
+        }
+        ai = std::move(openrouter);
+      } else {
+        std::string endpoint = j.value("endpoint", "http://localhost:11434/api/generate");
+        auto ollama = std::make_unique<OllamaAI>(model, endpoint);
+        
+        if (j.contains("temperature")) {
+          ollama->setOption("temperature", j["temperature"]);
+        }
+        ai = std::move(ollama);
+      }
+      
+      if (ai) {
+        ai->setErrorLogger([this](const std::string& err) {
+          if (this->debugLog) {
+            this->debugLog->LogError(err);
+          }
+        });
+      }
+    } catch (const std::exception& e) {
+      std::cerr << "Error parsing model.json: " << e.what() << std::endl;
+      ai = std::make_unique<OllamaAI>("llama3");
+    }
+  }
+
   ecs.set<AIBackend>({std::move(ai)});
 
   ECSInitPhysicsSystems();

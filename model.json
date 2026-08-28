@@ -1,0 +1,6 @@
+{
+  "type": "openrouter",
+  "model": "deepseek/deepseek-v4-flash",
+  "max_tokens": 1000,
+  "apiKey": ""
+}

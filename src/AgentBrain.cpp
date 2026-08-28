@@ -17,7 +17,7 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
     : state(state), targetName(targetName) {
   bool found = false;
   sourceEntity.world().filter<DisplayName, AgentBrainWrapper>().each(
-      [&](flecs::entity e, const DisplayName &name, AgentBrainWrapper) {
+      [&](flecs::entity e, const DisplayName &name, AgentBrainWrapper &wrapper) {
         if (StringUtils::EqualsIgnoreCase(name.name, targetName)) {
           this->targetEntity = e;
           found = true;
@@ -45,7 +45,7 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
     const AIRequest *request = entity.get<AIRequest>();
     if (request == nullptr) {
       std::string context = entity.get<NPCContext>()->context;
-      entity.set<AIRequest>({context, false, "", false});
+      entity.set<AIRequest>({"\nYou: ", false, "", false});
     } else if (request->finished) {
       
       if (!targetEntity.is_alive() || !targetEntity.has<AgentBrainWrapper>()) {
@@ -96,6 +96,12 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
     if (!targetEntity.is_alive() || !targetEntity.has<AgentBrainWrapper>()) {
       return ActionStatus::Failed;
     }
+    
+    // Clear any pending AIRequest that was dispatched before we started listening
+    // to prevent the AI from responding to the conversation with a stale command
+    if (entity.has<AIRequest>()) {
+      entity.remove<AIRequest>();
+    }
   } else if (state == ConversationState::Ended) {
     return ActionStatus::Done;
   }
@@ -104,11 +110,11 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
 }
 
 std::string TalkAction::getSuccessMessage() {
-  return "System: You are done talking to " + targetName + ", what's next?\n";
+  return "System: You are done talking to " + targetName + ", what's next?";
 }
 
 std::string TalkAction::getFailureMessage() {
-  return "System: The person you were trying to talk to is no longer available.\n";
+  return "System: The person you were trying to talk to is no longer available.";
 }
 
 AgentBrain::AgentBrain(flecs::entity entity, std::string name)
@@ -187,6 +193,7 @@ void AgentBrain::injectNextAction(ActionThunk actionThunk) {
 }
 
 void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
+
   switch (msgCmd.type) {
   case (NPCCommandType::DO_NOTHING): {
     action_queue.push_back([](flecs::entity) {
@@ -249,6 +256,8 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
 }
 
 void AgentBrain::update(float deltaTime) {
+  if (isStopped) return;
+
   if (entity.get<AgentSleepTimer>()) {
     AgentSleepTimer *timer = entity.get_mut<AgentSleepTimer>();
     timer->time_remaining_ms -= deltaTime;
@@ -267,7 +276,7 @@ void AgentBrain::update(float deltaTime) {
   const AIRequest *request = entity.get<AIRequest>();
   const std::string context = entity.get<NPCContext>()->context;
   if (request == nullptr) {
-    entity.set<AIRequest>({"", false, "", false});
+    entity.set<AIRequest>({"\nYou: ", false, "", false});
     entity.set<AgentSleepTimer>({10});
     return;
   }
@@ -276,9 +285,9 @@ void AgentBrain::update(float deltaTime) {
     return;
   }
 
-  std::string lastMsg = StringUtils::substringAfterLast(context, "System:");
-
-  MessageCommand msgCmd = ParseMessageCommand(lastMsg);
+  std::string responseText = request->pendingResponse;
+  
+  MessageCommand msgCmd = ParseMessageCommand(responseText);
   addCmdToQueue(msgCmd);
 
   entity.remove<AIRequest>();

@@ -50,13 +50,13 @@ VARIABLES & RULES:
 CHARACTER CONTEXT:
 - Background: %BACKGROUND%
 
-Based on your background and current location, what is your first command?
-You: )";
+Based on your background and current location, what is your first command?)";
 
 
 class AgentBrain {
 public:
   AgentBrain(flecs::entity entity, std::string name);
+  bool isStopped = false;
 
   MessageCommand ParseMessageCommand(std::string msg);
   void addCmdToQueue(MessageCommand msgCmd);

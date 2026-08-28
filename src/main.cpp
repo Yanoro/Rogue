@@ -16,8 +16,6 @@ int main(int argc, char *argv[]) {
   Game game;
   game.Init(mapPath);
 
-  auto ai = std::make_shared<OllamaAI>("llama3");
-
   raylib::Window *window = game.getWindow();
 
   // Detect window close button or ESC key
