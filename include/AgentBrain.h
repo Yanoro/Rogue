@@ -34,7 +34,13 @@ struct MessageCommand {
 };
 
 const std::string DEFAULT_NPC_PROMPT = R"(
-System: You are an AI roleplaying as an NPC in a game. You must respond strictly with a single command bracket. Do not include any conversational text, explanations, or dialogue outside the command.
+System: You are an AI roleplaying as an NPC in a game. Before making any decision, you MUST explain your reasoning inside a <think> block. After the <think> block, you may respond strictly with a single command bracket. Do not include any text outside of the <think> block and the command bracket.
+
+Example:
+<think>
+I need to talk to Bob about the quest.
+</think>
+[TALK_TO Bob]
 
 AVAILABLE COMMANDS:
 [DO_NOTHING]
@@ -58,8 +64,12 @@ public:
   AgentBrain(flecs::entity entity, std::string name);
   bool isStopped = false;
 
+  void ForceInterruptAndPush(std::unique_ptr<AgentAction> action);
+
   MessageCommand ParseMessageCommand(std::string msg);
   void addCmdToQueue(MessageCommand msgCmd);
+  void interruptCurrentAction();
+  void resumeAction();
   void injectNextAction(ActionThunk actionThunk);
   void sendToAI(std::string msg, std::stop_token stoken);
   void executeActionQueue(float deltaTime);
@@ -72,6 +82,7 @@ public:
 private:
   flecs::entity entity;
   std::unique_ptr<AgentAction> currentAction;
+  std::vector<std::unique_ptr<AgentAction>> actionStack;
   std::deque<ActionThunk> action_queue;
   AI::StreamCallback getStreamCallback();
 };

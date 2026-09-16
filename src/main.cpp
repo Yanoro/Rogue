@@ -8,7 +8,7 @@
 #include <string>
 
 int main(int argc, char *argv[]) {
-  std::string mapPath = "./Map_Village.json";
+  std::string mapPath = "./Map_Tiny.json";
   if (argc > 1) {
     mapPath = argv[1];
   }

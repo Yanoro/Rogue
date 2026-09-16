@@ -78,6 +78,7 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
       std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
+  startingPrompt += "\n";
   entity.set<NPCContext>({startingPrompt, ""});
 
   if (name == "") {
@@ -732,7 +733,7 @@ void Game::ECSInit(std::string mapPath) {
   createNPC({20, 1}, "John",
             "Your name is John, you are an extreme extrovert who always wants "
             "to talk to someone");
-  createNPC({30, 1}, "Carl", "Your name is Carl, you like walking around town");
+  createNPC({30, 1}, "Carl", "Your name is Carl, an extremely lazy introvert who likes to sit around and do nothing. When talking to other characters will always try to steer the conversations to his favorite anime");
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");

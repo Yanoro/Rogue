@@ -8,7 +8,7 @@
 #include <string>
 #include "StringUtils.hpp"
 
-enum class ActionStatus { Doing, Done, Failed };
+enum class ActionStatus { Doing, Done, Failed, Interrupted };
 
 class AgentAction {
 public:
@@ -16,15 +16,17 @@ public:
 
   // Returns true when the action is completely finished
   virtual ActionStatus update(float deltaTime, flecs::entity entity) = 0;
+  virtual ActionStatus handleInterruption(flecs::entity entity) = 0;
+  virtual void resume(flecs::entity entity) = 0;
   virtual std::string getSuccessMessage() = 0;
   virtual std::string getFailureMessage() {
-          return "System: Your action has failed. What's next?";
+          return "System: Your action has failed. What's next?\n";
         }
       };
 
       class InvalidAction : public AgentAction {
       public:
-        InvalidAction() : time(10.0f) {};
+        InvalidAction() : time(10.0f * 1000.0f) {};
 
         ActionStatus update(float deltaTime, flecs::entity) override {
           time -= deltaTime;
@@ -35,8 +37,14 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: Your previous action was invalid, please try again";
+          return "System: Your previous action was invalid, please try again\n";
         }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
 
       private:
         float time;
@@ -44,7 +52,8 @@ public:
 
       class WaitAction : public AgentAction {
       public:
-        WaitAction(float time) : time(time) {};
+        // time is passed in as seconds, but our deltaTime is in milliseconds
+        WaitAction(float time_seconds) : time(time_seconds * 1000.0f) {};
 
         ActionStatus update(float deltaTime, flecs::entity) override {
           time -= deltaTime;
@@ -55,8 +64,14 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: You have awaited for a while, what's next?";
+          return "System: You have awaited for a while, what's next?\n";
         }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
 
       private:
         float time;
@@ -79,8 +94,15 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: You have arrived at your destination. What's next?";
+          return "System: You have arrived at your destination. What's next?\n";
         }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          entity.remove<MOVE_THROUGH_PATH_ACTION>();
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
 
       private:
         GamePosition targetPos;
@@ -125,12 +147,19 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: You have arrived next to " + targetName + ".";
+          return "System: You have arrived next to " + targetName + ".\n";
         }
 
         std::string getFailureMessage() override {
-          return "System: Could not find character " + targetName + " to move to. What's next?";
+          return "System: Could not find character " + targetName + " to move to. What's next?\n";
         }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          entity.remove<MOVE_THROUGH_PATH_ACTION>();
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
 
       private:
         std::string targetName;
@@ -148,6 +177,8 @@ public:
         TalkAction(flecs::entity sourceEntity, std::string targetName, ConversationState state = ConversationState::Talking);
 
         ActionStatus update(float deltaTime, flecs::entity entity) override;
+        ActionStatus handleInterruption(flecs::entity entity) override;
+        void resume(flecs::entity entity) override;
         std::string getSuccessMessage() override;
         std::string getFailureMessage() override;
 
@@ -155,6 +186,7 @@ public:
       private:
         std::string targetName;
         flecs::entity targetEntity;
+        bool isTalkingToSelf = false;
       };
 
       class CharactersAction : public AgentAction {
@@ -177,9 +209,9 @@ public:
           }
 
           if (characterNames.empty()) {
-            response = "System: There are no other characters nearby.";
+            response = "System: There are no other characters nearby.\n";
           } else {
-            response = "System: The following characters are nearby: " + characterNames;
+            response = "System: The following characters are nearby: " + characterNames + "\n";
     }
 
     return ActionStatus::Done;
@@ -188,6 +220,12 @@ public:
   std::string getSuccessMessage() override {
     return response;
   }
+
+  ActionStatus handleInterruption(flecs::entity) override {
+    return ActionStatus::Interrupted;
+  }
+
+  void resume(flecs::entity) override {}
 
 private:
   std::string response;
