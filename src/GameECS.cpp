@@ -79,7 +79,7 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
   startingPrompt += "\n";
-  entity.set<NPCContext>({startingPrompt, ""});
+  entity.set<NPCContext>({ {{"system", startingPrompt}}, ""});
 
   if (name == "") {
     flecs::entity_t id = entity.id();
@@ -618,19 +618,25 @@ void Game::ECSInitAgentSystems() {
             if (this->debugLog) {
                 this->debugLog->LogInfo(std::string("AI Resp (") + entity.name().c_str() + "): " + newRequest->pendingResponse);
             }
-            if (ctx->context.back() != '\n') {
-              ctx->context += "\n";
+            if (!ctx->history.empty() && !ctx->history.back().content.empty() && ctx->history.back().content.back() != '\n') {
+              ctx->history.back().content += "\n";
             }
           } else {
             newRequest->pendingResponse += token;
-            ctx->context += token;
+            if (!ctx->history.empty() && ctx->history.back().role == "assistant") {
+              ctx->history.back().content += token;
+            } else {
+              ctx->history.push_back({"assistant", token});
+            }
           }
         }
       });
     };
 
-    ctx.context += request.prompt;
-    aiPtr->generateStream(ctx.contextID, ctx.context, callBack);
+    if (!request.prompt.empty()) {
+      ctx.history.push_back({"user", request.prompt});
+    }
+    aiPtr->generateStream(ctx.contextID, ctx.history, callBack);
   });
 
   ecs.system<AgentBrainWrapper>().iter([](flecs::iter &it, AgentBrainWrapper *brains) {

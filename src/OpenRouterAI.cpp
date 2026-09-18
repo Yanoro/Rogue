@@ -41,11 +41,33 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
         if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
       } else if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
         auto &choice = j["choices"][0];
-        if (choice.contains("delta") && choice["delta"].contains("content") && choice["delta"]["content"].is_string()) {
-          std::string token = choice["delta"]["content"].get<std::string>();
-          if (!token.empty()) {
-            ctx->fullResponse += token;
-            ctx->callback(token);
+        if (choice.contains("delta")) {
+          auto &delta = choice["delta"];
+          if (delta.contains("reasoning") && delta["reasoning"].is_string()) {
+            std::string token = delta["reasoning"].get<std::string>();
+            if (!token.empty()) {
+              if (!ctx->isThinking) {
+                ctx->isThinking = true;
+                std::string tag = "<think>\n";
+                ctx->fullResponse += tag;
+                ctx->callback(tag);
+              }
+              ctx->fullResponse += token;
+              ctx->callback(token);
+            }
+          }
+          if (delta.contains("content") && delta["content"].is_string()) {
+            std::string token = delta["content"].get<std::string>();
+            if (!token.empty()) {
+              if (ctx->isThinking) {
+                ctx->isThinking = false;
+                std::string tag = "\n</think>\n";
+                ctx->fullResponse += tag;
+                ctx->callback(tag);
+              }
+              ctx->fullResponse += token;
+              ctx->callback(token);
+            }
           }
         } else if (choice.contains("message") && choice["message"].contains("content") && choice["message"]["content"].is_string()) {
           std::string token = choice["message"]["content"].get<std::string>();
@@ -73,7 +95,7 @@ void OpenRouterAI::setOption(const std::string &key, const nlohmann::json &value
 }
 
 std::string OpenRouterAI::generate(const std::string &contextId,
-                                   const std::string &prompt,
+                                   const std::vector<ChatMessage> &history,
                                    std::stop_token stoken) {
   {
     std::lock_guard<std::mutex> lock(busyMutex);
@@ -88,19 +110,19 @@ std::string OpenRouterAI::generate(const std::string &contextId,
     std::string endpoint = "https://openrouter.ai/api/v1/chat/completions";
     curl_easy_setopt(curl, CURLOPT_URL, endpoint.c_str());
 
-    std::vector<nlohmann::json> history;
-    if (contexts.find(contextId) != contexts.end()) {
-      history = contexts[contextId];
+    std::vector<nlohmann::json> historyJson;
+    for (const auto& msg : history) {
+      historyJson.push_back({
+        {"role", msg.role},
+        {"content", msg.content}
+      });
     }
-    history.push_back({
-      {"role", "user"},
-      {"content", prompt}
-    });
 
     nlohmann::json payload = {
       {"model", modelName},
-      {"messages", history},
-      {"stream", false}
+      {"messages", historyJson},
+      {"stream", false},
+      {"include_reasoning", true}
     };
     
     for (auto& el : options.items()) {
@@ -160,27 +182,27 @@ std::string OpenRouterAI::generate(const std::string &contextId,
     std::string resp = "";
     if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
       auto &choice = j["choices"][0];
-      if (choice.contains("message") && choice["message"].contains("content")) {
-        resp = choice["message"]["content"];
+      if (choice.contains("message")) {
+        auto &msg = choice["message"];
+        std::string reasoning = "";
+        if (msg.contains("reasoning") && msg["reasoning"].is_string()) {
+          reasoning = msg["reasoning"].get<std::string>();
+        }
+        if (msg.contains("content") && msg["content"].is_string()) {
+          resp = msg["content"].get<std::string>();
+        }
+        if (!reasoning.empty()) {
+          resp = "<think>\n" + reasoning + "\n</think>\n" + resp;
+        }
       }
     }
 
     if (!resp.empty()) {
-      std::vector<nlohmann::json> history;
-      history.push_back({
-        {"role", "user"},
-        {"content", prompt}
-      });
-      history.push_back({
-        {"role", "assistant"},
-        {"content", resp}
-      });
+      // Local history tracking is now handled by the caller (NPCContext)
 
       {
         std::lock_guard<std::mutex> lock(messagesMutex);
         lastMessages[contextId] = resp;
-        fullContexts[contextId] +=
-            "\nPrompt: " + prompt + "\nResponse: " + resp;
       }
     } else if (j.contains("error")) {
         std::string errStr = "OpenRouter API Error: " + j["error"].dump();
@@ -208,23 +230,26 @@ bool OpenRouterAI::isBusy(const std::string &contextId) {
 }
 
 bool OpenRouterAI::generateStream(const std::string &contextId,
-                                  const std::string &prompt,
+                                  const std::vector<ChatMessage> &history,
                                   StreamCallback callback, std::stop_token stoken) {
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
 
-  std::vector<nlohmann::json> history;
-  history.push_back({
-    {"role", "user"},
-    {"content", prompt}
-  });
+  std::vector<nlohmann::json> historyJson;
+  for (const auto& msg : history) {
+    historyJson.push_back({
+      {"role", msg.role},
+      {"content", msg.content}
+    });
+  }
 
   nlohmann::json payload = {
     {"model", modelName},
-    {"messages", history},
-    {"stream", true}
+    {"messages", historyJson},
+    {"stream", true},
+    {"include_reasoning", true}
   };
   
   for (auto& el : options.items()) {
@@ -233,7 +258,7 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
 
   std::string jsonStr = payload.dump();
 
-  std::thread([this, contextId, prompt, history, callback, stoken, jsonStr]() mutable {
+  std::thread([this, contextId, callback, stoken, jsonStr]() mutable {
     StreamContext ctx;
     ctx.callback = callback;
     ctx.contextId = contextId;
@@ -293,9 +318,15 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     curl_easy_cleanup(curl);
 
     if (success && !ctx.fullResponse.empty()) {
+      if (ctx.isThinking) {
+        ctx.isThinking = false;
+        std::string tag = "\n</think>\n";
+        ctx.fullResponse += tag;
+        callback(tag);
+      }
       std::lock_guard<std::mutex> lock(messagesMutex);
       lastMessages[contextId] = ctx.fullResponse;
-      fullContexts[contextId] += "\nPrompt: " + prompt + "\nResponse: " + ctx.fullResponse;
+      fullContexts[contextId] += "\nResponse: " + ctx.fullResponse;
     }
 
     {

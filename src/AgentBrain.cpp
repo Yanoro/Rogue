@@ -32,9 +32,9 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
       });
 
   if (state == ConversationState::Talking) {
-    sourceEntity.get_mut<NPCContext>()->context += "System: You are now talking to " + targetName + ". You MUST explain your reasoning using a <think> block before speaking. What do you say? To leave the conversation, append [EXIT] to the end of your goodbye message, for example: <think>I'm tired of this.</think> I have to go now, goodbye! [EXIT]\n";
+    sourceEntity.get_mut<NPCContext>()->history.push_back({"user", "System: You are now talking to " + targetName + ". What do you say? To leave the conversation, append [EXIT] to the end of your goodbye message, for example: I have to go now, goodbye! [EXIT]\n"});
   } else {
-    sourceEntity.get_mut<NPCContext>()->context += "System: " + targetName + " approaches you to talk and is currently speaking. When it is your turn, you MUST explain your reasoning using a <think> block before speaking. You can append [EXIT] to the end of your goodbye message (for example: <think>I need to leave.</think> Talk to you later! [EXIT]) to leave the conversation.\n";
+    sourceEntity.get_mut<NPCContext>()->history.push_back({"user", "System: " + targetName + " approaches you to talk and is currently speaking. When it is your turn, you can append [EXIT] to the end of your goodbye message (for example: Talk to you later! [EXIT]) to leave the conversation.\n"});
   }
 
   if (state == ConversationState::Talking && found) {
@@ -49,8 +49,8 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
   if (state == ConversationState::Talking) {
     const AIRequest *request = entity.get<AIRequest>();
     if (request == nullptr) {
-      std::string context = entity.get<NPCContext>()->context;
-      entity.set<AIRequest>({"You: ", false, "", false});
+      std::string context = entity.get<AgentBrainWrapper>()->agBrain->getContext();
+      entity.set<AIRequest>({"", false, "", false});
     } else if (request->finished) {
       
       if (!targetEntity.is_alive() || !targetEntity.has<AgentBrainWrapper>()) {
@@ -71,24 +71,10 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
 
       // We ONLY swap states and transfer the message if they are ready!
       // Otherwise, we just wait and check again next frame.
-      if (targetReady) {
-        std::string response = request->pendingResponse;
-        
-        std::regex extractThink(R"(<think>([\s\S]*?)<\/think>)", std::regex_constants::icase);
-        std::smatch match;
-        bool hasValidThink = false;
-        if (std::regex_search(response, match, extractThink)) {
-          std::string thinkContents = match[1].str();
-          if (thinkContents.find_first_not_of(" \n\r\t") != std::string::npos) {
-            hasValidThink = true;
-          }
-        }
-        
-        if (!hasValidThink) {
-          entity.get_mut<NPCContext>()->context += "System: Warning - you MUST explain your reasoning using a <think> block before speaking.\n";
-        }
-
-        // Strip out <think> tags so they aren't spoken out loud
+        if (targetReady) {
+          std::string response = request->pendingResponse;
+          
+          // Strip out <think> tags so they aren't spoken out loud
         std::regex thinkRegex(R"(<think>[\s\S]*?<\/think>)", std::regex_constants::icase);
         response = std::regex_replace(response, thinkRegex, "");
 
@@ -120,14 +106,16 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
         bool hasOtherCommand = std::regex_search(response, anyCommandRegex);
 
         if ((response.empty() && !exiting) || hasOtherCommand) {
-            std::string warning = "System: Warning - you must stay in character during a TalkAction. Any messages including SYSTEM commands besides [EXIT] will not be consired valid. Provide conversational dialogue, or append [EXIT] to your message to end the conversation.\n";
-            entity.get_mut<NPCContext>()->context += warning;
+            std::string warning = "System: Warning - you must stay in character during a TalkAction. Provide conversational dialogue, or append [EXIT] to your message to end the conversation.\n";
+            entity.get_mut<NPCContext>()->history.push_back({"user", warning});
             entity.remove<AIRequest>();
             return ActionStatus::Doing;
         }
 
         std::string myName = entity.get<DisplayName>()->name;
-        targetBrain->appendContext(myName + " says: " + response + "\n");
+        if (!response.empty()) {
+          targetBrain->appendContext("user", myName + " says: " + response + "\n");
+        }
         entity.remove<AIRequest>();
 
         if (exiting) {
@@ -190,6 +178,19 @@ void AgentBrain::ForceInterruptAndPush(std::unique_ptr<AgentAction> action) {
 }
 
 MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
+  // Strip out <think> tags before parsing to avoid matching thoughts
+  std::regex thinkRegex(R"(<think>[\s\S]*?<\/think>)", std::regex_constants::icase);
+  std::string strippedMsg = std::regex_replace(msg, thinkRegex, "");
+
+  // Check for multiple commands
+  static std::regex anyCmdRegex(R"(\[[A-Z_]+.*?\])", std::regex_constants::icase);
+  auto words_begin = std::sregex_iterator(strippedMsg.begin(), strippedMsg.end(), anyCmdRegex);
+  auto words_end = std::sregex_iterator();
+  if (std::distance(words_begin, words_end) > 1) {
+    appendContext("user", "System: Warning - you issued multiple commands at once. You must only issue one command at a time.\n");
+    return {NPCCommandType::INVALID_COMMAND, ""};
+  }
+
   // Static means that we don't have to recompile every time
   // this function gets run
   static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
@@ -198,29 +199,50 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
                                  std::regex_constants::icase);
   static std::regex charactersRegex(R"(\[CHARACTERS\])",
                                     std::regex_constants::icase);
+  static std::regex locationsRegex(R"(\[LOCATIONS\])",
+                                   std::regex_constants::icase);
   static std::regex talkToRegex(R"(\[TALK_TO\s+(.+?)\s*\])",
                                 std::regex_constants::icase);
   std::smatch match;
 
-  if (std::regex_search(msg, match, moveRegex)) {
+  if (std::regex_search(strippedMsg, match, moveRegex)) {
     return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
-  } else if (std::regex_search(msg, match, nothingRegex)) {
+  } else if (std::regex_search(strippedMsg, match, nothingRegex)) {
     return {NPCCommandType::DO_NOTHING, ""};
-  } else if (std::regex_search(msg, match, charactersRegex)) {
+  } else if (std::regex_search(strippedMsg, match, charactersRegex)) {
     return {NPCCommandType::CHARACTERS_QUERY, ""};
-  } else if (std::regex_search(msg, match, talkToRegex)) {
+  } else if (std::regex_search(strippedMsg, match, locationsRegex)) {
+    return {NPCCommandType::LOCATIONS_QUERY, ""};
+  } else if (std::regex_search(strippedMsg, match, talkToRegex)) {
     return {NPCCommandType::TALK_TO, match[1].str()};
   }
 
   return {NPCCommandType::INVALID_COMMAND, ""};
 }
 
-void AgentBrain::appendContext(const std::string &text) {
-  entity.get_mut<NPCContext>()->context += text;
+std::string AgentBrain::getContext() const {
+  std::string result = "";
+  auto ctx = entity.get<NPCContext>();
+  if (ctx) {
+    for (const auto& msg : ctx->history) {
+      if (msg.role == "assistant") result += "You: " + msg.content;
+      else result += msg.content;
+    }
+  }
+  return result;
+}
+
+void AgentBrain::appendContext(const std::string &role, const std::string &text) {
+  auto ctx = entity.get_mut<NPCContext>();
+  if (!ctx->history.empty() && ctx->history.back().role == role) {
+    ctx->history.back().content += text;
+  } else {
+    ctx->history.push_back({role, text});
+  }
 }
 
 AI::StreamCallback AgentBrain::getStreamCallback() {
-  return [this](const std::string &token) { appendContext(token); };
+  return [this](const std::string &token) { appendContext("assistant", token); };
 }
 
 void AgentBrain::interruptCurrentAction() {
@@ -240,7 +262,7 @@ void AgentBrain::resumeAction() {
     actionStack.pop_back();
     currentAction->resume(entity);
   } else {
-    appendContext("System: There is no interrupted action to resume.\n");
+    appendContext("user", "System: There is no interrupted action to resume.\n");
   }
 }
 
@@ -258,7 +280,7 @@ void AgentBrain::executeActionQueue(float deltaTime) {
 
   switch (currentAction->update(deltaTime, entity)) {
   case (ActionStatus::Done): {
-    appendContext(currentAction->getSuccessMessage());
+    appendContext("user", currentAction->getSuccessMessage());
     currentAction.reset();
     break;
   }
@@ -266,7 +288,7 @@ void AgentBrain::executeActionQueue(float deltaTime) {
     break;
   }
   case (ActionStatus::Failed): {
-    appendContext(currentAction->getFailureMessage());
+    appendContext("user", currentAction->getFailureMessage());
     currentAction.reset();
     break;
   }
@@ -336,6 +358,12 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     });
     break;
   }
+  case (NPCCommandType::LOCATIONS_QUERY): {
+    action_queue.push_back([](flecs::entity) {
+      return std::make_unique<LocationsAction>();
+    });
+    break;
+  }
   case (NPCCommandType::INVALID_COMMAND): {
     action_queue.push_back([](flecs::entity) {
       return std::make_unique<InvalidAction>();
@@ -366,9 +394,9 @@ void AgentBrain::update(float deltaTime) {
   }
 
   const AIRequest *request = entity.get<AIRequest>();
-  const std::string context = entity.get<NPCContext>()->context;
+  const std::string context = getContext();
   if (request == nullptr) {
-    entity.set<AIRequest>({"You: ", false, "", false});
+    entity.set<AIRequest>({"System: Based on your background and current location, what is your first command?\n", false, "", false});
     entity.set<AgentSleepTimer>({10});
     return;
   }
@@ -379,35 +407,6 @@ void AgentBrain::update(float deltaTime) {
 
   std::string responseText = request->pendingResponse;
   
-  std::regex extractThink(R"(<think>([\s\S]*?)<\/think>)", std::regex_constants::icase);
-  std::smatch match;
-  bool hasValidThink = false;
-  if (std::regex_search(responseText, match, extractThink)) {
-    std::string thinkContents = match[1].str();
-    if (thinkContents.find_first_not_of(" \n\r\t") != std::string::npos) {
-      hasValidThink = true;
-    }
-  }
-
-  if (!hasValidThink) {
-    appendContext("System: Warning - you MUST include a <think> block with your reasoning before taking an action. For example: <think>I should look around.</think>\n");
-  }
-
-  std::string textWithoutThink = std::regex_replace(responseText, std::regex(R"(<think>[\s\S]*?<\/think>)", std::regex_constants::icase), "");
-  std::string textWithoutCommand = std::regex_replace(textWithoutThink, std::regex(R"(\[.*?\])"), "");
-  
-  auto start = textWithoutCommand.find_first_not_of(" \n\r\t");
-  if (start != std::string::npos) {
-    textWithoutCommand = textWithoutCommand.substr(start);
-    textWithoutCommand.erase(textWithoutCommand.find_last_not_of(" \n\r\t") + 1);
-  } else {
-    textWithoutCommand = "";
-  }
-  
-  if (!textWithoutCommand.empty()) {
-    appendContext("System: Warning - you included conversational text or explanations outside of your <think> tags. All reasoning must be strictly enclosed in <think> tags, followed only by your command.\n");
-  }
-
   MessageCommand msgCmd = ParseMessageCommand(responseText);
   
   addCmdToQueue(msgCmd);

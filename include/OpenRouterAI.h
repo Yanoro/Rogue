@@ -19,6 +19,7 @@ private:
     std::string contextId;
     OpenRouterAI *aiInstance;
     std::string fullResponse;
+    bool isThinking = false;
   };
 
   static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
@@ -32,9 +33,9 @@ public:
   void setOption(const std::string &key, const nlohmann::json &value);
 
   std::string generate(const std::string &contextId,
-                       const std::string &prompt,
+                       const std::vector<ChatMessage> &history,
                        std::stop_token stoken = {}) override;
-  bool generateStream(const std::string &contextId, const std::string &prompt,
+  bool generateStream(const std::string &contextId, const std::vector<ChatMessage> &history,
                       StreamCallback callback,
                       std::stop_token stoken = {}) override;
   bool isBusy(const std::string &contextId) override;

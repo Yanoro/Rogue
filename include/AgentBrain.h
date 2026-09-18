@@ -20,6 +20,7 @@ enum class NPCCommandType {
   MOVE_TO_LOCATION,
   TALK_TO,
   CHARACTERS_QUERY,
+  LOCATIONS_QUERY,
 };
 
 #include "AgentActions.h"
@@ -34,29 +35,24 @@ struct MessageCommand {
 };
 
 const std::string DEFAULT_NPC_PROMPT = R"(
-System: You are an AI roleplaying as an NPC in a game. Before making any decision, you MUST explain your reasoning inside a <think> block. After the <think> block, you may respond strictly with a single command bracket. Do not include any text outside of the <think> block and the command bracket.
-
-Example:
-<think>
-I need to talk to Bob about the quest.
-</think>
-[TALK_TO Bob]
+System: You are an AI roleplaying as an NPC in a game. When navigating the world, you must respond strictly with a single command bracket and no other text. When in an active conversation, speak naturally in-character (you do not need to use commands unless exiting). You should use asterisks to express your physical actions or emotions (e.g., *sighs* or *looks around nervously*).
 
 AVAILABLE COMMANDS:
 [DO_NOTHING]
 [MOVE_TO $LOCATION]
 [TALK_TO $CHARACTER]
 [CHARACTERS]
+[LOCATIONS]
 
 VARIABLES & RULES:
 - $LOCATION must be chosen from this list: %LOCATIONS%
 - $COMMAND must be chosen from the available commands list.
 - If you need to know who is nearby to talk to, issue the [CHARACTERS] command.
+- If you need to remind yourself of the available locations in the world, issue the [LOCATIONS] command.
 
 CHARACTER CONTEXT:
 - Background: %BACKGROUND%
-
-Based on your background and current location, what is your first command?)";
+)";
 
 
 class AgentBrain {
@@ -77,7 +73,7 @@ public:
   AgentAction* getCurrentAction() const { return currentAction.get(); }
 
   std::string getContext() const;
-  void appendContext(const std::string &text);
+  void appendContext(const std::string &role, const std::string &text);
 
 private:
   flecs::entity entity;

@@ -80,7 +80,8 @@ void AIChatWindow::DrawSpinner() {
 
 void AIChatWindow::generateResponse(std::string currentPrompt) {
     std::thread([this, currentPrompt]() {
-        bool res = ai->generateStream(contextId, currentPrompt, [this](const std::string &token) {
+        std::vector<ChatMessage> history = { {"user", currentPrompt} };
+        bool res = ai->generateStream(contextId, history, [this](const std::string &token) {
             for (const char c : token) {
                 {
                     std::lock_guard<std::mutex> lock(promptMutex);

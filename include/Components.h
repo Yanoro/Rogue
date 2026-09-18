@@ -167,7 +167,7 @@ struct AgentSleepTimer {
 struct NPCTag {};
 
 struct NPCContext {
-  std::string context;
+  std::vector<ChatMessage> history;
   std::string contextID;
 };
 

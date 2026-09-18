@@ -29,9 +29,9 @@ public:
   GeminiAI(const std::string &apiKey, const std::string &model = "gemini-1.5-flash");
 
   std::string generate(const std::string &contextId,
-                       const std::string &prompt,
+                       const std::vector<ChatMessage> &history,
                        std::stop_token stoken = {}) override;
-  bool generateStream(const std::string &contextId, const std::string &prompt,
+  bool generateStream(const std::string &contextId, const std::vector<ChatMessage> &history,
                       StreamCallback callback,
                       std::stop_token stoken = {}) override;
   bool isBusy(const std::string &contextId) override;

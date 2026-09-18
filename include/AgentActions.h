@@ -37,7 +37,7 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: Your previous action was invalid, please try again\n";
+          return "System: Your previous action was invalid or unrecognized. Please remember to use one of the available commands: [DO_NOTHING], [MOVE_TO $LOCATION], [TALK_TO $CHARACTER], [CHARACTERS], or [LOCATIONS].\n";
         }
 
         ActionStatus handleInterruption(flecs::entity) override {
@@ -230,3 +230,41 @@ public:
 private:
   std::string response;
 };
+      class LocationsAction : public AgentAction {
+      public:
+        ActionStatus update(float, flecs::entity entity) override {
+          std::string locationsList;
+          Map* currMap = entity.world().get<MapResource>()->map;
+          
+          if (currMap) {
+            auto names = currMap->GetAllLocationNames();
+            for (const auto& name : names) {
+              locationsList += name + ", ";
+            }
+            if (locationsList.length() >= 2) {
+              locationsList.erase(locationsList.length() - 2);
+            }
+          }
+
+          if (locationsList.empty()) {
+            response = "System: There are no mapped locations available.\n";
+          } else {
+            response = "System: The following locations are available to move to: " + locationsList + "\n";
+          }
+
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return response;
+        }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string response;
+      };

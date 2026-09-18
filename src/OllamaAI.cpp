@@ -56,8 +56,13 @@ void OllamaAI::setOption(const std::string &key, const nlohmann::json &value) {
 }
 
 std::string OllamaAI::generate(const std::string &contextId,
-                               const std::string &prompt,
+                               const std::vector<ChatMessage> &history,
                                std::stop_token stoken) {
+  std::string prompt = "";
+  for (const auto& msg : history) {
+    if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";
+    else prompt += msg.content + "\n";
+  }
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
@@ -129,11 +134,7 @@ std::string OllamaAI::generate(const std::string &contextId,
 
   try {
     auto j = nlohmann::json::parse(readBuffer);
-    if (j.contains("done") && j["done"] == true) {
-      if (j.contains("context")) {
-        contexts[contextId] = j["context"].get<std::vector<int>>();
-      }
-    }
+    // Local history tracking is handled by NPCContext
 
     {
       std::lock_guard<std::mutex> lock(busyMutex);
@@ -164,8 +165,13 @@ bool OllamaAI::isBusy(const std::string &contextId) {
 }
 
 bool OllamaAI::generateStream(const std::string &contextId,
-                              const std::string &prompt,
+                              const std::vector<ChatMessage> &history,
                               StreamCallback callback, std::stop_token stoken) {
+  std::string prompt = "";
+  for (const auto& msg : history) {
+    if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";
+    else prompt += msg.content + "\n";
+  }
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);

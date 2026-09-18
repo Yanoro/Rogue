@@ -11,7 +11,8 @@ void Character::addToPrompt(std::string prompt) {
 std::string Character::sendPrompt() {
   std::string res;
   std::string contextId = std::to_string(reinterpret_cast<uintptr_t>(this));
-  AIBackend->generateStream(contextId, currPrompt, [&res](const std::string& token) {
+  std::vector<ChatMessage> history = { {"user", currPrompt} };
+  AIBackend->generateStream(contextId, history, [&res](const std::string& token) {
     std::cout << token << std::flush;
     res += token;
   });

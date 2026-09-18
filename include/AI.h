@@ -8,6 +8,11 @@
 #include <unordered_set>
 #include <vector>
 
+struct ChatMessage {
+  std::string role;
+  std::string content;
+};
+
 class AI {
 public:
   using StreamCallback = std::function<void(const std::string &)>;
@@ -17,10 +22,10 @@ public:
   }
 
   virtual std::string generate(const std::string &contextId,
-                               const std::string &prompt,
+                               const std::vector<ChatMessage> &history,
                                std::stop_token stoken = {}) = 0;
   virtual bool generateStream(const std::string &contextId,
-                              const std::string &prompt,
+                              const std::vector<ChatMessage> &history,
                               StreamCallback callback,
                               std::stop_token = {}) = 0;
   virtual bool isBusy(const std::string &contextId) = 0;

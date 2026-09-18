@@ -52,8 +52,13 @@ GeminiAI::GeminiAI(const std::string &apiKey, const std::string &model)
     : apiKey(apiKey), modelName(model) {}
 
 std::string GeminiAI::generate(const std::string &contextId,
-                               const std::string &prompt,
+                               const std::vector<ChatMessage> &history,
                                std::stop_token stoken) {
+  std::string prompt = "";
+  for (const auto& msg : history) {
+    if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";
+    else prompt += msg.content + "\n";
+  }
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
@@ -144,10 +149,7 @@ std::string GeminiAI::generate(const std::string &contextId,
         {"role", "user"},
         {"parts", {{{"text", prompt}}}}
       });
-      history.push_back({
-        {"role", "model"},
-        {"parts", {{{"text", resp}}}}
-      });
+      // Local history tracking is handled by NPCContext
       contexts[contextId] = history;
 
       {
@@ -178,23 +180,28 @@ bool GeminiAI::isBusy(const std::string &contextId) {
 }
 
 bool GeminiAI::generateStream(const std::string &contextId,
-                              const std::string &prompt,
+                              const std::vector<ChatMessage> &history,
                               StreamCallback callback, std::stop_token stoken) {
+  std::string prompt = "";
+  for (const auto& msg : history) {
+    if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";
+    else prompt += msg.content + "\n";
+  }
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
 
-  std::vector<nlohmann::json> history;
+  std::vector<nlohmann::json> historyJson;
   if (contexts.find(contextId) != contexts.end()) {
-    history = contexts[contextId];
+    historyJson = contexts[contextId];
   }
-  history.push_back({
+  historyJson.push_back({
     {"role", "user"},
     {"parts", {{{"text", prompt}}}}
   });
 
-  nlohmann::json payload = {{"contents", history}};
+  nlohmann::json payload = {{"contents", historyJson}};
   std::string jsonStr = payload.dump();
 
   std::thread([this, contextId, prompt, history, callback, stoken, jsonStr]() mutable {
@@ -254,11 +261,7 @@ bool GeminiAI::generateStream(const std::string &contextId,
     curl_easy_cleanup(curl);
 
     if (success && !ctx.fullResponse.empty()) {
-      history.push_back({
-        {"role", "model"},
-        {"parts", {{{"text", ctx.fullResponse}}}}
-      });
-      contexts[contextId] = history;
+      // Local history tracking is handled by NPCContext
 
       std::lock_guard<std::mutex> lock(messagesMutex);
       lastMessages[contextId] = ctx.fullResponse;
