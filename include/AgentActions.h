@@ -3,6 +3,7 @@
 #include "Components.h"
 #include "Map.h"
 #include "PathFinding.h"
+#include "Defaults.h"
 
 #include <flecs.h>
 #include <string>
@@ -104,8 +105,37 @@ public:
 
         void resume(flecs::entity) override {}
 
-      private:
+      protected:
         GamePosition targetPos;
+      };
+
+      class MoveToObjectAction : public MoveAction {
+      public:
+        MoveToObjectAction(GamePosition target, flecs::entity obj) 
+            : MoveAction(target), targetObject(obj) {};
+
+        std::string getSuccessMessage() override {
+          if (!targetObject.is_alive()) return "System: The object is no longer here.\n";
+          
+          std::string objName = "Object";
+          if (targetObject.has<DisplayName>()) {
+            objName = targetObject.get<DisplayName>()->name;
+          }
+          std::string options = "System: You have arrived at the " + objName + ". Available actions:\n";
+          int optionNum = 1;
+          if (targetObject.has<Harvestable>()) {
+             options += std::to_string(optionNum++) + ") Harvest\n";
+          }
+          if (targetObject.has<Workstation>()) {
+             options += std::to_string(optionNum++) + ") Craft\n";
+          }
+          options += std::to_string(optionNum++) + ") Examine\n";
+          options += "To choose, use [INTERACT $NUMBER].\n";
+          
+          return options;
+        }
+      private:
+        flecs::entity targetObject;
       };
 
       class MoveToEntityAction : public AgentAction {
@@ -268,3 +298,65 @@ private:
       private:
         std::string response;
       };
+
+      class ObjectsAction : public AgentAction {
+      public:
+        ActionStatus update(float, flecs::entity entity) override {
+          if (isFirstUpdate) {
+            isFirstUpdate = false;
+            successMsg = "System: Nearby objects:\n";
+            const GamePosition currentPos = *entity.get<GamePosition>();
+            bool found = false;
+
+            entity.world().filter<Interactable, DisplayName, GamePosition>().each(
+                [&](flecs::entity obj, const Interactable&, const DisplayName& dName, const GamePosition& pos) {
+                  if (std::abs(pos.x - currentPos.x) <= DEFAULT_OBJECT_SEARCH_RADIUS && std::abs(pos.y - currentPos.y) <= DEFAULT_OBJECT_SEARCH_RADIUS) {
+                    successMsg += "- " + dName.name + " (at " + std::to_string(pos.x) + ", " + std::to_string(pos.y) + ")\n";
+                    found = true;
+                  }
+                });
+
+            if (!found) {
+              successMsg = "System: There are no objects nearby.\n";
+            }
+          }
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return successMsg;
+        }
+        
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+        
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string successMsg;
+        bool isFirstUpdate = true;
+      };
+
+      class InteractAction : public AgentAction {
+      public:
+        InteractAction(int option) : option(option) {}
+        ActionStatus update(float, flecs::entity) override {
+          // TODO: Implement interaction logic
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return "System: You selected option " + std::to_string(option) + " (Not yet fully implemented).\n";
+        }
+        
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+        
+        void resume(flecs::entity) override {}
+
+      private:
+        int option;
+      };
+

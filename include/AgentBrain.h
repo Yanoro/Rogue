@@ -21,6 +21,8 @@ enum class NPCCommandType {
   TALK_TO,
   CHARACTERS_QUERY,
   LOCATIONS_QUERY,
+  OBJECTS_QUERY,
+  INTERACT,
 };
 
 #include "AgentActions.h"
@@ -39,14 +41,17 @@ System: You are an AI roleplaying as an NPC in a game. When navigating the world
 
 AVAILABLE COMMANDS:
 [DO_NOTHING]
-[MOVE_TO $LOCATION]
+[MOVE_TO $TARGET]
+[INTERACT $NUMBER]
 [TALK_TO $CHARACTER]
 [CHARACTERS]
 [LOCATIONS]
+[OBJECTS]
 
 VARIABLES & RULES:
-- $LOCATION must be chosen from this list: %LOCATIONS%
+- $TARGET can be a location or an object. Available locations: %LOCATIONS%
 - $COMMAND must be chosen from the available commands list.
+- To see nearby objects you can move to, issue the [OBJECTS] command.
 - If you need to know who is nearby to talk to, issue the [CHARACTERS] command.
 - If you need to remind yourself of the available locations in the world, issue the [LOCATIONS] command.
 

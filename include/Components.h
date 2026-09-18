@@ -216,6 +216,24 @@ struct CHARACTERS_QUERY {};
 
 struct INVALID_ACTION {};
 
+// Object Components
+struct Interactable {
+  bool active = true;
+};
+
+struct Harvestable {
+  std::string resourceType;
+  int amountRemaining;
+};
+
+struct Workstation {
+  std::vector<std::string> recipes;
+};
+
+struct Obstacle {
+  bool blocksMovement = true;
+};
+
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>
 inline flecs::opaque<Vector, Elem> std_vector_support(flecs::world &world) {

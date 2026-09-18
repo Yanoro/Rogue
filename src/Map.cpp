@@ -2,6 +2,7 @@
 #include "Defaults.h"
 #include "Game.h"
 #include "raylib.h"
+#include "ObjectFactory.h"
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -87,6 +88,19 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath) {
       if (++currPos.y == height) {
         currPos.y = 0;
         currPos.x++;
+      }
+    }
+
+    if (json.contains("objects")) {
+      ObjectFactory factory;
+      factory.LoadTemplates("data/objects");
+      for (const auto &objData : json["objects"]) {
+        std::string type = objData.value("type", "");
+        int x = objData.value("x", 0);
+        int y = objData.value("y", 0);
+        if (!type.empty()) {
+          factory.SpawnObject(ecs, mapEntity, this, type, x, y);
+        }
       }
     }
 

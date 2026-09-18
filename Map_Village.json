@@ -43,6 +43,33 @@
       ],
       "hitboxWidth": 8,
       "hitboxHeight": 8
+    },
+    {
+      "name": "Apple Tree Garden",
+      "description": "A small garden with some apple trees.",
+      "position": [
+        30,
+        10
+      ],
+      "hitboxWidth": 8,
+      "hitboxHeight": 8
+    }
+  ],
+  "objects": [
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 32,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 12
     }
   ],
   "tileInfo": [

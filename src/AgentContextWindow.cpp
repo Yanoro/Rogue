@@ -47,6 +47,8 @@ void NPCContextWindow::Draw() {
     std::istringstream stream(currentContext);
     std::string line;
     bool inThought = false;
+    bool inSystem = true;
+    bool inYou = false;
 
     while (std::getline(stream, line)) {
       if (!line.empty() && line.back() == '\r') {
@@ -57,17 +59,33 @@ void NPCContextWindow::Draw() {
         continue;
       }
 
+      if (line.find("System:") == 0) {
+        inSystem = true;
+        inYou = false;
+      } else if (line.find("You:") == 0) {
+        inYou = true;
+        inSystem = false;
+      }
+
       if (line.find("<think>") != std::string::npos) {
         inThought = true;
       }
 
+      bool colorPushed = false;
       if (inThought) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+        colorPushed = true;
+      } else if (inSystem) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.6f, 1.0f, 1.0f)); // Light Blue
+        colorPushed = true;
+      } else if (inYou) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f)); // Light Green
+        colorPushed = true;
       }
 
       ImGui::TextWrapped("%s", line.c_str());
 
-      if (inThought) {
+      if (colorPushed) {
         ImGui::PopStyleColor();
       }
 
