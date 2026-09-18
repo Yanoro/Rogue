@@ -208,6 +208,9 @@ void Game::UpdateGUI() {
         if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
           std::vector<GamePosition> path = AStar(map.get(), *pPos, gPos);
           playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
+          if (playerEntity.has<PendingPlayerInteraction>()) {
+            playerEntity.remove<PendingPlayerInteraction>();
+          }
         }
       }
       isSettingPlayerTarget =
@@ -225,6 +228,19 @@ void Game::UpdateGUI() {
             }
           });
     }
+  } else if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) && !ImGui::GetIO().WantCaptureMouse) {
+    Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+    GamePosition gPos = map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
+
+    bool found = false;
+    ecs.filter<Interactable, const GamePosition>().each(
+        [this, &gPos, &found](flecs::entity entity, const Interactable &, const GamePosition &pos) {
+          if (!found && gPos.x == pos.x && gPos.y == pos.y) {
+            contextMenuTarget = entity;
+            openContextMenu = true;
+            found = true;
+          }
+        });
   }
 }
 

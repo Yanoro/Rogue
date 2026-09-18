@@ -164,7 +164,7 @@ struct AgentSleepTimer {
   float time_remaining_ms;
 };
 
-struct NPCTag {};
+struct CharacterTag {};
 
 struct NPCContext {
   std::vector<ChatMessage> history;
@@ -176,6 +176,7 @@ struct AIRequest {
   bool finished = false;
   std::string pendingResponse;
   bool dispatched = false;
+  std::stop_source stopSource;
 };
 
 struct MovingTowards {};
@@ -232,6 +233,24 @@ struct Workstation {
 
 struct Obstacle {
   bool blocksMovement = true;
+};
+
+struct Portable {
+  bool canBePickedUp = true;
+};
+
+struct InteractionTarget {
+  flecs::entity targetEntity;
+};
+
+struct PendingPlayerInteraction {
+  flecs::entity targetEntity;
+  std::string interactionName;
+};
+
+class ObjectFactory;
+struct ObjectFactoryResource {
+  ObjectFactory* factory;
 };
 
 // Reusable reflection support for std::vector
@@ -299,6 +318,7 @@ inline void RegisterComponents(flecs::world &ecs) {
       .member<unsigned char>("a");
 
   ecs.component<ActiveWindow>();
+  ecs.component<PendingPlayerInteraction>();
 
   ecs.component<std::string>()
       .opaque(flecs::String)

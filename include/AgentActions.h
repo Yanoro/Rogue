@@ -4,6 +4,8 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "Defaults.h"
+#include "ObjectFactory.h"
+#include "InteractionRegistry.h"
 
 #include <flecs.h>
 #include <string>
@@ -114,6 +116,14 @@ public:
         MoveToObjectAction(GamePosition target, flecs::entity obj) 
             : MoveAction(target), targetObject(obj) {};
 
+        ActionStatus update(float dt, flecs::entity entity) override {
+          ActionStatus status = MoveAction::update(dt, entity);
+          if (status == ActionStatus::Done && targetObject.is_alive()) {
+            entity.set<InteractionTarget>({targetObject});
+          }
+          return status;
+        }
+
         std::string getSuccessMessage() override {
           if (!targetObject.is_alive()) return "System: The object is no longer here.\n";
           
@@ -223,12 +233,12 @@ public:
       public:
         ActionStatus update(float, flecs::entity entity) override {
           std::string characterNames;
-          auto name_filter = entity.world().filter<DisplayName>();
+          auto name_filter = entity.world().filter<DisplayName, CharacterTag>();
           
           const DisplayName* myNameComp = entity.get<DisplayName>();
           std::string myName = myNameComp ? myNameComp->name : "";
 
-          name_filter.each([&characterNames, &myName](const DisplayName &displayName) {
+          name_filter.each([&characterNames, &myName](const DisplayName &displayName, const CharacterTag &) {
             if (!displayName.name.empty() && displayName.name != myName) {
               characterNames += displayName.name + ", ";
             }
@@ -341,13 +351,29 @@ private:
       class InteractAction : public AgentAction {
       public:
         InteractAction(int option) : option(option) {}
-        ActionStatus update(float, flecs::entity) override {
-          // TODO: Implement interaction logic
+        ActionStatus update(float, flecs::entity entity) override {
+          if (isFirstUpdate) {
+            isFirstUpdate = false;
+            auto target = entity.get<InteractionTarget>();
+            if (!target || !target->targetEntity.is_alive()) {
+              successMsg = "System: The object is no longer here.\n";
+              return ActionStatus::Done;
+            }
+
+            flecs::entity targetObj = target->targetEntity;
+            auto interactions = InteractionRegistry::GetAvailableInteractions(targetObj);
+
+            if (option < 1 || option > interactions.size()) {
+              successMsg = "System: Invalid option selected.\n";
+            } else {
+              successMsg = interactions[option - 1].execute(entity, targetObj);
+            }
+          }
           return ActionStatus::Done;
         }
 
         std::string getSuccessMessage() override {
-          return "System: You selected option " + std::to_string(option) + " (Not yet fully implemented).\n";
+          return successMsg;
         }
         
         ActionStatus handleInterruption(flecs::entity) override {
@@ -358,5 +384,7 @@ private:
 
       private:
         int option;
+        bool isFirstUpdate = true;
+        std::string successMsg;
       };
 

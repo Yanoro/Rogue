@@ -2,6 +2,7 @@
 
 #include "Components.h"
 #include "AgentBrain.h"
+#include "Defaults.h"
 #include "imgui.h"
 #include <sstream>
 
@@ -43,12 +44,26 @@ void NPCContextWindow::Draw() {
 
   if (ImGui::BeginChild("ContextScroll", ImVec2(500, 300),
                         ImGuiChildFlags_Borders)) {
-    
     std::istringstream stream(currentContext);
     std::string line;
     bool inThought = false;
-    bool inSystem = true;
-    bool inYou = false;
+    
+    enum Speaker { SYSTEM, YOU, OTHER };
+    Speaker currentSpeaker = SYSTEM;
+
+    float window_visible_x2 = ImGui::GetWindowContentRegionMax().x;
+
+    auto render_word = [&](const std::string& w, const ImVec4* overrideColor = nullptr) {
+        if (w.empty()) return;
+        if (overrideColor) ImGui::PushStyleColor(ImGuiCol_Text, *overrideColor);
+        ImVec2 text_size = ImGui::CalcTextSize(w.c_str());
+        if (ImGui::GetCursorPosX() + text_size.x >= window_visible_x2 - 5.0f) {
+            ImGui::NewLine();
+        }
+        ImGui::TextUnformatted(w.c_str());
+        ImGui::SameLine(0, 0);
+        if (overrideColor) ImGui::PopStyleColor();
+    };
 
     while (std::getline(stream, line)) {
       if (!line.empty() && line.back() == '\r') {
@@ -59,35 +74,99 @@ void NPCContextWindow::Draw() {
         continue;
       }
 
-      if (line.find("System:") == 0) {
-        inSystem = true;
-        inYou = false;
-      } else if (line.find("You:") == 0) {
-        inYou = true;
-        inSystem = false;
-      }
-
       if (line.find("<think>") != std::string::npos) {
         inThought = true;
       }
 
-      bool colorPushed = false;
+      size_t start_idx = 0;
+      ImVec4 prefixColor;
+      bool hasPrefix = false;
+      std::string prefixStr;
+
+      if (line.find("System: ") == 0) {
+          currentSpeaker = SYSTEM;
+          prefixStr = "System: ";
+          prefixColor = DEFAULT_COLOR_SYSTEM_PREFIX;
+          hasPrefix = true;
+          start_idx = 8;
+      } else if (line.find("System:") == 0) {
+          currentSpeaker = SYSTEM;
+          prefixStr = "System:";
+          prefixColor = DEFAULT_COLOR_SYSTEM_PREFIX;
+          hasPrefix = true;
+          start_idx = 7;
+      } else if (line.find("You: ") == 0) {
+          currentSpeaker = YOU;
+          prefixStr = "You: ";
+          prefixColor = DEFAULT_COLOR_YOU_PREFIX;
+          hasPrefix = true;
+          start_idx = 5;
+      } else if (line.find("You:") == 0) {
+          currentSpeaker = YOU;
+          prefixStr = "You:";
+          prefixColor = DEFAULT_COLOR_YOU_PREFIX;
+          hasPrefix = true;
+          start_idx = 4;
+      } else {
+          size_t says_pos = line.find(" says: ");
+          if (says_pos != std::string::npos && says_pos < 30) {
+              currentSpeaker = OTHER;
+              prefixStr = line.substr(0, says_pos + 7);
+              prefixColor = DEFAULT_COLOR_OTHER_PREFIX;
+              hasPrefix = true;
+              start_idx = says_pos + 7;
+          }
+      }
+
+      ImVec4 baseColor;
       if (inThought) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-        colorPushed = true;
-      } else if (inSystem) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.6f, 1.0f, 1.0f)); // Light Blue
-        colorPushed = true;
-      } else if (inYou) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.9f, 0.4f, 1.0f)); // Light Green
-        colorPushed = true;
+          baseColor = DEFAULT_COLOR_THOUGHT;
+      } else if (currentSpeaker == SYSTEM) {
+          baseColor = DEFAULT_COLOR_SYSTEM_TEXT;
+      } else if (currentSpeaker == YOU) {
+          baseColor = DEFAULT_COLOR_YOU_TEXT;
+      } else {
+          baseColor = DEFAULT_COLOR_OTHER_TEXT;
       }
 
-      ImGui::TextWrapped("%s", line.c_str());
+      ImGui::PushStyleColor(ImGuiCol_Text, baseColor);
 
-      if (colorPushed) {
-        ImGui::PopStyleColor();
+      if (hasPrefix) {
+          render_word(prefixStr, &prefixColor);
       }
+
+      std::string current_word;
+      bool in_cmd = false;
+      ImVec4 cmdColor = DEFAULT_COLOR_COMMAND;
+
+      for (size_t i = start_idx; i <= line.length(); ++i) {
+          char c = (i < line.length()) ? line[i] : '\0';
+          if (c == '\0') {
+              render_word(current_word, in_cmd ? &cmdColor : nullptr);
+              break;
+          }
+          
+          if (c == '[') {
+              render_word(current_word, nullptr);
+              current_word.clear();
+              in_cmd = true;
+              current_word += c;
+          } else if (c == ']' && in_cmd) {
+              current_word += c;
+              render_word(current_word, &cmdColor);
+              current_word.clear();
+              in_cmd = false;
+          } else if ((c == ' ' || c == '\t') && !in_cmd) {
+              current_word += c;
+              render_word(current_word, nullptr);
+              current_word.clear();
+          } else {
+              current_word += c;
+          }
+      }
+      ImGui::NewLine();
+
+      ImGui::PopStyleColor(); // Pop baseColor
 
       if (line.find("</think>") != std::string::npos) {
         inThought = false;

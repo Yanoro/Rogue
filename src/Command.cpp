@@ -29,6 +29,14 @@ void ChangeVelocityCommand::execute(flecs::entity e) {
   if (!e.has<Velocity>()) {
     e.set<Velocity>(Velocity{0.0f, 0.0f});
   }
+  
+  if (e.has<PendingPlayerInteraction>()) {
+    e.remove<PendingPlayerInteraction>();
+  }
+  if (e.has<MOVE_THROUGH_PATH_ACTION>()) {
+    e.remove<MOVE_THROUGH_PATH_ACTION>();
+  }
+
   auto v = e.get_mut<Velocity>();
   //TODO: Can probably clean this up
   if (e.has<MaxSpeed>()) {

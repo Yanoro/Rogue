@@ -11,6 +11,7 @@
 #include "Game.h"
 
 #include "AgentBrain.h"
+#include "InteractionRegistry.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
 #include "flecs.h"
@@ -53,6 +54,8 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
           .set<Friction>({DEFAULT_ENTITY_FRICTION})
           .set<WindowOnClick>({WindowType::NPCContextWindowType})
           .add<BlocksTile>();
+
+  entity.add<CharacterTag>();
 
   std::string locations = "";
   std::string characterNames = "";
@@ -434,6 +437,20 @@ void Game::ECSInitActionSystems() {
           std::string name = entity.name().c_str();
           debugLog->LogInfo("Entity " + name + " has finished it's path");
           entity.remove<MOVE_THROUGH_PATH_ACTION>();
+          
+          if (auto pendingInt = entity.get<PendingPlayerInteraction>()) {
+            if (pendingInt->targetEntity.is_alive()) {
+              auto interactions = InteractionRegistry::GetAvailableInteractions(pendingInt->targetEntity);
+              for (const auto& interaction : interactions) {
+                if (interaction.name == pendingInt->interactionName) {
+                  std::string msg = interaction.execute(entity, pendingInt->targetEntity);
+                  if (debugLog) debugLog->Log(msg);
+                  break;
+                }
+              }
+            }
+            entity.remove<PendingPlayerInteraction>();
+          }
           return;
         }
         GamePosition currWaypoint = tPath.path[0];
@@ -481,7 +498,19 @@ void Game::ECSInitActionSystems() {
         }
 
         desiredVelocity *= DEFAULT_WAYPOINT_ACCEL * slowFactor;
-        accel += desiredVelocity - vel;
+        Acceleration pathAccel = desiredVelocity - vel;
+        if (pathAccel.Length() > DEFAULT_WAYPOINT_ACCEL) {
+            pathAccel = pathAccel.Normalize() * DEFAULT_WAYPOINT_ACCEL;
+        }
+        
+        if (const Friction *f = entity.get<Friction>()) {
+            if (vel.Length() > 3.0f) {
+                float gravity = 9.8f;
+                pathAccel += vel.Normalize().Scale(gravity * f->value);
+            }
+        }
+        
+        accel += pathAccel;
 
         static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
         static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 10};
@@ -593,6 +622,11 @@ void Game::ECSInitAgentSystems() {
         ctx.contextID = std::to_string(e.id());
       });
 
+  ecs.observer<AIRequest>()
+      .event(flecs::OnRemove)
+      .each([](flecs::entity e, AIRequest &req) {
+        req.stopSource.request_stop();
+      });
   auto ai = ecs.get<AIBackend>();
   ecs.system<AIRequest, NPCContext>().each([this, ai](flecs::entity entity,
                                                       AIRequest &request,
@@ -636,7 +670,7 @@ void Game::ECSInitAgentSystems() {
     if (!request.prompt.empty()) {
       ctx.history.push_back({"user", request.prompt});
     }
-    aiPtr->generateStream(ctx.contextID, ctx.history, callBack);
+    aiPtr->generateStream(ctx.contextID, ctx.history, callBack, request.stopSource.get_token());
   });
 
   ecs.system<AgentBrainWrapper>().iter([](flecs::iter &it, AgentBrainWrapper *brains) {
@@ -652,9 +686,44 @@ void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
 
+  objectFactory.LoadTemplates("data/objects");
+  ecs.set<ObjectFactoryResource>({&objectFactory});
+
   LoadMap(mapPath);
 
   RegisterComponents(ecs);
+
+  InteractionRegistry::Clear();
+  
+  InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target) {
+      std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
+      Harvestable* h = target.get_mut<Harvestable>();
+      
+      if (h->amountRemaining > 0) {
+        h->amountRemaining--;
+        auto factoryRes = actor.world().get<ObjectFactoryResource>();
+        if (factoryRes && factoryRes->factory) {
+          flecs::world ecs = actor.world();
+          factoryRes->factory->SpawnObject(ecs, actor, nullptr, h->resourceType);
+        }
+        std::string msg = "System: You harvested 1 " + h->resourceType + " from " + objName + ".\n";
+        if (h->amountRemaining <= 0) {
+          msg += "The " + objName + " is depleted and destroyed.\n";
+          target.destruct();
+        }
+        return msg;
+      }
+      return "System: The " + objName + " has no more resources to harvest.\n";
+  });
+
+  InteractionRegistry::RegisterComponentInteraction<Workstation>("Craft", [](flecs::entity actor, flecs::entity target) {
+      return "System: Crafting menu opened (Not yet implemented).\n";
+  });
+
+  InteractionRegistry::RegisterComponentInteraction<DisplayName>("Examine", [](flecs::entity actor, flecs::entity target) {
+      std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
+      return "System: You examined the " + objName + ". It looks normal.\n";
+  });
 
   std::unique_ptr<AI> ai;
   std::ifstream f("model.json");
@@ -735,6 +804,7 @@ void Game::ECSInit(std::string mapPath) {
 
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
+  playerEntity.add<CharacterTag>();
 
   createNPC({20, 1}, "John",
             "Your name is John, you are an extreme extrovert who always wants "

@@ -31,7 +31,7 @@ void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
   }
 }
 
-flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, int x, int y) {
+flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos) {
   if (templates.find(type) == templates.end()) {
     std::cerr << "Warning: Attempted to spawn unknown object type: " << type << std::endl;
     return flecs::entity::null();
@@ -39,12 +39,13 @@ flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent
 
   const auto& tmpl = templates[type];
   
-  flecs::entity obj = ecs.entity()
-                        .child_of(parent)
-                        .set<GamePosition>({x, y});
+  flecs::entity obj = ecs.entity().child_of(parent);
 
-  if (map) {
-    obj.set<ScreenPosition>(map->GameCoordsToScreenCoords(x, y));
+  if (pos.has_value()) {
+    obj.set<GamePosition>(pos.value());
+    if (map) {
+      obj.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos->x, pos->y));
+    }
   }
 
   if (tmpl.contains("character")) {
@@ -88,6 +89,7 @@ flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent
     for (const auto& compName : tmpl["components"]) {
       if (compName == "Interactable") obj.add<Interactable>();
       else if (compName == "Obstacle") obj.add<Obstacle>();
+      else if (compName == "Portable") obj.add<Portable>();
       else if (compName == "Harvestable") {
         Harvestable h;
         h.resourceType = tmpl.value("resourceType", "unknown");

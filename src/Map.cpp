@@ -92,14 +92,15 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath) {
     }
 
     if (json.contains("objects")) {
-      ObjectFactory factory;
-      factory.LoadTemplates("data/objects");
-      for (const auto &objData : json["objects"]) {
-        std::string type = objData.value("type", "");
-        int x = objData.value("x", 0);
-        int y = objData.value("y", 0);
-        if (!type.empty()) {
-          factory.SpawnObject(ecs, mapEntity, this, type, x, y);
+      auto factoryRes = ecs.get<ObjectFactoryResource>();
+      if (factoryRes && factoryRes->factory) {
+        for (const auto &objData : json["objects"]) {
+          std::string type = objData.value("type", "");
+          int x = objData.value("x", 0);
+          int y = objData.value("y", 0);
+          if (!type.empty()) {
+            factoryRes->factory->SpawnObject(ecs, mapEntity, this, type, GamePosition{x, y});
+          }
         }
       }
     }

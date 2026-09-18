@@ -43,6 +43,7 @@ public:
 private:
   raylib::Window window;
   std::unique_ptr<Map> map;
+  ObjectFactory objectFactory;
 
   flecs::world ecs;
   flecs::entity renderPipeline;
@@ -58,7 +59,12 @@ private:
   Font gameFont;
   size_t virtualWidth;
   size_t virtualHeight;
-  // Available fonts for selection
+
+  flecs::entity contextMenuTarget;
+  bool openContextMenu = false;
+  Vector2 contextMenuScreenPos;
+
+  // Camera settings for selection
   std::vector<std::string> availableFontPaths;
   int selectedFontIndex = 0;
   // Astar related variables (Mainly drawing related)

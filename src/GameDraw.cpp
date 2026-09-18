@@ -11,6 +11,7 @@
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
+#include "InteractionRegistry.h"
 
 void Game::DrawGameWindows() {
   // Draw any active component-based UI windows
@@ -21,6 +22,45 @@ void Game::DrawGameWindows() {
       }
     });
   });
+
+  if (openContextMenu) {
+    ImGui::OpenPopup("ObjectContextMenu");
+    openContextMenu = false; // Reset so it doesn't keep opening
+  }
+
+  if (ImGui::BeginPopup("ObjectContextMenu")) {
+    if (contextMenuTarget.is_alive()) {
+      auto interactions = InteractionRegistry::GetAvailableInteractions(contextMenuTarget);
+      
+      std::string objName = "Object";
+      if (contextMenuTarget.has<DisplayName>()) {
+        objName = contextMenuTarget.get<DisplayName>()->name;
+      }
+      ImGui::TextDisabled("%s", objName.c_str());
+      ImGui::Separator();
+
+      if (interactions.empty()) {
+        ImGui::Text("No actions available");
+      } else {
+        for (const auto& interaction : interactions) {
+          if (ImGui::Selectable(interaction.name.c_str())) {
+            // Cancel any old interaction first
+            playerEntity.remove<PendingPlayerInteraction>();
+            
+            // Pathfind to the object
+            if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
+              if (const GamePosition *tPos = contextMenuTarget.get<GamePosition>()) {
+                std::vector<GamePosition> path = AStar(map.get(), *pPos, *tPos);
+                playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
+                playerEntity.set<PendingPlayerInteraction>({contextMenuTarget, interaction.name});
+              }
+            }
+          }
+        }
+      }
+    }
+    ImGui::EndPopup();
+  }
 }
 
 
