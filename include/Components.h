@@ -248,6 +248,8 @@ struct PendingPlayerInteraction {
   std::string interactionName;
 };
 
+struct Holds {};
+
 class ObjectFactory;
 struct ObjectFactoryResource {
   ObjectFactory* factory;

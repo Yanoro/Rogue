@@ -53,6 +53,7 @@ private:
   bool hasClicked = false;
   bool validTileSelected = false;
   GamePosition lastClickedPos{0, 0};
+  double lastLeftClickTime = 0.0;
 
   raylib::RenderTexture2D gameTexture;
 

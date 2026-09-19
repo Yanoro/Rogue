@@ -146,12 +146,27 @@ void Game::UpdateGUI() {
     GamePosition gPos =
         map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
 
+    bool clickedWindow = false;
     auto ai = ecs.get<AIBackend>();
     ecs.defer_begin();
     ecs.filter<GamePosition, WindowOnClick>().each(
-        [&gPos, ai, this](flecs::entity entity, const GamePosition &pos,
+        [&gPos, &mouseWorldPos, ai, this, &clickedWindow](flecs::entity entity, const GamePosition &pos,
                           WindowOnClick &clickWin) {
-          if (gPos == pos) {
+          bool clickedOnEntity = false;
+          if (const ScreenPosition *sPos = entity.get<ScreenPosition>()) {
+            if (const Hitbox *hb = entity.get<Hitbox>()) {
+              raylib::Rectangle rect(sPos->x, sPos->y, hb->width, hb->height);
+              if (rect.CheckCollision(mouseWorldPos)) {
+                clickedOnEntity = true;
+              }
+            }
+          }
+          if (!clickedOnEntity && gPos == pos) {
+            clickedOnEntity = true;
+          }
+
+          if (clickedOnEntity) {
+            clickedWindow = true;
             switch (clickWin.type) {
             case ::WindowType::AIChatWindowType:
               if (entity.has<ActiveWindow>()) {
@@ -215,7 +230,25 @@ void Game::UpdateGUI() {
       }
       isSettingPlayerTarget =
           false; // Disable the mode after setting the target
-    } else {
+    } else if (!clickedWindow) {
+      double currentTime = GetTime();
+      bool isDoubleClick = (currentTime - lastLeftClickTime < DEFAULT_DOUBLE_CLICK_TIME) && (lastClickedPos == gPos);
+      lastLeftClickTime = currentTime;
+
+      if (isDoubleClick) {
+        if (playerEntity.is_alive()) {
+          if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
+            std::vector<GamePosition> path = AStar(map.get(), *pPos, gPos);
+            if (!path.empty()) {
+              playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
+              if (playerEntity.has<PendingPlayerInteraction>()) {
+                playerEntity.remove<PendingPlayerInteraction>();
+              }
+            }
+          }
+        }
+      }
+
       lastClickedPos = gPos;
       hasClicked = true;
       validTileSelected = false;

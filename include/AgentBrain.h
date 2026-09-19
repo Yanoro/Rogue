@@ -22,6 +22,7 @@ enum class NPCCommandType {
   CHARACTERS_QUERY,
   LOCATIONS_QUERY,
   OBJECTS_QUERY,
+  INVENTORY_QUERY,
   INTERACT,
 };
 
@@ -47,6 +48,7 @@ AVAILABLE COMMANDS:
 [CHARACTERS]
 [LOCATIONS]
 [OBJECTS]
+[INVENTORY]
 
 VARIABLES & RULES:
 - $TARGET can be a location or an object. Available locations: %LOCATIONS%
@@ -54,6 +56,7 @@ VARIABLES & RULES:
 - To see nearby objects you can move to, issue the [OBJECTS] command.
 - If you need to know who is nearby to talk to, issue the [CHARACTERS] command.
 - If you need to remind yourself of the available locations in the world, issue the [LOCATIONS] command.
+- If you need to see what items you are holding, issue the [INVENTORY] command.
 
 CHARACTER CONTEXT:
 - Background: %BACKGROUND%

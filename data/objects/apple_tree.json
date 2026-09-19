@@ -1,0 +1,13 @@
+{
+  "name": "Apple Tree",
+  "components": [
+    "Interactable",
+    "Harvestable",
+    "Obstacle"
+  ],
+  "resourceType": "apple",
+  "amountRemaining": 5,
+  "character": "T",
+  "characterColor": [34, 139, 34, 255],
+  "backgroundColor": [0, 0, 0, 0]
+}

@@ -206,6 +206,8 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
                                 std::regex_constants::icase);
   static std::regex objectsRegex(R"(\[OBJECTS\])",
                                  std::regex_constants::icase);
+  static std::regex inventoryRegex(R"(\[INVENTORY\])",
+                                   std::regex_constants::icase);
   static std::regex interactRegex(R"(\[INTERACT\s+(\d+)\s*\])",
                                   std::regex_constants::icase);
   std::smatch match;
@@ -222,7 +224,8 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
     return {NPCCommandType::LOCATIONS_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, objectsRegex)) {
     return {NPCCommandType::OBJECTS_QUERY, ""};
-
+  } else if (std::regex_search(strippedMsg, match, inventoryRegex)) {
+    return {NPCCommandType::INVENTORY_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, talkToRegex)) {
     return {NPCCommandType::TALK_TO, match[1].str()};
   }
@@ -396,6 +399,12 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     });
     break;
   }
+  case (NPCCommandType::INVENTORY_QUERY): {
+    action_queue.push_back([](flecs::entity) {
+      return std::make_unique<InventoryAction>();
+    });
+    break;
+  }
   case (NPCCommandType::INTERACT): {
     std::string optionStr = std::any_cast<std::string>(msgCmd.params);
     int option = 0;
@@ -439,7 +448,12 @@ void AgentBrain::update(float deltaTime) {
   const AIRequest *request = entity.get<AIRequest>();
   const std::string context = getContext();
   if (request == nullptr) {
-    entity.set<AIRequest>({"System: Based on your background and current location, what is your first command?\n", false, "", false});
+    auto ctx = entity.get<NPCContext>();
+    if (ctx && ctx->history.size() > 1) {
+      entity.set<AIRequest>({"System: What is your next command?\n", false, "", false});
+    } else {
+      entity.set<AIRequest>({"System: Based on your background and current location, what is your first command?\n", false, "", false});
+    }
     entity.set<AgentSleepTimer>({10});
     return;
   }

@@ -321,7 +321,7 @@ private:
             entity.world().filter<Interactable, DisplayName, GamePosition>().each(
                 [&](flecs::entity obj, const Interactable&, const DisplayName& dName, const GamePosition& pos) {
                   if (std::abs(pos.x - currentPos.x) <= DEFAULT_OBJECT_SEARCH_RADIUS && std::abs(pos.y - currentPos.y) <= DEFAULT_OBJECT_SEARCH_RADIUS) {
-                    successMsg += "- " + dName.name + " (at " + std::to_string(pos.x) + ", " + std::to_string(pos.y) + ")\n";
+                    successMsg += "- " + dName.name + "\n";
                     found = true;
                   }
                 });
@@ -346,6 +346,39 @@ private:
       private:
         std::string successMsg;
         bool isFirstUpdate = true;
+      };
+
+      class InventoryAction : public AgentAction {
+      public:
+        ActionStatus update(float, flecs::entity entity) override {
+          std::string inventoryList;
+          entity.each<Holds>([&](flecs::entity child) {
+            if (child.is_alive() && child.has<DisplayName>()) {
+              inventoryList += "- " + child.get<DisplayName>()->name + "\n";
+            }
+          });
+
+          if (inventoryList.empty()) {
+            response = "System: Your inventory is empty.\n";
+          } else {
+            response = "System: You are currently holding:\n" + inventoryList;
+          }
+
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return response;
+        }
+        
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+        
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string response;
       };
 
       class InteractAction : public AgentAction {

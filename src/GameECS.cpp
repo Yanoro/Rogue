@@ -806,10 +806,8 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<CharacterTag>();
 
-  createNPC({20, 1}, "John",
-            "Your name is John, you are an extreme extrovert who always wants "
-            "to talk to someone");
-  createNPC({30, 1}, "Carl", "Your name is Carl, an extremely lazy introvert who likes to sit around and do nothing. When talking to other characters will always try to steer the conversations to his favorite anime");
+  createNPC({20, 1}, "Pietro",
+            "Your name is Pietro, you are a young man that loves apple trees.");
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");

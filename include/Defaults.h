@@ -19,8 +19,8 @@ enum class GameCameraMode {
 };
 
 inline const std::string DEFAULT_PLAYER_ENTITY_NAME = "playerCharacter";
-constexpr float DEFAULT_MAXSPEED = 150.0f;
-constexpr float DEFAULT_WAYPOINT_ACCEL = 200.0f;
+constexpr float DEFAULT_MAXSPEED = 100.0f;
+constexpr float DEFAULT_WAYPOINT_ACCEL = 100.0f;
 constexpr float DEFAULT_PLAYER_FRICTION = 30.0f;
 constexpr float DEFAULT_ENTITY_FRICTION = 10.0f;
 constexpr float DEFAULT_VELOCITY = 50.0f;
@@ -39,6 +39,7 @@ constexpr float DEFAULT_INPUT_ZOOM = 1.0f;
 constexpr float DEFAULT_MINIMUM_INPUT_ZOOM = 1.0f;
 constexpr float DEFAULT_MAXIMUM_INPUT_ZOOM = 4.0f;
 constexpr GameCameraMode DEFAULT_STARTING_CAMERA_MODE = GameCameraMode::FollowMode;
+constexpr double DEFAULT_DOUBLE_CLICK_TIME = 0.3;
 
 constexpr const char *DEFAULT_FONT_PATH = "./fonts/oldschool/otb - Bm (linux bitmap)/BmPlus_IBM_CGA.otb";
 constexpr size_t DEFAULT_FONTSIZE = 32;

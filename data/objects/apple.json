@@ -1,0 +1,9 @@
+{
+  "name": "Apple",
+  "components": [
+    "Portable"
+  ],
+  "character": "a",
+  "characterColor": [255, 0, 0, 255],
+  "backgroundColor": [0, 0, 0, 0]
+}
