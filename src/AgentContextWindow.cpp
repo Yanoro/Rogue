@@ -188,5 +188,37 @@ void NPCContextWindow::Draw() {
   }
   ImGui::EndChild();
 
+  if (entity.is_alive() && entity.has<AgentBrainWrapper>()) {
+    auto wrapper = entity.get_mut<AgentBrainWrapper>();
+    if (wrapper->agBrain) {
+      if (wrapper->agBrain->isStopped) {
+        ImGui::Separator();
+        ImGui::PushItemWidth(-100);
+        bool enterPressed = ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf), ImGuiInputTextFlags_EnterReturnsTrue);
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        bool sendPressed = ImGui::Button("Send as AI");
+        if (enterPressed || sendPressed) {
+          std::string inputStr(inputBuf);
+          if (!inputStr.empty()) {
+            wrapper->agBrain->appendContext("assistant", "You: " + inputStr + "\n");
+            auto msgCmd = wrapper->agBrain->ParseMessageCommand(inputStr);
+            wrapper->agBrain->addCmdToQueue(msgCmd);
+            memset(inputBuf, 0, sizeof(inputBuf));
+          }
+        }
+      } else {
+        ImGui::Separator();
+        ImGui::BeginDisabled();
+        ImGui::PushItemWidth(-100);
+        ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf));
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        ImGui::Button("Send as AI");
+        ImGui::EndDisabled();
+      }
+    }
+  }
+
   ImGui::End();
 }

@@ -16,4 +16,5 @@ private:
     std::string name;
     std::string fallbackContext;
     bool autoScroll = true;
+    char inputBuf[256] = "";
 };

@@ -2,6 +2,7 @@
 #include "Defaults.h"
 #include "raylib.h"
 #include <algorithm>
+#include "imgui.h"
 
 InputHandler::InputHandler(raylib::Camera2D &gameCamera,
                            GameCameraMode &cameraMode, size_t mapWidthPx,
@@ -10,6 +11,13 @@ InputHandler::InputHandler(raylib::Camera2D &gameCamera,
       mapHeightPx(mapHeightPx) {};
 
 std::vector<Command *> InputHandler::handleInput() {
+  std::vector<Command *> commands;
+
+  // Ignore input if ImGui is capturing keyboard (e.g. typing in a text field)
+  if (ImGui::GetIO().WantCaptureKeyboard) {
+    return commands;
+  }
+
   // Actions that do not affect in game 16:19
   // Camera movement, zooming, etc.
 
@@ -50,8 +58,6 @@ std::vector<Command *> InputHandler::handleInput() {
                                 DEFAULT_MAXIMUM_INPUT_ZOOM);
     }
   }
-
-  std::vector<Command *> commands;
 
   // Actions that affect game state
   if (IsKeyDown(KEY_W))
