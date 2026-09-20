@@ -201,7 +201,7 @@ void NPCContextWindow::Draw() {
         if (enterPressed || sendPressed) {
           std::string inputStr(inputBuf);
           if (!inputStr.empty()) {
-            wrapper->agBrain->appendContext("assistant", "You: " + inputStr + "\n");
+            wrapper->agBrain->appendContext("assistant", inputStr + "\n");
             auto msgCmd = wrapper->agBrain->ParseMessageCommand(inputStr);
             wrapper->agBrain->addCmdToQueue(msgCmd);
             memset(inputBuf, 0, sizeof(inputBuf));
