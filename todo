@@ -1,3 +1,31 @@
-Have AI download a bunch of different fonts so i can test them all at once
-Improve ease of font testing
-Make A* not take diagonal paths with walls on either end
+High: 
+  Create farmer
+  Create blacksmith
+  Create cook
+  Create Mayor
+  Storage solution
+  Helper AI that guides agents on how to accomplish their task
+  Have an easy way to tell which AI openrouter is using
+  Map editing tools
+  Being able to take control over AI's context
+  AI Menu
+
+Medium:
+  Make A* not take diagonal paths with walls on either end
+  Whenever an entity moving to a location changes tile, use A* again to find a better path
+  Add disable AI by default option
+  Add harvest timer
+
+Low:
+ Improve map system, change from json to raw binary
+
+Maybe:
+  Add possibility for AI to increase radius of surroundings call
+
+ ======
+ Current Thoughts:
+
+ Create storage for farmer, ideally have him harvest the crops and store them in his house.
+ Implement farmer being able to plant his crops
+
+
