@@ -152,6 +152,10 @@ struct DisplayName {
   std::string name;
 };
 
+struct NameTagColor {
+  Color color;
+};
+
 struct ActiveWindow {
   std::shared_ptr<Window> ptr;
 };
@@ -222,9 +226,18 @@ struct Interactable {
   bool active = true;
 };
 
+struct LootDrop {
+  std::string itemType;
+  float chance;
+};
+
+struct LootTable {
+  std::vector<LootDrop> drops;
+};
+
 struct Harvestable {
-  std::string resourceType;
   int amountRemaining;
+  LootTable lootTable;
 };
 
 struct Workstation {
@@ -234,6 +247,7 @@ struct Workstation {
 struct Obstacle {
   bool blocksMovement = true;
 };
+
 
 struct Portable {
   bool canBePickedUp = true;
@@ -248,7 +262,17 @@ struct PendingPlayerInteraction {
   std::string interactionName;
 };
 
+struct Evolvable {
+  float timeRemaining;
+  std::string nextStageTemplate;
+};
+
+
 struct Holds {};
+
+struct LastObjectsQuery {
+  std::vector<flecs::entity> objects;
+};
 
 class ObjectFactory;
 struct ObjectFactoryResource {
@@ -321,6 +345,7 @@ inline void RegisterComponents(flecs::world &ecs) {
 
   ecs.component<ActiveWindow>();
   ecs.component<PendingPlayerInteraction>();
+  ecs.component<LastObjectsQuery>();
 
   ecs.component<std::string>()
       .opaque(flecs::String)

@@ -1,5 +1,7 @@
 #include "DebugWindows.h"
 #include "Game.h"
+#include "AgentBrain.h"
+#include "ObjectFactory.h"
 #include "imgui.h"
 #include "Components.h"
 #include "DebugLog.h"
@@ -165,6 +167,11 @@ void DebugConsoleWindow::Draw() {
   }
   ImGui::SameLine();
 
+  bool showLocations = game->debugWindowState->GetShowLocations();
+  if (ImGui::Checkbox("Show Locations", &showLocations)) {
+    game->debugWindowState->SetShowLocations(showLocations);
+  }
+
   bool showFont = game->fontSelectionWindowEntity.has<ActiveWindow>();
   if (ImGui::Checkbox("Font Selection", &showFont)) {
     if (showFont) {
@@ -172,6 +179,27 @@ void DebugConsoleWindow::Draw() {
     } else {
       game->fontSelectionWindowEntity.remove<ActiveWindow>();
     }
+  }
+  ImGui::SameLine();
+
+  bool showMapEditor = game->mapEditorWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Map Editor", &showMapEditor)) {
+    if (showMapEditor) {
+      game->mapEditorWindowEntity.set<ActiveWindow>({std::make_shared<MapEditorWindow>(game)});
+    } else {
+      game->mapEditorWindowEntity.remove<ActiveWindow>();
+    }
+  }
+
+  ImGui::Separator();
+  
+  static bool stopAllAI = false;
+  if (ImGui::Checkbox("Stop All AI Agents", &stopAllAI)) {
+    game->ecs.filter<AgentBrainWrapper>().each([&](flecs::entity, AgentBrainWrapper& wrapper) {
+      if (wrapper.agBrain) {
+        wrapper.agBrain->isStopped = stopAllAI;
+      }
+    });
   }
 
   ImGui::Separator();
@@ -546,7 +574,23 @@ void FontSelectionWindow::Draw() {
       items.push_back(name.c_str());
     }
 
+    bool fontChanged = false;
+
+    ImGui::PushItemWidth(150);
     if (ImGui::Combo("##FontList", &game->selectedFontIndex, items.data(), items.size())) {
+      fontChanged = true;
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine();
+    if (ImGui::Button("Next")) {
+      if (!items.empty()) {
+        game->selectedFontIndex = (game->selectedFontIndex + 1) % items.size();
+        fontChanged = true;
+      }
+    }
+
+    if (fontChanged) {
       if (game->selectedFontIndex >= 0 && game->selectedFontIndex < (int)game->availableFontPaths.size()) {
         if (game->gameFont.glyphCount > 0) {
           UnloadFont(game->gameFont);
@@ -580,6 +624,84 @@ void FontSelectionWindow::Draw() {
     }
   } else {
     ImGui::TextDisabled("No fonts found in ./fonts directory");
+  }
+
+  ImGui::End();
+}
+
+MapEditorWindow::MapEditorWindow(Game* game) : game(game) {}
+
+void MapEditorWindow::Draw() {
+  bool isOpen = true;
+  ImGui::Begin("Map Editor", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  if (!isOpen) {
+    game->mapEditorWindowEntity.remove<ActiveWindow>();
+    ImGui::End();
+    return;
+  }
+  
+  ImGui::Text("Map Tiles");
+  ImGui::Separator();
+  if (ImGui::BeginTable("TilesTable", 8)) {
+    for (const auto& tile : game->map->GetUniqueTiles()) {
+      ImGui::TableNextColumn();
+      ImVec4 bgColor(tile->ascii->backgroundColor.r / 255.0f, tile->ascii->backgroundColor.g / 255.0f, tile->ascii->backgroundColor.b / 255.0f, tile->ascii->backgroundColor.a / 255.0f);
+      ImVec4 fgColor(tile->ascii->characterColor.r / 255.0f, tile->ascii->characterColor.g / 255.0f, tile->ascii->characterColor.b / 255.0f, tile->ascii->characterColor.a / 255.0f);
+      
+      ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
+      ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
+      
+      std::string label = std::string(1, tile->ascii->ch) + "##" + tile->name;
+      ImGui::Button(label.c_str(), ImVec2(32, 32));
+      
+      ImGui::PopStyleColor(2);
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", tile->name.c_str());
+      }
+    }
+    ImGui::EndTable();
+  }
+  
+  ImGui::Text("Object Templates");
+  ImGui::Separator();
+  if (ImGui::BeginTable("ObjectsTable", 8)) {
+    for (const auto& pair : game->objectFactory.GetTemplates()) {
+      ImGui::TableNextColumn();
+      
+      char ch = '?';
+      ImVec4 bgColor(0,0,0,0);
+      ImVec4 fgColor(1,1,1,1);
+      
+      if (pair.second.contains("character")) {
+         std::string charStr = pair.second["character"];
+         if (!charStr.empty()) ch = charStr[0];
+      }
+      
+      if (pair.second.contains("characterColor")) {
+         auto& c = pair.second["characterColor"];
+         if (c.size() >= 3) {
+            fgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
+         }
+      }
+      if (pair.second.contains("backgroundColor")) {
+         auto& c = pair.second["backgroundColor"];
+         if (c.size() >= 3) {
+            bgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
+         }
+      }
+      
+      ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
+      ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
+      
+      std::string label = std::string(1, ch) + "##" + pair.first;
+      ImGui::Button(label.c_str(), ImVec2(32, 32));
+      
+      ImGui::PopStyleColor(2);
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s", pair.first.c_str());
+      }
+    }
+    ImGui::EndTable();
   }
 
   ImGui::End();

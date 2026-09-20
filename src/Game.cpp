@@ -32,9 +32,9 @@ void Game::Init(std::string mapPath) {
   window.Init(1920, 1080, "AIRogue");
 
   // Initialize debug systems early to read state
-  debugWindowState = std::make_unique<DebugWindowState>();
   debugLog = std::make_unique<DebugLog>();
-  mapReloader = std::make_unique<MapReloader>("./");
+  debugWindowState = std::make_unique<DebugWindowState>(debugLog.get());
+  mapReloader = std::make_unique<MapReloader>("./", debugLog.get());
 
   // Load debug window state if it exists
   debugWindowState->LoadState("./debug_windows_state.json");
@@ -72,9 +72,7 @@ void Game::Init(std::string mapPath) {
   window.SetSize(GetMonitorWidth(currentMonitor),
                  GetMonitorHeight(currentMonitor));
 
-  // Offset the mouse so clicking maps 1:1 on the primary display coordinates
-  SetMouseOffset(static_cast<int>(-GetMonitorPosition(currentMonitor).x),
-                 static_cast<int>(-GetMonitorPosition(currentMonitor).y));
+  // Mouse offset removed. Raylib already reports window-relative coordinates.
 
   // Actually go fullscreen (locks correctly on the targeted monitor in most
   // X11 setups)
@@ -317,6 +315,8 @@ void Game::Shutdown() {
         drawAsciiToggleWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowFontSelectionWindow(
         fontSelectionWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowMapEditorWindow(
+        mapEditorWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState("./debug_windows_state.json");
     if (debugLog) {

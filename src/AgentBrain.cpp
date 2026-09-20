@@ -12,6 +12,13 @@
 #include <memory>
 #include <regex>
 #include <thread>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <fstream>
+#include <filesystem>
+#include "TimeUtils.hpp"
+
 
 TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, ConversationState state)
     : state(state), targetName(targetName) {
@@ -170,6 +177,9 @@ AgentBrain::AgentBrain(flecs::entity entity, std::string name)
     : entity(entity) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
   entity.set_name(name.c_str());
+
+  std::filesystem::create_directories("logs");
+  logFilePath = "logs/" + TimeUtils::GetStartTimeString() + "-" + name + ".txt";
 }
 
 void AgentBrain::ForceInterruptAndPush(std::unique_ptr<AgentAction> action) {
@@ -208,14 +218,14 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
                                  std::regex_constants::icase);
   static std::regex inventoryRegex(R"(\[INVENTORY\])",
                                    std::regex_constants::icase);
-  static std::regex interactRegex(R"(\[INTERACT\s+(\d+)\s*\])",
-                                  std::regex_constants::icase);
+  static std::regex inspectItemRegex(R"(\[INSPECT_ITEM\s+(.+?)\s*\])",
+                                     std::regex_constants::icase);
+  static std::regex genericCommandRegex(R"(\[([A-Z_]+)\])",
+                                        std::regex_constants::icase);
   std::smatch match;
 
   if (std::regex_search(strippedMsg, match, moveRegex)) {
     return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
-  } else if (std::regex_search(strippedMsg, match, interactRegex)) {
-    return {NPCCommandType::INTERACT, match[1].str()};
   } else if (std::regex_search(strippedMsg, match, nothingRegex)) {
     return {NPCCommandType::DO_NOTHING, ""};
   } else if (std::regex_search(strippedMsg, match, charactersRegex)) {
@@ -226,8 +236,12 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
     return {NPCCommandType::OBJECTS_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, inventoryRegex)) {
     return {NPCCommandType::INVENTORY_QUERY, ""};
+  } else if (std::regex_search(strippedMsg, match, inspectItemRegex)) {
+    return {NPCCommandType::INSPECT_ITEM_QUERY, match[1].str()};
   } else if (std::regex_search(strippedMsg, match, talkToRegex)) {
     return {NPCCommandType::TALK_TO, match[1].str()};
+  } else if (std::regex_search(strippedMsg, match, genericCommandRegex)) {
+    return {NPCCommandType::GENERIC_INTERACT, match[1].str()};
   }
 
   return {NPCCommandType::INVALID_COMMAND, ""};
@@ -247,10 +261,21 @@ std::string AgentBrain::getContext() const {
 
 void AgentBrain::appendContext(const std::string &role, const std::string &text) {
   auto ctx = entity.get_mut<NPCContext>();
+  bool isNewMessage = true;
   if (!ctx->history.empty() && ctx->history.back().role == role) {
     ctx->history.back().content += text;
+    isNewMessage = false;
   } else {
     ctx->history.push_back({role, text});
+  }
+
+  std::ofstream out(logFilePath, std::ios::app);
+  if (out.is_open()) {
+    if (isNewMessage && role == "assistant") {
+      out << "You: " << text;
+    } else {
+      out << text;
+    }
   }
 }
 
@@ -320,6 +345,19 @@ void AgentBrain::injectNextAction(ActionThunk actionThunk) {
 }
 
 void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
+  // Clear InteractionTarget if we are doing anything other than interacting
+  if (msgCmd.type != NPCCommandType::GENERIC_INTERACT) {
+    if (entity.has<InteractionTarget>()) {
+      entity.remove<InteractionTarget>();
+    }
+  }
+
+  // Clear LastObjectsQuery if we are doing anything other than moving to a location or querying objects
+  if (msgCmd.type != NPCCommandType::MOVE_TO_LOCATION && msgCmd.type != NPCCommandType::OBJECTS_QUERY) {
+    if (entity.has<LastObjectsQuery>()) {
+      entity.remove<LastObjectsQuery>();
+    }
+  }
 
   switch (msgCmd.type) {
   case (NPCCommandType::DO_NOTHING): {
@@ -340,11 +378,34 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     } else {
       std::string targetName = std::any_cast<std::string>(msgCmd.params);
       flecs::entity targetObj = flecs::entity::null();
-      entity.world().filter<Interactable, DisplayName, GamePosition>().each([&](flecs::entity e, Interactable&, DisplayName& dName, GamePosition& pos) {
-        if (StringUtils::EqualsIgnoreCase(dName.name, targetName)) {
-           targetObj = e;
+      
+      bool isNumber = !targetName.empty();
+      for (char c : targetName) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) {
+          isNumber = false;
+          break;
         }
-      });
+      }
+
+      if (isNumber) {
+        int targetIndex = std::stoi(targetName) - 1;
+        if (const LastObjectsQuery* lastObjects = entity.get<LastObjectsQuery>()) {
+          if (targetIndex >= 0 && static_cast<size_t>(targetIndex) < lastObjects->objects.size()) {
+            targetObj = lastObjects->objects[targetIndex];
+          }
+        }
+        
+        // Consume the query so it can't be reused for stale locations
+        if (entity.has<LastObjectsQuery>()) {
+          entity.remove<LastObjectsQuery>();
+        }
+      } else {
+        entity.world().filter<Interactable, DisplayName, GamePosition>().each([&](flecs::entity e, Interactable&, DisplayName& dName, GamePosition&) {
+          if (StringUtils::EqualsIgnoreCase(dName.name, targetName)) {
+             targetObj = e;
+          }
+        });
+      }
       
       if (targetObj.is_alive()) {
          GamePosition* objPos = targetObj.get_mut<GamePosition>();
@@ -405,14 +466,17 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     });
     break;
   }
-  case (NPCCommandType::INTERACT): {
-    std::string optionStr = std::any_cast<std::string>(msgCmd.params);
-    int option = 0;
-    try {
-      option = std::stoi(optionStr);
-    } catch (...) {}
-    action_queue.push_back([option](flecs::entity) {
-      return std::make_unique<InteractAction>(option);
+  case (NPCCommandType::INSPECT_ITEM_QUERY): {
+    std::string itemName = std::any_cast<std::string>(msgCmd.params);
+    action_queue.push_back([itemName](flecs::entity) {
+      return std::make_unique<InspectItemAction>(itemName);
+    });
+    break;
+  }
+  case (NPCCommandType::GENERIC_INTERACT): {
+    std::string commandName = std::any_cast<std::string>(msgCmd.params);
+    action_queue.push_back([commandName](flecs::entity) {
+      return std::make_unique<GenericInteractAction>(commandName);
     });
     break;
   }

@@ -89,6 +89,7 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
     name = "NPC " + std::to_string(id);
   }
   entity.set<DisplayName>({name});
+  entity.set<NameTagColor>({BLUE});
   entity.set_name(name.c_str());
 
   entity.set<AgentBrainWrapper>({std::make_unique<AgentBrain>(entity, name)});
@@ -132,9 +133,24 @@ void Game::ECSInitRenderSystems() {
       });
 
   ecs.system<ScreenPosition, DisplayName>().kind<Render>().each(
-      [](const ScreenPosition &pos, const DisplayName &displayName) {
-        ScreenPosition TextPos = {pos.x, pos.y - 25};
-        DrawText(displayName.name.c_str(), TextPos.x, TextPos.y, 12, BLACK);
+      [](flecs::entity e, const ScreenPosition &pos, const DisplayName &displayName) {
+        Color tagColor = BLACK;
+        if (e.has<NameTagColor>()) {
+          tagColor = e.get<NameTagColor>()->color;
+        }
+
+        int fontSize = 12;
+        int textWidth = MeasureText(displayName.name.c_str(), fontSize);
+        
+        float entityWidth = 32.0f;
+        if (e.has<DrawAscii>()) {
+          entityWidth = e.get<DrawAscii>()->width;
+        } else if (e.has<Hitbox>()) {
+          entityWidth = e.get<Hitbox>()->width;
+        }
+        
+        ScreenPosition TextPos = {pos.x + entityWidth / 2.0f - textWidth / 2.0f, pos.y - 20.0f};
+        DrawText(displayName.name.c_str(), TextPos.x, TextPos.y, fontSize, tagColor);
       });
 }
 
@@ -267,7 +283,7 @@ void Game::LoadMap(std::string mapPath) {
   ecs.defer([&]() {
     mapEntity.children([](flecs::entity child) { child.destruct(); });
   });
-  map = std::make_unique<Map>(mapEntity, mapPath);
+  map = std::make_unique<Map>(mapEntity, mapPath, debugLog.get());
   ecs.set<MapResource>({map.get()});
 
   Map *currentMap = map.get();
@@ -680,12 +696,37 @@ void Game::ECSInitAgentSystems() {
       brains[i].agBrain.get()->update(dt);
     }
   });
+  ecs.system<Evolvable>("GrowthSystem").iter([](flecs::iter &it, Evolvable *evolvables) {
+    float dt = it.delta_time();
+    bool resourcesLoaded = false;
+    ObjectFactory* factory = nullptr;
+    Map* map = nullptr;
+
+    for (auto i : it) {
+      evolvables[i].timeRemaining -= dt;
+      if (evolvables[i].timeRemaining <= 0.0f) {
+        if (!resourcesLoaded) {
+          auto factoryRes = it.world().get<ObjectFactoryResource>();
+          factory = factoryRes ? factoryRes->factory : nullptr;
+          auto mapRes = it.world().get<MapResource>();
+          map = mapRes ? mapRes->map : nullptr;
+          resourcesLoaded = true;
+        }
+
+        if (factory) {
+          std::string nextStage = evolvables[i].nextStageTemplate;
+          factory->ApplyTemplate(it.entity(i), nextStage, map);
+        }
+      }
+    }
+  });
 };
 
 void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
 
+  objectFactory.SetDebugLog(debugLog.get());
   objectFactory.LoadTemplates("data/objects");
   ecs.set<ObjectFactoryResource>({&objectFactory});
 
@@ -697,16 +738,40 @@ void Game::ECSInit(std::string mapPath) {
   
   InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target) {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
-      Harvestable* h = target.get_mut<Harvestable>();
       
+      Harvestable* h = target.get_mut<Harvestable>();
+      if (h->lootTable.drops.empty()) {
+          return "System: The " + objName + " cannot be harvested because it has no loot table.\n";
+      }
+
       if (h->amountRemaining > 0) {
         h->amountRemaining--;
         auto factoryRes = actor.world().get<ObjectFactoryResource>();
+        std::string droppedItemsStr = "";
+
         if (factoryRes && factoryRes->factory) {
           flecs::world ecs = actor.world();
-          factoryRes->factory->SpawnObject(ecs, actor, nullptr, h->resourceType);
+          
+          for (const auto& drop : h->lootTable.drops) {
+              float roll = (float)rand() / RAND_MAX;
+              if (roll <= drop.chance) {
+                  flecs::entity spawned = factoryRes->factory->SpawnObject(ecs, actor, nullptr, drop.itemType);
+                  if (spawned.is_alive()) {
+                      actor.add<Holds>(spawned);
+                      droppedItemsStr += drop.itemType + ", ";
+                  }
+              }
+          }
         }
-        std::string msg = "System: You harvested 1 " + h->resourceType + " from " + objName + ".\n";
+
+        if (!droppedItemsStr.empty()) {
+            droppedItemsStr.pop_back();
+            droppedItemsStr.pop_back();
+        } else {
+            droppedItemsStr = "nothing";
+        }
+
+        std::string msg = "System: You harvested " + droppedItemsStr + " from " + objName + ".\n";
         if (h->amountRemaining <= 0) {
           msg += "The " + objName + " is depleted and destroyed.\n";
           target.destruct();
@@ -722,7 +787,12 @@ void Game::ECSInit(std::string mapPath) {
 
   InteractionRegistry::RegisterComponentInteraction<DisplayName>("Examine", [](flecs::entity actor, flecs::entity target) {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
-      return "System: You examined the " + objName + ". It looks normal.\n";
+      std::string msg = "System: You examined the " + objName + ". It looks normal.\n";
+      if (target.has<Harvestable>()) {
+          const Harvestable* h = target.get<Harvestable>();
+          msg += "You can harvest it " + std::to_string(h->amountRemaining) + " more time(s).\n";
+      }
+      return msg;
   });
 
   std::unique_ptr<AI> ai;
@@ -731,6 +801,7 @@ void Game::ECSInit(std::string mapPath) {
   if (!f.is_open()) {
     std::cerr << "Error: model.json not found! Falling back to default Ollama model." << std::endl;
     ai = std::make_unique<OllamaAI>("llama3");
+    ai->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
   } else {
     try {
       nlohmann::json j;
@@ -741,10 +812,13 @@ void Game::ECSInit(std::string mapPath) {
 
       if (type == "gemini") {
         std::string apiKey = j.value("apiKey", "");
-        ai = std::make_unique<GeminiAI>(apiKey, model);
+        auto gemini = std::make_unique<GeminiAI>(apiKey, model);
+        gemini->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
+        ai = std::move(gemini);
       } else if (type == "openrouter") {
         std::string apiKey = j.value("apiKey", "");
         auto openrouter = std::make_unique<OpenRouterAI>(apiKey, model);
+        openrouter->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
         if (j.contains("temperature")) {
           openrouter->setOption("temperature", j["temperature"]);
         }
@@ -755,6 +829,7 @@ void Game::ECSInit(std::string mapPath) {
       } else {
         std::string endpoint = j.value("endpoint", "http://localhost:11434/api/generate");
         auto ollama = std::make_unique<OllamaAI>(model, endpoint);
+        ollama->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
         
         if (j.contains("temperature")) {
           ollama->setOption("temperature", j["temperature"]);
@@ -772,6 +847,7 @@ void Game::ECSInit(std::string mapPath) {
     } catch (const std::exception& e) {
       std::cerr << "Error parsing model.json: " << e.what() << std::endl;
       ai = std::make_unique<OllamaAI>("llama3");
+      ai->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
     }
   }
 
@@ -818,6 +894,7 @@ void Game::ECSInit(std::string mapPath) {
   mapReloadWindowEntity = ecs.entity("Map Reload Window");
   drawAsciiToggleWindowEntity = ecs.entity("DrawAscii Debug Window");
   fontSelectionWindowEntity = ecs.entity("Font Selection Window");
+  mapEditorWindowEntity = ecs.entity("Map Editor Window");
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -850,6 +927,10 @@ void Game::ECSInit(std::string mapPath) {
   if (debugWindowState->GetShowFontSelectionWindow()) {
     fontSelectionWindowEntity.set<ActiveWindow>(
         {std::make_shared<FontSelectionWindow>(this)});
+  }
+  if (debugWindowState->GetShowMapEditorWindow()) {
+    mapEditorWindowEntity.set<ActiveWindow>(
+        {std::make_shared<MapEditorWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
     playerEntity.set<ActiveWindow>(

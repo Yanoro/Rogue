@@ -131,16 +131,15 @@ public:
           if (targetObject.has<DisplayName>()) {
             objName = targetObject.get<DisplayName>()->name;
           }
-          std::string options = "System: You have arrived at the " + objName + ". Available actions:\n";
-          int optionNum = 1;
-          if (targetObject.has<Harvestable>()) {
-             options += std::to_string(optionNum++) + ") Harvest\n";
+          std::string options = "System: You have arrived at the " + objName + ". Available commands:\n";
+          auto interactions = InteractionRegistry::GetAvailableInteractions(targetObject);
+          if (interactions.empty()) {
+            options += "None\n";
+          } else {
+            for (const auto& interaction : interactions) {
+              options += "[" + StringUtils::ToUpper(interaction.name) + "]\n";
+            }
           }
-          if (targetObject.has<Workstation>()) {
-             options += std::to_string(optionNum++) + ") Craft\n";
-          }
-          options += std::to_string(optionNum++) + ") Examine\n";
-          options += "To choose, use [INTERACT $NUMBER].\n";
           
           return options;
         }
@@ -317,17 +316,25 @@ private:
             successMsg = "System: Nearby objects:\n";
             const GamePosition currentPos = *entity.get<GamePosition>();
             bool found = false;
+            int count = 1;
+            std::vector<flecs::entity> foundObjects;
 
             entity.world().filter<Interactable, DisplayName, GamePosition>().each(
                 [&](flecs::entity obj, const Interactable&, const DisplayName& dName, const GamePosition& pos) {
                   if (std::abs(pos.x - currentPos.x) <= DEFAULT_OBJECT_SEARCH_RADIUS && std::abs(pos.y - currentPos.y) <= DEFAULT_OBJECT_SEARCH_RADIUS) {
-                    successMsg += "- " + dName.name + "\n";
+                    successMsg += std::to_string(count) + ". " + dName.name + "\n";
+                    foundObjects.push_back(obj);
+                    count++;
                     found = true;
                   }
                 });
 
+            entity.set<LastObjectsQuery>({foundObjects});
+
             if (!found) {
               successMsg = "System: There are no objects nearby.\n";
+            } else {
+              successMsg += "System: To see the interaction options of an object, use [MOVE_TO $NUMBER] to go there.\n";
             }
           }
           return ActionStatus::Done;
@@ -352,16 +359,18 @@ private:
       public:
         ActionStatus update(float, flecs::entity entity) override {
           std::string inventoryList;
+          int index = 1;
           entity.each<Holds>([&](flecs::entity child) {
             if (child.is_alive() && child.has<DisplayName>()) {
-              inventoryList += "- " + child.get<DisplayName>()->name + "\n";
+              inventoryList += std::to_string(index++) + ": " + child.get<DisplayName>()->name + "\n";
             }
           });
 
           if (inventoryList.empty()) {
             response = "System: Your inventory is empty.\n";
           } else {
-            response = "System: You are currently holding:\n" + inventoryList;
+            response = "System: You are currently holding:\n" + inventoryList + 
+                       "\nYou can use [INSPECT_ITEM $ITEM_NAME] to see what actions are available for an item.";
           }
 
           return ActionStatus::Done;
@@ -381,25 +390,82 @@ private:
         std::string response;
       };
 
-      class InteractAction : public AgentAction {
+      class InspectItemAction : public AgentAction {
       public:
-        InteractAction(int option) : option(option) {}
+        InspectItemAction(std::string itemName) : itemName(itemName) {}
+
+        ActionStatus update(float, flecs::entity entity) override {
+          flecs::entity targetItem = flecs::entity::null();
+          
+          entity.each<Holds>([&](flecs::entity child) {
+            if (child.is_alive() && child.has<DisplayName>()) {
+              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, itemName)) {
+                targetItem = child;
+              }
+            }
+          });
+
+          if (!targetItem.is_alive()) {
+            response = "System: Invalid item name. You don't have an item named " + itemName + ".\n";
+            return ActionStatus::Done;
+          }
+
+          std::string objName = targetItem.has<DisplayName>() ? targetItem.get<DisplayName>()->name : "Item";
+          response = "System: You inspected the " + objName + ".\nAvailable actions:\n";
+
+          auto interactions = ItemInteractionRegistry::GetAvailableInteractions(targetItem);
+          if (interactions.empty()) {
+            response += "- None\n";
+          } else {
+            for (const auto& interaction : interactions) {
+              response += "- " + interaction.name + "\n";
+            }
+          }
+
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return response;
+        }
+        
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+        
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string itemName;
+        std::string response;
+      };
+
+      class GenericInteractAction : public AgentAction {
+      public:
+        GenericInteractAction(std::string commandName) : commandName(commandName) {}
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
             auto target = entity.get<InteractionTarget>();
             if (!target || !target->targetEntity.is_alive()) {
-              successMsg = "System: The object is no longer here.\n";
+              successMsg = "System: You are not near any interactive object. You must use [MOVE_TO $TARGET] first.\n";
               return ActionStatus::Done;
             }
 
             flecs::entity targetObj = target->targetEntity;
             auto interactions = InteractionRegistry::GetAvailableInteractions(targetObj);
 
-            if (option < 1 || option > interactions.size()) {
-              successMsg = "System: Invalid option selected.\n";
-            } else {
-              successMsg = interactions[option - 1].execute(entity, targetObj);
+            bool found = false;
+            for (const auto& interaction : interactions) {
+              if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
+                successMsg = interaction.execute(entity, targetObj);
+                found = true;
+                break;
+              }
+            }
+
+            if (!found) {
+              successMsg = "System: Invalid command or action not available for this object.\n";
             }
           }
           return ActionStatus::Done;
@@ -416,7 +482,7 @@ private:
         void resume(flecs::entity) override {}
 
       private:
-        int option;
+        std::string commandName;
         bool isFirstUpdate = true;
         std::string successMsg;
       };

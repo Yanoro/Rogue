@@ -5,9 +5,11 @@
 #include <nlohmann/json.hpp>
 #include <string>
 
+class DebugLog;
+
 class Map {
 public:
-  Map(flecs::entity mapEntity, std::string jsonPath);
+  Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog = nullptr);
 
   // Coordinate helpers
   int GetWidth() const { return width; }
@@ -27,6 +29,8 @@ public:
   Location *GetLocation(GamePosition pos);
   Location *GetLocation(const std::string& name);
   std::vector<std::string> GetAllLocationNames(); 
+  const std::vector<std::unique_ptr<Location>>& GetLocations() const { return mapLocations; }
+  const std::vector<std::unique_ptr<Tile>>& GetUniqueTiles() const { return uniqueTiles; }
 
   void addTileToMap(Tile *newTile, int x, int y);
   Tile *GetTile(int x, int y); 
@@ -34,6 +38,7 @@ public:
   static bool AreNeighbours(GamePosition p1, GamePosition p2);
 
 private:
+  DebugLog* debugLog;
   flecs::world ecs;
 
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 

@@ -40,8 +40,9 @@ size_t OllamaAI::WriteCallbackStream(void *contents, size_t size, size_t nmemb,
       }
 
     } catch (const std::exception &e) {
-      std::cerr << "JSON Parse Error: " << e.what() << " Line: " << line
-                << std::endl;
+      std::string errStr = "JSON Parse Error: " + std::string(e.what()) + " Line: " + line;
+      if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
+      else std::cerr << errStr << std::endl;
     }
   }
 
@@ -121,8 +122,9 @@ std::string OllamaAI::generate(const std::string &contextId,
     CURLMsg *msg;
     while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
       if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK) {
-        std::cerr << "curl_multi failed: "
-                  << curl_easy_strerror(msg->data.result) << std::endl;
+        std::string errStr = "curl_multi failed: " + std::string(curl_easy_strerror(msg->data.result));
+        if (errorLogger) errorLogger(errStr);
+        else std::cerr << errStr << std::endl;
       }
     }
 
@@ -237,8 +239,9 @@ bool OllamaAI::generateStream(const std::string &contextId,
           if (msg->data.result == CURLE_OK) {
             success = true;
           } else {
-            std::cerr << "curl stream failed: "
-                      << curl_easy_strerror(msg->data.result) << std::endl;
+            std::string errStr = "curl stream failed: " + std::string(curl_easy_strerror(msg->data.result));
+            if (errorLogger) errorLogger(errStr);
+            else std::cerr << errStr << std::endl;
           }
         }
       }

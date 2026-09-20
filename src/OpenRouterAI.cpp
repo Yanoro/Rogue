@@ -37,8 +37,8 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
       auto j = nlohmann::json::parse(line);
       if (j.contains("error")) {
         std::string errStr = "OpenRouter Stream Error: " + j["error"].dump();
-        std::cerr << errStr << std::endl;
         if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
+        else std::cerr << errStr << std::endl;
       } else if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
         auto &choice = j["choices"][0];
         if (choice.contains("delta")) {
@@ -79,8 +79,8 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
       }
     } catch (const std::exception& e) {
       std::string errStr = "OpenRouter JSON Parse Error: " + std::string(e.what()) + " Line: " + line;
-      std::cerr << errStr << std::endl;
       if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
+      else std::cerr << errStr << std::endl;
     }
   }
 
@@ -166,8 +166,9 @@ std::string OpenRouterAI::generate(const std::string &contextId,
     CURLMsg *msg;
     while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
       if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK) {
-        std::cerr << "curl_multi failed: "
-                  << curl_easy_strerror(msg->data.result) << std::endl;
+        std::string errStr = "curl_multi failed: " + std::string(curl_easy_strerror(msg->data.result));
+        if (errorLogger) errorLogger(errStr);
+        else std::cerr << errStr << std::endl;
       }
     }
 
@@ -206,8 +207,8 @@ std::string OpenRouterAI::generate(const std::string &contextId,
       }
     } else if (j.contains("error")) {
         std::string errStr = "OpenRouter API Error: " + j["error"].dump();
-        std::cerr << errStr << std::endl;
         if (errorLogger) errorLogger(errStr);
+        else std::cerr << errStr << std::endl;
     }
     
     {
@@ -305,8 +306,9 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
           if (msg->data.result == CURLE_OK) {
             success = true;
           } else {
-            std::cerr << "curl stream failed: "
-                      << curl_easy_strerror(msg->data.result) << std::endl;
+            std::string errStr = "curl stream failed: " + std::string(curl_easy_strerror(msg->data.result));
+            if (errorLogger) errorLogger(errStr);
+            else std::cerr << errStr << std::endl;
           }
         }
       }

@@ -4,12 +4,22 @@
 
 using json = nlohmann::json;
 
-DebugWindowState::DebugWindowState()
-    : showDebugConsole(true), showEntityInfoWindow(false),
-      showTileInfoWindow(false), showAStarWindow(false),
-      showEntityOverviewWindow(false), showDebugLogWindow(false),
-      showMapReloadWindow(false), showDrawAsciiToggleWindow(false),
-      showFontSelectionWindow(false), defaultFontPath("") {}
+#include "DebugLog.h"
+
+DebugWindowState::DebugWindowState(DebugLog* debugLog) 
+  : debugLog(debugLog),
+    showDebugConsole(true),
+    showEntityInfoWindow(true),
+    showTileInfoWindow(false),
+    showAStarWindow(false),
+    showEntityOverviewWindow(false),
+    showDebugLogWindow(false),
+    showMapReloadWindow(false),
+    showDrawAsciiToggleWindow(false),
+    showFontSelectionWindow(false),
+    showMapEditorWindow(false),
+    showLocations(false),
+    defaultFontPath("") {}
 
 void DebugWindowState::SaveState(const std::string &filePath) const {
   json state;
@@ -22,6 +32,8 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["mapReload"] = showMapReloadWindow;
   state["drawAsciiToggle"] = showDrawAsciiToggleWindow;
   state["fontSelection"] = showFontSelectionWindow;
+  state["mapEditor"] = showMapEditorWindow;
+  state["showLocations"] = showLocations;
   state["defaultFontPath"] = defaultFontPath;
 
   std::ofstream file(filePath);
@@ -30,8 +42,9 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
     file.close();
     std::cout << "Debug window state saved to: " << filePath << std::endl;
   } else {
-    std::cerr << "Failed to save debug window state to: " << filePath
-              << std::endl;
+    std::string errStr = "Failed to save debug window state to: " + filePath + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
   }
 }
 
@@ -56,15 +69,19 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showMapReloadWindow = state.value("mapReload", false);
       showDrawAsciiToggleWindow = state.value("drawAsciiToggle", false);
       showFontSelectionWindow = state.value("fontSelection", false);
+      showMapEditorWindow = state.value("mapEditor", false);
+      showLocations = state.value("showLocations", false);
       defaultFontPath = state.value("defaultFontPath", "");
 
       std::cout << "Debug window state loaded from: " << filePath << std::endl;
     } catch (const std::exception &e) {
-      std::cerr << "Failed to parse debug window state JSON: " << e.what()
-                << std::endl;
+      std::string errStr = "Failed to parse debug window state JSON: " + std::string(e.what()) + "\n";
+      if (debugLog) debugLog->LogError(errStr);
+      else std::cerr << errStr;
     }
   } else {
-    std::cerr << "Failed to open debug window state file: " << filePath
-              << std::endl;
+    std::string errStr = "Failed to open debug window state file: " + filePath + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
   }
 }

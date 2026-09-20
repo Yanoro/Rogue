@@ -4,10 +4,54 @@
 #include <iostream>
 
 #include "Map.h"
+#include "DebugLog.h"
+
+ObjectFactory::ObjectFactory() {
+  RegisterDefaultComponents();
+}
+
+void ObjectFactory::RegisterDefaultComponents() {
+  RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
+  RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
+  RegisterComponent<Portable>("Portable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Portable>(); });
+  
+  RegisterComponent<Harvestable>("Harvestable", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Harvestable h;
+    h.amountRemaining = tmpl.value("amountRemaining", 1);
+    if (tmpl.contains("drops")) {
+      for (const auto& drop : tmpl["drops"]) {
+        h.lootTable.drops.push_back({
+          drop.value("item", ""),
+          drop.value("chance", 1.0f)
+        });
+      }
+    }
+    obj.set<Harvestable>(h);
+  });
+  
+  RegisterComponent<Workstation>("Workstation", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Workstation w;
+    if (tmpl.contains("recipes")) {
+      for (const auto& r : tmpl["recipes"]) {
+        w.recipes.push_back(r.get<std::string>());
+      }
+    }
+    obj.set<Workstation>(w);
+  });
+  
+  RegisterComponent<Evolvable>("Evolvable", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Evolvable e;
+    e.timeRemaining = tmpl.value("evolveTime", 60.0f);
+    e.nextStageTemplate = tmpl.value("evolveTarget", "");
+    obj.set<Evolvable>(e);
+  });
+}
 
 void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
   if (!std::filesystem::exists(directoryPath)) {
-    std::cerr << "Warning: Object template directory not found: " << directoryPath << std::endl;
+    std::string errStr = "Warning: Object template directory not found: " + directoryPath + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
     return;
   }
 
@@ -24,28 +68,28 @@ void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
           templates[type] = j;
           
         } catch (const std::exception& e) {
-          std::cerr << "Failed to parse object template " << entry.path() << ": " << e.what() << std::endl;
+          std::string errStr = "Failed to parse object template " + entry.path().string() + ": " + std::string(e.what()) + "\n";
+          if (debugLog) debugLog->LogError(errStr);
+          else std::cerr << errStr;
         }
       }
     }
   }
 }
 
-flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos) {
+bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Map* map) {
   if (templates.find(type) == templates.end()) {
-    std::cerr << "Warning: Attempted to spawn unknown object type: " << type << std::endl;
-    return flecs::entity::null();
+    std::string msg = "Warning: Attempted to apply unknown object type: " + type;
+    if (debugLog) debugLog->LogWarning(msg);
+    else std::cerr << msg << std::endl;
+    return false;
   }
 
   const auto& tmpl = templates[type];
-  
-  flecs::entity obj = ecs.entity().child_of(parent);
 
-  if (pos.has_value()) {
-    obj.set<GamePosition>(pos.value());
-    if (map) {
-      obj.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos->x, pos->y));
-    }
+  // Remove potential old components to ensure a clean state
+  for (const auto& pair : componentRemovers) {
+    pair.second(obj);
   }
 
   if (tmpl.contains("character")) {
@@ -84,29 +128,53 @@ flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent
   std::string name = tmpl.value("name", type);
   obj.set<DisplayName>({name});
 
+  if (tmpl.contains("nameTagColor")) {
+    Color tagColor = {
+      tmpl["nameTagColor"][0],
+      tmpl["nameTagColor"][1],
+      tmpl["nameTagColor"][2],
+      tmpl["nameTagColor"][3]
+    };
+    obj.set<NameTagColor>({tagColor});
+  } else {
+    obj.set<NameTagColor>({DARKGRAY});
+  }
+
   // Assign components
   if (tmpl.contains("components")) {
-    for (const auto& compName : tmpl["components"]) {
-      if (compName == "Interactable") obj.add<Interactable>();
-      else if (compName == "Obstacle") obj.add<Obstacle>();
-      else if (compName == "Portable") obj.add<Portable>();
-      else if (compName == "Harvestable") {
-        Harvestable h;
-        h.resourceType = tmpl.value("resourceType", "unknown");
-        h.amountRemaining = tmpl.value("amountRemaining", 1);
-        obj.set<Harvestable>(h);
-      }
-      else if (compName == "Workstation") {
-        Workstation w;
-        if (tmpl.contains("recipes")) {
-          for (const auto& r : tmpl["recipes"]) {
-            w.recipes.push_back(r.get<std::string>());
-          }
-        }
-        obj.set<Workstation>(w);
+    for (const auto& compNameJson : tmpl["components"]) {
+      std::string compName = compNameJson.get<std::string>();
+      if (componentSetters.find(compName) != componentSetters.end()) {
+        componentSetters[compName](obj, tmpl);
+      } else {
+        std::string msg = "Warning: Unknown component type: " + compName;
+        if (debugLog) debugLog->LogWarning(msg);
+        else std::cerr << msg << std::endl;
       }
     }
   }
+
+  return true;
+}
+
+flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos) {
+  if (templates.find(type) == templates.end()) {
+    std::string errStr = "Warning: Attempted to spawn unknown object type: " + type + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
+    return flecs::entity::null();
+  }
+
+  flecs::entity obj = ecs.entity().child_of(parent);
+
+  if (pos.has_value()) {
+    obj.set<GamePosition>(pos.value());
+    if (map) {
+      obj.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos->x, pos->y));
+    }
+  }
+
+  ApplyTemplate(obj, type, map);
 
   return obj;
 }

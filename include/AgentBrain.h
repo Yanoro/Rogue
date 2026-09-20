@@ -23,7 +23,8 @@ enum class NPCCommandType {
   LOCATIONS_QUERY,
   OBJECTS_QUERY,
   INVENTORY_QUERY,
-  INTERACT,
+  INSPECT_ITEM_QUERY,
+  GENERIC_INTERACT,
 };
 
 #include "AgentActions.h"
@@ -43,12 +44,12 @@ System: You are an AI roleplaying as an NPC in a game. When navigating the world
 AVAILABLE COMMANDS:
 [DO_NOTHING]
 [MOVE_TO $TARGET]
-[INTERACT $NUMBER]
 [TALK_TO $CHARACTER]
 [CHARACTERS]
 [LOCATIONS]
 [OBJECTS]
 [INVENTORY]
+[INSPECT_ITEM $ITEM_NAME]
 
 VARIABLES & RULES:
 - $TARGET can be a location or an object. Available locations: %LOCATIONS%
@@ -89,4 +90,5 @@ private:
   std::vector<std::unique_ptr<AgentAction>> actionStack;
   std::deque<ActionThunk> action_queue;
   AI::StreamCallback getStreamCallback();
+  std::string logFilePath;
 };

@@ -1,0 +1,10 @@
+{
+  "name": "Wheat",
+  "components": [
+    "Portable"
+  ],
+  "character": "w",
+  "characterColor": [245, 222, 179, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [245, 222, 179, 255]
+}

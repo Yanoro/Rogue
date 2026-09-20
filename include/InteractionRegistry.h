@@ -29,3 +29,28 @@ public:
 private:
     static std::vector<InteractionHandler> handlers;
 };
+
+struct ItemInteractionHandler {
+    std::string name;
+    std::function<bool(flecs::entity)> canInteract;
+    std::function<std::string(flecs::entity actor, flecs::entity item)> execute;
+};
+
+class ItemInteractionRegistry {
+public:
+    static void Register(const ItemInteractionHandler& handler);
+    static std::vector<ItemInteractionHandler> GetAvailableInteractions(flecs::entity item);
+    static void Clear();
+
+    template <typename Component>
+    static void RegisterComponentInteraction(const std::string& name, std::function<std::string(flecs::entity actor, flecs::entity item)> executeFunc) {
+        Register({
+            name,
+            [](flecs::entity item) { return item.has<Component>(); },
+            executeFunc
+        });
+    }
+
+private:
+    static std::vector<ItemInteractionHandler> handlers;
+};

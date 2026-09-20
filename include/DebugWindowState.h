@@ -4,9 +4,11 @@
 #include <filesystem>
 #include <nlohmann/json.hpp>
 
+class DebugLog;
+
 class DebugWindowState {
 public:
-  DebugWindowState();
+  DebugWindowState(DebugLog* debugLog = nullptr);
   
   // Save debug window visibility states to JSON
   void SaveState(const std::string &filePath) const;
@@ -42,19 +44,28 @@ public:
   bool GetShowFontSelectionWindow() const { return showFontSelectionWindow; }
   void SetShowFontSelectionWindow(bool value) { showFontSelectionWindow = value; }
 
+  bool GetShowMapEditorWindow() const { return showMapEditorWindow; }
+  void SetShowMapEditorWindow(bool value) { showMapEditorWindow = value; }
+
+  bool GetShowLocations() const { return showLocations; }
+  void SetShowLocations(bool value) { showLocations = value; }
+
   std::string GetDefaultFontPath() const { return defaultFontPath; }
   void SetDefaultFontPath(const std::string& path) { defaultFontPath = path; }
 
 private:
+  DebugLog* debugLog;
   bool showDebugConsole;
   bool showEntityInfoWindow;
   bool showTileInfoWindow;
   bool showAStarWindow;
   bool showEntityOverviewWindow;
   bool showDebugLogWindow;
-    bool showMapReloadWindow;
-    bool showDrawAsciiToggleWindow;
-    bool showFontSelectionWindow;
-    std::string defaultFontPath;
+  bool showMapReloadWindow;
+  bool showDrawAsciiToggleWindow;
+  bool showFontSelectionWindow;
+  bool showMapEditorWindow;
+  bool showLocations;
+  std::string defaultFontPath;
   
     static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";};

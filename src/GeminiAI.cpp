@@ -116,8 +116,9 @@ std::string GeminiAI::generate(const std::string &contextId,
     CURLMsg *msg;
     while ((msg = curl_multi_info_read(multi_handle, &msgs_left))) {
       if (msg->msg == CURLMSG_DONE && msg->data.result != CURLE_OK) {
-        std::cerr << "curl_multi failed: "
-                  << curl_easy_strerror(msg->data.result) << std::endl;
+        std::string errStr = "curl_multi failed: " + std::string(curl_easy_strerror(msg->data.result));
+        if (errorLogger) errorLogger(errStr);
+        else std::cerr << errStr << std::endl;
       }
     }
 
@@ -248,8 +249,9 @@ bool GeminiAI::generateStream(const std::string &contextId,
           if (msg->data.result == CURLE_OK) {
             success = true;
           } else {
-            std::cerr << "curl stream failed: "
-                      << curl_easy_strerror(msg->data.result) << std::endl;
+            std::string errStr = "curl stream failed: " + std::string(curl_easy_strerror(msg->data.result));
+            if (errorLogger) errorLogger(errStr);
+            else std::cerr << errStr << std::endl;
           }
         }
       }

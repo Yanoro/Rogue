@@ -21,7 +21,16 @@ NPCContextWindow::NPCContextWindow(flecs::entity entity)
 void NPCContextWindow::Draw() {
   char window_name[128];
   sprintf(window_name, "NPC Context: %s###%llu", name.c_str(), (unsigned long long)entity.id());
-  ImGui::Begin(window_name, nullptr, ImGuiWindowFlags_None); 
+  bool isOpen = true;
+  ImGui::Begin(window_name, &isOpen, ImGuiWindowFlags_None); 
+  
+  if (!isOpen) {
+    if (entity.is_alive()) {
+      entity.remove<ActiveWindow>();
+    }
+    ImGui::End();
+    return;
+  } 
 
   ImGui::Checkbox("Auto-scroll", &autoScroll);
   ImGui::SameLine();

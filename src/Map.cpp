@@ -16,15 +16,17 @@ inline void from_json(const nlohmann::json &j, Color &c) {
   }
 }
 
-Map::Map(flecs::entity mapEntity, std::string jsonPath) {
-  ecs = mapEntity.world();
+Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog) 
+  : ecs(mapEntity.world()), debugLog(debugLog) {
 
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
   try {
     jsonFile.open(jsonPath);
   } catch (const std::ifstream::failure &e) {
-    std::cerr << "Exception opening/reading file: " << e.what() << std::endl;
+    std::string errStr = "Exception opening/reading file: " + std::string(e.what()) + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
     throw;
   }
 
@@ -68,8 +70,8 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath) {
           currLoc.value("description", "Unknown location Description");
       auto locPos = currLoc["position"];
       location->pos = {locPos[0], locPos[1]};
-      location->width = currLoc.value("width", width);
-      location->height = currLoc.value("height", height);
+      location->width = currLoc.value("hitboxWidth", currLoc.value("width", width));
+      location->height = currLoc.value("hitboxHeight", currLoc.value("height", height));
 
       mapLocations.push_back(std::move(location));
     }
@@ -106,8 +108,9 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath) {
     }
 
   } catch (const std::exception &e) {
-    std::cerr << "JSON Parse Error: " << e.what() << " jsonPath: " << jsonPath
-              << std::endl;
+    std::string errStr = "JSON Parse Error: " + std::string(e.what()) + " jsonPath: " + jsonPath + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
     throw;
   }
 }

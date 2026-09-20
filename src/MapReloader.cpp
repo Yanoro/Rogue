@@ -3,9 +3,10 @@
 #include <iostream>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include "DebugLog.h"
 
-MapReloader::MapReloader(const std::string &mapsDirectory)
-    : mapsDirectory(mapsDirectory) {
+MapReloader::MapReloader(const std::string &mapsDir, DebugLog* debugLog) 
+    : mapsDirectory(mapsDir), debugLog(debugLog) {
   RefreshMapList();
 }
 
@@ -13,8 +14,9 @@ void MapReloader::RefreshMapList() {
   mapList.clear();
 
   if (!std::filesystem::exists(mapsDirectory)) {
-    std::cerr << "Maps directory does not exist: " << mapsDirectory
-              << std::endl;
+    std::string errStr = "Maps directory does not exist: " + mapsDirectory + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
     return;
   }
 
@@ -28,7 +30,9 @@ void MapReloader::RefreshMapList() {
     std::cout << "Found " << mapList.size() << " map files in "
               << mapsDirectory << std::endl;
   } catch (const std::exception &e) {
-    std::cerr << "Error reading maps directory: " << e.what() << std::endl;
+    std::string errStr = "Error reading maps directory: " + std::string(e.what()) + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
   }
 }
 

@@ -63,7 +63,15 @@ private:
 
 class FontSelectionWindow : public Window {
 public:
-  explicit FontSelectionWindow(Game* game);
+  FontSelectionWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};
+
+class MapEditorWindow : public Window {
+public:
+  MapEditorWindow(Game* game);
   void Draw() override;
 private:
   Game* game;

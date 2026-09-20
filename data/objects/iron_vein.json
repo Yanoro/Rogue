@@ -1,0 +1,16 @@
+{
+  "name": "Iron Vein",
+  "components": [
+    "Interactable",
+    "Harvestable",
+    "Obstacle"
+  ],
+  "amountRemaining": 10,
+  "drops": [
+    {"item": "iron_ore", "chance": 1.0}
+  ],
+  "character": "V",
+  "characterColor": [169, 169, 169, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [169, 169, 169, 255]
+}

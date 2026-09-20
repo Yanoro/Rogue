@@ -5,9 +5,12 @@
     "Harvestable",
     "Obstacle"
   ],
-  "resourceType": "apple",
   "amountRemaining": 5,
+  "drops": [
+    {"item": "apple", "chance": 1.0}
+  ],
   "character": "T",
   "characterColor": [34, 139, 34, 255],
-  "backgroundColor": [0, 0, 0, 0]
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [34, 139, 34, 255]
 }

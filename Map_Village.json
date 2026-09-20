@@ -25,8 +25,8 @@
       "hitboxHeight": 10
     },
     {
-      "name": "John\"s House",
-      "description": "A cozy little home belonging to John.",
+      "name": "Farmer\"s House",
+      "description": "A cozy little home belonging to a farmer.",
       "position": [
         45,
         10
@@ -53,6 +53,26 @@
       ],
       "hitboxWidth": 8,
       "hitboxHeight": 8
+    },
+    {
+      "name": "Wheat Farm",
+      "description": "A large field of growing wheat.",
+      "position": [
+        10,
+        30
+      ],
+      "hitboxWidth": 8,
+      "hitboxHeight": 8
+    },
+    {
+      "name": "Iron Mine",
+      "description": "A dark mine filled with rich iron veins.",
+      "position": [
+        50,
+        50
+      ],
+      "hitboxWidth": 10,
+      "hitboxHeight": 10
     }
   ],
   "objects": [
@@ -70,6 +90,41 @@
       "type": "apple_tree",
       "x": 31,
       "y": 12
+    },
+    {
+      "type": "wheat_seed",
+      "x": 10,
+      "y": 30
+    },
+    {
+      "type": "wheat_seed",
+      "x": 12,
+      "y": 30
+    },
+    {
+      "type": "wheat_seed",
+      "x": 10,
+      "y": 32
+    },
+    {
+      "type": "wheat_seed",
+      "x": 12,
+      "y": 32
+    },
+    {
+      "type": "iron_vein",
+      "x": 51,
+      "y": 51
+    },
+    {
+      "type": "iron_vein",
+      "x": 53,
+      "y": 52
+    },
+    {
+      "type": "iron_vein",
+      "x": 52,
+      "y": 54
     }
   ],
   "tileInfo": [

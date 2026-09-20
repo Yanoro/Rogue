@@ -1,0 +1,10 @@
+{
+  "name": "Iron Ore",
+  "components": [
+    "Portable"
+  ],
+  "character": "o",
+  "characterColor": [169, 169, 169, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [169, 169, 169, 255]
+}

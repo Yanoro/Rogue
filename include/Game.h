@@ -91,6 +91,7 @@ private:
   flecs::entity mapReloadWindowEntity;
   flecs::entity drawAsciiToggleWindowEntity;
   flecs::entity fontSelectionWindowEntity;
+  flecs::entity mapEditorWindowEntity;
 
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
@@ -100,6 +101,7 @@ private:
   friend class MapReloadWindow;
   friend class DrawAsciiDebugWindow;
   friend class FontSelectionWindow;
+  friend class MapEditorWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

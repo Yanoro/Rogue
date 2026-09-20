@@ -125,6 +125,30 @@ void Game::Draw() {
             DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, BLUE);
           }
         });
+
+    if (debugWindowState && debugWindowState->GetShowLocations()) {
+      const auto& locations = map->GetLocations();
+      Color locationColors[] = { RED, GREEN, BLUE, YELLOW, MAGENTA, ORANGE, PURPLE, PINK };
+      int colorIdx = 0;
+      for (const auto& loc : locations) {
+        ScreenPosition sPos = map->GameCoordsToScreenCoords(loc->pos.x, loc->pos.y);
+        int rectWidth = loc->width * tileW;
+        int rectHeight = loc->height * tileH;
+        Color col = locationColors[colorIdx % 8];
+        
+        // Draw the bounding box
+        DrawRectangleLines(sPos.x, sPos.y, rectWidth, rectHeight, col);
+        
+        // Draw the location name in the center
+        int fontSize = 20;
+        int textWidth = MeasureText(loc->name.c_str(), fontSize);
+        int textX = sPos.x + (rectWidth - textWidth) / 2;
+        int textY = sPos.y + (rectHeight - fontSize) / 2;
+        DrawText(loc->name.c_str(), textX, textY, fontSize, col);
+        
+        colorIdx++;
+      }
+    }
   }
 
   camera.EndMode();
@@ -141,8 +165,8 @@ void Game::Draw() {
   Rectangle sourceRec = {0.0f, 0.0f, (float)gameTexture.texture.width,
                          -(float)gameTexture.texture.height};
 
-  Rectangle destRec = {GetMonitorPosition(currentMonitor).x,
-                       GetMonitorPosition(currentMonitor).y,
+  Rectangle destRec = {0.0f,
+                       0.0f,
                        1920.0f,
                        1080.0f};
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);

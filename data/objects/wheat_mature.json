@@ -1,0 +1,13 @@
+{
+  "name": "Mature Wheat",
+  "character": "W",
+  "characterColor": [245, 222, 179, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [218, 165, 32, 255],
+  "components": ["Interactable", "Harvestable"],
+  "amountRemaining": 3,
+  "drops": [
+    {"item": "wheat", "chance": 1.0},
+    {"item": "wheat_seed", "chance": 0.33}
+  ]
+}

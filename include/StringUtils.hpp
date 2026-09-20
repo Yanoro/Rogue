@@ -41,4 +41,10 @@ inline std::string substringAfterLast(const std::string &text,
   return text.substr(pos + delimiter.length());
 }
 
+inline std::string ToUpper(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(),
+                 [](unsigned char c) { return std::toupper(c); });
+  return text;
+}
+
 } // namespace StringUtils

@@ -4,9 +4,11 @@
 #include <vector>
 #include <filesystem>
 
+class DebugLog;
+
 class MapReloader {
 public:
-  MapReloader(const std::string &mapsDirectory = "./");
+  MapReloader(const std::string &mapsDirectory = "./", DebugLog* debugLog = nullptr);
 
   // Get list of available map files in the directory
   const std::vector<std::string> &GetMapList() const { return mapList; }
@@ -21,6 +23,7 @@ public:
   const std::string &GetDirectory() const { return mapsDirectory; }
 
 private:
+  DebugLog* debugLog;
   std::string mapsDirectory;
   std::vector<std::string> mapList;
 

@@ -21,3 +21,25 @@ std::vector<InteractionHandler> InteractionRegistry::GetAvailableInteractions(fl
 void InteractionRegistry::Clear() {
     handlers.clear();
 }
+
+std::vector<ItemInteractionHandler> ItemInteractionRegistry::handlers;
+
+void ItemInteractionRegistry::Register(const ItemInteractionHandler& handler) {
+    handlers.push_back(handler);
+}
+
+std::vector<ItemInteractionHandler> ItemInteractionRegistry::GetAvailableInteractions(flecs::entity item) {
+    std::vector<ItemInteractionHandler> available;
+    if (!item.is_alive()) return available;
+
+    for (const auto& handler : handlers) {
+        if (handler.canInteract(item)) {
+            available.push_back(handler);
+        }
+    }
+    return available;
+}
+
+void ItemInteractionRegistry::Clear() {
+    handlers.clear();
+}
