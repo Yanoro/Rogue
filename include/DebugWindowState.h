@@ -47,11 +47,17 @@ public:
   bool GetShowMapEditorWindow() const { return showMapEditorWindow; }
   void SetShowMapEditorWindow(bool value) { showMapEditorWindow = value; }
 
+  bool GetShowAIMenuWindow() const { return showAIMenuWindow; }
+  void SetShowAIMenuWindow(bool value) { showAIMenuWindow = value; }
+
   bool GetShowLocations() const { return showLocations; }
   void SetShowLocations(bool value) { showLocations = value; }
 
   std::string GetDefaultFontPath() const { return defaultFontPath; }
   void SetDefaultFontPath(const std::string& path) { defaultFontPath = path; }
+
+  bool GetStopAllAI() const { return stopAllAI; }
+  void SetStopAllAI(bool value) { stopAllAI = value; }
 
 private:
   DebugLog* debugLog;
@@ -65,7 +71,9 @@ private:
   bool showDrawAsciiToggleWindow;
   bool showFontSelectionWindow;
   bool showMapEditorWindow;
+  bool showAIMenuWindow;
   bool showLocations;
+  bool stopAllAI;
   std::string defaultFontPath;
   
     static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";};

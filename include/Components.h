@@ -248,6 +248,10 @@ struct Obstacle {
   bool blocksMovement = true;
 };
 
+struct Storage {
+  int capacity = 10;
+};
+
 
 struct Portable {
   bool canBePickedUp = true;

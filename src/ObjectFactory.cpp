@@ -14,6 +14,11 @@ void ObjectFactory::RegisterDefaultComponents() {
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
   RegisterComponent<Portable>("Portable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Portable>(); });
+  RegisterComponent<Storage>("Storage", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Storage s;
+    s.capacity = tmpl.value("capacity", 10);
+    obj.set<Storage>(s);
+  });
   
   RegisterComponent<Harvestable>("Harvestable", [](flecs::entity obj, const nlohmann::json& tmpl) {
     Harvestable h;

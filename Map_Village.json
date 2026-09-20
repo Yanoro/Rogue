@@ -77,6 +77,11 @@
   ],
   "objects": [
     {
+      "type": "chest",
+      "x": 46,
+      "y": 11
+    },
+    {
       "type": "apple_tree",
       "x": 30,
       "y": 10

@@ -14,6 +14,17 @@
 #include "MapReloader.h"
 #include "AgentBrain.h"
 
+enum class EditorSelectionType {
+  None,
+  Tile,
+  ObjectTemplate
+};
+
+struct EditorSelection {
+  EditorSelectionType type = EditorSelectionType::None;
+  std::string name;
+};
+
 class Game {
 public:
   Game();
@@ -52,6 +63,7 @@ private:
   flecs::entity selectedTile;
   bool hasClicked = false;
   bool validTileSelected = false;
+  EditorSelection editorSelection;
   GamePosition lastClickedPos{0, 0};
   double lastLeftClickTime = 0.0;
 
@@ -92,6 +104,7 @@ private:
   flecs::entity drawAsciiToggleWindowEntity;
   flecs::entity fontSelectionWindowEntity;
   flecs::entity mapEditorWindowEntity;
+  flecs::entity aiMenuWindowEntity;
 
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
@@ -102,6 +115,7 @@ private:
   friend class DrawAsciiDebugWindow;
   friend class FontSelectionWindow;
   friend class MapEditorWindow;
+  friend class AIMenuWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

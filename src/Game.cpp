@@ -228,6 +228,57 @@ void Game::UpdateGUI() {
       }
       isSettingPlayerTarget =
           false; // Disable the mode after setting the target
+    } else if (editorSelection.type != EditorSelectionType::None && !clickedWindow) {
+      if (editorSelection.type == EditorSelectionType::Tile) {
+        Tile* newTile = nullptr;
+        for (const auto& uTile : map->GetUniqueTiles()) {
+          if (uTile->name == editorSelection.name) {
+            newTile = uTile.get();
+            break;
+          }
+        }
+        if (newTile) {
+          map->addTileToMap(newTile, gPos.x, gPos.y);
+          
+          // Update the visual representation
+          ScreenPosition targetScreenPos = map->GameCoordsToScreenCoords(gPos.x, gPos.y);
+          flecs::entity mapEntity = ecs.lookup("CurrentMap");
+          if (mapEntity.is_valid()) {
+            flecs::entity targetEntity = flecs::entity::null();
+            ecs.filter<const ScreenPosition>().each(
+                [&](flecs::entity e, const ScreenPosition& sPos) {
+                  // Background tiles are children of Map and don't have GamePosition
+                  if (e.parent() == mapEntity && !e.has<GamePosition>()) {
+                    if (sPos.x == targetScreenPos.x && sPos.y == targetScreenPos.y) {
+                      targetEntity = e;
+                    }
+                  }
+                });
+            
+            if (targetEntity.is_alive()) {
+              targetEntity.set<DrawAscii>(*newTile->ascii);
+            }
+          }
+        }
+      } else if (editorSelection.type == EditorSelectionType::ObjectTemplate) {
+        flecs::entity mapEntity = ecs.lookup("CurrentMap");
+        if (mapEntity.is_valid()) {
+          flecs::entity existingObj = flecs::entity::null();
+          ecs.filter<const GamePosition>().each([&](flecs::entity e, const GamePosition& pos) {
+            if (pos.x == gPos.x && pos.y == gPos.y && e != playerEntity && !e.has<CharacterTag>()) {
+               if (!existingObj.is_alive()) {
+                 existingObj = e;
+               }
+            }
+          });
+          
+          if (existingObj.is_alive()) {
+            objectFactory.ApplyTemplate(existingObj, editorSelection.name, map.get());
+          } else {
+            objectFactory.SpawnObject(ecs, mapEntity, map.get(), editorSelection.name, gPos);
+          }
+        }
+      }
     } else if (!clickedWindow) {
       double currentTime = GetTime();
       bool isDoubleClick = (currentTime - lastLeftClickTime < DEFAULT_DOUBLE_CLICK_TIME) && (lastClickedPos == gPos);

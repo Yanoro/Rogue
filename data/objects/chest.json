@@ -1,0 +1,13 @@
+{
+  "name": "Chest",
+  "components": [
+    "Interactable",
+    "Storage",
+    "Obstacle"
+  ],
+  "capacity": 20,
+  "character": "C",
+  "characterColor": [139, 69, 19, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [205, 133, 63, 255]
+}

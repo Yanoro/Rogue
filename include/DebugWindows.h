@@ -71,7 +71,15 @@ private:
 
 class MapEditorWindow : public Window {
 public:
-  MapEditorWindow(Game* game);
+  explicit MapEditorWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};
+
+class AIMenuWindow : public Window {
+public:
+  explicit AIMenuWindow(Game* game);
   void Draw() override;
 private:
   Game* game;

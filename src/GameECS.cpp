@@ -92,7 +92,9 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
   entity.set<NameTagColor>({BLUE});
   entity.set_name(name.c_str());
 
-  entity.set<AgentBrainWrapper>({std::make_unique<AgentBrain>(entity, name)});
+  auto brain = std::make_unique<AgentBrain>(entity, name);
+  brain->isStopped = debugWindowState ? debugWindowState->GetStopAllAI() : false;
+  entity.set<AgentBrainWrapper>({std::move(brain)});
   return entity;
 }
 
@@ -459,7 +461,7 @@ void Game::ECSInitActionSystems() {
               auto interactions = InteractionRegistry::GetAvailableInteractions(pendingInt->targetEntity);
               for (const auto& interaction : interactions) {
                 if (interaction.name == pendingInt->interactionName) {
-                  std::string msg = interaction.execute(entity, pendingInt->targetEntity);
+                  std::string msg = interaction.execute(entity, pendingInt->targetEntity, "");
                   if (debugLog) debugLog->Log(msg);
                   break;
                 }
@@ -736,7 +738,7 @@ void Game::ECSInit(std::string mapPath) {
 
   InteractionRegistry::Clear();
   
-  InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target) {
+  InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
       
       Harvestable* h = target.get_mut<Harvestable>();
@@ -781,18 +783,90 @@ void Game::ECSInit(std::string mapPath) {
       return "System: The " + objName + " has no more resources to harvest.\n";
   });
 
-  InteractionRegistry::RegisterComponentInteraction<Workstation>("Craft", [](flecs::entity actor, flecs::entity target) {
+  InteractionRegistry::RegisterComponentInteraction<Workstation>("Craft", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       return "System: Crafting menu opened (Not yet implemented).\n";
   });
 
-  InteractionRegistry::RegisterComponentInteraction<DisplayName>("Examine", [](flecs::entity actor, flecs::entity target) {
+  InteractionRegistry::RegisterComponentInteraction<DisplayName>("Examine", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
       std::string msg = "System: You examined the " + objName + ". It looks normal.\n";
       if (target.has<Harvestable>()) {
           const Harvestable* h = target.get<Harvestable>();
           msg += "You can harvest it " + std::to_string(h->amountRemaining) + " more time(s).\n";
       }
+      if (target.has<Storage>()) {
+          msg += "It can be used to [STORE $ITEM_NAME] or [TAKE $ITEM_NAME].\n";
+          std::string items = "";
+          target.each<Holds>([&](flecs::entity child) {
+              if (child.is_alive() && child.has<DisplayName>()) {
+                  items += child.get<DisplayName>()->name + ", ";
+              }
+          });
+          if (!items.empty()) {
+              items.pop_back();
+              items.pop_back();
+              msg += "It currently holds: " + items + ".\n";
+          } else {
+              msg += "It is currently empty.\n";
+          }
+      }
       return msg;
+  });
+
+  InteractionRegistry::RegisterComponentInteraction<Storage>("Store", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+      if (args.empty()) {
+          return "System: You must specify an item to store. Use [STORE $ITEM_NAME].\n";
+      }
+
+      flecs::entity itemToStore = flecs::entity::null();
+      actor.each<Holds>([&](flecs::entity child) {
+          if (child.is_alive() && child.has<DisplayName>()) {
+              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, args)) {
+                  itemToStore = child;
+              }
+          }
+      });
+
+      if (!itemToStore.is_alive()) {
+          return "System: You do not have an item named " + args + " to store.\n";
+      }
+
+      int currentCount = 0;
+      target.each<Holds>([&](flecs::entity) { currentCount++; });
+      if (currentCount >= target.get<Storage>()->capacity) {
+          return "System: The storage is full.\n";
+      }
+
+      actor.remove<Holds>(itemToStore);
+      target.add<Holds>(itemToStore);
+      itemToStore.child_of(target);
+
+      return "System: You stored the " + itemToStore.get<DisplayName>()->name + ".\n";
+  });
+
+  InteractionRegistry::RegisterComponentInteraction<Storage>("Take", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+      if (args.empty()) {
+          return "System: You must specify an item to take. Use [TAKE $ITEM_NAME].\n";
+      }
+
+      flecs::entity itemToTake = flecs::entity::null();
+      target.each<Holds>([&](flecs::entity child) {
+          if (child.is_alive() && child.has<DisplayName>()) {
+              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, args)) {
+                  itemToTake = child;
+              }
+          }
+      });
+
+      if (!itemToTake.is_alive()) {
+          return "System: The storage does not have an item named " + args + ".\n";
+      }
+
+      target.remove<Holds>(itemToTake);
+      actor.add<Holds>(itemToTake);
+      itemToTake.child_of(actor);
+
+      return "System: You took the " + itemToTake.get<DisplayName>()->name + ".\n";
   });
 
   std::unique_ptr<AI> ai;
@@ -895,6 +969,7 @@ void Game::ECSInit(std::string mapPath) {
   drawAsciiToggleWindowEntity = ecs.entity("DrawAscii Debug Window");
   fontSelectionWindowEntity = ecs.entity("Font Selection Window");
   mapEditorWindowEntity = ecs.entity("Map Editor Window");
+  aiMenuWindowEntity = ecs.entity("AI Menu Window");
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -931,6 +1006,10 @@ void Game::ECSInit(std::string mapPath) {
   if (debugWindowState->GetShowMapEditorWindow()) {
     mapEditorWindowEntity.set<ActiveWindow>(
         {std::make_shared<MapEditorWindow>(this)});
+  }
+  if (debugWindowState->GetShowAIMenuWindow()) {
+    aiMenuWindowEntity.set<ActiveWindow>(
+        {std::make_shared<AIMenuWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
     playerEntity.set<ActiveWindow>(

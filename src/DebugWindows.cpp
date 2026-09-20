@@ -191,10 +191,22 @@ void DebugConsoleWindow::Draw() {
     }
   }
 
+  ImGui::SameLine();
+
+  bool showAIMenu = game->aiMenuWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("AI Menu", &showAIMenu)) {
+    if (showAIMenu) {
+      game->aiMenuWindowEntity.set<ActiveWindow>({std::make_shared<AIMenuWindow>(game)});
+    } else {
+      game->aiMenuWindowEntity.remove<ActiveWindow>();
+    }
+  }
+
   ImGui::Separator();
   
-  static bool stopAllAI = false;
+  bool stopAllAI = game->debugWindowState->GetStopAllAI();
   if (ImGui::Checkbox("Stop All AI Agents", &stopAllAI)) {
+    game->debugWindowState->SetStopAllAI(stopAllAI);
     game->ecs.filter<AgentBrainWrapper>().each([&](flecs::entity, AgentBrainWrapper& wrapper) {
       if (wrapper.agBrain) {
         wrapper.agBrain->isStopped = stopAllAI;
@@ -640,6 +652,15 @@ void MapEditorWindow::Draw() {
     return;
   }
   
+  ImGui::Text("Selected: %s", game->editorSelection.type != EditorSelectionType::None ? game->editorSelection.name.c_str() : "None");
+  if (game->editorSelection.type != EditorSelectionType::None) {
+    ImGui::SameLine();
+    if (ImGui::Button("Clear Selection")) {
+      game->editorSelection.type = EditorSelectionType::None;
+      game->editorSelection.name = "";
+    }
+  }
+
   ImGui::Text("Map Tiles");
   ImGui::Separator();
   if (ImGui::BeginTable("TilesTable", 8)) {
@@ -651,10 +672,23 @@ void MapEditorWindow::Draw() {
       ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
       ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
       
+      bool isSelected = (game->editorSelection.type == EditorSelectionType::Tile && game->editorSelection.name == tile->name);
+      if (isSelected) {
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+      }
+
       std::string label = std::string(1, tile->ascii->ch) + "##" + tile->name;
-      ImGui::Button(label.c_str(), ImVec2(32, 32));
+      if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
+        game->editorSelection.type = EditorSelectionType::Tile;
+        game->editorSelection.name = tile->name;
+      }
       
       ImGui::PopStyleColor(2);
+      if (isSelected) {
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+      }
       if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", tile->name.c_str());
       }
@@ -693,10 +727,23 @@ void MapEditorWindow::Draw() {
       ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
       ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
       
+      bool isSelected = (game->editorSelection.type == EditorSelectionType::ObjectTemplate && game->editorSelection.name == pair.first);
+      if (isSelected) {
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+      }
+
       std::string label = std::string(1, ch) + "##" + pair.first;
-      ImGui::Button(label.c_str(), ImVec2(32, 32));
+      if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
+        game->editorSelection.type = EditorSelectionType::ObjectTemplate;
+        game->editorSelection.name = pair.first;
+      }
       
       ImGui::PopStyleColor(2);
+      if (isSelected) {
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+      }
       if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("%s", pair.first.c_str());
       }
@@ -705,4 +752,32 @@ void MapEditorWindow::Draw() {
   }
 
   ImGui::End();
+}
+
+AIMenuWindow::AIMenuWindow(Game* game) : game(game) {}
+
+void AIMenuWindow::Draw() {
+  bool show = game->aiMenuWindowEntity.has<ActiveWindow>();
+  if (!show)
+    return;
+    
+  if (ImGui::Begin("AI Menu", &show)) {
+    const AIBackend* backend = game->ecs.get<AIBackend>();
+    if (backend && backend->ptr) {
+      ImGui::Text("AI Backend: %s", backend->ptr->getAIName().c_str());
+      ImGui::Text("Model Name: %s", backend->ptr->getModelName().c_str());
+      ImGui::Separator();
+      ImGui::TextUnformatted(backend->ptr->getAdditionalInfo().c_str());
+    } else {
+      ImGui::Text("No AI initialized.");
+    }
+  }
+  ImGui::End();
+
+  if (!show) {
+    game->aiMenuWindowEntity.remove<ActiveWindow>();
+    game->debugWindowState->SetShowAIMenuWindow(false);
+  } else {
+    game->debugWindowState->SetShowAIMenuWindow(true);
+  }
 }
