@@ -41,4 +41,20 @@ public:
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;
+  
+  std::string getAIName() const override { return "Ollama"; }
+  std::string getModelName() const override { return modelName; }
+  
+  std::string getAdditionalInfo() const override {
+    std::string info;
+    if (!options.empty()) {
+      info += "Options:\n";
+      for (auto& el : options.items()) {
+        info += "  " + el.key() + ": " + el.value().dump() + "\n";
+      }
+    } else {
+      info += "Options: Default\n";
+    }
+    return info;
+  }
 };

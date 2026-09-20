@@ -31,5 +31,8 @@ public:
   virtual bool isBusy(const std::string &contextId) = 0;
   virtual std::string getLastMessage(const std::string &contextId) = 0;
   virtual std::string getContext(const std::string &contextId) = 0;
+  virtual std::string getAIName() const = 0;
+  virtual std::string getModelName() const = 0;
+  virtual std::string getAdditionalInfo() const { return ""; }
   virtual ~AI() = default;
 };

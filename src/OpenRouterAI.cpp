@@ -101,6 +101,7 @@ std::string OpenRouterAI::generate(const std::string &contextId,
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
+  totalRequests++;
 
   CURL *curl;
   std::string readBuffer;
@@ -237,6 +238,7 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
+  totalRequests++;
 
   std::vector<nlohmann::json> historyJson;
   for (const auto& msg : history) {

@@ -22,6 +22,8 @@ private:
     bool isThinking = false;
   };
 
+  std::atomic<int> totalRequests{0};
+
   static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
                               void *userp);
   static size_t WriteCallbackStream(void *contents, size_t size, size_t nmemb,
@@ -41,4 +43,21 @@ public:
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;
+
+  std::string getAIName() const override { return "OpenRouter"; }
+  std::string getModelName() const override { return modelName; }
+  
+  std::string getAdditionalInfo() const override {
+    std::string info;
+    info += "Total Requests: " + std::to_string(totalRequests.load()) + "\n\n";
+    if (!options.empty()) {
+      info += "Options:\n";
+      for (auto& el : options.items()) {
+        info += "  " + el.key() + ": " + el.value().dump() + "\n";
+      }
+    } else {
+      info += "Options: Default\n";
+    }
+    return info;
+  }
 };

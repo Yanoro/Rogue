@@ -37,4 +37,7 @@ public:
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;
+
+  std::string getAIName() const override { return "Gemini"; }
+  std::string getModelName() const override { return modelName; }
 };
