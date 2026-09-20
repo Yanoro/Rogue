@@ -29,7 +29,7 @@ public:
 
       class InvalidAction : public AgentAction {
       public:
-        InvalidAction() : time(10.0f * 1000.0f) {};
+        InvalidAction() : time(2.0f * 1000.0f) {};
 
         ActionStatus update(float deltaTime, flecs::entity) override {
           time -= deltaTime;

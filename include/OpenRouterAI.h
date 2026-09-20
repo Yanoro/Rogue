@@ -1,5 +1,6 @@
 #pragma once
 #include "AI.h"
+#include <atomic>
 
 class OpenRouterAI : public AI {
 private:
