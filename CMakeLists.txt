@@ -105,12 +105,15 @@ set(SOURCES
     src/GameDraw.cpp
     src/GameECS.cpp
     src/Map.cpp
-    src/AI.cpp
+    src/OllamaAI.cpp
+    src/GeminiAI.cpp
+    src/OpenRouterAI.cpp
     src/Character.cpp
     src/AIChatWindow.cpp
     src/AgentContextWindow.cpp
     src/EntityInfoWindow.cpp
     src/Command.cpp
+    src/InteractionRegistry.cpp
     src/InputHandler.cpp
     src/PathFinding.cpp
     src/DebugWindowState.cpp
@@ -119,6 +122,7 @@ set(SOURCES
     src/DrawAsciiDebug.cpp
     src/DebugWindows.cpp
     src/AgentBrain.cpp
+    src/ObjectFactory.cpp
 )
 
 add_executable(AIRogue ${SOURCES})
