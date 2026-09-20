@@ -308,33 +308,55 @@ private:
         std::string response;
       };
 
-      class ObjectsAction : public AgentAction {
+      class SurroundingsAction : public AgentAction {
       public:
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
-            successMsg = "System: Nearby objects:\n";
             const GamePosition currentPos = *entity.get<GamePosition>();
-            bool found = false;
-            int count = 1;
-            std::vector<flecs::entity> foundObjects;
+            Map *map = entity.world().get<MapResource>()->map;
 
-            entity.world().filter<Interactable, DisplayName, GamePosition>().each(
-                [&](flecs::entity obj, const Interactable&, const DisplayName& dName, const GamePosition& pos) {
-                  if (std::abs(pos.x - currentPos.x) <= DEFAULT_OBJECT_SEARCH_RADIUS && std::abs(pos.y - currentPos.y) <= DEFAULT_OBJECT_SEARCH_RADIUS) {
-                    successMsg += std::to_string(count) + ". " + dName.name + "\n";
-                    foundObjects.push_back(obj);
-                    count++;
-                    found = true;
+            int radius = 2; // 5x5 grid (from -2 to +2)
+            std::string grid = "";
+            std::map<char, std::string> legend;
+
+            // Mark the agent
+            legend['@'] = "You";
+
+            for (int y = currentPos.y - radius; y <= currentPos.y + radius; ++y) {
+              for (int x = currentPos.x - radius; x <= currentPos.x + radius; ++x) {
+                if (x == currentPos.x && y == currentPos.y) {
+                  grid += "@";
+                  continue;
+                }
+
+                char tileChar = ' ';
+                if (map && map->IsInBounds(x, y)) {
+                  auto tile = map->GetTile(x, y);
+                  if (tile) {
+                    tileChar = tile->ascii->ch;
                   }
-                });
+                }
 
-            entity.set<LastObjectsQuery>({foundObjects});
+                bool entityFound = false;
+                entity.world().filter<GamePosition, DrawAscii, DisplayName>().each(
+                  [&](flecs::entity other, const GamePosition& pos, const DrawAscii& ascii, const DisplayName& dName) {
+                    if (pos.x == x && pos.y == y) {
+                      tileChar = ascii.ch;
+                      legend[tileChar] = dName.name;
+                      entityFound = true;
+                    }
+                  }
+                );
 
-            if (!found) {
-              successMsg = "System: There are no objects nearby.\n";
-            } else {
-              successMsg += "System: To see the interaction options of an object, use [MOVE_TO $NUMBER] to go there.\n";
+                grid += tileChar;
+              }
+              grid += "\n";
+            }
+
+            successMsg = "System: Surroundings (5x5 grid):\n```\n" + grid + "```\nLegend:\n";
+            for (const auto& pair : legend) {
+               successMsg += std::string(1, pair.first) + " = " + pair.second + "\n";
             }
           }
           return ActionStatus::Done;
@@ -351,8 +373,8 @@ private:
         void resume(flecs::entity) override {}
 
       private:
-        std::string successMsg;
         bool isFirstUpdate = true;
+        std::string successMsg;
       };
 
       class InventoryAction : public AgentAction {
@@ -442,7 +464,7 @@ private:
 
       class GenericInteractAction : public AgentAction {
       public:
-        GenericInteractAction(std::string commandName) : commandName(commandName) {}
+        GenericInteractAction(std::string commandName, std::string commandArgs) : commandName(commandName), commandArgs(commandArgs) {}
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
@@ -458,7 +480,7 @@ private:
             bool found = false;
             for (const auto& interaction : interactions) {
               if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
-                successMsg = interaction.execute(entity, targetObj);
+                successMsg = interaction.execute(entity, targetObj, commandArgs);
                 found = true;
                 break;
               }
@@ -483,6 +505,7 @@ private:
 
       private:
         std::string commandName;
+        std::string commandArgs;
         bool isFirstUpdate = true;
         std::string successMsg;
       };

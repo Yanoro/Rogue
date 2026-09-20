@@ -211,16 +211,15 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
                                     std::regex_constants::icase);
   static std::regex locationsRegex(R"(\[LOCATIONS\])",
                                    std::regex_constants::icase);
-
+  static std::regex surroundingsRegex(R"(\[SURROUNDINGS\])",
+                                  std::regex_constants::icase);
   static std::regex talkToRegex(R"(\[TALK_TO\s+(.+?)\s*\])",
                                 std::regex_constants::icase);
-  static std::regex objectsRegex(R"(\[OBJECTS\])",
-                                 std::regex_constants::icase);
   static std::regex inventoryRegex(R"(\[INVENTORY\])",
                                    std::regex_constants::icase);
   static std::regex inspectItemRegex(R"(\[INSPECT_ITEM\s+(.+?)\s*\])",
                                      std::regex_constants::icase);
-  static std::regex genericCommandRegex(R"(\[([A-Z_]+)\])",
+  static std::regex genericCommandRegex(R"(\[([A-Z_]+)(?:\s+(.+?))?\s*\])",
                                         std::regex_constants::icase);
   std::smatch match;
 
@@ -232,8 +231,8 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
     return {NPCCommandType::CHARACTERS_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, locationsRegex)) {
     return {NPCCommandType::LOCATIONS_QUERY, ""};
-  } else if (std::regex_search(strippedMsg, match, objectsRegex)) {
-    return {NPCCommandType::OBJECTS_QUERY, ""};
+  } else if (std::regex_search(strippedMsg, match, surroundingsRegex)) {
+    return {NPCCommandType::SURROUNDINGS_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, inventoryRegex)) {
     return {NPCCommandType::INVENTORY_QUERY, ""};
   } else if (std::regex_search(strippedMsg, match, inspectItemRegex)) {
@@ -241,7 +240,8 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
   } else if (std::regex_search(strippedMsg, match, talkToRegex)) {
     return {NPCCommandType::TALK_TO, match[1].str()};
   } else if (std::regex_search(strippedMsg, match, genericCommandRegex)) {
-    return {NPCCommandType::GENERIC_INTERACT, match[1].str()};
+    std::pair<std::string, std::string> args = {match[1].str(), match.size() > 2 ? match[2].str() : ""};
+    return {NPCCommandType::GENERIC_INTERACT, args};
   }
 
   return {NPCCommandType::INVALID_COMMAND, ""};
@@ -353,7 +353,7 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
   }
 
   // Clear LastObjectsQuery if we are doing anything other than moving to a location or querying objects
-  if (msgCmd.type != NPCCommandType::MOVE_TO_LOCATION && msgCmd.type != NPCCommandType::OBJECTS_QUERY) {
+  if (msgCmd.type != NPCCommandType::MOVE_TO_LOCATION && msgCmd.type != NPCCommandType::SURROUNDINGS_QUERY) {
     if (entity.has<LastObjectsQuery>()) {
       entity.remove<LastObjectsQuery>();
     }
@@ -454,9 +454,9 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     break;
   }
 
-  case (NPCCommandType::OBJECTS_QUERY): {
+  case (NPCCommandType::SURROUNDINGS_QUERY): {
     action_queue.push_back([](flecs::entity) {
-      return std::make_unique<ObjectsAction>();
+      return std::make_unique<SurroundingsAction>();
     });
     break;
   }
@@ -474,9 +474,9 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
     break;
   }
   case (NPCCommandType::GENERIC_INTERACT): {
-    std::string commandName = std::any_cast<std::string>(msgCmd.params);
-    action_queue.push_back([commandName](flecs::entity) {
-      return std::make_unique<GenericInteractAction>(commandName);
+    auto args = std::any_cast<std::pair<std::string, std::string>>(msgCmd.params);
+    action_queue.push_back([args](flecs::entity) {
+      return std::make_unique<GenericInteractAction>(args.first, args.second);
     });
     break;
   }
@@ -492,8 +492,6 @@ void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
 }
 
 void AgentBrain::update(float deltaTime) {
-  if (isStopped) return;
-
   if (entity.get<AgentSleepTimer>()) {
     AgentSleepTimer *timer = entity.get_mut<AgentSleepTimer>();
     timer->time_remaining_ms -= deltaTime;
@@ -508,6 +506,8 @@ void AgentBrain::update(float deltaTime) {
     entity.set<AgentSleepTimer>({10});
     return;
   }
+
+  if (isStopped) return;
 
   const AIRequest *request = entity.get<AIRequest>();
   const std::string context = getContext();
