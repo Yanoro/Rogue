@@ -139,6 +139,10 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
   std::string name = tmpl.value("name", type);
   obj.set<DisplayName>({name});
 
+  // Short blurb surfaced by the [EXAMINE] interaction.
+  obj.set<ObjectDescription>(
+      {tmpl.value("description", std::string("It looks unremarkable."))});
+
   if (tmpl.contains("nameTagColor")) {
     Color tagColor = {
       tmpl["nameTagColor"][0],

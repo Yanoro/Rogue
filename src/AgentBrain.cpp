@@ -2,6 +2,7 @@
 #include "AI.h"
 #include "AgentContextWindow.h"
 #include "Components.h"
+#include "DebugLog.h"
 #include "Map.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
@@ -38,10 +39,11 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
         }
       });
 
+  AgentBrain *sourceBrain = sourceEntity.get_mut<AgentBrainWrapper>()->agBrain.get();
   if (state == ConversationState::Talking) {
-    sourceEntity.get_mut<NPCContext>()->history.push_back({"user", "System: You are now talking to " + targetName + ". What do you say? To leave the conversation, append [EXIT] to the end of your goodbye message, for example: I have to go now, goodbye! [EXIT]\n"});
+    sourceBrain->pushContext("user", "System: You are now talking to " + targetName + ". What do you say? To leave the conversation, append [EXIT] to the end of your goodbye message, for example: I have to go now, goodbye! [EXIT]\n");
   } else {
-    sourceEntity.get_mut<NPCContext>()->history.push_back({"user", "System: " + targetName + " approaches you to talk and is currently speaking. When it is your turn, you can append [EXIT] to the end of your goodbye message (for example: Talk to you later! [EXIT]) to leave the conversation.\n"});
+    sourceBrain->pushContext("user", "System: " + targetName + " approaches you to talk and is currently speaking. When it is your turn, you can append [EXIT] to the end of your goodbye message (for example: Talk to you later! [EXIT]) to leave the conversation.\n");
   }
 
   if (state == ConversationState::Talking && found) {
@@ -52,7 +54,15 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
   }
 }
 
-ActionStatus TalkAction::update(float, flecs::entity entity) {
+ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
+  // Waiting out the backoff after an empty response before asking again. The
+  // AIRequest was already dropped, so a fresh one is only created once this
+  // reaches zero.
+  if (retryCooldownMs > 0.0f) {
+    retryCooldownMs -= deltaTime;
+    return ActionStatus::Doing;
+  }
+
   if (state == ConversationState::Talking) {
     const AIRequest *request = entity.get<AIRequest>();
     if (request == nullptr) {
@@ -79,6 +89,23 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
       // We ONLY swap states and transfer the message if they are ready!
       // Otherwise, we just wait and check again next frame.
         if (targetReady) {
+          // An empty response is never dialogue. It means the provider rejected
+          // the request or the stream died, so flag it and back off before
+          // retrying. The "stay in character" warning further down is for a
+          // model that answered with no usable words, which is a different
+          // problem from the provider not answering at all.
+          if (request->pendingResponse.empty()) {
+            std::string who = entity.has<DisplayName>()
+                                  ? entity.get<DisplayName>()->name
+                                  : std::string("NPC");
+            entity.get<AgentBrainWrapper>()->agBrain->logWarning(
+                "Empty AI response during conversation for " + who +
+                " - retrying");
+            retryCooldownMs = DEFAULT_EMPTY_RESPONSE_RETRY_MS;
+            entity.remove<AIRequest>();
+            return ActionStatus::Doing;
+          }
+
           std::string response = request->pendingResponse;
           
           // Strip out <think> tags so they aren't spoken out loud
@@ -114,7 +141,7 @@ ActionStatus TalkAction::update(float, flecs::entity entity) {
 
         if ((response.empty() && !exiting) || hasOtherCommand) {
             std::string warning = "System: Warning - you must stay in character during a TalkAction. Provide conversational dialogue, or append [EXIT] to your message to end the conversation.\n";
-            entity.get_mut<NPCContext>()->history.push_back({"user", warning});
+            entity.get_mut<AgentBrainWrapper>()->agBrain->pushContext("user", warning);
             entity.remove<AIRequest>();
             return ActionStatus::Doing;
         }
@@ -173,8 +200,8 @@ std::string TalkAction::getFailureMessage() {
   return "System: The person you were trying to talk to is no longer available.\n";
 }
 
-AgentBrain::AgentBrain(flecs::entity entity, std::string name)
-    : entity(entity) {
+AgentBrain::AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLog)
+    : entity(entity), debugLog(debugLog) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
   entity.set_name(name.c_str());
 
@@ -231,23 +258,64 @@ std::string AgentBrain::getContext() const {
 }
 
 void AgentBrain::appendContext(const std::string &role, const std::string &text) {
+  recordContext(role, text, true);
+}
+
+void AgentBrain::pushContext(const std::string &role, const std::string &text) {
+  recordContext(role, text, false);
+}
+
+void AgentBrain::recordAssistantStream(const std::string &token) {
+  if (!token.empty()) {
+    recordContext("assistant", token, true);
+    return;
+  }
+
+  // End of stream: close the reply with a newline so the next transcript entry
+  // starts on its own line instead of butting up against the assistant's text.
+  auto ctx = entity.get_mut<NPCContext>();
+  if (ctx && !ctx->history.empty() && ctx->history.back().role == "assistant" &&
+      !ctx->history.back().content.empty() &&
+      ctx->history.back().content.back() != '\n') {
+    recordContext("assistant", "\n", true);
+  }
+}
+
+void AgentBrain::recordContext(const std::string &role, const std::string &text,
+                               bool continueTurn) {
   if (text.empty()) return;
   auto ctx = entity.get_mut<NPCContext>();
+  if (!ctx) return;
   bool isNewMessage = true;
-  if (!ctx->history.empty() && ctx->history.back().role == role) {
+  if (continueTurn && !ctx->history.empty() && ctx->history.back().role == role) {
     ctx->history.back().content += text;
     isNewMessage = false;
   } else {
     ctx->history.push_back({role, text});
   }
 
+  // A new assistant turn is prefixed so the transcript reads as a dialogue.
+  writeTranscript(isNewMessage && role == "assistant" ? "You: " + text : text);
+}
+
+void AgentBrain::logNote(const std::string &text) {
+  // Deliberately does not touch NPCContext::history: this is for bookkeeping we
+  // want in the transcript but must not wake the model with. Timed harvests use
+  // it, because they already report back when they complete.
+  writeTranscript(text);
+}
+
+void AgentBrain::logWarning(const std::string &text) const {
+  if (debugLog) {
+    debugLog->LogWarning(text);
+  }
+}
+
+void AgentBrain::writeTranscript(const std::string &text) {
+  if (text.empty()) return;
   std::ofstream out(logFilePath, std::ios::app);
   if (out.is_open()) {
-    if (isNewMessage && role == "assistant") {
-      out << "You: " << text;
-    } else {
-      out << text;
-    }
+    out << text;
   }
 }
 
@@ -341,6 +409,7 @@ void AgentBrain::update(float deltaTime) {
   const AIRequest *request = entity.get<AIRequest>();
   const std::string context = getContext();
   if (request == nullptr) {
+    awaitingRetry = false;
     auto ctx = entity.get<NPCContext>();
     if (ctx && ctx->history.size() > 1) {
       entity.set<AIRequest>({"System: What is your next command?\n", false, "", false});
@@ -356,7 +425,42 @@ void AgentBrain::update(float deltaTime) {
   }
 
   std::string responseText = request->pendingResponse;
-  
+
+  // An empty response is never a command. It means the provider rejected the
+  // request or the stream died, so flag it in the debug log and retry. Parsing
+  // it as a command would only append an "invalid command" turn and grow the
+  // context for no reason.
+  if (responseText.empty()) {
+    if (!awaitingRetry) {
+      awaitingRetry = true;
+      if (debugLog) {
+        std::string who = "NPC";
+        if (entity.has<DisplayName>()) {
+          who = entity.get<DisplayName>()->name;
+        } else if (entity.name().c_str() != nullptr) {
+          who = entity.name().c_str();
+        }
+        debugLog->LogWarning("Empty AI response for " + who + " - retrying");
+      }
+      entity.set<AgentSleepTimer>({DEFAULT_EMPTY_RESPONSE_RETRY_MS});
+      return;
+    }
+
+    // Backoff elapsed: re-arm the same request. Clearing the prompt stops the
+    // dispatcher from appending a duplicate turn to the history.
+    awaitingRetry = false;
+    if (AIRequest *mutableRequest = entity.get_mut<AIRequest>()) {
+      mutableRequest->prompt.clear();
+      mutableRequest->pendingResponse.clear();
+      mutableRequest->finished = false;
+      mutableRequest->dispatched = false;
+    }
+    entity.set<AgentSleepTimer>({10});
+    return;
+  }
+
+  awaitingRetry = false;
+
   ActionThunk actionThunk = ParseMessageCommand(responseText);
   
   addCmdToQueue(actionThunk);

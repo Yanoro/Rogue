@@ -6,8 +6,8 @@
   "npcs": [
     {
       "name": "Pietro",
-      "position": [14, 26],
-      "background": "Your name is Pietro, you are an ambitios young farmer living in a remote village. Harvest your wheat crops, store it in the chest inside the farmer's hourse and plant more wheat to increase your farm."
+      "position": [46, 20],
+      "background": "Your name is Pietro, you are an ambitious young farmer living in a remote village. Harvest your wheat crops, store it in the chest inside the farmer's hourse and plant more wheat to increase your farm."
     }
   ], 
   "locations": [
@@ -32,7 +32,7 @@
       "hitboxHeight": 10
     },
     {
-      "name": "Farmer\"s House",
+      "name": "Farmer's House",
       "description": "A cozy little home belonging to a farmer.",
       "position": [
         45,
@@ -42,8 +42,8 @@
       "hitboxHeight": 8
     },
     {
-      "name": "Carl\"s House",
-      "description": "Carl\"s slightly messy residence.",
+      "name": "Carl's House",
+      "description": "Carl's slightly messy residence.",
       "position": [
         10,
         45
@@ -65,8 +65,8 @@
       "name": "Wheat Farm",
       "description": "A large field of growing wheat.",
       "position": [
-        10,
-        30
+        45,
+        19
       ],
       "hitboxWidth": 8,
       "hitboxHeight": 8
@@ -85,8 +85,8 @@
   "objects": [
     {
       "type": "chest",
-      "x": 46,
-      "y": 11
+      "x": 49,
+      "y": 14
     },
     {
       "type": "apple_tree",
@@ -104,24 +104,24 @@
       "y": 12
     },
     {
-      "type": "wheat_seed",
-      "x": 10,
-      "y": 30
+      "type": "wheat_mature",
+      "x": 45,
+      "y": 19
     },
     {
-      "type": "wheat_seed",
-      "x": 12,
-      "y": 30
+      "type": "wheat_mature",
+      "x": 47,
+      "y": 19
     },
     {
-      "type": "wheat_seed",
-      "x": 10,
-      "y": 32
+      "type": "wheat_mature",
+      "x": 45,
+      "y": 21
     },
     {
-      "type": "wheat_seed",
-      "x": 12,
-      "y": 32
+      "type": "wheat_mature",
+      "x": 47,
+      "y": 21
     },
     {
       "type": "iron_vein",

@@ -2,6 +2,7 @@
 
 #include <string>
 #include "imgui.h"
+#include "raylib-cpp.hpp"
 
 inline const ImVec4 DEFAULT_COLOR_SYSTEM_PREFIX = ImVec4(0.3f, 0.6f, 1.0f, 1.0f); // Light Blue
 inline const ImVec4 DEFAULT_COLOR_SYSTEM_TEXT = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); // White
@@ -52,3 +53,10 @@ constexpr size_t DEFAULT_ENTITY_HITBOX_WIDTH = 16;
 constexpr size_t DEFAULT_ENTITY_HITBOX_HEIGHT = 16; 
 constexpr size_t DEFAULT_ENTITY_VISUAL_WIDTH = 16;
 constexpr size_t DEFAULT_ENTITY_VISUAL_HEIGHT = 16; 
+
+// Timed-action progress bar, drawn just below the entity that is acting.
+constexpr float DEFAULT_ACTION_BAR_HEIGHT = 4.0f;
+constexpr float DEFAULT_ACTION_BAR_OFFSET_Y = 4.0f;
+constexpr float DEFAULT_ACTION_BAR_MIN_WIDTH = 24.0f;
+inline const Color DEFAULT_ACTION_BAR_BACKGROUND = {30, 30, 30, 200};
+inline const Color DEFAULT_ACTION_BAR_FILL = {90, 210, 90, 255};

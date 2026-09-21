@@ -10,9 +10,11 @@
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "AgentContextWindow.h"
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cstdio>
 
 // Helper function to format JSON with indentation for pretty printing
 static std::string PrettyPrintJson(const char *json) {
@@ -199,6 +201,17 @@ void DebugConsoleWindow::Draw() {
       game->aiMenuWindowEntity.set<ActiveWindow>({std::make_shared<AIMenuWindow>(game)});
     } else {
       game->aiMenuWindowEntity.remove<ActiveWindow>();
+    }
+  }
+
+  ImGui::SameLine();
+
+  bool showNPCMenu = game->npcMenuWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("NPC Menu", &showNPCMenu)) {
+    if (showNPCMenu) {
+      game->npcMenuWindowEntity.set<ActiveWindow>({std::make_shared<NPCMenuWindow>(game)});
+    } else {
+      game->npcMenuWindowEntity.remove<ActiveWindow>();
     }
   }
 
@@ -781,5 +794,149 @@ void AIMenuWindow::Draw() {
     game->debugWindowState->SetShowAIMenuWindow(false);
   } else {
     game->debugWindowState->SetShowAIMenuWindow(true);
+  }
+}
+
+// Builds a short tag-style description of what an NPC is doing right now.
+// Prefers the timed action entity referenced by Busy (e.g. harvesting), then
+// falls back to the brain's current polymorphic action.
+static std::string GetNPCActionLabel(const flecs::entity &npc) {
+  if (const Busy *busy = npc.get<Busy>()) {
+    if (busy->actionEntity.is_alive()) {
+      std::string label =
+          busy->actionEntity.has<HarvestAction>() ? "HARVEST" : "BUSY";
+      if (const ActionTimer *timer = busy->actionEntity.get<ActionTimer>()) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), " (%.1fs)", timer->timeRemaining);
+        label += buf;
+      }
+      return label;
+    }
+  }
+
+  if (const AgentBrainWrapper *wrapper = npc.get<AgentBrainWrapper>()) {
+    if (wrapper->agBrain) {
+      if (AgentAction *current = wrapper->agBrain->getCurrentAction()) {
+        return current->getActionName();
+      }
+    }
+  }
+
+  return "IDLE";
+}
+
+NPCMenuWindow::NPCMenuWindow(Game* game) : game(game) {}
+
+void NPCMenuWindow::Draw() {
+  bool show = game->npcMenuWindowEntity.has<ActiveWindow>();
+  if (!show)
+    return;
+
+  if (ImGui::Begin("NPC Menu", &show)) {
+    static ImGuiTextFilter filter;
+    filter.Draw("Filter", 180.0f);
+
+    ImGui::Separator();
+
+    // Applied after the iteration so we do not mutate the ECS while querying it.
+    flecs::entity contextToToggle = flecs::entity::null();
+
+    if (ImGui::BeginTable("NPCMenuTable", 6,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_Resizable |
+                              ImGuiTableFlags_SizingStretchProp)) {
+      ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+      ImGui::TableSetupColumn("Name");
+      ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthFixed,
+                              90.0f);
+      ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed,
+                              130.0f);
+      ImGui::TableSetupColumn("Stop Brain",
+                              ImGuiTableColumnFlags_WidthFixed, 80.0f);
+      ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed,
+                              130.0f);
+      ImGui::TableHeadersRow();
+
+      game->ecs.filter<AgentBrainWrapper>().each(
+          [&contextToToggle](flecs::entity npc, AgentBrainWrapper &wrapper) {
+            if (!npc.is_alive()) {
+              return;
+            }
+
+            std::string name = "Unnamed";
+            if (const DisplayName *displayName = npc.get<DisplayName>()) {
+              name = displayName->name;
+            } else if (npc.name().c_str()) {
+              name = npc.name().c_str();
+            }
+
+            std::string idStr = std::to_string(npc.id());
+            if (!filter.PassFilter((name + " " + idStr).c_str())) {
+              return;
+            }
+
+            ImGui::TableNextRow();
+
+            ImGui::TableNextColumn();
+            ImGui::Text("%lu", npc.id());
+
+            ImGui::TableNextColumn();
+            ImGui::TextUnformatted(name.c_str());
+
+            ImGui::TableNextColumn();
+            if (const GamePosition *pos = npc.get<GamePosition>()) {
+              ImGui::Text("(%d, %d)", pos->x, pos->y);
+            } else {
+              ImGui::TextDisabled("-");
+            }
+
+            ImGui::TableNextColumn();
+            const std::string action = GetNPCActionLabel(npc);
+            ImVec4 color(0.4f, 1.0f, 0.6f, 1.0f);
+            if (action == "IDLE") {
+              color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
+            } else if (action.find("HARVEST") != std::string::npos ||
+                       action.find("BUSY") != std::string::npos) {
+              color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+            }
+            ImGui::TextColored(color, "%s", action.c_str());
+
+            ImGui::TableNextColumn();
+            if (wrapper.agBrain) {
+              ImGui::Checkbox(("##stopBrain" + idStr).c_str(),
+                              &wrapper.agBrain->isStopped);
+            } else {
+              ImGui::TextDisabled("-");
+            }
+
+            ImGui::TableNextColumn();
+            const bool hasContextWindow = npc.has<ActiveWindow>();
+            std::string buttonLabel = (hasContextWindow ? "Close Context##"
+                                                        : "Open Context##") +
+                                      idStr;
+            if (ImGui::Button(buttonLabel.c_str())) {
+              contextToToggle = npc;
+            }
+          });
+
+      ImGui::EndTable();
+    }
+
+    if (contextToToggle.is_alive()) {
+      if (contextToToggle.has<ActiveWindow>()) {
+        contextToToggle.remove<ActiveWindow>();
+      } else {
+        contextToToggle.set<ActiveWindow>(
+            {std::make_shared<NPCContextWindow>(contextToToggle)});
+      }
+    }
+  }
+  ImGui::End();
+
+  if (!show) {
+    game->npcMenuWindowEntity.remove<ActiveWindow>();
+    game->debugWindowState->SetShowNPCMenuWindow(false);
+  } else {
+    game->debugWindowState->SetShowNPCMenuWindow(true);
   }
 }

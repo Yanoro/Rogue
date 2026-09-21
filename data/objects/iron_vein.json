@@ -1,11 +1,13 @@
 {
   "name": "Iron Vein",
+  "description": "A rock face rich with iron.",
   "components": [
     "Interactable",
     "Harvestable",
     "Obstacle"
   ],
   "amountRemaining": 10,
+  "timer": 5.0,
   "drops": [
     {"item": "iron_ore", "chance": 1.0}
   ],

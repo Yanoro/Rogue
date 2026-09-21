@@ -1,5 +1,6 @@
 {
   "name": "Wheat",
+  "description": "A bundle of harvested wheat.",
   "components": [
     "Portable"
   ],

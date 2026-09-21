@@ -105,6 +105,7 @@ private:
   flecs::entity fontSelectionWindowEntity;
   flecs::entity mapEditorWindowEntity;
   flecs::entity aiMenuWindowEntity;
+  flecs::entity npcMenuWindowEntity;
 
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
@@ -116,6 +117,7 @@ private:
   friend class FontSelectionWindow;
   friend class MapEditorWindow;
   friend class AIMenuWindow;
+  friend class NPCMenuWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;

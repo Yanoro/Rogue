@@ -50,6 +50,9 @@ public:
   bool GetShowAIMenuWindow() const { return showAIMenuWindow; }
   void SetShowAIMenuWindow(bool value) { showAIMenuWindow = value; }
 
+  bool GetShowNPCMenuWindow() const { return showNPCMenuWindow; }
+  void SetShowNPCMenuWindow(bool value) { showNPCMenuWindow = value; }
+
   bool GetShowLocations() const { return showLocations; }
   void SetShowLocations(bool value) { showLocations = value; }
 
@@ -72,6 +75,7 @@ private:
   bool showFontSelectionWindow;
   bool showMapEditorWindow;
   bool showAIMenuWindow;
+  bool showNPCMenuWindow;
   bool showLocations;
   bool stopAllAI;
   std::string defaultFontPath;

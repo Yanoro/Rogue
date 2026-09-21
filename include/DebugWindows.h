@@ -84,3 +84,11 @@ public:
 private:
   Game* game;
 };
+
+class NPCMenuWindow : public Window {
+public:
+  explicit NPCMenuWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};

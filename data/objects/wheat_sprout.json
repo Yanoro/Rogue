@@ -1,5 +1,6 @@
 {
   "name": "Wheat Sprout",
+  "description": "A young wheat sprout. Has been growing for a while",
   "character": "v",
   "characterColor": [144, 238, 144, 255],
   "nameTagColor": [144, 238, 144, 255],

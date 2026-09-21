@@ -1,5 +1,6 @@
 {
   "name": "Chest",
+  "description": "A sturdy chest for storing items.",
   "components": [
     "Interactable",
     "Storage",

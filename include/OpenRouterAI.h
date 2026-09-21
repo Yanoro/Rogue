@@ -17,6 +17,15 @@ private:
   std::string currentQuantization = "Unknown";
   std::string rawMetadata = "";
 
+  // provider_name (lowercased) -> quantization, filled from the model's
+  // endpoint list at https://openrouter.ai/api/v1/models/{model}/endpoints.
+  std::unordered_map<std::string, std::string> quantizationByProvider;
+  std::atomic<bool> endpointsFetched{false};
+  mutable std::mutex metadataMutex;
+
+  // One-shot background lookup of per-provider quantization.
+  void fetchEndpointMetadata();
+
   struct StreamContext {
     StreamCallback callback;
     std::string buffer;
@@ -50,10 +59,14 @@ public:
 
   std::string getAIName() const override { return "OpenRouter"; }
   std::string getModelName() const override { return modelName; }
-  std::string getProviderName() const override { return currentProvider; }
-  std::string getQuantization() const override { return currentQuantization; }
+  std::string getProviderName() const override {
+    std::lock_guard<std::mutex> lock(metadataMutex);
+    return currentProvider;
+  }
+  std::string getQuantization() const override;
   
   std::string getAdditionalInfo() const override {
+    std::lock_guard<std::mutex> lock(metadataMutex);
     std::string info;
     info += "Total Requests: " + std::to_string(totalRequests.load()) + "\n\n";
     if (!options.empty()) {

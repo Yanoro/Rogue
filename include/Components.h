@@ -156,6 +156,13 @@ struct NameTagColor {
   Color color;
 };
 
+// Short blurb shown by the [EXAMINE] interaction. Loaded from the "description"
+// key of an object's JSON template (see ObjectFactory::ApplyTemplate). Named
+// ObjectDescription, not Description, to stay clear of flecs::Description.
+struct ObjectDescription {
+  std::string text;
+};
+
 struct ActiveWindow {
   std::shared_ptr<Window> ptr;
 };
@@ -189,10 +196,6 @@ struct Action {};
 
 struct DO_NOTHING_ACTION {
   float time_remaining; // In seconds
-};
-
-struct MOVE_TO_TILE_ACTION {
-  GamePosition target;
 };
 
 struct MOVE_THROUGH_PATH_ACTION {
@@ -241,10 +244,50 @@ struct Harvestable {
   float timer = 0.0f;
 };
 
-struct ActiveHarvest {
-  flecs::entity target;
+struct ActionActor { flecs::entity actor; };
+struct ActionTarget { flecs::entity target; };
+struct ActionTimer {
+  // Seconds left on the action. ActionTimerSystem owns counting this down; it is
+  // the only mutable part of the timer.
   float timeRemaining;
+
+  ActionTimer() : timeRemaining(0.0f), duration(0.0f) {}
+
+  // An action always starts full, so its initial remaining time *is* the duration.
+  // Callers only pass the total time and duration is filled in automatically.
+  ActionTimer(float seconds) : timeRemaining(seconds), duration(seconds) {}
+
+  // 0 when the action just started, 1 when the timer runs out.
+  // Deliberately the ONLY reader of `duration`.
+  float Progress() const {
+    if (duration <= 0.0f) {
+      return 1.0f;
+    }
+    float progress = 1.0f - timeRemaining / duration;
+    if (progress < 0.0f) {
+      return 0.0f;
+    }
+    if (progress > 1.0f) {
+      return 1.0f;
+    }
+    return progress;
+  }
+
+private:
+  // A snapshot of timeRemaining taken when the action started. This is NOT
+  // independent state and must never be edited after construction: it exists
+  // solely so Progress() can turn the countdown into a fill fraction. It is
+  // private on purpose, so that "editing the duration" is a compile error
+  // instead of a silent animation bug.
+  float duration;
 };
+
+struct ActionCompleted {};
+struct ActionCanceled {};
+
+struct HarvestAction {};
+
+struct Busy { flecs::entity actionEntity; };
 
 struct Workstation {
   std::vector<std::string> recipes;

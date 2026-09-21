@@ -1,5 +1,6 @@
 {
   "name": "Wheat Seeds",
+  "description": "Planted seeds in the soil. Started growing recently.",
   "character": ".",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],

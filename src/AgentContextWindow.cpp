@@ -22,6 +22,9 @@ void NPCContextWindow::Draw() {
   char window_name[128];
   sprintf(window_name, "NPC Context: %s###%llu", name.c_str(), (unsigned long long)entity.id());
   bool isOpen = true;
+  // The scroll region now fills the window, so give the window a sensible size
+  // the first time it appears (the user can freely resize it afterwards).
+  ImGui::SetNextWindowSize(ImVec2(560, 460), ImGuiCond_FirstUseEver);
   ImGui::Begin(window_name, &isOpen, ImGuiWindowFlags_None); 
   
   if (!isOpen) {
@@ -33,25 +36,31 @@ void NPCContextWindow::Draw() {
   } 
 
   ImGui::Checkbox("Auto-scroll", &autoScroll);
-  ImGui::SameLine();
-  if (entity.is_alive() && entity.has<AgentBrainWrapper>()) {
-    auto wrapper = entity.get_mut<AgentBrainWrapper>();
-    if (wrapper->agBrain) {
-      ImGui::Checkbox("Stop Brain", &wrapper->agBrain->isStopped);
-    }
-  }
   ImGui::Separator();
 
-  std::string currentContext = fallbackContext;
+  AgentBrainWrapper* brainWrapper = nullptr;
   if (entity.is_alive() && entity.has<AgentBrainWrapper>()) {
-    auto wrapper = entity.get_ref<AgentBrainWrapper>();
-    if (wrapper->agBrain) {
-      fallbackContext = wrapper->agBrain->getContext();
-      currentContext = fallbackContext;
-    }
+    brainWrapper = entity.get_mut<AgentBrainWrapper>();
   }
 
-  if (ImGui::BeginChild("ContextScroll", ImVec2(500, 300),
+  std::string currentContext = fallbackContext;
+  if (brainWrapper && brainWrapper->agBrain) {
+    fallbackContext = brainWrapper->agBrain->getContext();
+    currentContext = fallbackContext;
+  }
+
+  // Keep the input bar pinned to the bottom of the window: the scroll region
+  // above it fills the available space (width 0 = full width, negative height =
+  // full height minus this reservation), so it grows and shrinks with the
+  // window while the bar stays put. The reservation mirrors ImGui's own console
+  // example: one separator plus one input row.
+  const bool showInputBar = brainWrapper && brainWrapper->agBrain;
+  const float footerHeightToReserve =
+      showInputBar
+          ? ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing()
+          : 0.0f;
+
+  if (ImGui::BeginChild("ContextScroll", ImVec2(0, -footerHeightToReserve),
                         ImGuiChildFlags_Borders)) {
     std::istringstream stream(currentContext);
     std::string line;
@@ -188,39 +197,36 @@ void NPCContextWindow::Draw() {
   }
   ImGui::EndChild();
 
-  if (entity.is_alive() && entity.has<AgentBrainWrapper>()) {
-    auto wrapper = entity.get_mut<AgentBrainWrapper>();
-    if (wrapper->agBrain) {
-      if (wrapper->agBrain->isStopped) {
-        ImGui::Separator();
-        ImGui::PushItemWidth(-100);
-        ImGuiInputTextFlags input_text_flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
-        bool enterPressed = ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf), input_text_flags, &TextEditCallbackStub, (void*)this);
-        ImGui::PopItemWidth();
-        ImGui::SameLine();
-        bool sendPressed = ImGui::Button("Send as AI");
-        if (enterPressed || sendPressed) {
-          std::string inputStr(inputBuf);
-          if (!inputStr.empty()) {
-            history.push_back(inputStr);
-            historyPos = -1;
-            wrapper->agBrain->appendContext("assistant", inputStr + "\n");
-            auto msgCmd = wrapper->agBrain->ParseMessageCommand(inputStr);
-            wrapper->agBrain->addCmdToQueue(msgCmd);
-            memset(inputBuf, 0, sizeof(inputBuf));
-          }
-          ImGui::SetKeyboardFocusHere(-1);
+  if (showInputBar) {
+    if (brainWrapper->agBrain->isStopped) {
+      ImGui::Separator();
+      ImGui::PushItemWidth(-100);
+      ImGuiInputTextFlags input_text_flags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackHistory;
+      bool enterPressed = ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf), input_text_flags, &TextEditCallbackStub, (void*)this);
+      ImGui::PopItemWidth();
+      ImGui::SameLine();
+      bool sendPressed = ImGui::Button("Send as AI");
+      if (enterPressed || sendPressed) {
+        std::string inputStr(inputBuf);
+        if (!inputStr.empty()) {
+          history.push_back(inputStr);
+          historyPos = -1;
+          brainWrapper->agBrain->appendContext("assistant", inputStr + "\n");
+          auto msgCmd = brainWrapper->agBrain->ParseMessageCommand(inputStr);
+          brainWrapper->agBrain->addCmdToQueue(msgCmd);
+          memset(inputBuf, 0, sizeof(inputBuf));
         }
-      } else {
-        ImGui::Separator();
-        ImGui::BeginDisabled();
-        ImGui::PushItemWidth(-100);
-        ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf));
-        ImGui::PopItemWidth();
-        ImGui::SameLine();
-        ImGui::Button("Send as AI");
-        ImGui::EndDisabled();
+        ImGui::SetKeyboardFocusHere(-1);
       }
+    } else {
+      ImGui::Separator();
+      ImGui::BeginDisabled();
+      ImGui::PushItemWidth(-100);
+      ImGui::InputText("##AI_Input", inputBuf, sizeof(inputBuf));
+      ImGui::PopItemWidth();
+      ImGui::SameLine();
+      ImGui::Button("Send as AI");
+      ImGui::EndDisabled();
     }
   }
 

@@ -108,7 +108,7 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
   entity.set<NameTagColor>({BLUE});
   entity.set_name(name.c_str());
 
-  auto brain = std::make_unique<AgentBrain>(entity, name);
+  auto brain = std::make_unique<AgentBrain>(entity, name, debugLog.get());
   brain->isStopped = debugWindowState ? debugWindowState->GetStopAllAI() : false;
   entity.set<AgentBrainWrapper>({std::move(brain)});
   return entity;
@@ -169,6 +169,40 @@ void Game::ECSInitRenderSystems() {
         
         ScreenPosition TextPos = {pos.x + entityWidth / 2.0f - textWidth / 2.0f, pos.y - 20.0f};
         DrawText(displayName.name.c_str(), TextPos.x, TextPos.y, fontSize, tagColor);
+      });
+
+  // Progress bar for timed actions (e.g. harvesting). The action entity carries
+  // the ActionTimer/ActionActor components, so the bar is positioned relative to
+  // the acting entity and is empty when the action starts, filling as it runs out.
+  ecs.system<ActionTimer, ActionActor>("ActionProgressBarSystem")
+      .kind<Render>()
+      .each([](const ActionTimer &timer, const ActionActor &action) {
+        flecs::entity actor = action.actor;
+        if (!actor.is_alive() || !actor.has<ScreenPosition>()) {
+          return;
+        }
+
+        const ScreenPosition &pos = *actor.get<ScreenPosition>();
+
+        float entityWidth = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+        float entityHeight = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
+        if (actor.has<DrawAscii>()) {
+          entityWidth = static_cast<float>(actor.get<DrawAscii>()->width);
+          entityHeight = static_cast<float>(actor.get<DrawAscii>()->height);
+        } else if (actor.has<Hitbox>()) {
+          entityWidth = static_cast<float>(actor.get<Hitbox>()->width);
+          entityHeight = static_cast<float>(actor.get<Hitbox>()->height);
+        }
+
+        float barWidth = std::max(entityWidth, DEFAULT_ACTION_BAR_MIN_WIDTH);
+        float barX = std::round(pos.x + entityWidth / 2.0f - barWidth / 2.0f);
+        float barY = std::round(pos.y + entityHeight + DEFAULT_ACTION_BAR_OFFSET_Y);
+
+        DrawRectangleV({barX, barY}, {barWidth, DEFAULT_ACTION_BAR_HEIGHT},
+                       DEFAULT_ACTION_BAR_BACKGROUND);
+        DrawRectangleV({barX, barY},
+                       {barWidth * timer.Progress(), DEFAULT_ACTION_BAR_HEIGHT},
+                       DEFAULT_ACTION_BAR_FILL);
       });
 }
 
@@ -460,7 +494,7 @@ void Game::ECSInitActionSystems() {
               for (const auto& interaction : interactions) {
                 if (interaction.name == pendingInt->interactionName) {
                   std::string msg = interaction.execute(entity, pendingInt->targetEntity, "");
-                  if (debugLog) debugLog->Log(msg);
+                  if (debugLog && !msg.empty()) debugLog->Log(msg);
                   break;
                 }
               }
@@ -673,29 +707,28 @@ void Game::ECSInitAgentSystems() {
           }
 
           AIRequest *newRequest = entity.get_mut<AIRequest>();
-          NPCContext *ctx = entity.get_mut<NPCContext>();
           if (token.empty()) {
             newRequest->finished = true;
-            if (this->debugLog) {
-                this->debugLog->LogInfo(std::string("AI Resp (") + entity.name().c_str() + "): " + newRequest->pendingResponse);
-            }
-            if (!ctx->history.empty() && !ctx->history.back().content.empty() && ctx->history.back().content.back() != '\n') {
-              ctx->history.back().content += "\n";
-            }
           } else {
             newRequest->pendingResponse += token;
-            if (!ctx->history.empty() && ctx->history.back().role == "assistant") {
-              ctx->history.back().content += token;
-            } else {
-              ctx->history.push_back({"assistant", token});
-            }
+          }
+
+          // Record the reply through the brain so it lands in NPCContext AND the
+          // per-NPC transcript. Writing history directly here used to bypass the
+          // transcript, so the log was missing every AI reply.
+          AgentBrainWrapper *wrapper = entity.get_mut<AgentBrainWrapper>();
+          if (wrapper && wrapper->agBrain) {
+            wrapper->agBrain->recordAssistantStream(token);
           }
         }
       });
     };
 
     if (!request.prompt.empty()) {
-      ctx.history.push_back({"user", request.prompt});
+      AgentBrainWrapper *wrapper = entity.get_mut<AgentBrainWrapper>();
+      if (wrapper && wrapper->agBrain) {
+        wrapper->agBrain->pushContext("user", request.prompt);
+      }
     }
     aiPtr->generateStream(ctx.contextID, ctx.history, callBack, request.stopSource.get_token());
   });
@@ -734,40 +767,74 @@ void Game::ECSInitAgentSystems() {
     }
   });
 
-  ecs.system<ActiveHarvest>("ActiveHarvestSystem").iter([this](flecs::iter &it, ActiveHarvest *activeHarvests) {
-    float dt = it.delta_time();
-    for (auto i : it) {
-      activeHarvests[i].timeRemaining -= dt;
-      if (activeHarvests[i].timeRemaining <= 0.0f) {
-        flecs::entity target = activeHarvests[i].target;
-        flecs::entity actor = it.entity(i);
-        actor.world().defer([actor, target, this]() {
-            flecs::entity act = actor;
-            flecs::entity tgt = target;
-            if (act.is_alive()) {
-              act.remove<ActiveHarvest>();
-              if (tgt.is_alive()) {
-                  auto interactions = InteractionRegistry::GetAvailableInteractions(tgt);
-                  for (const auto& interaction : interactions) {
-                      if (interaction.name == "Harvest") {
-                          std::string msg = interaction.execute(act, tgt, "finish");
-                          if (!msg.empty()) {
-                              if (act.has<AgentBrainWrapper>()) {
-                                  act.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
-                              }
-                              if (!act.has<AgentBrainWrapper>() && this->debugLog) {
-                                  this->debugLog->Log(msg);
+  ecs.system<ActionTimer>("ActionTimerSystem").iter([](flecs::iter& it, ActionTimer* timers) {
+      float dt = it.delta_time();
+      for (auto i : it) {
+          timers[i].timeRemaining -= dt;
+          if (timers[i].timeRemaining <= 0.0f) {
+              it.entity(i).add<ActionCompleted>();
+              it.entity(i).remove<ActionTimer>();
+          }
+      }
+  });
+
+  ecs.system<ActionActor, ActionTarget>("HarvestResolutionSystem")
+      .with<HarvestAction>()
+      .with<ActionCompleted>()
+      .each([this](flecs::entity actionEntity, ActionActor& a, ActionTarget& t) {
+          flecs::entity actor = a.actor;
+          flecs::entity target = t.target;
+
+          if (actor.is_alive() && target.is_alive()) {
+              Harvestable* h = target.get_mut<Harvestable>();
+              if (h) {
+                  h->amountRemaining--;
+                  auto factoryRes = actor.world().get<ObjectFactoryResource>();
+                  std::string droppedItemsStr = "";
+
+                  if (factoryRes && factoryRes->factory) {
+                      flecs::world ecs = actor.world();
+                      for (const auto& drop : h->lootTable.drops) {
+                          float roll = (float)rand() / RAND_MAX;
+                          if (roll <= drop.chance) {
+                              flecs::entity spawned = factoryRes->factory->SpawnObject(ecs, actor, nullptr, drop.itemType);
+                              if (spawned.is_alive()) {
+                                  actor.add<Holds>(spawned);
+                                  droppedItemsStr += drop.itemType + ", ";
                               }
                           }
-                          break;
                       }
                   }
+
+                  if (!droppedItemsStr.empty()) {
+                      droppedItemsStr.pop_back();
+                      droppedItemsStr.pop_back();
+                  } else {
+                      droppedItemsStr = "nothing";
+                  }
+
+                  std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
+                  std::string msg = "System: You harvested " + droppedItemsStr + " from " + objName + ".\n";
+                  
+                  if (h->amountRemaining <= 0) {
+                      msg += "The " + objName + " is depleted and destroyed.\n";
+                      actor.world().defer([target]() { target.destruct(); });
+                  }
+
+                  if (actor.has<AgentBrainWrapper>()) {
+                      actor.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
+                  }
+                  if (!actor.has<AgentBrainWrapper>() && this->debugLog) {
+                      this->debugLog->Log(msg);
+                  }
               }
-            }
-        });
-      }
-    }
-  });
+          }
+
+          if (actor.is_alive()) {
+              actor.remove<Busy>();
+          }
+          actionEntity.destruct();
+      });
 };
 
 void Game::ECSInit(std::string mapPath) {
@@ -887,7 +954,10 @@ void Game::ECSInit(std::string mapPath) {
   InteractionRegistry::Clear();
   
   ItemInteractionRegistry::Clear();
-  ItemInteractionRegistry::RegisterComponentInteraction<Seed>("Plant", [](flecs::entity actor, flecs::entity item) -> std::string {
+  ItemInteractionRegistry::RegisterComponentInteraction<Seed>(
+      "Plant",
+      "Ask how to plant this seed in the ground next to you; it replies with the exact [PLANT_AT ...] command and the relative coordinates to use. Example: [PLANT Wheat Seeds]",
+      [](flecs::entity actor, flecs::entity item) -> std::string {
       std::string itemName = item.has<DisplayName>() ? item.get<DisplayName>()->name : "Seed";
       std::string msg = GetSurroundingsRadar(actor, 2);
       msg += "\nSystem: To plant " + itemName + ", please use the command [PLANT_AT X,Y X,Y ... " + itemName + "]\n";
@@ -895,7 +965,10 @@ void Game::ECSInit(std::string mapPath) {
       return msg;
   });
 
-  InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+  InteractionRegistry::RegisterComponentInteraction<Harvestable>(
+      "Harvest",
+      "Gather the resources this object holds. Harvesting can take a few seconds, and it yields nothing once the object is depleted. Example: [HARVEST]",
+      [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
       
       Harvestable* h = target.get_mut<Harvestable>();
@@ -904,19 +977,33 @@ void Game::ECSInit(std::string mapPath) {
       }
 
       if (h->amountRemaining > 0) {
-        if (h->timer > 0.0f && args != "finish") {
-            if (!actor.has<ActiveHarvest>()) {
-                actor.set<ActiveHarvest>({target, h->timer});
+        if (h->timer > 0.0f) {
+            if (!actor.has<Busy>()) {
+                flecs::entity actionEntity = actor.world().entity()
+                    .set<ActionActor>({actor})
+                    .set<ActionTarget>({target})
+                    .set<ActionTimer>({h->timer})
+                    .add<HarvestAction>();
+                
+                actor.set<Busy>({actionEntity});
+
                 std::string msg = "System: Started harvesting " + objName + ". It will take " + std::to_string((int)h->timer) + " seconds.\n";
                 if (actor.has<AgentBrainWrapper>()) {
-                    actor.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
+                    // Log it but do NOT append to the agent's context: the harvest
+                    // completes on its own and HarvestResolutionSystem reports the
+                    // outcome, so waking the model here only costs a request and
+                    // lets the agent act while it is meant to be busy.
+                    actor.get_mut<AgentBrainWrapper>()->agBrain->logNote(msg);
+                    return ""; // Return empty so AI Action queue doesn't hold it
+                } else {
+                    return msg; // Return msg so player queue logs it immediately
                 }
-                return "";
             } else {
-                return "System: Already harvesting " + objName + ".\n";
+                return "System: You are already busy doing something else.\n";
             }
         }
 
+        // Instant harvest fallback if timer == 0
         h->amountRemaining--;
         auto factoryRes = actor.world().get<ObjectFactoryResource>();
         std::string droppedItemsStr = "";
@@ -953,19 +1040,30 @@ void Game::ECSInit(std::string mapPath) {
       return "System: The " + objName + " has no more resources to harvest.\n";
   });
 
-  InteractionRegistry::RegisterComponentInteraction<Workstation>("Craft", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+  InteractionRegistry::RegisterComponentInteraction<Workstation>(
+      "Craft",
+      "Use this workstation to turn materials into a crafted item (not implemented yet). Example: [CRAFT]",
+      [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       return "System: Crafting menu opened (Not yet implemented).\n";
   });
 
-  InteractionRegistry::RegisterComponentInteraction<DisplayName>("Examine", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+  InteractionRegistry::RegisterComponentInteraction<DisplayName>(
+      "Examine",
+      "Look closely at this object to learn what it is, what it currently holds and what you can do with it. Example: [EXAMINE]",
+      [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
-      std::string msg = "System: You examined the " + objName + ". It looks normal.\n";
+      std::string description = target.has<ObjectDescription>() ? target.get<ObjectDescription>()->text : "It looks unremarkable.";
+      std::string msg = "System: You examined the " + objName + ". " + description + "\n";
       if (target.has<Harvestable>()) {
           const Harvestable* h = target.get<Harvestable>();
-          msg += "You can harvest it " + std::to_string(h->amountRemaining) + " more time(s).\n";
+          if (h->amountRemaining > 0) {
+              msg += "You can harvest it " + std::to_string(h->amountRemaining) + " more time(s).\n";
+          } else {
+              msg += "It has nothing left to harvest.\n";
+          }
       }
       if (target.has<Storage>()) {
-          msg += "It can be used to [STORE $ITEM_NAME] or [TAKE $ITEM_NAME].\n";
+          msg += "It can be used to [STORE $ITEM_NAME $COUNT] or [TAKE $ITEM_NAME $COUNT].\n";
           std::string items = "";
           target.each<Holds>([&](flecs::entity child) {
               if (child.is_alive() && child.has<DisplayName>()) {
@@ -980,63 +1078,95 @@ void Game::ECSInit(std::string mapPath) {
               msg += "It is currently empty.\n";
           }
       }
+      if (const Evolvable* e = target.get<Evolvable>()) {
+          if (e->isActive) {
+              msg += "It is still growing.\n";
+          }
+      }
       return msg;
   });
 
-  InteractionRegistry::RegisterComponentInteraction<Storage>("Store", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
-      if (args.empty()) {
-          return "System: You must specify an item to store. Use [STORE $ITEM_NAME].\n";
+  InteractionRegistry::RegisterComponentInteraction<Storage>(
+      "Store",
+      "Put items you are carrying into this container (it has limited space). The last word is how many to store. Examples: [STORE Wheat 3], [STORE Iron Ore 5]",
+      [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+      auto [itemName, count] = StringUtils::SplitTrailingCount(args);
+      if (itemName.empty()) {
+          return "System: You must specify an item to store. Use [STORE $ITEM_NAME $COUNT].\n";
       }
 
-      flecs::entity itemToStore = flecs::entity::null();
+      // Collect first, then move: transferring Holds mutates the relationship
+      // this scan walks, and we only want up to $COUNT items.
+      std::vector<flecs::entity> itemsToStore;
       actor.each<Holds>([&](flecs::entity child) {
+          if (static_cast<int>(itemsToStore.size()) >= count) return;
           if (child.is_alive() && child.has<DisplayName>()) {
-              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, args)) {
-                  itemToStore = child;
+              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, itemName)) {
+                  itemsToStore.push_back(child);
               }
           }
       });
 
-      if (!itemToStore.is_alive()) {
-          return "System: You do not have an item named " + args + " to store.\n";
+      if (itemsToStore.empty()) {
+          return "System: You do not have an item named " + itemName + " to store.\n";
       }
 
       int currentCount = 0;
       target.each<Holds>([&](flecs::entity) { currentCount++; });
-      if (currentCount >= target.get<Storage>()->capacity) {
+      int spaceLeft = target.get<Storage>()->capacity - currentCount;
+      if (spaceLeft <= 0) {
           return "System: The storage is full.\n";
       }
 
-      actor.remove<Holds>(itemToStore);
-      target.add<Holds>(itemToStore);
-      itemToStore.child_of(target);
+      int stored = 0;
+      for (flecs::entity item : itemsToStore) {
+          if (stored >= spaceLeft) break;
 
-      return "System: You stored the " + itemToStore.get<DisplayName>()->name + ".\n";
-  });
-
-  InteractionRegistry::RegisterComponentInteraction<Storage>("Take", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
-      if (args.empty()) {
-          return "System: You must specify an item to take. Use [TAKE $ITEM_NAME].\n";
+          actor.remove<Holds>(item);
+          target.add<Holds>(item);
+          item.child_of(target);
+          stored++;
       }
 
-      flecs::entity itemToTake = flecs::entity::null();
+      std::string msg = "System: You stored " + std::to_string(stored) + " " + itemName + ".\n";
+      if (stored < static_cast<int>(itemsToStore.size())) {
+          msg += "System: The storage is full, " + std::to_string(static_cast<int>(itemsToStore.size()) - stored) + " " + itemName + " stayed with you.\n";
+      }
+      return msg;
+  });
+
+  InteractionRegistry::RegisterComponentInteraction<Storage>(
+      "Take",
+      "Take items out of this container and carry them yourself. The last word is how many to take. Examples: [TAKE Wheat 3], [TAKE Iron Ore 5]",
+      [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
+      auto [itemName, count] = StringUtils::SplitTrailingCount(args);
+      if (itemName.empty()) {
+          return "System: You must specify an item to take. Use [TAKE $ITEM_NAME $COUNT].\n";
+      }
+
+      // Collect first, then move: transferring Holds mutates the relationship
+      // this scan walks, and we only want up to $COUNT items.
+      std::vector<flecs::entity> itemsToTake;
       target.each<Holds>([&](flecs::entity child) {
+          if (static_cast<int>(itemsToTake.size()) >= count) return;
           if (child.is_alive() && child.has<DisplayName>()) {
-              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, args)) {
-                  itemToTake = child;
+              if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, itemName)) {
+                  itemsToTake.push_back(child);
               }
           }
       });
 
-      if (!itemToTake.is_alive()) {
-          return "System: The storage does not have an item named " + args + ".\n";
+      if (itemsToTake.empty()) {
+          return "System: The storage does not have an item named " + itemName + ".\n";
       }
 
-      target.remove<Holds>(itemToTake);
-      actor.add<Holds>(itemToTake);
-      itemToTake.child_of(actor);
+      for (flecs::entity item : itemsToTake) {
+          target.remove<Holds>(item);
+          actor.add<Holds>(item);
+          item.child_of(actor);
+      }
 
-      return "System: You took the " + itemToTake.get<DisplayName>()->name + ".\n";
+      return "System: You took " + std::to_string(static_cast<int>(itemsToTake.size())) + " " + itemName + ".\n";
   });
 
 
@@ -1107,7 +1237,7 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitAgentSystems();
   ECSInitActionSystems();
 
-  GamePosition startPlayerPos = {12, 25};
+  GamePosition startPlayerPos = {48, 20};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
 
@@ -1142,6 +1272,7 @@ void Game::ECSInit(std::string mapPath) {
   fontSelectionWindowEntity = ecs.entity("Font Selection Window");
   mapEditorWindowEntity = ecs.entity("Map Editor Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
+  npcMenuWindowEntity = ecs.entity("NPC Menu Window");
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -1182,6 +1313,10 @@ void Game::ECSInit(std::string mapPath) {
   if (debugWindowState->GetShowAIMenuWindow()) {
     aiMenuWindowEntity.set<ActiveWindow>(
         {std::make_shared<AIMenuWindow>(this)});
+  }
+  if (debugWindowState->GetShowNPCMenuWindow()) {
+    npcMenuWindowEntity.set<ActiveWindow>(
+        {std::make_shared<NPCMenuWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
     playerEntity.set<ActiveWindow>(

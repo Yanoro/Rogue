@@ -368,6 +368,8 @@ void Game::Shutdown() {
         fontSelectionWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowMapEditorWindow(
         mapEditorWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowNPCMenuWindow(
+        npcMenuWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState("./debug_windows_state.json");
     if (debugLog) {

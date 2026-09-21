@@ -1,11 +1,13 @@
 {
   "name": "Apple Tree",
+  "description": "A leafy tree that bears apples.",
   "components": [
     "Interactable",
     "Harvestable",
     "Obstacle"
   ],
   "amountRemaining": 5,
+  "timer": 5.0,
   "drops": [
     {"item": "apple", "chance": 1.0}
   ],

@@ -19,6 +19,7 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showFontSelectionWindow(false),
     showMapEditorWindow(false),
     showAIMenuWindow(false),
+    showNPCMenuWindow(false),
     showLocations(false),
     stopAllAI(false),
     defaultFontPath("") {}
@@ -36,6 +37,7 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["fontSelection"] = showFontSelectionWindow;
   state["mapEditor"] = showMapEditorWindow;
   state["aiMenu"] = showAIMenuWindow;
+  state["npcMenu"] = showNPCMenuWindow;
   state["showLocations"] = showLocations;
   state["stopAllAI"] = stopAllAI;
   state["defaultFontPath"] = defaultFontPath;
@@ -75,6 +77,7 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showFontSelectionWindow = state.value("fontSelection", false);
       showMapEditorWindow = state.value("mapEditor", false);
       showAIMenuWindow = state.value("aiMenu", false);
+      showNPCMenuWindow = state.value("npcMenu", false);
       showLocations = state.value("showLocations", false);
       stopAllAI = state.value("stopAllAI", false);
       defaultFontPath = state.value("defaultFontPath", "");

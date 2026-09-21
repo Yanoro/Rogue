@@ -12,7 +12,13 @@
 #include <memory>
 #include <thread>
 
+class DebugLog;
+
 constexpr float DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 10.0f;
+
+// Backoff before re-issuing a request whose response came back empty, so a
+// failing provider is not hammered in a tight loop.
+constexpr float DEFAULT_EMPTY_RESPONSE_RETRY_MS = 2000.0f;
 
 #include "AgentActions.h"
 
@@ -38,7 +44,7 @@ CHARACTER CONTEXT:
 
 class AgentBrain {
 public:
-  AgentBrain(flecs::entity entity, std::string name);
+  AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLog = nullptr);
   bool isStopped = false;
 
   void ForceInterruptAndPush(std::unique_ptr<AgentAction> action);
@@ -54,7 +60,22 @@ public:
   AgentAction* getCurrentAction() const { return currentAction.get(); }
 
   std::string getContext() const;
+  // Add a message to the agent's context, continuing the current turn when the
+  // previous message has the same role. Mirrored to the transcript log.
   void appendContext(const std::string &role, const std::string &text);
+  // Add a message as its own turn even when the previous turn shares its role.
+  // Use this for entries that must stay distinct (prompts, conversation state).
+  void pushContext(const std::string &role, const std::string &text);
+  // Record one streamed assistant token. An empty token marks end of stream and
+  // closes the transcript line. Going through here (rather than writing history
+  // directly) is what keeps the transcript in sync with NPCContext.
+  void recordAssistantStream(const std::string &token);
+  // Surface a problem in the Debug Log window. Const so actions that only hold
+  // a read-only brain pointer (e.g. TalkAction) can still report failures.
+  void logWarning(const std::string &text) const;
+  // Write to the transcript log without adding a turn to the AI's context, so
+  // bookkeeping notes do not wake the model. See its use for timed harvests.
+  void logNote(const std::string &text);
 
 private:
   flecs::entity entity;
@@ -62,5 +83,14 @@ private:
   std::vector<std::unique_ptr<AgentAction>> actionStack;
   std::deque<ActionThunk> action_queue;
   AI::StreamCallback getStreamCallback();
+  // The single writer for NPCContext::history. Every context mutation must go
+  // through here so the transcript file records exactly what the model sees.
+  void recordContext(const std::string &role, const std::string &text,
+                     bool continueTurn);
+  void writeTranscript(const std::string &text);
   std::string logFilePath;
+  DebugLog *debugLog = nullptr;
+  // Set while waiting out the backoff before retrying an empty response, so the
+  // same failure is not re-logged and re-scheduled on every frame.
+  bool awaitingRetry = false;
 };
