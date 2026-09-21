@@ -13,6 +13,8 @@ private:
   std::unordered_map<std::string, std::string> fullContexts;
   std::mutex messagesMutex;
   nlohmann::json options;
+  std::string currentProvider = "Unknown";
+  std::string currentQuantization = "Unknown";
 
   struct StreamContext {
     StreamCallback callback;
@@ -47,6 +49,8 @@ public:
 
   std::string getAIName() const override { return "OpenRouter"; }
   std::string getModelName() const override { return modelName; }
+  std::string getProviderName() const override { return currentProvider; }
+  std::string getQuantization() const override { return currentQuantization; }
   
   std::string getAdditionalInfo() const override {
     std::string info;
@@ -54,7 +58,14 @@ public:
     if (!options.empty()) {
       info += "Options:\n";
       for (auto& el : options.items()) {
-        info += "  " + el.key() + ": " + el.value().dump() + "\n";
+        if (el.key() == "provider" && el.value().is_object()) {
+            info += "  Provider Settings:\n";
+            for (auto& provider_el : el.value().items()) {
+                info += "    - " + provider_el.key() + ": " + provider_el.value().dump() + "\n";
+            }
+        } else {
+            info += "  " + el.key() + ": " + el.value().dump() + "\n";
+        }
       }
     } else {
       info += "Options: Default\n";

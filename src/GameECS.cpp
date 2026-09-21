@@ -1043,6 +1043,9 @@ void Game::ECSInit(std::string mapPath) {
         if (j.contains("max_tokens")) {
           openrouter->setOption("max_tokens", j["max_tokens"]);
         }
+        if (j.contains("provider")) {
+          openrouter->setOption("provider", j["provider"]);
+        }
         ai = std::move(openrouter);
       } else {
         std::string endpoint = j.value("endpoint", "http://localhost:11434/api/generate");
