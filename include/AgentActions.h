@@ -546,6 +546,11 @@ private:
               }
             }
           }
+
+          if (entity.has<ActiveHarvest>()) {
+            return ActionStatus::Doing;
+          }
+
           return ActionStatus::Done;
         }
 

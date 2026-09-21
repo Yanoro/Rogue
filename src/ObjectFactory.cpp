@@ -23,6 +23,7 @@ void ObjectFactory::RegisterDefaultComponents() {
   RegisterComponent<Harvestable>("Harvestable", [](flecs::entity obj, const nlohmann::json& tmpl) {
     Harvestable h;
     h.amountRemaining = tmpl.value("amountRemaining", 1);
+    h.timer = tmpl.value("timer", 0.0f);
     if (tmpl.contains("drops")) {
       for (const auto& drop : tmpl["drops"]) {
         h.lootTable.drops.push_back({

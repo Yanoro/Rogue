@@ -238,6 +238,12 @@ struct LootTable {
 struct Harvestable {
   int amountRemaining;
   LootTable lootTable;
+  float timer = 0.0f;
+};
+
+struct ActiveHarvest {
+  flecs::entity target;
+  float timeRemaining;
 };
 
 struct Workstation {
