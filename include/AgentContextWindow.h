@@ -1,7 +1,12 @@
 #pragma once
 
+#include <imgui.h>
 #include <string>
+#include <vector>
 #include <flecs.h>
+#include "AgentBrain.h"
+
+struct ImGuiInputTextCallbackData;
 
 #include "Window.h"
 
@@ -17,4 +22,10 @@ private:
     std::string fallbackContext;
     bool autoScroll = true;
     char inputBuf[256] = "";
+
+    std::vector<std::string> history;
+    int historyPos = -1;
+
+    static int TextEditCallbackStub(ImGuiInputTextCallbackData* data);
+    int TextEditCallback(ImGuiInputTextCallbackData* data);
 };
