@@ -77,6 +77,16 @@ private:
   Game* game;
 };
 
+// Modal-ish prompt shown after a location rectangle is dragged out. Reads and
+// clears Game::pendingLocation, and only calls Map::AddLocation on confirm.
+class LocationNamingWindow : public Window {
+public:
+  explicit LocationNamingWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};
+
 class AIMenuWindow : public Window {
 public:
   explicit AIMenuWindow(Game* game);

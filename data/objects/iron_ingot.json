@@ -1,0 +1,11 @@
+{
+  "name": "Iron Ingot",
+  "description": "A refined bar of iron, ready to be worked at an anvil.",
+  "components": [
+    "Portable"
+  ],
+  "character": "I",
+  "characterColor": [176, 176, 176, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [176, 176, 176, 255]
+}

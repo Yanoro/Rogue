@@ -1,0 +1,11 @@
+{
+  "name": "Flour",
+  "description": "Finely ground wheat, ready to be baked into bread.",
+  "components": [
+    "Portable"
+  ],
+  "character": "f",
+  "characterColor": [245, 245, 220, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [245, 245, 220, 255]
+}

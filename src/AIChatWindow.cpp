@@ -1,4 +1,5 @@
 #include "AIChatWindow.h"
+#include "Components.h"
 #include <cmath>
 #include <thread>
 #include <chrono>
@@ -10,17 +11,34 @@
 
 const size_t DEFAULT_DELAY_AI_TEXT_MS = 90;
 
-AIChatWindow::AIChatWindow(AI* aiInstance, const std::string& startPrompt) 
-    : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))), context(startPrompt) {
+AIChatWindow::AIChatWindow(AI* aiInstance, const std::string& startPrompt, flecs::entity owner) 
+    : ai(aiInstance), owner(owner), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))), context(startPrompt) {
     generateResponse(context);
 }
 
-AIChatWindow::AIChatWindow(AI *aiInstance) : ai(aiInstance), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))) {}
+AIChatWindow::AIChatWindow(AI *aiInstance, flecs::entity owner) : ai(aiInstance), owner(owner), contextId(std::to_string(reinterpret_cast<uintptr_t>(this))) {}
 
 void AIChatWindow::Draw() {
-    ImGui::Begin("AI Chat", nullptr, ImGuiWindowFlags_AlwaysAutoResize); 
+    bool isOpen = true;
+    // Resizable with a sane first-use size. The close button is enabled by
+    // passing &isOpen instead of nullptr; closing removes the ActiveWindow.
+    ImGui::SetNextWindowSize(ImVec2(560, 460), ImGuiCond_FirstUseEver);
+    ImGui::Begin("AI Chat", &isOpen, ImGuiWindowFlags_None);
 
-    if (ImGui::BeginChild("LogScroll", ImVec2(500, 300), ImGuiChildFlags_Borders)) {
+    if (!isOpen) {
+        if (owner.is_alive()) {
+            owner.remove<ActiveWindow>();
+        }
+        ImGui::End();
+        return;
+    }
+
+    // Reserve room at the bottom for the status line and the input row so the
+    // log fills the window and grows with it. Mirrors NPCContextWindow.
+    const float footerHeightToReserve =
+        ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing() * 2.0f;
+
+    if (ImGui::BeginChild("LogScroll", ImVec2(0, -footerHeightToReserve), ImGuiChildFlags_Borders)) {
         if (not couldConnect) {
           ImGui::TextWrapped("%s", "Could not connect to AI Backend!");
         }

@@ -327,9 +327,38 @@ void Game::ECSInitLogicSystems() {
       });
 }
 
+namespace {
+
+// Turns a map-defined starting inventory into real entities held by the NPC.
+// Each unit is spawned as its own entity and attached with the Holds
+// relationship, which is the same shape harvest drops and crafting outputs use,
+// so [INVENTORY], [STORE], [TAKE] and [CRAFT] see these items with no special
+// casing. An unknown template id is reported by ObjectFactory::SpawnObject and
+// skipped here.
+void GiveStartingInventory(flecs::world &world, flecs::entity npc,
+                           const std::vector<ItemStack> &inventory) {
+  if (inventory.empty()) return;
+
+  auto factoryRes = world.get<ObjectFactoryResource>();
+  if (!factoryRes || !factoryRes->factory) return;
+
+  for (const ItemStack &stack : inventory) {
+    for (int i = 0; i < stack.count; ++i) {
+      flecs::entity item =
+          factoryRes->factory->SpawnObject(world, npc, nullptr, stack.item);
+      if (item.is_alive()) {
+        npc.add<Holds>(item);
+      }
+    }
+  }
+}
+
+} // namespace
+
 void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   hasClicked = false;
   validTileSelected = false;
+  mapFilePath = mapPath;
 
   flecs::entity mapEntity = ecs.entity("CurrentMap");
   ecs.defer([&]() {
@@ -345,7 +374,9 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   if (currentMap) {
     if (spawnNPCs) {
       for (const auto& npc : currentMap->GetNPCs()) {
-        createNPC(npc.position, npc.name, npc.background);
+        flecs::entity npcEntity =
+            createNPC(npc.position, npc.name, npc.background);
+        GiveStartingInventory(ecs, npcEntity, npc.inventory);
       }
     }
 
@@ -837,6 +868,76 @@ void Game::ECSInitAgentSystems() {
       });
 };
 
+namespace {
+
+std::string TrimCopy(const std::string &text) {
+  size_t begin = text.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return "";
+  }
+  size_t end = text.find_last_not_of(" \t\r\n");
+  return text.substr(begin, end - begin + 1);
+}
+
+// One line per recipe, written with content ids rather than display names,
+// because the id is the exact token [CRAFT ...] and the recipe files use.
+std::string FormatRecipe(const CraftRecipe &recipe) {
+  std::string line = recipe.id + " (";
+  for (size_t i = 0; i < recipe.inputs.size(); ++i) {
+    if (i > 0) line += " + ";
+    line += std::to_string(recipe.inputs[i].count) + " " + recipe.inputs[i].item;
+  }
+  line += " -> ";
+  for (size_t i = 0; i < recipe.outputs.size(); ++i) {
+    if (i > 0) line += " + ";
+    const LootDrop &output = recipe.outputs[i];
+    line += output.itemType;
+    if (output.chance < 1.0f) {
+      line += " (" + std::to_string(std::lround(output.chance * 100.0f)) +
+              "% chance)";
+    }
+  }
+  line += ")";
+  return line;
+}
+
+// Bullet list of everything a station advertises. Recipe ids missing from the
+// registry are reported instead of skipped: a silent gap looks exactly like
+// "the station cannot do that" and hides a content bug.
+std::string FormatStationRecipes(const Workstation &station,
+                                 const RecipeRegistry *registry) {
+  std::string msg;
+  for (const std::string &id : station.recipes) {
+    const CraftRecipe *recipe = registry ? registry->Get(id) : nullptr;
+    if (recipe) {
+      msg += "- " + FormatRecipe(*recipe) + "\n";
+    } else {
+      msg += "- " + id + " (unknown: no data/recipes/" + id + ".json)\n";
+    }
+  }
+  return msg;
+}
+
+// Resolves what the station advertises against the registry, case-insensitively
+// so a model that emits "Flour" still resolves. Returns nullptr when the station
+// does not offer the recipe (which is different from the recipe not existing).
+const CraftRecipe *ResolveStationRecipe(const RecipeRegistry *registry,
+                                        const Workstation &station,
+                                        const std::string &requestedId) {
+  if (!registry || requestedId.empty()) {
+    return nullptr;
+  }
+  for (const std::string &id : station.recipes) {
+    if (!StringUtils::EqualsIgnoreCase(id, requestedId)) {
+      continue;
+    }
+    return registry->Get(id);
+  }
+  return nullptr;
+}
+
+} // namespace
+
 void Game::ECSInit(std::string mapPath) {
   ecs.import <flecs::monitor>();
   ecs.set<flecs::Rest>({});
@@ -844,6 +945,10 @@ void Game::ECSInit(std::string mapPath) {
   objectFactory.SetDebugLog(debugLog.get());
   objectFactory.LoadTemplates("data/objects");
   ecs.set<ObjectFactoryResource>({&objectFactory});
+
+  recipeRegistry.SetDebugLog(debugLog.get());
+  recipeRegistry.LoadRecipes("data/recipes");
+  ecs.set<RecipeRegistryResource>({&recipeRegistry});
 
   GlobalCommandRegistry::Clear();
 
@@ -1042,9 +1147,118 @@ void Game::ECSInit(std::string mapPath) {
 
   InteractionRegistry::RegisterComponentInteraction<Workstation>(
       "Craft",
-      "Use this workstation to turn materials into a crafted item (not implemented yet). Example: [CRAFT]",
+      "Turn materials you are carrying into a finished good at this station. Name the recipe you want, e.g. [CRAFT flour]. Use [CRAFT] on its own to list what this station can make and what each recipe consumes.",
       [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
-      return "System: Crafting menu opened (Not yet implemented).\n";
+      const Workstation* station = target.get<Workstation>();
+      if (!station) {
+        return "System: This is not a crafting station.\n";
+      }
+
+      auto regRes = actor.world().get<RecipeRegistryResource>();
+      const RecipeRegistry* registry = regRes ? regRes->registry : nullptr;
+      if (!registry) {
+        return "System: No recipes are loaded, so nothing can be crafted.\n";
+      }
+
+      std::string stationName =
+          target.has<DisplayName>() ? target.get<DisplayName>()->name : "station";
+
+      // No recipe named: this is the "what can I make here?" query. The player
+      // context menu passes no args, and an agent gets here with [CRAFT].
+      std::string requested = TrimCopy(args);
+      if (requested.empty()) {
+        if (station->recipes.empty()) {
+          return "System: The " + stationName + " cannot craft anything.\n";
+        }
+        std::string msg = "System: The " + stationName + " can craft:\n" +
+                          FormatStationRecipes(*station, registry);
+        msg += "Use [CRAFT $RECIPE] to make one, for example [CRAFT " +
+               station->recipes.front() + "].\n";
+        return msg;
+      }
+
+      const CraftRecipe* recipe =
+          ResolveStationRecipe(registry, *station, requested);
+      if (!recipe) {
+        return "System: The " + stationName + " has no recipe called " + requested +
+               ". Use [CRAFT] to see what it can make.\n";
+      }
+
+      // Verify the whole ingredient list before consuming anything: crafting is
+      // all-or-nothing, so a recipe that is only half satisfiable must not eat
+      // the materials it did find. Each entity is claimed at most once so a
+      // recipe that lists the same item twice cannot consume one unit twice.
+      std::vector<flecs::entity> toConsume;
+      std::string missing;
+      for (const ItemStack& input : recipe->inputs) {
+        std::vector<flecs::entity> found;
+        actor.each<Holds>([&](flecs::entity child) {
+          if (static_cast<int>(found.size()) >= input.count) return;
+          if (!child.is_alive()) return;
+          if (std::find(toConsume.begin(), toConsume.end(), child) !=
+              toConsume.end()) {
+            return;
+          }
+          const ItemType* itemType = child.get<ItemType>();
+          if (itemType &&
+              StringUtils::EqualsIgnoreCase(itemType->id, input.item)) {
+            found.push_back(child);
+          }
+        });
+
+        if (static_cast<int>(found.size()) < input.count) {
+          if (!missing.empty()) missing += ", ";
+          missing +=
+              std::to_string(input.count - static_cast<int>(found.size())) + " " +
+              input.item;
+          // Keep checking the other inputs so the shortage message is complete.
+          continue;
+        }
+        toConsume.insert(toConsume.end(), found.begin(), found.end());
+      }
+
+      if (!missing.empty()) {
+        return "System: You do not have enough materials to craft " + recipe->id +
+               ". Still needed: " + missing + ".\n";
+      }
+
+      auto factoryRes = actor.world().get<ObjectFactoryResource>();
+      if (!factoryRes || !factoryRes->factory) {
+        return "System: Crafting is unavailable: no object factory is loaded.\n";
+      }
+
+      // Consume first, then produce. Removing Holds and destroying the spent
+      // entities mutates the relationship the scan above walked, which is why the
+      // entities were collected into toConsume first.
+      for (flecs::entity item : toConsume) {
+        actor.remove<Holds>(item);
+        item.destruct();
+      }
+
+      std::string produced;
+      flecs::world world = actor.world();
+      for (const LootDrop& output : recipe->outputs) {
+        float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+        if (roll > output.chance) continue;
+
+        flecs::entity crafted = factoryRes->factory->SpawnObject(
+            world, actor, nullptr, output.itemType);
+        if (crafted.is_alive()) {
+          actor.add<Holds>(crafted);
+          produced += crafted.has<DisplayName>()
+                          ? crafted.get<DisplayName>()->name
+                          : output.itemType;
+          produced += ", ";
+        }
+      }
+
+      if (produced.empty()) {
+        return "System: You crafted " + recipe->id +
+               " but nothing came out of it.\n";
+      }
+      produced.pop_back();
+      produced.pop_back();
+      return "System: You crafted " + produced + " and put it in your inventory.\n";
   });
 
   InteractionRegistry::RegisterComponentInteraction<DisplayName>(
@@ -1082,6 +1296,12 @@ void Game::ECSInit(std::string mapPath) {
           if (e->isActive) {
               msg += "It is still growing.\n";
           }
+      }
+      if (target.has<Workstation>()) {
+          auto regRes = target.world().get<RecipeRegistryResource>();
+          const RecipeRegistry* registry = regRes ? regRes->registry : nullptr;
+          msg += "It can craft:\n";
+          msg += FormatStationRecipes(*target.get<Workstation>(), registry);
       }
       return msg;
   });

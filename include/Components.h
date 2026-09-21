@@ -163,6 +163,40 @@ struct ObjectDescription {
   std::string text;
 };
 
+// Stable content identity of a spawned object: the ObjectFactory template key it
+// was spawned from (e.g. "wheat", "flour"). Recipes and any other system that
+// needs to reason about *what* an entity is must match on this, not on
+// DisplayName: the display name is player-facing text and is safe to rename,
+// while this id is what data files reference. Stamped in
+// ObjectFactory::ApplyTemplate, which receives the template key.
+struct ItemType {
+  std::string id;
+};
+
+// Marks an object as authored map content: it came either from the map file's
+// "objects" array or from a placement made in the map editor. Deliberately NOT
+// set on entities the world spawns at runtime (harvest drops, crafting output,
+// NPC starting inventory), which is what lets the map writer persist the
+// authored map without leaking simulation state into the file.
+//
+// `templateKey` is kept separately from ItemType because ItemType is restamped
+// whenever a template is re-applied: an Evolvable object that grew from
+// "wheat_sprout" to "wheat_mature" reports the grown id in ItemType, but the
+// authored entry should still be written back as the sprout it was placed as.
+struct MapAuthored {
+  std::string templateKey;
+};
+
+// A counted request for a kind of item: "3 wheat". Lives here rather than in
+// RecipeRegistry.h because it is shared item vocabulary, not crafting-specific
+// — recipes consume it, NPC map definitions spawn it, and a storage API would
+// take it too. Counts are always explicit because the engine stores each unit
+// as its own entity.
+struct ItemStack {
+  std::string item; // ObjectFactory template key, e.g. "wheat"
+  int count = 1;
+};
+
 struct ActiveWindow {
   std::shared_ptr<Window> ptr;
 };
@@ -335,6 +369,14 @@ struct ObjectFactoryResource {
   ObjectFactory* factory;
 };
 
+class RecipeRegistry;
+// Crafting recipe definitions, loaded once at init from data/recipes/*.json and
+// read by whoever resolves a Workstation's recipe ids (see RecipeRegistry.h).
+// Same resource-component pattern as ObjectFactoryResource.
+struct RecipeRegistryResource {
+  RecipeRegistry* registry;
+};
+
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>
 inline flecs::opaque<Vector, Elem> std_vector_support(flecs::world &world) {
@@ -357,6 +399,20 @@ inline flecs::opaque<Vector, Elem> std_vector_support(flecs::world &world) {
 }
 
 inline void RegisterComponents(flecs::world &ecs) {
+  // std::string must be registered before any component that reflects a
+  // std::string member. flecs resolves a member's type at registration time, so
+  // registering "X.member<std::string>" first leaves the member pointing at a
+  // type with no EcsMetaType and permanently breaks serialization of X with
+  // "missing EcsMetaType for type std.__cxx11.basic_string<char>".
+  ecs.component<std::string>()
+      .opaque(flecs::String)
+      .serialize([](const flecs::serializer *s, const std::string *data) {
+        const char *str = data->c_str();
+        return s->value(flecs::String, &str);
+      })
+      .assign_string(
+          [](std::string *data, const char *value) { *data = value; });
+
   ecs.component<Render>();
 
   ecs.component<raylib::Vector2>().member<float>("x").member<float>("y");
@@ -403,14 +459,7 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<PendingPlayerInteraction>();
   ecs.component<LastObjectsQuery>();
 
-  ecs.component<std::string>()
-      .opaque(flecs::String)
-      .serialize([](const flecs::serializer *s, const std::string *data) {
-        const char *str = data->c_str();
-        return s->value(flecs::String, &str);
-      })
-      .assign_string(
-          [](std::string *data, const char *value) { *data = value; });
+  ecs.component<MapAuthored>().member<std::string>("templateKey");
 
   ecs.component<Tile>()
       .member<std::string>("name")

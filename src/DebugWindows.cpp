@@ -3,6 +3,7 @@
 #include "AgentBrain.h"
 #include "ObjectFactory.h"
 #include "imgui.h"
+#include "imgui_stdlib.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
@@ -92,7 +93,9 @@ DebugConsoleWindow::DebugConsoleWindow(Game* game) : game(game) {}
 
 void DebugConsoleWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Debug Console", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  // Resizable: give it a starting size instead of AlwaysAutoResize.
+  ImGui::SetNextWindowSize(ImVec2(620, 320), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Debug Console", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->debugConsoleWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -237,7 +240,8 @@ TileInfoWindow::TileInfoWindow(Game* game) : game(game) {}
 
 void TileInfoWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Tile Info", &isOpen);
+  ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Tile Info", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->tileInfoWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -281,7 +285,8 @@ AStarWindow::AStarWindow(Game* game) : game(game) {}
 
 void AStarWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("A*", &isOpen);
+  ImGui::SetNextWindowSize(ImVec2(300, 200), ImGuiCond_FirstUseEver);
+  ImGui::Begin("A*", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->astarWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -325,7 +330,8 @@ void EntityOverviewWindow::Draw() {
   static std::vector<OpenComponentWindow> openComponentWindows;
 
   bool isOpen = true;
-  ImGui::Begin("Entity Overview", &isOpen);
+  ImGui::SetNextWindowSize(ImVec2(760, 460), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Entity Overview", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->entityOverviewWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -337,9 +343,12 @@ void EntityOverviewWindow::Draw() {
 
   ImGui::Separator();
 
+  // ScrollY keeps the header visible and lets the table follow the window size;
+  // without it the list clips at the window edge.
   if (ImGui::BeginTable("EntitiesTable", 4,
                         ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                             ImGuiTableFlags_Resizable |
+                            ImGuiTableFlags_ScrollY |
                             ImGuiTableFlags_SizingStretchProp)) {
     ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
     ImGui::TableSetupColumn("Name");
@@ -438,7 +447,8 @@ DebugLogWindow::DebugLogWindow(Game* game) : game(game) {}
 
 void DebugLogWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Debug Log", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Debug Log", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->debugLogWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -452,7 +462,9 @@ void DebugLogWindow::Draw() {
     game->debugLog->Clear();
   }
 
-  if (ImGui::BeginChild("##LogContent", ImVec2(500, 300), ImGuiChildFlags_Borders)) {
+  // Fills whatever is left of the window so resizing grows the log view rather
+  // than leaving a fixed 500x300 hole in it.
+  if (ImGui::BeginChild("##LogContent", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
     const auto &entries = game->debugLog->GetEntries();
     for (const auto &entry : entries) {
       ImVec4 color;
@@ -485,7 +497,8 @@ MapReloadWindow::MapReloadWindow(Game* game) : game(game) {}
 
 void MapReloadWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Map Reload", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetNextWindowSize(ImVec2(420, 460), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Map Reload", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->mapReloadWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -508,7 +521,8 @@ void MapReloadWindow::Draw() {
   } else {
     static int selectedMapIndex = 0;
 
-    if (ImGui::BeginListBox("##MapList", ImVec2(-1, 200))) {
+    // Sized to fill the window so the list grows and shrinks with it.
+    if (ImGui::BeginListBox("##MapList", ImVec2(-1, -1))) {
       for (size_t i = 0; i < mapList.size(); i++) {
         bool isSelected = (selectedMapIndex == (int)i);
         if (ImGui::Selectable(mapList[i].c_str(), isSelected)) {
@@ -538,7 +552,8 @@ DrawAsciiDebugWindow::DrawAsciiDebugWindow(Game* game) : game(game) {}
 
 void DrawAsciiDebugWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("DrawAscii Debug", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetNextWindowSize(ImVec2(340, 220), ImGuiCond_FirstUseEver);
+  ImGui::Begin("DrawAscii Debug", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->drawAsciiToggleWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -571,7 +586,8 @@ FontSelectionWindow::FontSelectionWindow(Game* game) : game(game) {}
 
 void FontSelectionWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Font Selection", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetNextWindowSize(ImVec2(420, 300), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Font Selection", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->fontSelectionWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -658,7 +674,8 @@ MapEditorWindow::MapEditorWindow(Game* game) : game(game) {}
 
 void MapEditorWindow::Draw() {
   bool isOpen = true;
-  ImGui::Begin("Map Editor", &isOpen, ImGuiWindowFlags_AlwaysAutoResize);
+  ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Map Editor", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->mapEditorWindowEntity.remove<ActiveWindow>();
     ImGui::End();
@@ -674,94 +691,271 @@ void MapEditorWindow::Draw() {
     }
   }
 
-  ImGui::Text("Map Tiles");
   ImGui::Separator();
-  if (ImGui::BeginTable("TilesTable", 8)) {
-    for (const auto& tile : game->map->GetUniqueTiles()) {
-      ImGui::TableNextColumn();
-      ImVec4 bgColor(tile->ascii->backgroundColor.r / 255.0f, tile->ascii->backgroundColor.g / 255.0f, tile->ascii->backgroundColor.b / 255.0f, tile->ascii->backgroundColor.a / 255.0f);
-      ImVec4 fgColor(tile->ascii->characterColor.r / 255.0f, tile->ascii->characterColor.g / 255.0f, tile->ascii->characterColor.b / 255.0f, tile->ascii->characterColor.a / 255.0f);
-      
-      ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
-      ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
-      
-      bool isSelected = (game->editorSelection.type == EditorSelectionType::Tile && game->editorSelection.name == tile->name);
-      if (isSelected) {
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
-      }
-
-      std::string label = std::string(1, tile->ascii->ch) + "##" + tile->name;
-      if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
-        game->editorSelection.type = EditorSelectionType::Tile;
-        game->editorSelection.name = tile->name;
-      }
-      
-      ImGui::PopStyleColor(2);
-      if (isSelected) {
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-      }
-      if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", tile->name.c_str());
-      }
+  ImGui::Text("Locations");
+  if (ImGui::Checkbox("Create Location##MapEditor", &game->createLocationMode)) {
+    if (!game->createLocationMode) {
+      game->isDraggingLocation = false;
     }
-    ImGui::EndTable();
   }
-  
-  ImGui::Text("Object Templates");
-  ImGui::Separator();
-  if (ImGui::BeginTable("ObjectsTable", 8)) {
-    for (const auto& pair : game->objectFactory.GetTemplates()) {
-      ImGui::TableNextColumn();
-      
-      char ch = '?';
-      ImVec4 bgColor(0,0,0,0);
-      ImVec4 fgColor(1,1,1,1);
-      
-      if (pair.second.contains("character")) {
-         std::string charStr = pair.second["character"];
-         if (!charStr.empty()) ch = charStr[0];
-      }
-      
-      if (pair.second.contains("characterColor")) {
-         auto& c = pair.second["characterColor"];
-         if (c.size() >= 3) {
-            fgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
-         }
-      }
-      if (pair.second.contains("backgroundColor")) {
-         auto& c = pair.second["backgroundColor"];
-         if (c.size() >= 3) {
-            bgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
-         }
-      }
-      
-      ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
-      ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
-      
-      bool isSelected = (game->editorSelection.type == EditorSelectionType::ObjectTemplate && game->editorSelection.name == pair.first);
-      if (isSelected) {
-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
-      }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Arm this, then press and drag on the map to mark the "
+                      "tiles of a new location. Releasing asks for a name.");
+  }
+  if (game->createLocationMode) {
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+                       "Drag on the map to mark the new location's tiles.");
+  }
 
-      std::string label = std::string(1, ch) + "##" + pair.first;
-      if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
-        game->editorSelection.type = EditorSelectionType::ObjectTemplate;
-        game->editorSelection.name = pair.first;
-      }
-      
-      ImGui::PopStyleColor(2);
-      if (isSelected) {
-        ImGui::PopStyleColor();
-        ImGui::PopStyleVar();
-      }
-      if (ImGui::IsItemHovered()) {
-        ImGui::SetTooltip("%s", pair.first.c_str());
-      }
+  ImGui::Checkbox("Remove Location##MapEditor", &game->removeLocationMode);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Arm this, then click a location on the map to delete "
+                      "it. Removals are not written to the map file.");
+  }
+
+  // Trash button: toggles the object-removal mode. The armed-looking style is
+  // pushed and popped around the button using the same value, because the button
+  // itself flips the mode: reading the (now flipped) state when deciding whether
+  // to pop would unbalance the style stack on the very click that arms it.
+  ImGui::SameLine();
+  const bool removeObjectLit = game->removeObjectMode;
+  if (removeObjectLit) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.65f, 0.15f, 0.15f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.25f, 0.25f, 1.0f));
+  }
+  if (ImGui::Button("[x] Remove Object##MapEditor")) {
+    game->removeObjectMode = !game->removeObjectMode;
+  }
+  if (removeObjectLit) {
+    ImGui::PopStyleColor(3);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Trash: while lit, clicking a tile deletes the object "
+                      "placed on it (and what the map file would record).");
+  }
+
+  if (game->removeLocationMode) {
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
+                       "Click a location on the map to remove it.");
+  }
+  if (game->removeObjectMode) {
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
+                       "Trash armed: click a tile to delete the object on it.");
+  }
+
+  if (!game->lastRemovedLocationName.empty()) {
+    ImGui::Text("Last removed location: %s",
+                game->lastRemovedLocationName.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear##LastRemovedLocation")) {
+      game->lastRemovedLocationName.clear();
     }
-    ImGui::EndTable();
+  }
+  if (!game->lastRemovedObjectName.empty()) {
+    ImGui::Text("Last removed object: %s",
+                game->lastRemovedObjectName.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear##LastRemovedObject")) {
+      game->lastRemovedObjectName.clear();
+    }
+  }
+  ImGui::Separator();
+
+  ImGui::Text("Map File");
+  if (ImGui::Button("Save Map to File")) {
+    if (game->SaveMapToFile()) {
+      game->lastMapSaveMessage = "Saved.";
+    } else {
+      game->lastMapSaveMessage = "Save failed - see the debug log.";
+    }
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Rewrite the current map file with the editor's tile "
+                      "layout, locations and placed objects.");
+  }
+  if (!game->mapFilePath.empty()) {
+    ImGui::TextDisabled("Target: %s", game->mapFilePath.c_str());
+  }
+  if (!game->lastMapSaveMessage.empty()) {
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%s",
+                       game->lastMapSaveMessage.c_str());
+  }
+  ImGui::Separator();
+
+  // The palette and template tables grow with the map's content, so they live in
+  // a scroll region that fills the window. Without this a resized window just
+  // clips them, and the content would force the window taller every frame.
+  if (ImGui::BeginChild("##MapEditorContent", ImVec2(0, 0))) {
+    ImGui::Text("Map Tiles");
+    ImGui::Separator();
+    if (ImGui::BeginTable("TilesTable", 8)) {
+      for (const auto& tile : game->map->GetUniqueTiles()) {
+        ImGui::TableNextColumn();
+        ImVec4 bgColor(tile->ascii->backgroundColor.r / 255.0f, tile->ascii->backgroundColor.g / 255.0f, tile->ascii->backgroundColor.b / 255.0f, tile->ascii->backgroundColor.a / 255.0f);
+        ImVec4 fgColor(tile->ascii->characterColor.r / 255.0f, tile->ascii->characterColor.g / 255.0f, tile->ascii->characterColor.b / 255.0f, tile->ascii->characterColor.a / 255.0f);
+        
+        ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
+        ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
+        
+        bool isSelected = (game->editorSelection.type == EditorSelectionType::Tile && game->editorSelection.name == tile->name);
+        if (isSelected) {
+          ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
+          ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+        }
+
+        std::string label = std::string(1, tile->ascii->ch) + "##" + tile->name;
+        if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
+          game->editorSelection.type = EditorSelectionType::Tile;
+          game->editorSelection.name = tile->name;
+        }
+        
+        ImGui::PopStyleColor(2);
+        if (isSelected) {
+          ImGui::PopStyleColor();
+          ImGui::PopStyleVar();
+        }
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("%s", tile->name.c_str());
+        }
+      }
+      ImGui::EndTable();
+    }
+  
+    ImGui::Text("Object Templates");
+    ImGui::Separator();
+    if (ImGui::BeginTable("ObjectsTable", 8)) {
+      for (const auto& pair : game->objectFactory.GetTemplates()) {
+        ImGui::TableNextColumn();
+        
+        char ch = '?';
+        ImVec4 bgColor(0,0,0,0);
+        ImVec4 fgColor(1,1,1,1);
+        
+        if (pair.second.contains("character")) {
+           std::string charStr = pair.second["character"];
+           if (!charStr.empty()) ch = charStr[0];
+        }
+        
+        if (pair.second.contains("characterColor")) {
+           auto& c = pair.second["characterColor"];
+           if (c.size() >= 3) {
+              fgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
+           }
+        }
+        if (pair.second.contains("backgroundColor")) {
+           auto& c = pair.second["backgroundColor"];
+           if (c.size() >= 3) {
+              bgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
+           }
+        }
+        
+        ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
+        ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
+        
+        bool isSelected = (game->editorSelection.type == EditorSelectionType::ObjectTemplate && game->editorSelection.name == pair.first);
+        if (isSelected) {
+          ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
+          ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
+        }
+
+        std::string label = std::string(1, ch) + "##" + pair.first;
+        if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
+          game->editorSelection.type = EditorSelectionType::ObjectTemplate;
+          game->editorSelection.name = pair.first;
+        }
+        
+        ImGui::PopStyleColor(2);
+        if (isSelected) {
+          ImGui::PopStyleColor();
+          ImGui::PopStyleVar();
+        }
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("%s", pair.first.c_str());
+        }
+      }
+      ImGui::EndTable();
+    }
+  }
+  ImGui::EndChild();
+
+  ImGui::End();
+
+  // The naming prompt only exists while a rectangle is waiting to be named.
+  if (game->pendingLocationWantsFocus || game->pendingLocationHasFocus) {
+    LocationNamingWindow(game).Draw();
+  }
+}
+
+LocationNamingWindow::LocationNamingWindow(Game* game) : game(game) {}
+
+void LocationNamingWindow::Draw() {
+  if (!game->pendingLocationWantsFocus && !game->pendingLocationHasFocus) {
+    return;
+  }
+
+  ImGui::SetNextWindowSize(ImVec2(440, 240), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                          ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+  bool show = true;
+  ImGui::Begin("New Location", &show, ImGuiWindowFlags_None);
+
+  PendingLocation &pending = game->pendingLocation;
+  const int markedWidth = pending.bottomRight.x - pending.topLeft.x + 1;
+  const int markedHeight = pending.bottomRight.y - pending.topLeft.y + 1;
+
+  ImGui::Text("Marked area: %d x %d tiles at (%d, %d)", markedWidth,
+              markedHeight, pending.topLeft.x, pending.topLeft.y);
+  ImGui::Separator();
+
+  if (game->pendingLocationWantsFocus) {
+    ImGui::SetKeyboardFocusHere();
+    game->pendingLocationWantsFocus = false;
+    game->pendingLocationHasFocus = true;
+  }
+
+  ImGui::Text("Name");
+  ImGui::SetNextItemWidth(-1.0f);
+  bool submitted = ImGui::InputText("##LocationName", &pending.name,
+                                    ImGuiInputTextFlags_EnterReturnsTrue);
+
+  ImGui::Text("Description (optional)");
+  ImGui::SetNextItemWidth(-1.0f);
+  ImGui::InputText("##LocationDescription", &pending.description);
+
+  const bool nameIsEmpty = pending.name.empty();
+
+  // The button is always drawn; the Enter key is handled separately below so an
+  // Enter consumed by the text field is never read as a button activation.
+  const bool createClicked = ImGui::Button("Create Location");
+  ImGui::SameLine();
+  const bool cancel = ImGui::Button("Cancel");
+
+  const bool confirm = !nameIsEmpty && (createClicked || submitted);
+
+  if (nameIsEmpty) {
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
+                       "A name is required.");
+  }
+
+  if (confirm) {
+    game->map->AddLocation(pending.name, pending.description,
+                           pending.topLeft, markedWidth, markedHeight);
+    if (game->debugLog) {
+      game->debugLog->LogInfo("Map editor: created location '" + pending.name +
+                              "' (" + std::to_string(markedWidth) + "x" +
+                              std::to_string(markedHeight) + " tiles at " +
+                              std::to_string(pending.topLeft.x) + "," +
+                              std::to_string(pending.topLeft.y) +
+                              ") (in memory only)");
+    }
+
+    game->pendingLocation = PendingLocation{};
+    game->pendingLocationHasFocus = false;
+  } else if (cancel || !show) {
+    game->pendingLocation = PendingLocation{};
+    game->pendingLocationHasFocus = false;
   }
 
   ImGui::End();
@@ -774,7 +968,8 @@ void AIMenuWindow::Draw() {
   if (!show)
     return;
     
-  if (ImGui::Begin("AI Menu", &show)) {
+  ImGui::SetNextWindowSize(ImVec2(460, 280), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("AI Menu", &show, ImGuiWindowFlags_None)) {
     const AIBackend* backend = game->ecs.get<AIBackend>();
     if (backend && backend->ptr) {
       ImGui::Text("AI Backend: %s", backend->ptr->getAIName().c_str());
@@ -832,7 +1027,8 @@ void NPCMenuWindow::Draw() {
   if (!show)
     return;
 
-  if (ImGui::Begin("NPC Menu", &show)) {
+  ImGui::SetNextWindowSize(ImVec2(720, 440), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("NPC Menu", &show, ImGuiWindowFlags_None)) {
     static ImGuiTextFilter filter;
     filter.Draw("Filter", 180.0f);
 
@@ -844,6 +1040,7 @@ void NPCMenuWindow::Draw() {
     if (ImGui::BeginTable("NPCMenuTable", 6,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Resizable |
+                              ImGuiTableFlags_ScrollY |
                               ImGuiTableFlags_SizingStretchProp)) {
       ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
       ImGui::TableSetupColumn("Name");

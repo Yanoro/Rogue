@@ -71,6 +71,16 @@
       ]
     },
     {
+      "description": "",
+      "hitboxHeight": 2,
+      "hitboxWidth": 4,
+      "name": "test",
+      "position": [
+        26,
+        4
+      ]
+    },
+    {
       "description": "A snug stone house built around a grinding mill. Everything inside wears a coat of flour dust.",
       "hitboxHeight": 5,
       "hitboxWidth": 5,
@@ -104,6 +114,11 @@
     },
     {
       "background": "Your name is Milo and you are the village miller. You grind wheat into flour at the mill inside your house, just north of the farmer's house. To start your trade: get 3 wheat - use your starting supply of wheat or ask Pietro the farmer. Carry the wheat to the mill and use [CRAFT flour] to grind it into flour, then trade or store the flour.",
+      "name": "Milo",
+      "position": [
+        49,
+        4
+      ],
       "inventory": [
         {
           "count": 12,
@@ -113,19 +128,14 @@
           "count": 20,
           "item": "bronze_coins"
         }
-      ],
-      "name": "Milo",
-      "position": [
-        49,
-        4
       ]
     }
   ],
   "objects": [
     {
-      "type": "mill",
-      "x": 46,
-      "y": 2
+      "type": "chest",
+      "x": 49,
+      "y": 14
     },
     {
       "type": "apple_tree",
@@ -141,11 +151,6 @@
       "type": "apple_tree",
       "x": 31,
       "y": 12
-    },
-    {
-      "type": "chest",
-      "x": 49,
-      "y": 14
     },
     {
       "type": "wheat_mature",
@@ -173,14 +178,19 @@
       "y": 51
     },
     {
-      "type": "smeltery",
-      "x": 55,
-      "y": 51
-    },
-    {
       "type": "iron_vein",
       "x": 53,
       "y": 52
+    },
+    {
+      "type": "iron_vein",
+      "x": 52,
+      "y": 54
+    },
+    {
+      "type": "smeltery",
+      "x": 55,
+      "y": 51
     },
     {
       "type": "anvil",
@@ -188,9 +198,9 @@
       "y": 52
     },
     {
-      "type": "iron_vein",
-      "x": 52,
-      "y": 54
+      "type": "mill",
+      "x": 46,
+      "y": 2
     }
   ],
   "positions": [

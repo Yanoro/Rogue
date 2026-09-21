@@ -1,0 +1,16 @@
+{
+  "name": "Smeltery",
+  "description": "A clay furnace hot enough to melt iron ore down into workable ingots.",
+  "components": [
+    "Interactable",
+    "Obstacle",
+    "Workstation"
+  ],
+  "recipes": [
+    "iron_ingot"
+  ],
+  "character": "S",
+  "characterColor": [200, 80, 40, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 80, 40, 255]
+}

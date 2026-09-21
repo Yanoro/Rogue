@@ -1,0 +1,16 @@
+{
+  "name": "Mill",
+  "description": "A stone mill for grinding grain. Feed it wheat and turn the handle to make flour.",
+  "components": [
+    "Interactable",
+    "Obstacle",
+    "Workstation"
+  ],
+  "recipes": [
+    "flour"
+  ],
+  "character": "M",
+  "characterColor": [169, 169, 169, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [192, 192, 192, 255]
+}

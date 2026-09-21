@@ -14,7 +14,14 @@ class ObjectFactory {
 public:
   ObjectFactory();
   void LoadTemplates(const std::string& directoryPath);
-  flecs::entity SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos = std::nullopt);
+
+  // `authored` marks the object as map content (see MapAuthored): the map loader
+  // and the map editor pass true, while any runtime spawn (harvest drop, craft
+  // output, NPC starting inventory) leaves it false so the map writer ignores it.
+  flecs::entity SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map,
+                            const std::string& type,
+                            std::optional<GamePosition> pos = std::nullopt,
+                            bool authored = false);
   bool ApplyTemplate(flecs::entity obj, const std::string& type, Map* map = nullptr);
   void SetDebugLog(DebugLog* log) { debugLog = log; }
   const std::unordered_map<std::string, nlohmann::json>& GetTemplates() const { return templates; }

@@ -16,7 +16,8 @@ void EntityInfoWindow::Draw() {
   }
 
   bool isOpen = true;
-  ImGui::Begin("Entity Info", &isOpen);
+  ImGui::SetNextWindowSize(ImVec2(420, 580), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Entity Info", &isOpen, ImGuiWindowFlags_None);
   
   if (!isOpen) {
     entity.remove<ActiveWindow>();

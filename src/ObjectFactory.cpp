@@ -139,6 +139,11 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
   std::string name = tmpl.value("name", type);
   obj.set<DisplayName>({name});
 
+  // Stable content id: the template key, not the display name. Recipes and any
+  // other logic that must identify *what* this is match on this, so renaming a
+  // display name in JSON cannot silently break them.
+  obj.set<ItemType>({type});
+
   // Short blurb surfaced by the [EXAMINE] interaction.
   obj.set<ObjectDescription>(
       {tmpl.value("description", std::string("It looks unremarkable."))});
@@ -172,7 +177,7 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
   return true;
 }
 
-flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos) {
+flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent, Map* map, const std::string& type, std::optional<GamePosition> pos, bool authored) {
   if (templates.find(type) == templates.end()) {
     std::string errStr = "Warning: Attempted to spawn unknown object type: " + type + "\n";
     if (debugLog) debugLog->LogError(errStr);
@@ -187,6 +192,11 @@ flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent
     if (map) {
       obj.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos->x, pos->y));
     }
+  }
+
+  // Marked before ApplyTemplate so the marker survives every early-out below.
+  if (authored) {
+    obj.set<MapAuthored>({type});
   }
 
   ApplyTemplate(obj, type, map);

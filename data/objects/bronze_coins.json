@@ -1,0 +1,11 @@
+{
+  "name": "Bronze Coins",
+  "description": "Small bronze coins stamped with the village mark. Accepted as currency by the villagers.",
+  "components": [
+    "Portable"
+  ],
+  "character": "$",
+  "characterColor": [205, 127, 50, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [205, 127, 50, 255]
+}

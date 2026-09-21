@@ -1,0 +1,11 @@
+{
+  "name": "Iron Scythe",
+  "description": "A curved iron blade on a wooden handle, made for cutting grain.",
+  "components": [
+    "Portable"
+  ],
+  "character": "/",
+  "characterColor": [200, 200, 210, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 200, 210, 255]
+}

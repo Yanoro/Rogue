@@ -129,6 +129,7 @@ set(SOURCES
     src/DebugWindows.cpp
     src/AgentBrain.cpp
     src/ObjectFactory.cpp
+    src/RecipeRegistry.cpp
 )
 
 add_executable(AIRogue ${SOURCES})
@@ -141,6 +142,7 @@ target_include_directories(AIRogue PRIVATE
     ${CURL_INCLUDE_DIRS}
     ${NLOHMANN_JSON_INCLUDE_DIRS}
     ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/misc/cpp
     ${rlimgui_SOURCE_DIR}
 )
 

@@ -13,6 +13,7 @@
 #include "Defaults.h"
 #include "MapReloader.h"
 #include "AgentBrain.h"
+#include "RecipeRegistry.h"
 
 enum class EditorSelectionType {
   None,
@@ -25,6 +26,15 @@ struct EditorSelection {
   std::string name;
 };
 
+// A rectangle the user has dragged out in the map editor that is waiting to be
+// named before it becomes a Location. Only alive while pendingLocation is true.
+struct PendingLocation {
+  GamePosition topLeft{0, 0};
+  GamePosition bottomRight{0, 0};
+  std::string name;
+  std::string description;
+};
+
 class Game {
 public:
   Game();
@@ -32,6 +42,11 @@ public:
 
   void Init(std::string mapPath);
   void handleInput();
+
+  // Rewrites the map file with every map-editor change: tile layout, locations
+  // and authored objects. Returns false (and logs) if the file cannot be
+  // written.
+  bool SaveMapToFile();
 
   void UpdateGUI();
   void Update();
@@ -55,6 +70,7 @@ private:
   raylib::Window window;
   std::unique_ptr<Map> map;
   ObjectFactory objectFactory;
+  RecipeRegistry recipeRegistry;
 
   flecs::world ecs;
   flecs::entity renderPipeline;
@@ -66,6 +82,33 @@ private:
   EditorSelection editorSelection;
   GamePosition lastClickedPos{0, 0};
   double lastLeftClickTime = 0.0;
+
+  // Location drawing (map editor). Armed from the Map Editor window, then a
+  // left-button drag marks the tiles and the release opens the naming prompt.
+  bool createLocationMode = false;
+  bool isDraggingLocation = false;
+  GamePosition locationDragStart{0, 0};
+  GamePosition locationDragEnd{0, 0};
+  PendingLocation pendingLocation;
+  bool pendingLocationWantsFocus = false;
+  bool pendingLocationHasFocus = false;
+
+  // Location removal (map editor). Armed from the Map Editor window, then a
+  // left click deletes the location under the cursor. In-memory only.
+  bool removeLocationMode = false;
+  std::string lastRemovedLocationName;
+
+  // Object removal, the "trash" mode (map editor). Armed from the Map Editor
+  // window, then a left click deletes the authored object on that tile.
+  bool removeObjectMode = false;
+  std::string lastRemovedObjectName;
+
+  // File the current map was loaded from, needed to write map edits back.
+  // Refreshed on every LoadMap so the save always targets the map on screen.
+  std::string mapFilePath;
+
+  // Result of the last "Save Map to File" press, shown in the Map Editor window.
+  std::string lastMapSaveMessage;
 
   raylib::RenderTexture2D gameTexture;
 
@@ -116,6 +159,7 @@ private:
   friend class DrawAsciiDebugWindow;
   friend class FontSelectionWindow;
   friend class MapEditorWindow;
+  friend class LocationNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
 

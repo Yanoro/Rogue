@@ -1,0 +1,16 @@
+{
+  "name": "Anvil",
+  "description": "A heavy block of iron for hammering ingots into tools and blades.",
+  "components": [
+    "Interactable",
+    "Obstacle",
+    "Workstation"
+  ],
+  "recipes": [
+    "iron_scythe"
+  ],
+  "character": "A",
+  "characterColor": [105, 105, 105, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [105, 105, 105, 255]
+}

@@ -24,6 +24,8 @@ void Game::Init(std::string mapPath) {
   if (window.IsReady())
     return;
 
+  mapFilePath = mapPath;
+
   // Do not set borderless flag, we will use proper fullscreen with explicit
   // monitor positioning
   raylib::Window::SetConfigFlags(FLAG_VSYNC_HINT);
@@ -138,11 +140,92 @@ void Game::Init(std::string mapPath) {
 }
 
 void Game::UpdateGUI() {
+  // Finish a location drag even when the button comes up over a window, so the
+  // drag can never be left dangling.
+  if (isDraggingLocation && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+    isDraggingLocation = false;
+    pendingLocation.topLeft = {std::min(locationDragStart.x, locationDragEnd.x),
+                               std::min(locationDragStart.y, locationDragEnd.y)};
+    pendingLocation.bottomRight = {std::max(locationDragStart.x, locationDragEnd.x),
+                                   std::max(locationDragStart.y, locationDragEnd.y)};
+    pendingLocation.name = "New Location";
+    pendingLocation.description = "";
+    pendingLocationWantsFocus = true;
+    pendingLocationHasFocus = false;
+  }
+
   if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
       !ImGui::GetIO().WantCaptureMouse) {
     Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
     GamePosition gPos =
         map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
+
+    // Location drawing takes priority over whatever tile or object is selected:
+    // while the mode is armed a left drag marks tiles instead of placing them.
+    // The naming prompt blocks new drags so two rectangles cannot stack up.
+    if (createLocationMode && !pendingLocationWantsFocus &&
+        !pendingLocationHasFocus) {
+      isDraggingLocation = true;
+      locationDragStart = gPos;
+      locationDragEnd = gPos;
+      // Keep the marked rectangle around so the render pass can preview it.
+      pendingLocation.topLeft = gPos;
+      pendingLocation.bottomRight = gPos;
+      return;
+    }
+
+    // Removal mode is checked before the tile/object selection branch, so a
+    // click that hits a location deletes it instead of placing anything.
+    if (removeLocationMode) {
+      std::string removedName = map->RemoveLocationAt(gPos);
+      if (!removedName.empty()) {
+        lastRemovedLocationName = removedName;
+        if (debugLog) {
+          debugLog->LogInfo("Map editor: removed location '" + removedName +
+                            "' at (" + std::to_string(gPos.x) + "," +
+                            std::to_string(gPos.y) +
+                            ") (not saved to the map file)");
+        }
+        return;
+      }
+    }
+
+    // Trash mode: delete the object sitting on the clicked tile. Only
+    // MapAuthored objects (map-file entries and editor placements) are eligible,
+    // which excludes NPCs, the player, held items and anything the world spawned.
+    if (removeObjectMode) {
+      flecs::entity target = flecs::entity::null();
+      ecs.filter<const GamePosition>().each([&](flecs::entity e,
+                                               const GamePosition &pos) {
+        if (target.is_alive() || pos.x != gPos.x || pos.y != gPos.y) {
+          return;
+        }
+        if (e.has<MapAuthored>() && e.has<ItemType>()) {
+          target = e;
+        }
+      });
+
+      if (target.is_alive()) {
+        const ItemType *itemType = target.get<ItemType>();
+        std::string removedType = itemType ? itemType->id : "object";
+        std::string removedLabel = removedType;
+        if (const DisplayName *displayName = target.get<DisplayName>()) {
+          removedLabel = displayName->name;
+        }
+
+        // Destructed after the query, never during it: destroying while iterating
+        // would invalidate the filter's range.
+        target.destruct();
+
+        lastRemovedObjectName = removedLabel;
+        if (debugLog) {
+          debugLog->LogInfo("Map editor: removed object '" + removedType +
+                            "' at (" + std::to_string(gPos.x) + "," +
+                            std::to_string(gPos.y) + ")");
+        }
+        return;
+      }
+    }
 
     bool clickedWindow = false;
     auto ai = ecs.get<AIBackend>();
@@ -171,7 +254,7 @@ void Game::UpdateGUI() {
                 entity.remove<ActiveWindow>();
               } else {
                 entity.set<ActiveWindow>(
-                    {std::make_shared<AIChatWindow>(ai->ptr.get())});
+                    {std::make_shared<AIChatWindow>(ai->ptr.get(), entity)});
               }
               break;
             case ::WindowType::EntityInfoWindowType:
@@ -273,9 +356,14 @@ void Game::UpdateGUI() {
           });
           
           if (existingObj.is_alive()) {
+            // Overwriting an entity with an editor template makes it authored
+            // content, keyed to whatever the user just chose.
+            existingObj.set<MapAuthored>({editorSelection.name});
             objectFactory.ApplyTemplate(existingObj, editorSelection.name, map.get());
           } else {
-            objectFactory.SpawnObject(ecs, mapEntity, map.get(), editorSelection.name, gPos);
+            // authored = true: editor placement must be written back by the map writer.
+            objectFactory.SpawnObject(ecs, mapEntity, map.get(),
+                                      editorSelection.name, gPos, true);
           }
         }
       }
@@ -324,6 +412,25 @@ void Game::UpdateGUI() {
           }
         });
   }
+
+  // Track the drag past the press so the marked grid follows the mouse. The
+  // pending rectangle is kept normalised (top-left / bottom-right) so the
+  // preview and the naming prompt can read it directly.
+  if (isDraggingLocation) {
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+      Vector2 dragWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
+      locationDragEnd =
+          map->ScreenCoordsToGameCoords(dragWorldPos.x, dragWorldPos.y);
+      pendingLocation.topLeft = {std::min(locationDragStart.x, locationDragEnd.x),
+                                 std::min(locationDragStart.y, locationDragEnd.y)};
+      pendingLocation.bottomRight = {std::max(locationDragStart.x, locationDragEnd.x),
+                                     std::max(locationDragStart.y, locationDragEnd.y)};
+    } else {
+      // The button is already up but the release branch above did not see it
+      // — drop the drag rather than leaving it dangling.
+      isDraggingLocation = false;
+    }
+  }
 }
 
 void Game::Update() {
@@ -338,6 +445,24 @@ void Game::handleInput() {
       cmd->execute(playerEntity);
     }
   }
+}
+
+bool Game::SaveMapToFile() {
+  if (!map) {
+    if (debugLog) {
+      debugLog->LogError("Cannot save map: no map is loaded.");
+    }
+    return false;
+  }
+
+  if (mapFilePath.empty()) {
+    if (debugLog) {
+      debugLog->LogError("Cannot save map: the map file path is unknown.");
+    }
+    return false;
+  }
+
+  return map->SaveToFile(mapFilePath);
 }
 
 void Game::Shutdown() {

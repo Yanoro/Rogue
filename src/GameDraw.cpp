@@ -126,6 +126,34 @@ void Game::Draw() {
           }
         });
 
+    // Live preview of the location rectangle currently being dragged out (and
+    // of the one waiting to be named, so the user can see what they marked).
+    if (isDraggingLocation || pendingLocationWantsFocus || pendingLocationHasFocus) {
+      auto markedTiles = map->GetTilePositionsInRect(
+          pendingLocation.topLeft,
+          pendingLocation.bottomRight.x - pendingLocation.topLeft.x + 1,
+          pendingLocation.bottomRight.y - pendingLocation.topLeft.y + 1);
+
+      for (const auto &pos : markedTiles) {
+        ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
+        DrawRectangle(sPos.x, sPos.y, tileW, tileH, Color{255, 255, 0, 90});
+        DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, YELLOW);
+      }
+
+      ScreenPosition boxPos =
+          map->GameCoordsToScreenCoords(pendingLocation.topLeft.x,
+                                        pendingLocation.topLeft.y);
+      int boxWidth =
+          (pendingLocation.bottomRight.x - pendingLocation.topLeft.x + 1) * tileW;
+      int boxHeight =
+          (pendingLocation.bottomRight.y - pendingLocation.topLeft.y + 1) * tileH;
+      DrawRectangleLinesEx(Rectangle{static_cast<float>(boxPos.x),
+                                     static_cast<float>(boxPos.y),
+                                     static_cast<float>(boxWidth),
+                                     static_cast<float>(boxHeight)},
+                           3.0f, ORANGE);
+    }
+
     if (debugWindowState && debugWindowState->GetShowLocations()) {
       const auto& locations = map->GetLocations();
       Color locationColors[] = { RED, GREEN, BLUE, YELLOW, MAGENTA, ORANGE, PURPLE, PINK };

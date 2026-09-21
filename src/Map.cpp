@@ -3,6 +3,7 @@
 #include "Game.h"
 #include "raylib.h"
 #include "ObjectFactory.h"
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -37,6 +38,10 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
     height = json["mapHeight"];
     tileWidth = json["tileWidth"];
     tileHeight = json["tileHeight"];
+
+    // Kept for saving: everything the editor does not own is written back from
+    // here, so hand-written keys survive. See Map::BuildMapJson.
+    rawMapJson = json;
 
     tileMap.resize(width * height);
 
@@ -83,6 +88,25 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
         auto pos = npcJson["position"];
         data.position = {pos[0], pos[1]};
         data.background = npcJson.value("background", "");
+
+        if (npcJson.contains("inventory")) {
+          for (const auto &itemJson : npcJson["inventory"]) {
+            ItemStack stack;
+            stack.item = itemJson.value("item", "");
+            stack.count = itemJson.value("count", 1);
+            if (stack.item.empty() || stack.count <= 0) {
+              std::string warnStr =
+                  "Warning: NPC '" + data.name +
+                  "' has an invalid inventory entry (empty item or non-positive "
+                  "count); skipping it.\n";
+              if (debugLog) debugLog->LogWarning(warnStr);
+              else std::cerr << warnStr;
+              continue;
+            }
+            data.inventory.push_back(stack);
+          }
+        }
+
         npcs.push_back(data);
       }
     }
@@ -112,7 +136,10 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
           int x = objData.value("x", 0);
           int y = objData.value("y", 0);
           if (!type.empty()) {
-            factoryRes->factory->SpawnObject(ecs, mapEntity, this, type, GamePosition{x, y});
+            // authored = true: these are the map's own objects, so the map
+            // writer must write them back.
+            factoryRes->factory->SpawnObject(ecs, mapEntity, this, type,
+                                             GamePosition{x, y}, true);
           }
         }
       }
@@ -126,8 +153,167 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
   }
 }
 
+nlohmann::json Map::BuildMapJson() const {
+  // Start from the file as loaded so section keys the editor does not manage -
+  // tileInfo above all - and any hand-written extras are carried through.
+  nlohmann::json mapJson = rawMapJson.is_object() ? rawMapJson
+                                                  : nlohmann::json::object();
+
+  mapJson["mapWidth"] = width;
+  mapJson["mapHeight"] = height;
+  mapJson["tileWidth"] = tileWidth;
+  mapJson["tileHeight"] = tileHeight;
+
+  // Tile layout. tileMap is indexed y*width+x but the file stores it
+  // column-major, which is the order Map::Map consumes; see the header note.
+  nlohmann::json positions = nlohmann::json::array();
+  for (int x = 0; x < width; ++x) {
+    for (int y = 0; y < height; ++y) {
+      const Tile *tile = tileMap[GetIndex(x, y)];
+      int tileId = 0;
+      for (size_t i = 0; i < uniqueTiles.size(); ++i) {
+        if (uniqueTiles[i].get() == tile) {
+          tileId = static_cast<int>(i);
+          break;
+        }
+      }
+      positions.push_back(tileId);
+    }
+  }
+  mapJson["positions"] = std::move(positions);
+
+  mapJson["locations"] = nlohmann::json::array();
+  for (const auto &loc : mapLocations) {
+    mapJson["locations"].push_back({
+        {"name", loc->name},
+        {"description", loc->description},
+        {"position", {loc->pos.x, loc->pos.y}},
+        {"hitboxWidth", loc->width},
+        {"hitboxHeight", loc->height},
+    });
+  }
+
+  // Only MapAuthored entities: entities the world spawned at runtime (harvest
+  // drops, crafted items, NPC starting inventory) carry no marker and are left
+  // out, so simulation state never leaks into the file. Positions are sorted so
+  // the output depends on map content, not on ECS allocation order.
+  struct AuthoredObject {
+    std::string type;
+    GamePosition pos;
+  };
+  std::vector<AuthoredObject> authoredObjects;
+  ecs.each([&authoredObjects](flecs::entity, MapAuthored &authored,
+                              const GamePosition &pos) {
+    authoredObjects.push_back({authored.templateKey, pos});
+  });
+  std::sort(authoredObjects.begin(), authoredObjects.end(),
+            [](const AuthoredObject &a, const AuthoredObject &b) {
+              if (a.pos.y != b.pos.y) return a.pos.y < b.pos.y;
+              if (a.pos.x != b.pos.x) return a.pos.x < b.pos.x;
+              return a.type < b.type;
+            });
+
+  mapJson["objects"] = nlohmann::json::array();
+  for (const AuthoredObject &obj : authoredObjects) {
+    mapJson["objects"].push_back(
+        {{"type", obj.type}, {"x", obj.pos.x}, {"y", obj.pos.y}});
+  }
+
+  // NPCs: the raw entries are already in the base document, so they are only
+  // rebuilt when the loaded list no longer matches. Rebuilding unconditionally
+  // from NPCData would drop "inventory", which NPCData does not model.
+  if (!mapJson.contains("npcs") || !mapJson["npcs"].is_array() ||
+      mapJson["npcs"].size() != npcs.size()) {
+    mapJson["npcs"] = nlohmann::json::array();
+    for (const NPCData &npc : npcs) {
+      mapJson["npcs"].push_back({
+          {"name", npc.name},
+          {"position", {npc.position.x, npc.position.y}},
+          {"background", npc.background},
+      });
+    }
+  }
+
+  return mapJson;
+}
+
+bool Map::SaveToFile(const std::string &path) {
+  try {
+    nlohmann::json mapJson = BuildMapJson();
+
+    std::ofstream outFile(path);
+    if (!outFile.is_open()) {
+      std::string errStr = "Cannot open map file for writing: " + path + "\n";
+      if (debugLog) debugLog->LogError(errStr);
+      else std::cerr << errStr;
+      return false;
+    }
+
+    outFile << mapJson.dump(2) << std::endl;
+    outFile.close();
+
+    if (debugLog) {
+      debugLog->LogInfo("Map editor: wrote map to " + path + " (" +
+                        std::to_string(width) + "x" + std::to_string(height) +
+                        " tiles, " + std::to_string(mapLocations.size()) +
+                        " locations, " +
+                        std::to_string(mapJson["objects"].size()) + " objects)");
+    }
+    return true;
+  } catch (const std::exception &e) {
+    std::string errStr =
+        "Failed to write map file " + path + ": " + std::string(e.what()) + "\n";
+    if (debugLog) debugLog->LogError(errStr);
+    else std::cerr << errStr;
+    return false;
+  }
+}
+
 void Map::addTileToMap(Tile *newTile, int x, int y) {
   tileMap[x + (y * width)] = newTile;
+}
+
+Location *Map::AddLocation(const std::string &name,
+                           const std::string &description,
+                           GamePosition topLeft, int width, int height) {
+  auto location = std::make_unique<Location>();
+  location->name = name;
+  location->description = description;
+  location->pos = topLeft;
+  location->width = width;
+  location->height = height;
+
+  mapLocations.push_back(std::move(location));
+  return mapLocations.back().get();
+}
+
+std::string Map::RemoveLocationAt(GamePosition pos) {
+  for (auto it = mapLocations.begin(); it != mapLocations.end(); ++it) {
+    const Location &loc = **it;
+    // Same bounds test GetLocation uses, so removal hits exactly what a lookup
+    // at this position would return.
+    if (pos.x >= loc.pos.x && pos.x <= loc.pos.x + loc.width &&
+        pos.y >= loc.pos.y && loc.height + loc.pos.y >= pos.y) {
+      std::string removedName = loc.name;
+      mapLocations.erase(it);
+      return removedName;
+    }
+  }
+  return "";
+}
+
+std::vector<GamePosition> Map::GetTilePositionsInRect(GamePosition topLeft,
+                                                      int rectWidth,
+                                                      int rectHeight) const {
+  std::vector<GamePosition> tiles;
+  for (int x = topLeft.x; x < topLeft.x + rectWidth; ++x) {
+    for (int y = topLeft.y; y < topLeft.y + rectHeight; ++y) {
+      if (IsInBounds(static_cast<float>(x), static_cast<float>(y))) {
+        tiles.push_back({x, y});
+      }
+    }
+  }
+  return tiles;
 }
 
 Location *Map::GetLocation(GamePosition pos) {
