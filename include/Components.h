@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "ItemStack.hpp"
 #include "Window.h"
 
 struct Render {};
@@ -187,16 +188,6 @@ struct MapAuthored {
   std::string templateKey;
 };
 
-// A counted request for a kind of item: "3 wheat". Lives here rather than in
-// RecipeRegistry.h because it is shared item vocabulary, not crafting-specific
-// — recipes consume it, NPC map definitions spawn it, and a storage API would
-// take it too. Counts are always explicit because the engine stores each unit
-// as its own entity.
-struct ItemStack {
-  std::string item; // ObjectFactory template key, e.g. "wheat"
-  int count = 1;
-};
-
 struct ActiveWindow {
   std::shared_ptr<Window> ptr;
 };
@@ -375,6 +366,21 @@ class RecipeRegistry;
 // Same resource-component pattern as ObjectFactoryResource.
 struct RecipeRegistryResource {
   RecipeRegistry* registry;
+};
+
+// A live trade proposal between exactly two agents. Runtime-only: it holds
+// entity handles, is never serialized, and is deliberately NOT registered with
+// ecs.component<>. It lives on the *offerer*; the responder finds it through its
+// conversation partner.
+//
+// Terms are ItemStacks resolved against real inventories only when the offer is
+// accepted, so an item consumed in the meantime cannot leave a dangling handle.
+// One offer per conversation: a counter-offer replaces the previous one.
+struct TradeOffer {
+  flecs::entity offerer;
+  flecs::entity responder;
+  std::vector<ItemStack> give;    // offerer -> responder if accepted
+  std::vector<ItemStack> receive; // responder -> offerer if accepted
 };
 
 // Reusable reflection support for std::vector

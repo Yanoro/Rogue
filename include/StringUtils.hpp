@@ -48,6 +48,16 @@ inline std::string ToUpper(std::string text) {
   return text;
 }
 
+// Removes leading and trailing whitespace (spaces, tabs, newlines).
+inline std::string Trim(const std::string &text) {
+  size_t begin = text.find_first_not_of(" \t\r\n");
+  if (begin == std::string::npos) {
+    return "";
+  }
+  size_t end = text.find_last_not_of(" \t\r\n");
+  return text.substr(begin, end - begin + 1);
+}
+
 // Splits a trailing item count off a command argument string, so item names that
 // contain spaces still parse: "Wheat Seeds 3" -> {"Wheat Seeds", 3}. A missing or
 // non-positive count means 1, so "Wheat" -> {"Wheat", 1}.

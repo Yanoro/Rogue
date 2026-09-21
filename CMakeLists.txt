@@ -130,6 +130,7 @@ set(SOURCES
     src/AgentBrain.cpp
     src/ObjectFactory.cpp
     src/RecipeRegistry.cpp
+    src/Trading.cpp
 )
 
 add_executable(AIRogue ${SOURCES})

@@ -75,28 +75,32 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
     characterNames.erase(characterNames.length() - 2);
   }
 
+  // Each active command is listed with its own description directly beneath it,
+  // in the same description-then-examples style the interaction registry uses,
+  // so the model sees what a command does next to the command itself.
   std::string commandsList = "";
-  std::string commandsRules = "";
   for (const auto &cmd : GlobalCommandRegistry::GetCommands()) {
     if (cmd.hidden || cmd.format.empty()) continue;
     commandsList += cmd.format + "\n";
     if (!cmd.rule.empty()) {
-      commandsRules += cmd.rule + "\n";
+      commandsList += "  - " + cmd.rule + "\n";
     }
+  }
+  // The template already supplies the blank line that follows the list.
+  if (!commandsList.empty() && commandsList.back() == '\n') {
+    commandsList.pop_back();
   }
 
   std::regex re1("%LOCATIONS%");
   std::regex re2("%BACKGROUND%");
   std::regex re3("%CHARACTERS%");
   std::regex re4("%COMMANDS_LIST%");
-  std::regex re5("%COMMANDS_RULES%");
 
   std::string startingPrompt =
       std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
   startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
-  startingPrompt = std::regex_replace(startingPrompt, re5, commandsRules);
   startingPrompt += "\n";
   entity.set<NPCContext>({ {{"system", startingPrompt}}, ""});
 
@@ -954,7 +958,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[WAIT $SECONDS]",
-    "- Wait for a specific amount of time. 1 in game minute equals to 1 real life second.",
+    "Wait before doing anything else. Examples: [WAIT 5], [WAIT 20].",
     std::regex(R"(\[WAIT\s+(\d+(?:\.\d+)?)\s*\])", std::regex_constants::icase),
     [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       float time = std::stof(match[1].str());
@@ -964,7 +968,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[MOVE_TO $TARGET]",
-    "- Used to pathfind automatically to characters or objects. If the target is an object, you'll be shown a list of interactions.",
+    "Pathfind automatically to a character, location or an object. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
     std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
     [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
@@ -974,7 +978,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[TALK_TO $TARGET]",
-    "- Initiates or continues a conversation with a character. Can only be used when next to the target.",
+    "Start or continue a conversation with a character. Example: [TALK_TO Pietro].",
     std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
     [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
@@ -984,7 +988,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[CHARACTERS]",
-    "- Query all nearby characters.",
+    "List the characters nearby. Example: [CHARACTERS].",
     std::regex(R"(\[CHARACTERS\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<CharactersAction>(); };
@@ -993,7 +997,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[LOCATIONS]",
-    "- Query all known mapped locations.",
+    "List all known mapped locations. Example: [LOCATIONS].",
     std::regex(R"(\[LOCATIONS\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<LocationsAction>(); };
@@ -1002,7 +1006,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[SURROUNDINGS]",
-    "- Look around you to see the immediate area and items/objects.",
+    "Look around you to see the immediate area, its objects and any items lying about. Example: [SURROUNDINGS].",
     std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<SurroundingsAction>(); };
@@ -1011,7 +1015,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[INVENTORY]",
-    "- If you need to see what items you are holding.",
+    "List the items you are currently carrying. Example: [INVENTORY].",
     std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<InventoryAction>(); };
@@ -1020,7 +1024,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[EXAMINE_ITEM $ITEM_NAME]",
-    "- If you want to see what actions you can perform with an item in your inventory, use this command.",
+    "See what actions you can perform with an item you are carrying. Example: [EXAMINE_ITEM Wheat].",
     std::regex(R"(\[EXAMINE_ITEM\s+(.+?)\s*\])", std::regex_constants::icase),
     [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string itemName = match[1].str();
@@ -1036,6 +1040,52 @@ void Game::ECSInit(std::string mapPath) {
       std::string coordsStr = match[1].str();
       std::string seedName = match[2].str();
       return [coordsStr, seedName](flecs::entity) { return std::make_unique<PlantAtAction>(coordsStr, seedName); };
+    },
+    true
+  });
+
+  // Trade verbs. Registered hidden so they are not dumped into every NPC's
+  // spawn prompt; the protocol is taught in the conversation-start message and
+  // each offer carries its own reply options. They sit before
+  // [GENERIC_INTERACT] so an [OFFER ...] is never swallowed by the catch-all,
+  // and they exist mainly to give a useful reply when a model uses one outside
+  // a conversation.
+  GlobalCommandRegistry::Register({
+    "[OFFER $GIVE FOR $RECEIVE]",
+    "- Propose a trade while talking to someone; separate multiple items with commas. Examples: [OFFER 3 Iron Ingot FOR 8 Flour], [OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
+    std::regex(R"(\[OFFER\b[^\]]*\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("OFFER"); };
+    },
+    true
+  });
+
+  GlobalCommandRegistry::Register({
+    "[COUNTER_OFFER $GIVE FOR $RECEIVE]",
+    "- Propose different terms while your partner's offer is pending; separate multiple items with commas. Examples: [COUNTER_OFFER 2 Iron Ingot FOR 10 Flour], [COUNTER_OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
+    std::regex(R"(\[COUNTER_OFFER\b[^\]]*\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("COUNTER_OFFER"); };
+    },
+    true
+  });
+
+  GlobalCommandRegistry::Register({
+    "[ACCEPT]",
+    "- Agree to the trade offer currently on the table.",
+    std::regex(R"(\[ACCEPT\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("ACCEPT"); };
+    },
+    true
+  });
+
+  GlobalCommandRegistry::Register({
+    "[DECLINE]",
+    "- Refuse the trade offer currently on the table.",
+    std::regex(R"(\[DECLINE\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("DECLINE"); };
     },
     true
   });

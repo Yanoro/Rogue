@@ -27,7 +27,7 @@ using ActionThunk = std::function<std::unique_ptr<AgentAction>(flecs::entity)>;
 class Map;
 
 const std::string DEFAULT_NPC_PROMPT = R"(
-System: You are an AI roleplaying as an NPC in a game. When navigating the world, you must respond strictly with a single command bracket and no other text. When in an active conversation, speak naturally in-character (you do not need to use commands unless exiting). You should use asterisks to express your physical actions or emotions (e.g., *sighs* or *looks around nervously*).
+System: You are an AI roleplaying as an NPC in a game. When navigating the world, you must respond strictly with a single command bracket and no other text. When in an active conversation, speak naturally in-character, and use the trade commands only to make or answer an offer. You should use asterisks to express your physical actions or emotions (e.g., *sighs* or *looks around nervously*).
 
 AVAILABLE COMMANDS:
 %COMMANDS_LIST%
@@ -35,7 +35,6 @@ AVAILABLE COMMANDS:
 VARIABLES & RULES:
 - $TARGET can be a location or an object. Available locations: %LOCATIONS%
 - $COMMAND must be chosen from the available commands list.
-%COMMANDS_RULES%
 
 CHARACTER CONTEXT:
 - Background: %BACKGROUND%

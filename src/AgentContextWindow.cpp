@@ -36,6 +36,8 @@ void NPCContextWindow::Draw() {
   } 
 
   ImGui::Checkbox("Auto-scroll", &autoScroll);
+  ImGui::SameLine();
+  ImGui::Checkbox("Show thoughts", &showThoughts);
   ImGui::Separator();
 
   AgentBrainWrapper* brainWrapper = nullptr;
@@ -94,6 +96,16 @@ void NPCContextWindow::Draw() {
 
       if (line.find("<think>") != std::string::npos) {
         inThought = true;
+      }
+
+      // Hiding thoughts is display-only. The block still advances the inThought
+      // state above and below, so a closing tag is consumed even when nothing is
+      // drawn -- otherwise the rest of the reply would be dimmed as a thought.
+      if (inThought && !showThoughts) {
+        if (line.find("</think>") != std::string::npos) {
+          inThought = false;
+        }
+        continue;
       }
 
       size_t start_idx = 0;

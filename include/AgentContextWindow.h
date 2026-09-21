@@ -21,6 +21,9 @@ private:
     std::string name;
     std::string fallbackContext;
     bool autoScroll = true;
+    // Display-only: hides <think>...</think> blocks from the transcript view
+    // without touching NPCContext::history, so the model still sees them.
+    bool showThoughts = true;
     char inputBuf[256] = "";
 
     std::vector<std::string> history;

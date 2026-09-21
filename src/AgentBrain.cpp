@@ -6,6 +6,8 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
+#include "TradeGrammar.hpp"
+#include "Trading.h"
 #include "flecs.h"
 
 #include <any>
@@ -41,9 +43,22 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
 
   AgentBrain *sourceBrain = sourceEntity.get_mut<AgentBrainWrapper>()->agBrain.get();
   if (state == ConversationState::Talking) {
-    sourceBrain->pushContext("user", "System: You are now talking to " + targetName + ". What do you say? To leave the conversation, append [EXIT] to the end of your goodbye message, for example: I have to go now, goodbye! [EXIT]\n");
+    sourceBrain->pushContext(
+        "user",
+        "System: You are now talking to " + targetName +
+            ". What do you say? You can negotiate a trade with [OFFER <what "
+            "you give> FOR <what you want>], for example [OFFER 3 Iron Ingot "
+            "FOR 8 Flour] or [OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot]. "
+            "To leave the conversation, append [EXIT] to the end of your "
+            "goodbye message, for example: I have to go now, goodbye! [EXIT]\n");
   } else {
-    sourceBrain->pushContext("user", "System: " + targetName + " approaches you to talk and is currently speaking. When it is your turn, you can append [EXIT] to the end of your goodbye message (for example: Talk to you later! [EXIT]) to leave the conversation.\n");
+    sourceBrain->pushContext(
+        "user",
+        "System: " + targetName +
+            " approaches you to talk and is currently speaking. When it is "
+            "your turn you can negotiate a trade, and you can append [EXIT] to "
+            "the end of your goodbye message (for example: Talk to you later! "
+            "[EXIT]) to leave the conversation.\n");
   }
 
   if (state == ConversationState::Talking && found) {
@@ -54,7 +69,75 @@ TalkAction::TalkAction(flecs::entity sourceEntity, std::string targetName, Conve
   }
 }
 
+namespace {
+
+// Verbs the conversation parser accepts while two agents are talking. Anything
+// else keeps the "stay in character" rejection, so allowing trade commands did
+// not turn a conversation into free-for-all command spam.
+bool IsConversationVerb(const std::string &verb) {
+  return verb == "OFFER" || verb == "COUNTER_OFFER" || verb == "ACCEPT" ||
+         verb == "DECLINE" || verb == "INVENTORY";
+}
+
+// Consecutive free-look [INVENTORY] calls allowed within a single turn.
+constexpr int kMaxConsecutivePeeks = 3;
+
+// Shown whenever an offer is live, so the model is reminded of the exact reply
+// verbs -- and of the multi-item syntax -- at the moment it has to choose one.
+constexpr const char *kTradeReplyHint =
+    "Reply with [ACCEPT] to agree, [DECLINE] to refuse, [COUNTER_OFFER <what "
+    "you give> FOR <what you receive>] to propose different terms (separate "
+    "multiple items with commas, e.g. [COUNTER_OFFER 2 Flour, 5 Bronze Coins "
+    "FOR 3 Iron Ingot]), or [EXIT] to decline the proposal and end the conversation.";
+
+// The canonical way to write a multi-item offer. Both agents in the first live
+// session invented "+" as a separator and were rejected for it, so the syntax is
+// restated wherever an offer can fail.
+std::string OfferSyntaxHint(const std::string &verb) {
+  return "Write each item as an optional count followed by its name, and "
+         "separate multiple items with commas, for example [" +
+         verb + " 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].";
+}
+
+// "you give 2 Flour, 5 Bronze Coins; you ask for 3 Iron Ingot"
+std::string DescribeTerms(const TradeGrammar::ParsedOffer &parsed) {
+  return "you give " + TradeGrammar::Format(parsed.give) + "; you ask for " +
+         TradeGrammar::Format(parsed.receive);
+}
+
+// Turns a shortfall into readable text. "You have no item called X" and "you are
+// short N X" are deliberately different sentences: conflating the two is what
+// made a mis-parsed list look like a broken inventory.
+std::string DescribeShortfall(const Trading::ShortfallInfo &shortfall) {
+  std::string text;
+  for (const std::string &name : shortfall.unknownItems) {
+    if (!text.empty()) text += ", ";
+    text += "you have no item called '" + name + "'";
+  }
+  for (const ItemStack &stack : shortfall.insufficientStacks) {
+    if (!text.empty()) text += ", ";
+    text += "you are short " + std::to_string(stack.count) + " " + stack.item;
+  }
+  if (text.empty()) {
+    text = "you cannot cover that";
+  }
+  return text;
+}
+
+} // namespace
+
 ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
+  // "Stop brain" has to hold inside a conversation too. TalkAction is the only
+  // action that drives the model itself, so without this guard a stopped pair
+  // keeps talking, trading and spending requests until one of them [EXIT]s:
+  // AgentBrain::update only consults isStopped once the action queue is empty,
+  // and while a conversation is running it never is.
+  if (AgentBrainWrapper *wrapper = entity.get_mut<AgentBrainWrapper>()) {
+    if (wrapper->agBrain && wrapper->agBrain->isStopped) {
+      return ActionStatus::Doing;
+    }
+  }
+
   // Waiting out the backoff after an empty response before asking again. The
   // AIRequest was already dropped, so a fresh one is only created once this
   // reaches zero.
@@ -71,6 +154,8 @@ ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
     } else if (request->finished) {
       
       if (!targetEntity.is_alive() || !targetEntity.has<AgentBrainWrapper>()) {
+        // The partner is gone, so no offer can survive them.
+        Trading::ClearOffersBetween(entity, targetEntity);
         entity.remove<AIRequest>();
         return ActionStatus::Failed;
       }
@@ -106,63 +191,295 @@ ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
             return ActionStatus::Doing;
           }
 
-          std::string response = request->pendingResponse;
-          
-          // Strip out <think> tags so they aren't spoken out loud
-        std::regex thinkRegex(R"(<think>[\s\S]*?<\/think>)", std::regex_constants::icase);
+        std::string response = request->pendingResponse;
+
+        // Strip out <think> tags so they aren't spoken out loud
+        std::regex thinkRegex(R"(<think>[\s\S]*?<\/think>)",
+                              std::regex_constants::icase);
         response = std::regex_replace(response, thinkRegex, "");
+        response = StringUtils::Trim(response);
 
-        // Trim leading and trailing whitespace
-        auto start = response.find_first_not_of(" \n\r\t");
-        if (start != std::string::npos) {
-            response = response.substr(start);
-            response.erase(response.find_last_not_of(" \n\r\t") + 1);
-        } else {
-            response = "";
-        }
-
+        // [EXIT] ends the conversation and also declines any live offer.
         bool exiting = false;
         std::regex exitRegex(R"(\[EXIT\])", std::regex_constants::icase);
         if (std::regex_search(response, exitRegex)) {
-            exiting = true;
-            response = std::regex_replace(response, exitRegex, "");
-            
-            start = response.find_first_not_of(" \n\r\t");
-            if (start != std::string::npos) {
-                response = response.substr(start);
-                response.erase(response.find_last_not_of(" \n\r\t") + 1);
-            } else {
-                response = "";
-            }
+          exiting = true;
+          response = std::regex_replace(response, exitRegex, "");
         }
 
-        std::regex anyCommandRegex(R"(\[.*?\])");
-        bool hasOtherCommand = std::regex_search(response, anyCommandRegex);
-
-        if ((response.empty() && !exiting) || hasOtherCommand) {
-            std::string warning = "System: Warning - you must stay in character during a TalkAction. Provide conversational dialogue, or append [EXIT] to your message to end the conversation.\n";
-            entity.get_mut<AgentBrainWrapper>()->agBrain->pushContext("user", warning);
-            entity.remove<AIRequest>();
-            return ActionStatus::Doing;
+        // Pull the commands out and remove them from the spoken text, so
+        // "Fine, [ACCEPT]" reaches the partner as "Fine,".
+        struct Command {
+          std::string verb;
+          std::string args;
+        };
+        std::vector<Command> commands;
+        static const std::regex commandRegex(R"(\[\s*([A-Za-z_]+)([^\]]*)\])");
+        for (auto it = std::sregex_iterator(response.begin(), response.end(),
+                                            commandRegex);
+             it != std::sregex_iterator(); ++it) {
+          Command command;
+          command.verb = StringUtils::ToUpper((*it)[1].str());
+          command.args = StringUtils::Trim((*it)[2].str());
+          commands.push_back(command);
         }
+        response = std::regex_replace(response, commandRegex, "");
+        const std::string spoken = StringUtils::Trim(response);
 
-        std::string myName = entity.get<DisplayName>()->name;
-        if (!response.empty()) {
-          targetBrain->appendContext("user", myName + " says: " + response + "\n");
+        AgentBrain *selfBrain = entity.get_mut<AgentBrainWrapper>()->agBrain.get();
+        const std::string myName = entity.has<DisplayName>()
+                                       ? entity.get<DisplayName>()->name
+                                       : std::string("Someone");
+
+        // Send the speaker back to the model with a warning, WITHOUT passing the
+        // turn. That is what enforces "a pending offer must be answered".
+        auto rePrompt = [&](const std::string &warning) {
+          selfBrain->pushContext("user", warning);
+          entity.remove<AIRequest>();
+          return ActionStatus::Doing;
+        };
+
+        auto inventoryBlock = [&]() {
+          std::string listing = Trading::DescribeInventory(entity);
+          return listing.empty() ? std::string("nothing.\n") : listing;
+        };
+
+        auto passTurnToPartner = [&]() {
+          consecutivePeeks = 0;
+          this->state = ConversationState::Listening;
+          targetTalk->state = ConversationState::Talking;
+          entity.remove<AIRequest>();
+          return ActionStatus::Doing;
+        };
+
+        if (spoken.empty() && commands.empty() && !exiting) {
+          return rePrompt(
+              "System: Warning - you must stay in character during a TalkAction. "
+              "Provide conversational dialogue, or append [EXIT] to your message "
+              "to end the conversation.\n");
         }
-        entity.remove<AIRequest>();
 
         if (exiting) {
+          Trading::ClearOffersBetween(entity, targetEntity);
+          if (!spoken.empty()) {
+            targetBrain->appendContext("user", myName + " says: " + spoken + "\n");
+          }
+          entity.remove<AIRequest>();
           targetTalk->state = ConversationState::Ended;
           return ActionStatus::Done;
         }
 
-        this->state = ConversationState::Listening;
-        targetTalk->state = ConversationState::Talking;
+        if (commands.size() > 1) {
+          return rePrompt(
+              "System: Warning - issue only one command per message. Use "
+              "[OFFER ...], [ACCEPT], [DECLINE], [COUNTER_OFFER ...], "
+              "[INVENTORY] or [EXIT].\n");
+        }
+        for (const Command &command : commands) {
+          if (!IsConversationVerb(command.verb)) {
+            return rePrompt(
+                "System: Warning - you must stay in character during a "
+                "TalkAction. Speak naturally, or use only the trade commands "
+                "[OFFER ...], [ACCEPT], [DECLINE], [COUNTER_OFFER ...] and "
+                "[INVENTORY]. Append [EXIT] to your goodbye to end the "
+                "conversation.\n");
+          }
+        }
+
+        const std::string verb = commands.empty() ? "" : commands.front().verb;
+        const std::string args = commands.empty() ? "" : commands.front().args;
+
+        // A free look at your own inventory: never consumes the turn, and never
+        // counts as answering a pending offer.
+        if (verb == "INVENTORY") {
+          if (consecutivePeeks >= kMaxConsecutivePeeks) {
+            return rePrompt(
+                "System: You have already checked your inventory " +
+                std::to_string(kMaxConsecutivePeeks) +
+                " times in a row. Answer what was said, or use [OFFER ...], "
+                "[ACCEPT], [DECLINE], [COUNTER_OFFER ...] or [EXIT].\n");
+          }
+          consecutivePeeks++;
+          const std::string listing = Trading::DescribeInventory(entity);
+          selfBrain->appendContext(
+              "user", listing.empty()
+                          ? "System: Your inventory is empty.\n"
+                          : "System: You are currently holding:\n" + listing);
+          entity.remove<AIRequest>();
+          return ActionStatus::Doing;
+        }
+
+        const TradeOffer *pending = Trading::FindOffer(targetEntity, entity);
+
+        // ---- Being offered to: ACCEPT, DECLINE, COUNTER_OFFER or EXIT --------
+        if (pending != nullptr) {
+          if (verb.empty()) {
+            return rePrompt("System: " + targetName +
+                            "'s offer is still on the table and you must answer "
+                            "it. " + kTradeReplyHint + "\n");
+          }
+          if (verb == "OFFER") {
+            return rePrompt(
+                "System: A counter-offer from " + targetName +
+                " is already pending, so a plain [OFFER] cannot be used. Use "
+                "[COUNTER_OFFER <what you give> FOR <what you receive>], "
+                "[DECLINE], [ACCEPT] or [EXIT].\n");
+          }
+          if (verb == "ACCEPT") {
+            // Copy the terms out before anything mutates the component.
+            const TradeOffer offer = *pending;
+            Trading::ShortfallInfo shortfall;
+            const Trading::TradeOutcome outcome =
+                Trading::ExecuteTrade(targetEntity, entity, offer, shortfall);
+            if (outcome == Trading::TradeOutcome::ResponderCannotPay) {
+              return rePrompt(
+                  "System: You cannot accept that offer - " +
+                  DescribeShortfall(shortfall) + ". You are holding:\n" +
+                  inventoryBlock() +
+                  "Refuse it with [DECLINE] or propose different terms with "
+                  "[COUNTER_OFFER ...].\n");
+            }
+            if (outcome == Trading::TradeOutcome::OffererCannotPay) {
+              Trading::ClearOffersBetween(entity, targetEntity);
+              targetBrain->appendContext(
+                  "user",
+                  "System: That trade could not be completed and the offer has "
+                  "been withdrawn.\n");
+              return rePrompt(
+                  "System: That trade could not be completed and the offer has "
+                  "been withdrawn. Continue the conversation.\n");
+            }
+
+            Trading::ClearOffersBetween(entity, targetEntity);
+            if (!spoken.empty()) {
+              targetBrain->appendContext("user",
+                                         myName + " says: " + spoken + "\n");
+            }
+            selfBrain->appendContext(
+                "user", "System: Trade agreed. You gave " +
+                            TradeGrammar::Format(offer.receive) +
+                            " and received " + TradeGrammar::Format(offer.give) +
+                            ".\n");
+            targetBrain->appendContext(
+                "user", "System: Trade agreed. You gave " +
+                            TradeGrammar::Format(offer.give) +
+                            " and received " +
+                            TradeGrammar::Format(offer.receive) + ".\n");
+            return passTurnToPartner();
+          }
+          if (verb == "DECLINE") {
+            Trading::ClearOffersBetween(entity, targetEntity);
+            if (!spoken.empty()) {
+              targetBrain->appendContext("user",
+                                         myName + " says: " + spoken + "\n");
+            }
+            targetBrain->appendContext(
+                "user", "System: " + myName + " declined your offer.\n");
+            return passTurnToPartner();
+          }
+
+          // verb == "COUNTER_OFFER"
+          TradeGrammar::ParsedOffer parsed;
+          const TradeGrammar::ParseResult result =
+              TradeGrammar::Parse(args, parsed);
+          if (result != TradeGrammar::ParseResult::Ok) {
+            return rePrompt("System: Your counter-offer could not be read - " +
+                            TradeGrammar::Explain(result) + ". " +
+                            OfferSyntaxHint("COUNTER_OFFER") +
+                            " The offer from " + targetName +
+                            " still stands.\n");
+          }
+          Trading::CanonicalizeNames(entity, parsed.give);
+          Trading::CanonicalizeNames(entity, parsed.receive);
+          Trading::ShortfallInfo shortfall;
+          if (!Trading::CanAfford(entity, parsed.give, shortfall)) {
+            return rePrompt(
+                "System: You cannot offer that - " +
+                DescribeShortfall(shortfall) +
+                ". I read your counter-offer as: " + DescribeTerms(parsed) +
+                ". You are holding:\n" + inventoryBlock() +
+                OfferSyntaxHint("COUNTER_OFFER") + " The offer from " +
+                targetName + " still stands.\n");
+          }
+          // Only a well-formed, affordable counter replaces the live offer: a
+          // formatting slip must never destroy the negotiation state.
+          Trading::ClearOffersBetween(entity, targetEntity);
+          Trading::SetOffer(entity, targetEntity, parsed.give, parsed.receive);
+          selfBrain->appendContext(
+              "user", "System: You countered " + targetName + ": you give " +
+                          TradeGrammar::Format(parsed.give) + "; you ask for " +
+                          TradeGrammar::Format(parsed.receive) + ".\n");
+          if (!spoken.empty()) {
+            targetBrain->appendContext("user",
+                                       myName + " says: " + spoken + "\n");
+          }
+          targetBrain->appendContext(
+              "user",
+              "System: " + myName + " counters your offer. You would give: " +
+                  TradeGrammar::Format(parsed.receive) +
+                  ". You would receive: " +
+                  TradeGrammar::Format(parsed.give) + ".\n" + kTradeReplyHint +
+                  "\n");
+          return passTurnToPartner();
+        }
+
+        // ---- Nothing pending: ordinary dialogue, or a fresh offer ------------
+        if (verb.empty()) {
+          if (!spoken.empty()) {
+            targetBrain->appendContext("user", myName + " says: " + spoken + "\n");
+          }
+          return passTurnToPartner();
+        }
+
+        if (verb == "OFFER") {
+          TradeGrammar::ParsedOffer parsed;
+          const TradeGrammar::ParseResult result =
+              TradeGrammar::Parse(args, parsed);
+          if (result != TradeGrammar::ParseResult::Ok) {
+            return rePrompt("System: Your offer could not be read - " +
+                            TradeGrammar::Explain(result) + ". " +
+                            OfferSyntaxHint("OFFER") + "\n");
+          }
+          Trading::CanonicalizeNames(entity, parsed.give);
+          Trading::CanonicalizeNames(entity, parsed.receive);
+          Trading::ShortfallInfo shortfall;
+          if (!Trading::CanAfford(entity, parsed.give, shortfall)) {
+            return rePrompt("System: You cannot offer that - " +
+                            DescribeShortfall(shortfall) +
+                            ". I read your offer as: " + DescribeTerms(parsed) +
+                            ". You are holding:\n" + inventoryBlock() +
+                            OfferSyntaxHint("OFFER") + "\n");
+          }
+          Trading::SetOffer(entity, targetEntity, parsed.give, parsed.receive);
+          selfBrain->appendContext(
+              "user", "System: You offered " + targetName + ": you give " +
+                          TradeGrammar::Format(parsed.give) + "; you ask for " +
+                          TradeGrammar::Format(parsed.receive) + ".\n");
+          if (!spoken.empty()) {
+            targetBrain->appendContext("user", myName + " says: " + spoken + "\n");
+          }
+          targetBrain->appendContext(
+              "user",
+              "System: " + myName + " offers a trade. You would give: " +
+                  TradeGrammar::Format(parsed.receive) +
+                  ". You would receive: " +
+                  TradeGrammar::Format(parsed.give) + ".\n" + kTradeReplyHint +
+                  "\n");
+          return passTurnToPartner();
+        }
+
+        // ACCEPT / DECLINE / COUNTER_OFFER with nothing on the table.
+        const std::string what = verb == "ACCEPT"    ? "accept"
+                                 : verb == "DECLINE" ? "decline"
+                                                     : "counter";
+        return rePrompt("System: There is no offer to " + what +
+                        " right now. Use [OFFER <what you give> FOR <what you "
+                        "want>] to propose a trade, or keep talking.\n");
       }
     }
   } else if (state == ConversationState::Listening) {
     if (!targetEntity.is_alive() || !targetEntity.has<AgentBrainWrapper>()) {
+      Trading::ClearOffersBetween(entity, targetEntity);
       return ActionStatus::Failed;
     }
     
@@ -179,6 +496,9 @@ ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
 }
 
 ActionStatus TalkAction::handleInterruption(flecs::entity entity) {
+  // An interrupted conversation takes any live offer down with it, so no stale
+  // offer can be accepted later by a partner who has moved on.
+  Trading::ClearOffersBetween(entity, targetEntity);
   if (entity.has<AIRequest>()) {
     entity.remove<AIRequest>();
   }

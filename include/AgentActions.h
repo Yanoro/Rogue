@@ -50,8 +50,9 @@ public:
           std::string msg = "System: Your previous action was invalid or unrecognized. Please remember to use one of the available commands: ";
           bool first = true;
           for (const auto& cmd : GlobalCommandRegistry::GetCommands()) {
-            // [GENERIC_INTERACT] is internal, skip it
-            if (cmd.format == "[GENERIC_INTERACT]" || cmd.format.empty()) continue;
+            // Hidden verbs (the trade commands, [PLANT_AT], [GENERIC_INTERACT])
+            // are surfaced contextually rather than advertised here.
+            if (cmd.hidden || cmd.format.empty()) continue;
             
             if (!first) msg += ", ";
             msg += cmd.format;
@@ -230,6 +231,40 @@ public:
         // Backoff in milliseconds after an empty response, so a failing provider
         // is not asked again once per frame.
         float retryCooldownMs = 0.0f;
+        // Consecutive free-look [INVENTORY] calls within the current turn. Reset
+        // whenever the turn ends, so the cap only bounds one agent stalling.
+        int consecutivePeeks = 0;
+      };
+
+      // A trade verb emitted outside a conversation has nothing to act on. This
+      // exists purely to tell the model to start a conversation, instead of
+      // handing it the generic "invalid command" reply.
+      class TradeOutOfContextAction : public AgentAction {
+      public:
+        explicit TradeOutOfContextAction(std::string verbName)
+            : verb(verbName) {}
+
+        std::string getActionName() const override { return verb; }
+
+        ActionStatus update(float, flecs::entity) override {
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return "System: [" + verb +
+                 "] only works while you are in a conversation with someone. "
+                 "Use [TALK_TO $TARGET] to start talking, then use the trade "
+                 "commands inside the conversation.\n";
+        }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string verb;
       };
 
       class CharactersAction : public AgentAction {
