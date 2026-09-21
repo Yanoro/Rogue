@@ -499,6 +499,17 @@ void Game::ECSInitActionSystems() {
             map->GameCoordsToScreenCoords(currWaypoint.x, currWaypoint.y);
         currWaypointScreenPos += centerTile;
 
+        ScreenPosition currPosScreen = map->GameCoordsToScreenCoords(currPos.x, currPos.y);
+        currPosScreen += centerTile;
+        if (entCenterScreenPos.Distance(currPosScreen) < 8.0f && currPos != currWaypoint) {
+            tPath.path = AStar(map.get(), currPos, target);
+            if (!tPath.path.empty()) {
+                currWaypoint = tPath.path[0];
+                currWaypointScreenPos = map->GameCoordsToScreenCoords(currWaypoint.x, currWaypoint.y);
+                currWaypointScreenPos += centerTile;
+            }
+        }
+
         Velocity desiredVelocity = static_cast<raylib::Vector2>(
             currWaypointScreenPos - entCenterScreenPos);
         if (desiredVelocity.LengthSqr() > 0) {
