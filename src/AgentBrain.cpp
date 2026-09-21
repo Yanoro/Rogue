@@ -231,6 +231,7 @@ std::string AgentBrain::getContext() const {
 }
 
 void AgentBrain::appendContext(const std::string &role, const std::string &text) {
+  if (text.empty()) return;
   auto ctx = entity.get_mut<NPCContext>();
   bool isNewMessage = true;
   if (!ctx->history.empty() && ctx->history.back().role == role) {

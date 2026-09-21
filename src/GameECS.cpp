@@ -733,6 +733,41 @@ void Game::ECSInitAgentSystems() {
       }
     }
   });
+
+  ecs.system<ActiveHarvest>("ActiveHarvestSystem").iter([this](flecs::iter &it, ActiveHarvest *activeHarvests) {
+    float dt = it.delta_time();
+    for (auto i : it) {
+      activeHarvests[i].timeRemaining -= dt;
+      if (activeHarvests[i].timeRemaining <= 0.0f) {
+        flecs::entity target = activeHarvests[i].target;
+        flecs::entity actor = it.entity(i);
+        actor.world().defer([actor, target, this]() {
+            flecs::entity act = actor;
+            flecs::entity tgt = target;
+            if (act.is_alive()) {
+              act.remove<ActiveHarvest>();
+              if (tgt.is_alive()) {
+                  auto interactions = InteractionRegistry::GetAvailableInteractions(tgt);
+                  for (const auto& interaction : interactions) {
+                      if (interaction.name == "Harvest") {
+                          std::string msg = interaction.execute(act, tgt, "finish");
+                          if (!msg.empty()) {
+                              if (act.has<AgentBrainWrapper>()) {
+                                  act.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
+                              }
+                              if (!act.has<AgentBrainWrapper>() && this->debugLog) {
+                                  this->debugLog->Log(msg);
+                              }
+                          }
+                          break;
+                      }
+                  }
+              }
+            }
+        });
+      }
+    }
+  });
 };
 
 void Game::ECSInit(std::string mapPath) {
@@ -869,6 +904,19 @@ void Game::ECSInit(std::string mapPath) {
       }
 
       if (h->amountRemaining > 0) {
+        if (h->timer > 0.0f && args != "finish") {
+            if (!actor.has<ActiveHarvest>()) {
+                actor.set<ActiveHarvest>({target, h->timer});
+                std::string msg = "System: Started harvesting " + objName + ". It will take " + std::to_string((int)h->timer) + " seconds.\n";
+                if (actor.has<AgentBrainWrapper>()) {
+                    actor.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
+                }
+                return "";
+            } else {
+                return "System: Already harvesting " + objName + ".\n";
+            }
+        }
+
         h->amountRemaining--;
         auto factoryRes = actor.world().get<ObjectFactoryResource>();
         std::string droppedItemsStr = "";

@@ -108,9 +108,7 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
 }
 
 OpenRouterAI::OpenRouterAI(const std::string &apiKey, const std::string &model)
-    : apiKey(apiKey), modelName(model) {
-    setOption("provider", {{"order", {"Fireworks", "Together AI", "DeepInfra"}}});
-}
+    : apiKey(apiKey), modelName(model) {}
 
 void OpenRouterAI::setOption(const std::string &key, const nlohmann::json &value) {
   options[key] = value;
