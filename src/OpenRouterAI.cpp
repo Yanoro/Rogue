@@ -35,6 +35,26 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
     
     try {
       auto j = nlohmann::json::parse(line);
+      if (j.contains("model") && j["model"].is_string()) {
+        std::string modelStr = j["model"].get<std::string>();
+        size_t slashPos = modelStr.find('/');
+        if (slashPos != std::string::npos) {
+            ctx->aiInstance->currentProvider = modelStr.substr(0, slashPos);
+        }
+      }
+      if (j.contains("openrouter_metadata") && j["openrouter_metadata"].is_object()) {
+        auto& metadata = j["openrouter_metadata"];
+        ctx->aiInstance->rawMetadata = metadata.dump(2);
+        if (metadata.contains("endpoints") && metadata["endpoints"].contains("available") && metadata["endpoints"]["available"].is_array() && !metadata["endpoints"]["available"].empty()) {
+            auto& endpoint = metadata["endpoints"]["available"][0];
+            if (endpoint.contains("provider") && endpoint["provider"].is_string()) {
+                ctx->aiInstance->currentProvider = endpoint["provider"].get<std::string>();
+            }
+            if (endpoint.contains("quantization") && endpoint["quantization"].is_string()) {
+                ctx->aiInstance->currentQuantization = endpoint["quantization"].get<std::string>();
+            }
+        }
+      }
       if (j.contains("error")) {
         std::string errStr = "OpenRouter Stream Error: " + j["error"].dump();
         if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
@@ -88,7 +108,9 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
 }
 
 OpenRouterAI::OpenRouterAI(const std::string &apiKey, const std::string &model)
-    : apiKey(apiKey), modelName(model) {}
+    : apiKey(apiKey), modelName(model) {
+    setOption("provider", {{"order", {"Fireworks", "Together AI", "DeepInfra"}}});
+}
 
 void OpenRouterAI::setOption(const std::string &key, const nlohmann::json &value) {
   options[key] = value;
@@ -136,6 +158,7 @@ std::string OpenRouterAI::generate(const std::string &contextId,
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, ("Authorization: Bearer " + apiKey).c_str());
     headers = curl_slist_append(headers, "HTTP-Referer: http://localhost:8080");
+    headers = curl_slist_append(headers, "X-OpenRouter-Metadata: enabled");
     
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());
@@ -181,6 +204,28 @@ std::string OpenRouterAI::generate(const std::string &contextId,
 
   try {
     auto j = nlohmann::json::parse(readBuffer);
+
+    if (j.contains("model") && j["model"].is_string()) {
+        std::string modelStr = j["model"].get<std::string>();
+        size_t slashPos = modelStr.find('/');
+        if (slashPos != std::string::npos) {
+            currentProvider = modelStr.substr(0, slashPos);
+        }
+    }
+    if (j.contains("openrouter_metadata") && j["openrouter_metadata"].is_object()) {
+      auto& metadata = j["openrouter_metadata"];
+      rawMetadata = metadata.dump(2);
+      if (metadata.contains("endpoints") && metadata["endpoints"].contains("available") && metadata["endpoints"]["available"].is_array() && !metadata["endpoints"]["available"].empty()) {
+          auto& endpoint = metadata["endpoints"]["available"][0];
+          if (endpoint.contains("provider") && endpoint["provider"].is_string()) {
+              currentProvider = endpoint["provider"].get<std::string>();
+          }
+          if (endpoint.contains("quantization") && endpoint["quantization"].is_string()) {
+              currentQuantization = endpoint["quantization"].get<std::string>();
+          }
+      }
+    }
+
     std::string resp = "";
     if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
       auto &choice = j["choices"][0];
@@ -282,6 +327,7 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     headers = curl_slist_append(headers, "Content-Type: application/json");
     headers = curl_slist_append(headers, ("Authorization: Bearer " + apiKey).c_str());
     headers = curl_slist_append(headers, "HTTP-Referer: http://localhost:8080");
+    headers = curl_slist_append(headers, "X-OpenRouter-Metadata: enabled");
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, jsonStr.c_str());

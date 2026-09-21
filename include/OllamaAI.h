@@ -44,6 +44,7 @@ public:
   
   std::string getAIName() const override { return "Ollama"; }
   std::string getModelName() const override { return modelName; }
+  std::string getProviderName() const override { return "Local (Ollama)"; }
   
   std::string getAdditionalInfo() const override {
     std::string info;

@@ -40,4 +40,5 @@ public:
 
   std::string getAIName() const override { return "Gemini"; }
   std::string getModelName() const override { return modelName; }
+  std::string getProviderName() const override { return "Google"; }
 };

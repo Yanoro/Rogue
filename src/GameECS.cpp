@@ -991,6 +991,7 @@ void Game::ECSInit(std::string mapPath) {
       return "System: You took the " + itemToTake.get<DisplayName>()->name + ".\n";
   });
 
+
   std::unique_ptr<AI> ai;
   std::ifstream f("model.json");
   // TODO: Add more options

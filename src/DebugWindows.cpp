@@ -765,7 +765,9 @@ void AIMenuWindow::Draw() {
     const AIBackend* backend = game->ecs.get<AIBackend>();
     if (backend && backend->ptr) {
       ImGui::Text("AI Backend: %s", backend->ptr->getAIName().c_str());
+      ImGui::Text("Provider: %s", backend->ptr->getProviderName().c_str());
       ImGui::Text("Model Name: %s", backend->ptr->getModelName().c_str());
+      ImGui::Text("Quantization: %s", backend->ptr->getQuantization().c_str());
       ImGui::Separator();
       ImGui::TextUnformatted(backend->ptr->getAdditionalInfo().c_str());
     } else {

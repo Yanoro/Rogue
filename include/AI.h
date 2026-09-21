@@ -33,6 +33,8 @@ public:
   virtual std::string getContext(const std::string &contextId) = 0;
   virtual std::string getAIName() const = 0;
   virtual std::string getModelName() const = 0;
+  virtual std::string getProviderName() const { return "Unknown"; }
+  virtual std::string getQuantization() const { return "Unknown"; }
   virtual std::string getAdditionalInfo() const { return ""; }
   virtual ~AI() = default;
 };
