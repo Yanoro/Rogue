@@ -9,6 +9,7 @@ pkgs.mkShell {
     git
     aseprite
     clang-tools
+    ccache
   ];
 
   # Libraries the project depends on
