@@ -3,24 +3,20 @@ High:
   Create blacksmith
   Create cook
   Create Mayor
-  Storage solution
-  Helper AI that guides agents on how to accomplish their task
-  Have an easy way to tell which AI openrouter is using
-  Map editing tools
-  Being able to take control over AI's context
-  AI Menu
 
 Medium:
   Make A* not take diagonal paths with walls on either end
   Whenever an entity moving to a location changes tile, use A* again to find a better path
-  Add disable AI by default option
   Add harvest timer
 
 Low:
  Improve map system, change from json to raw binary
+ Make npc context inner window increase as the window increases
+ Add sliding context window to AI so that it doesn't get dumber overtime
 
 Maybe:
   Add possibility for AI to increase radius of surroundings call
+  Helper AI that guides agents on how to accomplish their task
 
  ======
  Current Thoughts:
