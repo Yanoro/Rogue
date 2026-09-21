@@ -716,6 +716,8 @@ void Game::ECSInitAgentSystems() {
     Map* map = nullptr;
 
     for (auto i : it) {
+      if (!evolvables[i].isActive) continue;
+
       evolvables[i].timeRemaining -= dt;
       if (evolvables[i].timeRemaining <= 0.0f) {
         if (!resourcesLoaded) {

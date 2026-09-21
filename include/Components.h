@@ -269,7 +269,10 @@ struct PendingPlayerInteraction {
 struct Evolvable {
   float timeRemaining;
   std::string nextStageTemplate;
+  bool isActive = true;
 };
+
+struct Seed {};
 
 
 struct Holds {};

@@ -3,7 +3,8 @@
   "character": ".",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],
-  "components": ["Evolvable"],
+  "components": ["Evolvable", "Seed"],
   "evolveTime": 10.0,
-  "evolveTarget": "wheat_sprout"
+  "evolveTarget": "wheat_sprout",
+  "isActive": false
 }

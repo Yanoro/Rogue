@@ -48,7 +48,12 @@ void ObjectFactory::RegisterDefaultComponents() {
     Evolvable e;
     e.timeRemaining = tmpl.value("evolveTime", 60.0f);
     e.nextStageTemplate = tmpl.value("evolveTarget", "");
+    e.isActive = tmpl.value("isActive", true);
     obj.set<Evolvable>(e);
+  });
+  
+  RegisterComponent<Seed>("Seed", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    obj.add<Seed>();
   });
 }
 
