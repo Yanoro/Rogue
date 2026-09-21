@@ -7,6 +7,12 @@
 
 class DebugLog;
 
+struct NPCData {
+  std::string name;
+  GamePosition position;
+  std::string background;
+};
+
 class Map {
 public:
   Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog = nullptr);
@@ -31,6 +37,7 @@ public:
   std::vector<std::string> GetAllLocationNames(); 
   const std::vector<std::unique_ptr<Location>>& GetLocations() const { return mapLocations; }
   const std::vector<std::unique_ptr<Tile>>& GetUniqueTiles() const { return uniqueTiles; }
+  const std::vector<NPCData>& GetNPCs() const { return npcs; }
 
   void addTileToMap(Tile *newTile, int x, int y);
   Tile *GetTile(int x, int y); 
@@ -43,6 +50,7 @@ private:
 
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
   std::vector<std::unique_ptr<Location>> mapLocations; 
+  std::vector<NPCData> npcs;
 
   std::vector<Tile *> tileMap;
 

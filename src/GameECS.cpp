@@ -73,14 +73,28 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
     characterNames.erase(characterNames.length() - 2);
   }
 
+  std::string commandsList = "";
+  std::string commandsRules = "";
+  for (const auto &cmd : GlobalCommandRegistry::GetCommands()) {
+    if (cmd.hidden || cmd.format.empty()) continue;
+    commandsList += cmd.format + "\n";
+    if (!cmd.rule.empty()) {
+      commandsRules += cmd.rule + "\n";
+    }
+  }
+
   std::regex re1("%LOCATIONS%");
   std::regex re2("%BACKGROUND%");
   std::regex re3("%CHARACTERS%");
+  std::regex re4("%COMMANDS_LIST%");
+  std::regex re5("%COMMANDS_RULES%");
 
   std::string startingPrompt =
       std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
+  startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
+  startingPrompt = std::regex_replace(startingPrompt, re5, commandsRules);
   startingPrompt += "\n";
   entity.set<NPCContext>({ {{"system", startingPrompt}}, ""});
 
@@ -277,7 +291,7 @@ void Game::ECSInitLogicSystems() {
       });
 }
 
-void Game::LoadMap(std::string mapPath) {
+void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   hasClicked = false;
   validTileSelected = false;
 
@@ -293,6 +307,12 @@ void Game::LoadMap(std::string mapPath) {
   // TODO: Maybe have a better tag instead of velocity
   // to tell when an entity should be teleported out
   if (currentMap) {
+    if (spawnNPCs) {
+      for (const auto& npc : currentMap->GetNPCs()) {
+        createNPC(npc.position, npc.name, npc.background);
+      }
+    }
+
     ecs.filter<Velocity, Hitbox, GamePosition, ScreenPosition>().each(
         [currentMap](const Velocity &, const Hitbox &hitbox, GamePosition &gPos,
                      ScreenPosition &sPos) {
@@ -745,12 +765,123 @@ void Game::ECSInit(std::string mapPath) {
   objectFactory.LoadTemplates("data/objects");
   ecs.set<ObjectFactoryResource>({&objectFactory});
 
-  LoadMap(mapPath);
+  GlobalCommandRegistry::Clear();
+
+  GlobalCommandRegistry::Register({
+    "[WAIT $SECONDS]",
+    "- Wait for a specific amount of time. 1 in game minute equals to 1 real life second.",
+    std::regex(R"(\[WAIT\s+(\d+(?:\.\d+)?)\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      float time = std::stof(match[1].str());
+      return [time](flecs::entity) { return std::make_unique<WaitAction>(time); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[MOVE_TO $TARGET]",
+    "- Used to pathfind automatically to characters or objects. If the target is an object, you'll be shown a list of interactions.",
+    std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string targetName = match[1].str();
+      return [targetName](flecs::entity) { return std::make_unique<MoveToEntityAction>(targetName); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[TALK_TO $TARGET]",
+    "- Initiates or continues a conversation with a character. Can only be used when next to the target.",
+    std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string targetName = match[1].str();
+      return [targetName](flecs::entity entity) { return std::make_unique<TalkAction>(entity, targetName); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[CHARACTERS]",
+    "- Query all nearby characters.",
+    std::regex(R"(\[CHARACTERS\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<CharactersAction>(); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[LOCATIONS]",
+    "- Query all known mapped locations.",
+    std::regex(R"(\[LOCATIONS\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<LocationsAction>(); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[SURROUNDINGS]",
+    "- Look around you to see the immediate area and items/objects.",
+    std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<SurroundingsAction>(); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[INVENTORY]",
+    "- If you need to see what items you are holding.",
+    std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<InventoryAction>(); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[EXAMINE_ITEM $ITEM_NAME]",
+    "- If you want to see what actions you can perform with an item in your inventory, use this command.",
+    std::regex(R"(\[EXAMINE_ITEM\s+(.+?)\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string itemName = match[1].str();
+      return [itemName](flecs::entity) { return std::make_unique<ExamineItemAction>(itemName); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[PLANT_AT X,Y ... $SEED]",
+    "- Plants a seed at one or more relative coordinates.",
+    std::regex(R"(\[PLANT_AT\s+((?:-?\d+,-?\d+\s*)+)\s+(.+)\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string coordsStr = match[1].str();
+      std::string seedName = match[2].str();
+      return [coordsStr, seedName](flecs::entity) { return std::make_unique<PlantAtAction>(coordsStr, seedName); };
+    },
+    true
+  });
+
+  GlobalCommandRegistry::Register({
+    "[GENERIC_INTERACT]",
+    "",
+    std::regex(R"(\[([A-Z_]+)(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string actionName = match[1].str();
+      std::string args = match.size() > 2 ? match[2].str() : "";
+      return [actionName, args](flecs::entity) { return std::make_unique<GenericInteractAction>(actionName, args); };
+    },
+    true
+  });
+
+  LoadMap(mapPath, true);
 
   RegisterComponents(ecs);
 
   InteractionRegistry::Clear();
   
+  ItemInteractionRegistry::Clear();
+  ItemInteractionRegistry::RegisterComponentInteraction<Seed>("Plant", [](flecs::entity actor, flecs::entity item) -> std::string {
+      std::string itemName = item.has<DisplayName>() ? item.get<DisplayName>()->name : "Seed";
+      std::string msg = GetSurroundingsRadar(actor, 2);
+      msg += "\nSystem: To plant " + itemName + ", please use the command [PLANT_AT X,Y X,Y ... " + itemName + "]\n";
+      msg += "where X and Y are relative coordinates from your position (e.g. -1,0 for West, 1,1 for South-East). You can provide multiple coordinates separated by spaces to plant multiple seeds at once.\n";
+      return msg;
+  });
+
   InteractionRegistry::RegisterComponentInteraction<Harvestable>("Harvest", [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
       
@@ -946,7 +1077,7 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitAgentSystems();
   ECSInitActionSystems();
 
-  GamePosition startPlayerPos = {14, 14};
+  GamePosition startPlayerPos = {12, 25};
   playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
 
@@ -969,8 +1100,6 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<CharacterTag>();
 
-  createNPC({20, 1}, "Pietro",
-            "Your name is Pietro, you are a young man that loves apple trees.");
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");

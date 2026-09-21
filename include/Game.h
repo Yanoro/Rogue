@@ -124,7 +124,7 @@ private:
 
   std::unique_ptr<InputHandler> inputHandler;
 
-  void LoadMap(std::string mapPath);
+  void LoadMap(std::string mapPath, bool spawnNPCs = false);
 
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();

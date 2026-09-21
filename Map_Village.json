@@ -3,6 +3,13 @@
   "mapHeight": 64,
   "tileWidth": 32,
   "tileHeight": 32,
+  "npcs": [
+    {
+      "name": "Pietro",
+      "position": [14, 26],
+      "background": "Your name is Pietro, you are an ambitios young farmer living in a remote village. Harvest your wheat crops, store it in the chest inside the farmer's hourse and plant more wheat to increase your farm."
+    }
+  ], 
   "locations": [
     {
       "name": "Town Plaza",

@@ -76,6 +76,17 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
       mapLocations.push_back(std::move(location));
     }
 
+    if (json.contains("npcs")) {
+      for (const auto &npcJson : json["npcs"]) {
+        NPCData data;
+        data.name = npcJson.value("name", "NPC");
+        auto pos = npcJson["position"];
+        data.position = {pos[0], pos[1]};
+        data.background = npcJson.value("background", "");
+        npcs.push_back(data);
+      }
+    }
+
     GamePosition currPos = {0, 0};
 
     for (const int pos : json["positions"]) {
