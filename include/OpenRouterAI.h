@@ -15,6 +15,7 @@ private:
   nlohmann::json options;
   std::string currentProvider = "Unknown";
   std::string currentQuantization = "Unknown";
+  std::string rawMetadata = "";
 
   struct StreamContext {
     StreamCallback callback;
@@ -69,6 +70,9 @@ public:
       }
     } else {
       info += "Options: Default\n";
+    }
+    if (!rawMetadata.empty()) {
+      info += "\nMetadata:\n" + rawMetadata + "\n";
     }
     return info;
   }
