@@ -11,6 +11,8 @@
 #include "Game.h"
 
 #include "AgentBrain.h"
+#include "AgentActions.h"
+#include "GlobalCommandRegistry.h"
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
@@ -398,31 +400,7 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   }
 }
 
-MessageCommand ParseMessageCommand(std::string msg) {
-  // Static means that we don't have to recompile the regex every time
-  // this function gets run
-  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
-                              std::regex_constants::icase);
-  static std::regex talkToRegex(R"(\[TALK_TO\s+(.+?)\s*\])",
-                                std::regex_constants::icase);
-  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
-                                 std::regex_constants::icase);
-  static std::regex charactersRegex(R"(\[CHARACTERS\])",
-                                    std::regex_constants::icase);
-  std::smatch match;
 
-  if (std::regex_search(msg, match, moveRegex)) {
-    return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
-  } else if (std::regex_search(msg, match, talkToRegex)) {
-    return {NPCCommandType::TALK_TO, match[1].str()};
-  } else if (std::regex_search(msg, match, nothingRegex)) {
-    return {NPCCommandType::DO_NOTHING, ""};
-  } else if (std::regex_search(msg, match, charactersRegex)) {
-    return {NPCCommandType::CHARACTERS_QUERY, ""};
-  }
-
-  return {NPCCommandType::INVALID_COMMAND, ""};
-}
 
 void SendNewPrompt(flecs::entity entity, std::string prompt) {
 

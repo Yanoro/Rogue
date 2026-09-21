@@ -10,6 +10,7 @@
 #include <flecs.h>
 #include <string>
 #include "StringUtils.hpp"
+#include "GlobalCommandRegistry.h"
 
 enum class ActionStatus { Doing, Done, Failed, Interrupted };
 
@@ -40,7 +41,18 @@ public:
         }
 
         std::string getSuccessMessage() override {
-          return "System: Your previous action was invalid or unrecognized. Please remember to use one of the available commands: [DO_NOTHING], [MOVE_TO $LOCATION], [TALK_TO $CHARACTER], [CHARACTERS], or [LOCATIONS].\n";
+          std::string msg = "System: Your previous action was invalid or unrecognized. Please remember to use one of the available commands: ";
+          bool first = true;
+          for (const auto& cmd : GlobalCommandRegistry::GetCommands()) {
+            // [GENERIC_INTERACT] is internal, skip it
+            if (cmd.format == "[GENERIC_INTERACT]" || cmd.format.empty()) continue;
+            
+            if (!first) msg += ", ";
+            msg += cmd.format;
+            first = false;
+          }
+          msg += ".\n";
+          return msg;
         }
 
         ActionStatus handleInterruption(flecs::entity) override {
@@ -167,6 +179,18 @@ public:
           });
 
           if (!found) {
+            if (map) {
+              for (const auto& loc : map->GetLocations()) {
+                if (StringUtils::EqualsIgnoreCase(loc->name, targetName)) {
+                  targetPos = loc->pos;
+                  found = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (!found) {
             entity.remove<MOVE_THROUGH_PATH_ACTION>();
             return ActionStatus::Failed;
           }
@@ -190,7 +214,7 @@ public:
         }
 
         std::string getFailureMessage() override {
-          return "System: Could not find character " + targetName + " to move to. What's next?\n";
+          return "System: Could not find character or location " + targetName + " to move to. What's next?\n";
         }
 
         ActionStatus handleInterruption(flecs::entity entity) override {
@@ -308,56 +332,61 @@ private:
         std::string response;
       };
 
+      inline std::string GetSurroundingsRadar(flecs::entity entity, int radius) {
+        const GamePosition currentPos = *entity.get<GamePosition>();
+        Map *map = entity.world().get<MapResource>()->map;
+
+        std::string grid = "";
+        std::map<char, std::string> legend;
+
+        // Mark the agent
+        legend['@'] = "You";
+
+        for (int y = currentPos.y - radius; y <= currentPos.y + radius; ++y) {
+          for (int x = currentPos.x - radius; x <= currentPos.x + radius; ++x) {
+            if (x == currentPos.x && y == currentPos.y) {
+              grid += "@";
+              continue;
+            }
+
+            char tileChar = ' ';
+            if (map && map->IsInBounds(x, y)) {
+              auto tile = map->GetTile(x, y);
+              if (tile) {
+                tileChar = tile->ascii->ch;
+              }
+            }
+
+            bool entityFound = false;
+            entity.world().filter<GamePosition, DrawAscii, DisplayName>().each(
+              [&](flecs::entity other, const GamePosition& pos, const DrawAscii& ascii, const DisplayName& dName) {
+                if (pos.x == x && pos.y == y) {
+                  tileChar = ascii.ch;
+                  legend[tileChar] = dName.name;
+                  entityFound = true;
+                }
+              }
+            );
+
+            grid += tileChar;
+          }
+          grid += "\n";
+        }
+
+        std::string result = "System: Surroundings (" + std::to_string(radius*2+1) + "x" + std::to_string(radius*2+1) + " grid):\n```\n" + grid + "```\nLegend:\n";
+        for (const auto& pair : legend) {
+           result += std::string(1, pair.first) + " = " + pair.second + "\n";
+        }
+        return result;
+      }
+
       class SurroundingsAction : public AgentAction {
       public:
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
-            const GamePosition currentPos = *entity.get<GamePosition>();
-            Map *map = entity.world().get<MapResource>()->map;
-
-            int radius = 2; // 5x5 grid (from -2 to +2)
-            std::string grid = "";
-            std::map<char, std::string> legend;
-
-            // Mark the agent
-            legend['@'] = "You";
-
-            for (int y = currentPos.y - radius; y <= currentPos.y + radius; ++y) {
-              for (int x = currentPos.x - radius; x <= currentPos.x + radius; ++x) {
-                if (x == currentPos.x && y == currentPos.y) {
-                  grid += "@";
-                  continue;
-                }
-
-                char tileChar = ' ';
-                if (map && map->IsInBounds(x, y)) {
-                  auto tile = map->GetTile(x, y);
-                  if (tile) {
-                    tileChar = tile->ascii->ch;
-                  }
-                }
-
-                bool entityFound = false;
-                entity.world().filter<GamePosition, DrawAscii, DisplayName>().each(
-                  [&](flecs::entity other, const GamePosition& pos, const DrawAscii& ascii, const DisplayName& dName) {
-                    if (pos.x == x && pos.y == y) {
-                      tileChar = ascii.ch;
-                      legend[tileChar] = dName.name;
-                      entityFound = true;
-                    }
-                  }
-                );
-
-                grid += tileChar;
-              }
-              grid += "\n";
-            }
-
-            successMsg = "System: Surroundings (5x5 grid):\n```\n" + grid + "```\nLegend:\n";
-            for (const auto& pair : legend) {
-               successMsg += std::string(1, pair.first) + " = " + pair.second + "\n";
-            }
+            successMsg = GetSurroundingsRadar(entity, 2);
+            successMsg += "\nSystem: To interact with an object close to you, you may use the [MOVE_TO $OBJECT] command.\n";
           }
           return ActionStatus::Done;
         }
@@ -412,9 +441,9 @@ private:
         std::string response;
       };
 
-      class InspectItemAction : public AgentAction {
+      class ExamineItemAction : public AgentAction {
       public:
-        InspectItemAction(std::string itemName) : itemName(itemName) {}
+        ExamineItemAction(std::string itemName) : itemName(itemName) {}
 
         ActionStatus update(float, flecs::entity entity) override {
           flecs::entity targetItem = flecs::entity::null();
@@ -433,7 +462,7 @@ private:
           }
 
           std::string objName = targetItem.has<DisplayName>() ? targetItem.get<DisplayName>()->name : "Item";
-          response = "System: You inspected the " + objName + ".\nAvailable actions:\n";
+          response = "System: Available actions for " + objName + ":\n";
 
           auto interactions = ItemInteractionRegistry::GetAvailableInteractions(targetItem);
           if (interactions.empty()) {
@@ -468,26 +497,53 @@ private:
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
-            auto target = entity.get<InteractionTarget>();
-            if (!target || !target->targetEntity.is_alive()) {
-              successMsg = "System: You are not near any interactive object. You must use [MOVE_TO $TARGET] first.\n";
-              return ActionStatus::Done;
-            }
-
-            flecs::entity targetObj = target->targetEntity;
-            auto interactions = InteractionRegistry::GetAvailableInteractions(targetObj);
-
             bool found = false;
-            for (const auto& interaction : interactions) {
-              if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
-                successMsg = interaction.execute(entity, targetObj, commandArgs);
-                found = true;
-                break;
+
+            // 1. Try to see if this is an Item Interaction (Inventory)
+            if (!commandArgs.empty()) {
+              flecs::entity targetItem = flecs::entity::null();
+              entity.each<Holds>([&](flecs::entity child) {
+                if (child.is_alive() && child.has<DisplayName>()) {
+                  if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, commandArgs)) {
+                    targetItem = child;
+                  }
+                }
+              });
+
+              if (targetItem.is_alive()) {
+                auto itemInteractions = ItemInteractionRegistry::GetAvailableInteractions(targetItem);
+                for (const auto& interaction : itemInteractions) {
+                  if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
+                    successMsg = interaction.execute(entity, targetItem);
+                    found = true;
+                    break;
+                  }
+                }
               }
             }
 
+            // 2. Fall back to World Interaction
             if (!found) {
-              successMsg = "System: Invalid command or action not available for this object.\n";
+              auto target = entity.get<InteractionTarget>();
+              if (!target || !target->targetEntity.is_alive()) {
+                successMsg = "System: Invalid command, or you are not near any interactive object. You must use [MOVE_TO $TARGET] first to interact with world objects.\n";
+                return ActionStatus::Done;
+              }
+
+              flecs::entity targetObj = target->targetEntity;
+              auto interactions = InteractionRegistry::GetAvailableInteractions(targetObj);
+
+              for (const auto& interaction : interactions) {
+                if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
+                  successMsg = interaction.execute(entity, targetObj, commandArgs);
+                  found = true;
+                  break;
+                }
+              }
+
+              if (!found) {
+                successMsg = "System: Invalid command or action not available for this object.\n";
+              }
             }
           }
           return ActionStatus::Done;
@@ -506,6 +562,93 @@ private:
       private:
         std::string commandName;
         std::string commandArgs;
+        bool isFirstUpdate = true;
+        std::string successMsg;
+      };
+
+      class PlantAtAction : public AgentAction {
+      public:
+        PlantAtAction(std::string coordsStr, std::string seedName) : coordsStr(coordsStr), seedName(seedName) {}
+
+        ActionStatus update(float, flecs::entity entity) override {
+          if (isFirstUpdate) {
+            isFirstUpdate = false;
+            
+            // Parse coordinates
+            std::vector<std::pair<int, int>> coords;
+            std::istringstream iss(coordsStr);
+            std::string coord;
+            while (iss >> coord) {
+              size_t comma = coord.find(',');
+              if (comma != std::string::npos) {
+                try {
+                  int x = std::stoi(coord.substr(0, comma));
+                  int y = std::stoi(coord.substr(comma + 1));
+                  coords.push_back({x, y});
+                } catch (...) {
+                  // ignore invalid
+                }
+              }
+            }
+
+            if (coords.empty()) {
+              successMsg = "System: Invalid coordinates format. Use [PLANT_AT X,Y ... " + seedName + "]\n";
+              return ActionStatus::Done;
+            }
+
+            int plantedCount = 0;
+            GamePosition currentPos = *entity.get<GamePosition>();
+
+            for (auto& c : coords) {
+              flecs::entity seedItem = flecs::entity::null();
+              entity.each<Holds>([&](flecs::entity child) {
+                if (!seedItem.is_alive() && child.is_alive() && child.has<DisplayName>()) {
+                  if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, seedName)) {
+                    seedItem = child;
+                  }
+                }
+              });
+
+              if (!seedItem.is_alive()) {
+                successMsg += "System: You ran out of " + seedName + " after planting " + std::to_string(plantedCount) + ".\n";
+                break;
+              }
+
+              // Plant it
+              entity.remove<Holds>(seedItem);
+              seedItem.remove(flecs::ChildOf, entity);
+              seedItem.remove<Portable>();
+              if (seedItem.has<Evolvable>()) {
+                seedItem.get_mut<Evolvable>()->isActive = true;
+              }
+              
+              GamePosition pos = {currentPos.x + c.first, currentPos.y + c.second};
+              seedItem.set<GamePosition>(pos);
+              seedItem.set<ScreenPosition>(entity.world().get<MapResource>()->map->GameCoordsToScreenCoords(pos.x, pos.y));
+              
+              plantedCount++;
+            }
+
+            if (plantedCount > 0) {
+              successMsg += "System: You successfully planted " + std::to_string(plantedCount) + " " + seedName + ".\n";
+            }
+          }
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override {
+          return successMsg;
+        }
+        
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+        
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string coordsStr;
+        std::string seedName;
         bool isFirstUpdate = true;
         std::string successMsg;
       };

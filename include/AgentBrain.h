@@ -14,50 +14,22 @@
 
 constexpr float DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS = 10.0f;
 
-enum class NPCCommandType {
-  INVALID_COMMAND,
-  DO_NOTHING,
-  MOVE_TO_LOCATION,
-  TALK_TO,
-  CHARACTERS_QUERY,
-  LOCATIONS_QUERY,
-  SURROUNDINGS_QUERY,
-  INVENTORY_QUERY,
-  INSPECT_ITEM_QUERY,
-  GENERIC_INTERACT,
-};
-
 #include "AgentActions.h"
 
 using ActionThunk = std::function<std::unique_ptr<AgentAction>(flecs::entity)>;
 
 class Map;
 
-struct MessageCommand {
-  NPCCommandType type;
-  std::any params;
-};
-
 const std::string DEFAULT_NPC_PROMPT = R"(
 System: You are an AI roleplaying as an NPC in a game. When navigating the world, you must respond strictly with a single command bracket and no other text. When in an active conversation, speak naturally in-character (you do not need to use commands unless exiting). You should use asterisks to express your physical actions or emotions (e.g., *sighs* or *looks around nervously*).
 
 AVAILABLE COMMANDS:
-[DO_NOTHING]
-[MOVE_TO $TARGET]
-[TALK_TO $CHARACTER]
-[CHARACTERS]
-[LOCATIONS]
-[SURROUNDINGS]
-[INVENTORY]
-[INSPECT_ITEM $ITEM_NAME]
+%COMMANDS_LIST%
 
 VARIABLES & RULES:
 - $TARGET can be a location or an object. Available locations: %LOCATIONS%
 - $COMMAND must be chosen from the available commands list.
-- To see nearby objects you can move to, issue the [OBJECTS] command.
-- If you need to know who is nearby to talk to, issue the [CHARACTERS] command.
-- If you need to remind yourself of the available locations in the world, issue the [LOCATIONS] command.
-- If you need to see what items you are holding, issue the [INVENTORY] command.
+%COMMANDS_RULES%
 
 CHARACTER CONTEXT:
 - Background: %BACKGROUND%
@@ -71,8 +43,8 @@ public:
 
   void ForceInterruptAndPush(std::unique_ptr<AgentAction> action);
 
-  MessageCommand ParseMessageCommand(std::string msg);
-  void addCmdToQueue(MessageCommand msgCmd);
+  ActionThunk ParseMessageCommand(std::string msg);
+  void addCmdToQueue(ActionThunk actionThunk);
   void interruptCurrentAction();
   void resumeAction();
   void injectNextAction(ActionThunk actionThunk);

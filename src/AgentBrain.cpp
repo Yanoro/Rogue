@@ -187,7 +187,9 @@ void AgentBrain::ForceInterruptAndPush(std::unique_ptr<AgentAction> action) {
   currentAction = std::move(action);
 }
 
-MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
+#include "GlobalCommandRegistry.h"
+
+ActionThunk AgentBrain::ParseMessageCommand(std::string msg) {
   // Strip out <think> tags before parsing to avoid matching thoughts
   std::regex thinkRegex(R"(<think>[\s\S]*?<\/think>)", std::regex_constants::icase);
   std::string strippedMsg = std::regex_replace(msg, thinkRegex, "");
@@ -198,53 +200,22 @@ MessageCommand AgentBrain::ParseMessageCommand(std::string msg) {
   auto words_end = std::sregex_iterator();
   if (std::distance(words_begin, words_end) > 1) {
     appendContext("user", "System: Warning - you issued multiple commands at once. You must only issue one command at a time.\n");
-    return {NPCCommandType::INVALID_COMMAND, ""};
+    return [](flecs::entity) { return std::make_unique<InvalidAction>(); };
   }
 
-  // Static means that we don't have to recompile every time
-  // this function gets run
-  static std::regex moveRegex(R"(\[MOVE_TO\s+(.+?)\s*\])",
-                              std::regex_constants::icase);
-  static std::regex nothingRegex(R"(\[DO_NOTHING\])",
-                                 std::regex_constants::icase);
-  static std::regex charactersRegex(R"(\[CHARACTERS\])",
-                                    std::regex_constants::icase);
-  static std::regex locationsRegex(R"(\[LOCATIONS\])",
-                                   std::regex_constants::icase);
-  static std::regex surroundingsRegex(R"(\[SURROUNDINGS\])",
-                                  std::regex_constants::icase);
-  static std::regex talkToRegex(R"(\[TALK_TO\s+(.+?)\s*\])",
-                                std::regex_constants::icase);
-  static std::regex inventoryRegex(R"(\[INVENTORY\])",
-                                   std::regex_constants::icase);
-  static std::regex inspectItemRegex(R"(\[INSPECT_ITEM\s+(.+?)\s*\])",
-                                     std::regex_constants::icase);
-  static std::regex genericCommandRegex(R"(\[([A-Z_]+)(?:\s+(.+?))?\s*\])",
-                                        std::regex_constants::icase);
-  std::smatch match;
-
-  if (std::regex_search(strippedMsg, match, moveRegex)) {
-    return {NPCCommandType::MOVE_TO_LOCATION, match[1].str()};
-  } else if (std::regex_search(strippedMsg, match, nothingRegex)) {
-    return {NPCCommandType::DO_NOTHING, ""};
-  } else if (std::regex_search(strippedMsg, match, charactersRegex)) {
-    return {NPCCommandType::CHARACTERS_QUERY, ""};
-  } else if (std::regex_search(strippedMsg, match, locationsRegex)) {
-    return {NPCCommandType::LOCATIONS_QUERY, ""};
-  } else if (std::regex_search(strippedMsg, match, surroundingsRegex)) {
-    return {NPCCommandType::SURROUNDINGS_QUERY, ""};
-  } else if (std::regex_search(strippedMsg, match, inventoryRegex)) {
-    return {NPCCommandType::INVENTORY_QUERY, ""};
-  } else if (std::regex_search(strippedMsg, match, inspectItemRegex)) {
-    return {NPCCommandType::INSPECT_ITEM_QUERY, match[1].str()};
-  } else if (std::regex_search(strippedMsg, match, talkToRegex)) {
-    return {NPCCommandType::TALK_TO, match[1].str()};
-  } else if (std::regex_search(strippedMsg, match, genericCommandRegex)) {
-    std::pair<std::string, std::string> args = {match[1].str(), match.size() > 2 ? match[2].str() : ""};
-    return {NPCCommandType::GENERIC_INTERACT, args};
+  for (const auto& cmd : GlobalCommandRegistry::GetCommands()) {
+    std::smatch match;
+    if (std::regex_search(strippedMsg, match, cmd.pattern)) {
+      if (cmd.format != "[GENERIC_INTERACT]") {
+        if (entity.has<InteractionTarget>()) {
+          entity.remove<InteractionTarget>();
+        }
+      }
+      return cmd.createAction(match);
+    }
   }
 
-  return {NPCCommandType::INVALID_COMMAND, ""};
+  return [](flecs::entity) { return std::make_unique<InvalidAction>(); };
 }
 
 std::string AgentBrain::getContext() const {
@@ -344,151 +315,8 @@ void AgentBrain::injectNextAction(ActionThunk actionThunk) {
   }
 }
 
-void AgentBrain::addCmdToQueue(MessageCommand msgCmd) {
-  // Clear InteractionTarget if we are doing anything other than interacting
-  if (msgCmd.type != NPCCommandType::GENERIC_INTERACT) {
-    if (entity.has<InteractionTarget>()) {
-      entity.remove<InteractionTarget>();
-    }
-  }
-
-  // Clear LastObjectsQuery if we are doing anything other than moving to a location or querying objects
-  if (msgCmd.type != NPCCommandType::MOVE_TO_LOCATION && msgCmd.type != NPCCommandType::SURROUNDINGS_QUERY) {
-    if (entity.has<LastObjectsQuery>()) {
-      entity.remove<LastObjectsQuery>();
-    }
-  }
-
-  switch (msgCmd.type) {
-  case (NPCCommandType::DO_NOTHING): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<WaitAction>(DEFAULT_DO_NOTHING_COMMAND_SLEEP_TIME_SECONDS);
-    });
-    break;
-  }
-  case (NPCCommandType::MOVE_TO_LOCATION): {
-    Map *currMap = entity.world().get<MapResource>()->map;
-    Location *loc =
-        currMap->GetLocation(std::any_cast<std::string>(msgCmd.params));
-    if (loc != nullptr) {
-      GamePosition targetPos = loc->pos;
-      action_queue.push_back([targetPos](flecs::entity) {
-        return std::make_unique<MoveAction>(targetPos);
-      });
-    } else {
-      std::string targetName = std::any_cast<std::string>(msgCmd.params);
-      flecs::entity targetObj = flecs::entity::null();
-      
-      bool isNumber = !targetName.empty();
-      for (char c : targetName) {
-        if (!std::isdigit(static_cast<unsigned char>(c))) {
-          isNumber = false;
-          break;
-        }
-      }
-
-      if (isNumber) {
-        int targetIndex = std::stoi(targetName) - 1;
-        if (const LastObjectsQuery* lastObjects = entity.get<LastObjectsQuery>()) {
-          if (targetIndex >= 0 && static_cast<size_t>(targetIndex) < lastObjects->objects.size()) {
-            targetObj = lastObjects->objects[targetIndex];
-          }
-        }
-        
-        // Consume the query so it can't be reused for stale locations
-        if (entity.has<LastObjectsQuery>()) {
-          entity.remove<LastObjectsQuery>();
-        }
-      } else {
-        entity.world().filter<Interactable, DisplayName, GamePosition>().each([&](flecs::entity e, Interactable&, DisplayName& dName, GamePosition&) {
-          if (StringUtils::EqualsIgnoreCase(dName.name, targetName)) {
-             targetObj = e;
-          }
-        });
-      }
-      
-      if (targetObj.is_alive()) {
-         GamePosition* objPos = targetObj.get_mut<GamePosition>();
-         action_queue.push_back([objPos, targetObj](flecs::entity) {
-           return std::make_unique<MoveToObjectAction>(*objPos, targetObj);
-         });
-      } else {
-         addCmdToQueue({NPCCommandType::INVALID_COMMAND, ""});
-      }
-    }
-    break;
-  }
-  case (NPCCommandType::TALK_TO): {
-    std::string targetName = std::any_cast<std::string>(msgCmd.params);
-    
-    bool found = false;
-    entity.world().filter<DisplayName>().each(
-        [&](const DisplayName &name) {
-          if (StringUtils::EqualsIgnoreCase(name.name, targetName)) {
-            found = true;
-          }
-        });
-
-    if (found) {
-      action_queue.push_back([targetName](flecs::entity) {
-        return std::make_unique<MoveToEntityAction>(targetName);
-      });
-      action_queue.push_back([targetName](flecs::entity sourceEnt) {
-        return std::make_unique<TalkAction>(sourceEnt, targetName, ConversationState::Talking);
-      });
-    } else {
-      addCmdToQueue({NPCCommandType::INVALID_COMMAND, ""});
-    }
-    break;
-  }
-  case (NPCCommandType::CHARACTERS_QUERY): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<CharactersAction>();
-    });
-    break;
-  }
-  case (NPCCommandType::LOCATIONS_QUERY): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<LocationsAction>();
-    });
-    break;
-  }
-
-  case (NPCCommandType::SURROUNDINGS_QUERY): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<SurroundingsAction>();
-    });
-    break;
-  }
-  case (NPCCommandType::INVENTORY_QUERY): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<InventoryAction>();
-    });
-    break;
-  }
-  case (NPCCommandType::INSPECT_ITEM_QUERY): {
-    std::string itemName = std::any_cast<std::string>(msgCmd.params);
-    action_queue.push_back([itemName](flecs::entity) {
-      return std::make_unique<InspectItemAction>(itemName);
-    });
-    break;
-  }
-  case (NPCCommandType::GENERIC_INTERACT): {
-    auto args = std::any_cast<std::pair<std::string, std::string>>(msgCmd.params);
-    action_queue.push_back([args](flecs::entity) {
-      return std::make_unique<GenericInteractAction>(args.first, args.second);
-    });
-    break;
-  }
-  case (NPCCommandType::INVALID_COMMAND): {
-    action_queue.push_back([](flecs::entity) {
-      return std::make_unique<InvalidAction>();
-    });
-    break;
-  }
-  default:
-    break;
-  }
+void AgentBrain::addCmdToQueue(ActionThunk actionThunk) {
+  action_queue.push_back(std::move(actionThunk));
 }
 
 void AgentBrain::update(float deltaTime) {
@@ -528,9 +356,9 @@ void AgentBrain::update(float deltaTime) {
 
   std::string responseText = request->pendingResponse;
   
-  MessageCommand msgCmd = ParseMessageCommand(responseText);
+  ActionThunk actionThunk = ParseMessageCommand(responseText);
   
-  addCmdToQueue(msgCmd);
+  addCmdToQueue(actionThunk);
 
   entity.remove<AIRequest>();
 }
