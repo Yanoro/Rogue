@@ -503,19 +503,19 @@ void Game::ECSInitActionSystems() {
           
           if (auto pendingInt = entity.get<PendingPlayerInteraction>()) {
             if (pendingInt->targetEntity.is_alive()) {
-              auto interactions = InteractionRegistry::GetAvailableInteractions(pendingInt->targetEntity);
-              for (const auto& interaction : interactions) {
-                if (interaction.name == pendingInt->interactionName) {
-                  std::string msg = interaction.execute(entity, pendingInt->targetEntity, "");
-                  if (debugLog && !msg.empty()) debugLog->Log(msg);
-                  // Examining a container also opens the storage window, so the
-                  // player sees the contents as ascii instead of only reading
-                  // the log line.
-                  if (interaction.name == "Examine" &&
-                      pendingInt->targetEntity.has<Storage>()) {
-                    OpenStorageWindow(pendingInt->targetEntity);
+              if (pendingInt->interactionName == DEFAULT_SEE_INVENTORY_OPTION) {
+                // Player-only QOL option, not an InteractionRegistry entry, so
+                // it is handled here instead of the lookup below. Unlike the
+                // [EXAMINE] interaction it only opens the read-only window.
+                OpenStorageWindow(pendingInt->targetEntity);
+              } else {
+                auto interactions = InteractionRegistry::GetAvailableInteractions(pendingInt->targetEntity);
+                for (const auto& interaction : interactions) {
+                  if (interaction.name == pendingInt->interactionName) {
+                    std::string msg = interaction.execute(entity, pendingInt->targetEntity, "");
+                    if (debugLog && !msg.empty()) debugLog->Log(msg);
+                    break;
                   }
-                  break;
                 }
               }
             }
@@ -1759,7 +1759,6 @@ void Game::ECSInit(std::string mapPath) {
   mapEditorWindowEntity = ecs.entity("Map Editor Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
-  storageWindowEntity = ecs.entity("Storage Window");
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -1812,14 +1811,37 @@ void Game::ECSInit(std::string mapPath) {
 }
 
 void Game::OpenStorageWindow(flecs::entity container) {
-  if (!storageWindowEntity.is_alive()) {
+  if (!container.is_alive()) {
     return;
   }
-  // This is called from inside the movement system's iteration, so the
-  // structural change (adding ActiveWindow) is deferred to the end of the
-  // stage. Setting rather than adding replaces any previously examined chest.
+  // This can be called from inside a system's iteration (the pending
+  // interaction resolver) or from a window's draw pass, so the structural
+  // changes are deferred to the end of the stage.
   ecs.defer([this, container]() {
-    storageWindowEntity.set<ActiveWindow>(
-        {std::make_shared<StorageWindow>(container, storageWindowEntity)});
+    // Reuse the carrier entity if this container already has a window, so
+    // asking to see the same inventory again does not stack a duplicate. A
+    // closed window keeps its carrier (with StorageWindowTarget, without
+    // ActiveWindow) and is woken back up here.
+    flecs::entity carrier = flecs::entity::null();
+    ecs.filter<const StorageWindowTarget>().each(
+        [&](flecs::entity owner, const StorageWindowTarget &target) {
+          if (carrier.is_alive()) {
+            return;
+          }
+          if (target.container == container) {
+            carrier = owner;
+          }
+        });
+
+    if (!carrier.is_alive()) {
+      // One carrier per inventory, so several windows can be open at once.
+      carrier = ecs.entity();
+      carrier.set<StorageWindowTarget>({container});
+    }
+
+    if (!carrier.has<ActiveWindow>()) {
+      carrier.set<ActiveWindow>(
+          {std::make_shared<StorageWindow>(container, carrier)});
+    }
   });
 }

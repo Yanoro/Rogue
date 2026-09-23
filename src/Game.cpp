@@ -403,13 +403,22 @@ void Game::UpdateGUI() {
     GamePosition gPos = map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
 
     bool found = false;
-    ecs.filter<Interactable, const GamePosition>().each(
-        [this, &gPos, &found](flecs::entity entity, const Interactable &, const GamePosition &pos) {
-          if (!found && gPos.x == pos.x && gPos.y == pos.y) {
-            contextMenuTarget = entity;
-            openContextMenu = true;
-            found = true;
+    // Both interactable objects and characters open the player context menu.
+    // The player itself is excluded: its own inventory is not exposed this way.
+    ecs.filter<const GamePosition>().each(
+        [this, &gPos, &found](flecs::entity entity, const GamePosition &pos) {
+          if (found || entity == playerEntity) {
+            return;
           }
+          if (gPos.x != pos.x || gPos.y != pos.y) {
+            return;
+          }
+          if (!entity.has<Interactable>() && !entity.has<CharacterTag>()) {
+            return;
+          }
+          contextMenuTarget = entity;
+          openContextMenu = true;
+          found = true;
         });
   }
 

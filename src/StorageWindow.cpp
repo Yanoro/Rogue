@@ -45,8 +45,10 @@ void StorageWindow::Draw() {
   std::string title =
       container.has<DisplayName>() ? container.get<DisplayName>()->name
                                    : "Storage";
-  // The "###" id keeps ImGui's window state stable across examined containers.
-  title += "###StorageWindow";
+  // The "###" id keys ImGui's per-window state to this container; including the
+  // container id keeps several inventory windows distinct so they can be open at
+  // the same time instead of collapsing into one.
+  title += "###StorageWindow" + std::to_string(container.id());
 
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(300, 260), ImGuiCond_FirstUseEver);
@@ -93,10 +95,15 @@ void StorageWindow::Draw() {
     entries.push_back(entry);
   });
 
-  const int capacity =
-      container.has<Storage>() ? container.get<Storage>()->capacity : 0;
-  ImGui::TextDisabled("%d / %d slots, %d distinct", usedSlots, capacity,
-                      static_cast<int>(entries.size()));
+  // A character has no Storage component, only containers do, so the capacity
+  // is only meaningful there. Showing "N / 0 slots" for an NPC would be wrong.
+  if (const Storage *storage = container.get<Storage>()) {
+    ImGui::TextDisabled("%d / %d slots, %d distinct", usedSlots,
+                        storage->capacity, static_cast<int>(entries.size()));
+  } else {
+    ImGui::TextDisabled("%d item(s), %d distinct", usedSlots,
+                        static_cast<int>(entries.size()));
+  }
   ImGui::Separator();
 
   if (entries.empty()) {

@@ -39,22 +39,44 @@ void Game::DrawGameWindows() {
       ImGui::TextDisabled("%s", objName.c_str());
       ImGui::Separator();
 
-      if (interactions.empty()) {
+      // Any option first walks the player to the object, then runs on arrival
+      // (see the MOVE_THROUGH_PATH_ACTION system in GameECS.cpp).
+      auto selectInteraction = [this](const std::string &interactionName) {
+        // Cancel any old interaction first
+        playerEntity.remove<PendingPlayerInteraction>();
+
+        // Pathfind to the object
+        if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
+          if (const GamePosition *tPos = contextMenuTarget.get<GamePosition>()) {
+            std::vector<GamePosition> path = AStar(map.get(), *pPos, *tPos);
+            playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
+            playerEntity.set<PendingPlayerInteraction>(
+                {contextMenuTarget, interactionName});
+          }
+        }
+      };
+
+      // "See Inventory" is a player-side QOL shortcut for anything that holds
+      // items: Storage containers and characters. It is not an
+      // InteractionRegistry entry on purpose, so it never shows up in the
+      // commands the AI is offered or can issue.
+      const bool hasSeeInventory = contextMenuTarget.has<Storage>() ||
+                                   contextMenuTarget.has<CharacterTag>();
+
+      if (interactions.empty() && !hasSeeInventory) {
         ImGui::Text("No actions available");
       } else {
         for (const auto& interaction : interactions) {
           if (ImGui::Selectable(interaction.name.c_str())) {
-            // Cancel any old interaction first
-            playerEntity.remove<PendingPlayerInteraction>();
-            
-            // Pathfind to the object
-            if (const GamePosition *pPos = playerEntity.get<GamePosition>()) {
-              if (const GamePosition *tPos = contextMenuTarget.get<GamePosition>()) {
-                std::vector<GamePosition> path = AStar(map.get(), *pPos, *tPos);
-                playerEntity.set<MOVE_THROUGH_PATH_ACTION>({path});
-                playerEntity.set<PendingPlayerInteraction>({contextMenuTarget, interaction.name});
-              }
-            }
+            selectInteraction(interaction.name);
+          }
+        }
+        if (hasSeeInventory) {
+          if (!interactions.empty()) {
+            ImGui::Separator();
+          }
+          if (ImGui::Selectable(DEFAULT_SEE_INVENTORY_OPTION)) {
+            selectInteraction(DEFAULT_SEE_INVENTORY_OPTION);
           }
         }
       }

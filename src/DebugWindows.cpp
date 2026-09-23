@@ -1098,8 +1098,9 @@ void NPCMenuWindow::Draw() {
 
     // Applied after the iteration so we do not mutate the ECS while querying it.
     flecs::entity contextToToggle = flecs::entity::null();
+    flecs::entity inventoryToOpen = flecs::entity::null();
 
-    if (ImGui::BeginTable("NPCMenuTable", 6,
+    if (ImGui::BeginTable("NPCMenuTable", 7,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Resizable |
                               ImGuiTableFlags_ScrollY |
@@ -1114,10 +1115,13 @@ void NPCMenuWindow::Draw() {
                               ImGuiTableColumnFlags_WidthFixed, 80.0f);
       ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed,
                               130.0f);
+      ImGui::TableSetupColumn("Inventory",
+                              ImGuiTableColumnFlags_WidthFixed, 90.0f);
       ImGui::TableHeadersRow();
 
       game->ecs.filter<AgentBrainWrapper>().each(
-          [&contextToToggle, this](flecs::entity npc, AgentBrainWrapper &wrapper) {
+          [&contextToToggle, &inventoryToOpen,
+           this](flecs::entity npc, AgentBrainWrapper &wrapper) {
             if (!npc.is_alive()) {
               return;
             }
@@ -1191,6 +1195,12 @@ void NPCMenuWindow::Draw() {
             if (ImGui::Button(buttonLabel.c_str())) {
               contextToToggle = npc;
             }
+
+            ImGui::TableNextColumn();
+            std::string inventoryLabel = "Open##inventory" + idStr;
+            if (ImGui::Button(inventoryLabel.c_str())) {
+              inventoryToOpen = npc;
+            }
           });
 
       ImGui::EndTable();
@@ -1203,6 +1213,12 @@ void NPCMenuWindow::Draw() {
         contextToToggle.set<ActiveWindow>(
             {std::make_shared<NPCContextWindow>(contextToToggle)});
       }
+    }
+
+    // Opens the same read-only held-items window the "See Inventory"
+    // context-menu option uses.
+    if (inventoryToOpen.is_alive()) {
+      game->OpenStorageWindow(inventoryToOpen);
     }
   }
   ImGui::End();

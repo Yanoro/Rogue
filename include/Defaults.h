@@ -56,6 +56,13 @@ constexpr size_t DEFAULT_ENTITY_HITBOX_HEIGHT = 16;
 constexpr size_t DEFAULT_ENTITY_VISUAL_WIDTH = 16;
 constexpr size_t DEFAULT_ENTITY_VISUAL_HEIGHT = 16; 
 
+// Player-only context-menu option that opens the held-items window for a
+// Storage container or a character. It is deliberately NOT registered in
+// InteractionRegistry: the AI must never see or issue it. Produced by
+// Game::DrawGameWindows and consumed by the PendingPlayerInteraction handling in
+// GameECS.cpp.
+constexpr const char *DEFAULT_SEE_INVENTORY_OPTION = "See Inventory";
+
 // Timed-action progress bar, drawn just below the entity that is acting.
 constexpr float DEFAULT_ACTION_BAR_HEIGHT = 4.0f;
 constexpr float DEFAULT_ACTION_BAR_OFFSET_Y = 4.0f;

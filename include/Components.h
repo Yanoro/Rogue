@@ -192,6 +192,14 @@ struct ActiveWindow {
   std::shared_ptr<Window> ptr;
 };
 
+// Marks the entity that carries one inventory window's ActiveWindow, tying it
+// back to the container/character it displays. Each open inventory has its own
+// such entity, which is how several stay on screen at once; OpenStorageWindow
+// also uses this to find an already-open window instead of stacking a duplicate.
+struct StorageWindowTarget {
+  flecs::entity container;
+};
+
 struct AIBackend {
   std::unique_ptr<AI> ptr;
 };
@@ -477,6 +485,7 @@ inline void RegisterComponents(flecs::world &ecs) {
       .member<unsigned char>("a");
 
   ecs.component<ActiveWindow>();
+  ecs.component<StorageWindowTarget>();
   ecs.component<PendingPlayerInteraction>();
   ecs.component<LastObjectsQuery>();
 
