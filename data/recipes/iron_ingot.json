@@ -1,10 +1,19 @@
 {
   "name": "Iron Ingot",
   "inputs": [
-    {"item": "iron_ore", "count": 1}
+    {
+      "item": "iron_ore",
+      "count": 1
+    }
   ],
   "outputs": [
-    {"item": "iron_ingot", "chance": 1.0}
+    {
+      "item": "iron_ingot",
+      "chance": 1.0
+    }
   ],
-  "craftTime": 3.0
+  "craftTime": 3.0,
+  "trains": {
+    "blacksmithing": 5
+  }
 }

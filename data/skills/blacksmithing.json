@@ -1,0 +1,10 @@
+{
+  "name": "Blacksmithing",
+  "description": "Working iron at the forge. A craft learned at the anvil, and one that no amount of baking will ever teach.",
+  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "levelsPerStage": 9,
+  "xpPerStage": [150, 450, 1350, 4050, 12150],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": ["craft"]
+}

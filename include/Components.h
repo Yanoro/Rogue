@@ -9,6 +9,10 @@
 #include <vector>
 
 #include "ItemStack.hpp"
+#include "LootDrop.hpp"
+#include "SkillTypes.h"
+#include "SkillXp.hpp"
+#include "StatTypes.h"
 #include "Window.h"
 
 struct Render {};
@@ -201,6 +205,14 @@ struct StorageWindowTarget {
   flecs::entity container;
 };
 
+// Same idea for the character status window: one carrier per character, because
+// a character's own ActiveWindow slot is already taken by whichever chat or
+// entity-info window is open on it. Kept so reopening reuses the carrier instead
+// of stacking a second window on the same character.
+struct CharacterStatusWindowTarget {
+  flecs::entity character;
+};
+
 struct AIBackend {
   std::unique_ptr<AI> ptr;
 };
@@ -261,11 +273,6 @@ struct INVALID_ACTION {};
 // Object Components
 struct Interactable {
   bool active = true;
-};
-
-struct LootDrop {
-  std::string itemType;
-  float chance;
 };
 
 struct LootTable {
@@ -372,6 +379,16 @@ struct Evolvable {
 
 struct Seed {};
 
+// What harvesting this object teaches, and by how much. The subject-side half of
+// skill progression: the skill itself only declares which activities may train
+// it, while the amount and the choice of skill live next to the thing being
+// harvested. Absent on objects that teach nothing.
+//
+// Same shape and purpose as CraftRecipe::trains, which is the recipe-side half.
+struct Trains {
+  std::vector<SkillXp> grants;
+};
+
 
 struct Holds {};
 
@@ -390,6 +407,29 @@ class RecipeRegistry;
 // Same resource-component pattern as ObjectFactoryResource.
 struct RecipeRegistryResource {
   RecipeRegistry* registry;
+};
+
+class StatRegistry;
+// Character stat definitions, loaded once at init from data/stats/*.json and
+// read through StatView (see StatRegistry.h, StatView.hpp). Same
+// resource-component pattern as RecipeRegistryResource: components carry stat
+// ids and values, definitions live only in the registry.
+struct StatRegistryResource {
+  StatRegistry* registry;
+};
+
+class SkillRegistry;
+// Skill definitions, loaded once at init from data/skills/*.json (see
+// SkillRegistry.h). Same resource-component pattern as StatRegistryResource.
+struct SkillRegistryResource {
+  SkillRegistry* registry;
+};
+
+class HookRegistry;
+// Named C++ effects, registered once at init and referenced by id from stat data
+// (see Hooks.hpp). Same resource-component pattern as StatRegistryResource.
+struct HookRegistryResource {
+  HookRegistry* hooks;
 };
 
 // A live trade proposal between exactly two agents. Runtime-only: it holds
@@ -495,6 +535,30 @@ inline void RegisterComponents(flecs::world &ecs) {
 
   ecs.component<std::vector<Frame>>().opaque(std_vector_support<Frame>);
 
+  // StatBlock reflection. StatValue is registered before the vector that holds
+  // it, for the same reason std::string is registered before anything that
+  // reflects it: flecs resolves a member's type at registration time, so
+  // reflecting vector<StatValue> first would leave it pointing at a type with no
+  // EcsMetaType.
+  ecs.component<StatValue>().member<std::string>("id").member<float>("value");
+  ecs.component<std::vector<StatValue>>().opaque(
+      std_vector_support<StatValue>);
+  ecs.component<StatBlock>().member<std::vector<StatValue>>("values");
+
+  // SkillBlock reflection, registered on the same terms and for the same reason:
+  // SkillValue before the vector that holds it.
+  ecs.component<SkillValue>()
+      .member<std::string>("id")
+      .member<int>("level")
+      .member<int>("xp");
+  ecs.component<std::vector<SkillValue>>().opaque(
+      std_vector_support<SkillValue>);
+  ecs.component<SkillBlock>().member<std::vector<SkillValue>>("values");
+
+  ecs.component<SkillXp>().member<std::string>("skillId").member<int>("xp");
+  ecs.component<std::vector<SkillXp>>().opaque(std_vector_support<SkillXp>);
+  ecs.component<Trains>().member<std::vector<SkillXp>>("grants");
+
   ecs.component<Color>()
       .member<unsigned char>("r")
       .member<unsigned char>("g")
@@ -503,6 +567,7 @@ inline void RegisterComponents(flecs::world &ecs) {
 
   ecs.component<ActiveWindow>();
   ecs.component<StorageWindowTarget>();
+  ecs.component<CharacterStatusWindowTarget>();
   ecs.component<PendingPlayerInteraction>();
   ecs.component<LastObjectsQuery>();
 

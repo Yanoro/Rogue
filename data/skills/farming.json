@@ -1,0 +1,13 @@
+{
+  "name": "Farming",
+  "description": "Working the soil and bringing in a crop. Learned by harvesting, and the difference between a field that feeds a village and one that feeds a family.",
+  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "levelsPerStage": 9,
+  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": ["harvest"],
+  "effects": [
+    { "point": "duration", "activity": "harvest", "op": "pct", "perPoint": -0.10 }
+  ]
+}

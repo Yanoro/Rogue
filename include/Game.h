@@ -13,7 +13,10 @@
 #include "Defaults.h"
 #include "MapReloader.h"
 #include "AgentBrain.h"
+#include "Hooks.hpp"
 #include "RecipeRegistry.h"
+#include "SkillRegistry.h"
+#include "StatRegistry.h"
 
 enum class EditorSelectionType {
   None,
@@ -71,6 +74,9 @@ private:
   std::unique_ptr<Map> map;
   ObjectFactory objectFactory;
   RecipeRegistry recipeRegistry;
+  StatRegistry statRegistry;
+  SkillRegistry skillRegistry;
+  HookRegistry hookRegistry;
 
   flecs::world ecs;
   flecs::entity renderPipeline;
@@ -177,6 +183,11 @@ private:
   // window, so several can be open at once; re-opening one that is already on
   // screen is a no-op.
   void OpenStorageWindow(flecs::entity container);
+
+  // Opens the read-only window showing a character's name, starting context,
+  // stats and skills. Like OpenStorageWindow it gets its own carrier entity, so
+  // several can be open at once and reopening one already on screen is a no-op.
+  void OpenCharacterStatusWindow(flecs::entity character);
 
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();

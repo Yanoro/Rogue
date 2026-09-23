@@ -5,6 +5,7 @@
 
 #include "Map.h"
 #include "DebugLog.h"
+#include "TrainingParsing.h"
 
 ObjectFactory::ObjectFactory() {
   RegisterDefaultComponents();
@@ -55,6 +56,32 @@ void ObjectFactory::RegisterDefaultComponents() {
   
   RegisterComponent<Seed>("Seed", [](flecs::entity obj, const nlohmann::json& tmpl) {
     obj.add<Seed>();
+  });
+
+  // What harvesting this object teaches. The subject-side half of skill
+  // progression, so an object that teaches nothing simply omits the component --
+  // harvesting an iron vein trains no skill today.
+  //
+  // ItemType is readable here because ApplyTemplate stamps it before running the
+  // component setters, which is what lets the warning name the template.
+  RegisterComponent<Trains>("Trains", [this](flecs::entity obj, const nlohmann::json& tmpl) {
+    if (!tmpl.contains("trains")) {
+      return;
+    }
+    const std::string owner =
+        obj.has<ItemType>() ? obj.get<ItemType>()->id : std::string("object");
+
+    Trains trains;
+    auto warn = [this](const std::string& message) {
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    };
+    ParseTrainingGrants(tmpl["trains"], "Object template '" + owner + "'",
+                        trains.grants, warn);
+
+    if (!trains.grants.empty()) {
+      obj.set<Trains>(trains);
+    }
   });
 }
 

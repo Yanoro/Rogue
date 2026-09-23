@@ -1,10 +1,19 @@
 {
   "name": "Bread",
   "inputs": [
-    {"item": "flour", "count": 2}
+    {
+      "item": "flour",
+      "count": 2
+    }
   ],
   "outputs": [
-    {"item": "bread", "chance": 1.0}
+    {
+      "item": "bread",
+      "chance": 1.0
+    }
   ],
-  "craftTime": 4.0
+  "craftTime": 4.0,
+  "trains": {
+    "cooking": 4
+  }
 }

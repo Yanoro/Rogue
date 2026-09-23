@@ -1,5 +1,7 @@
 #include "EntityInfoWindow.h"
 #include "Components.h"
+#include "SkillRegistry.h"
+#include "StatRegistry.h"
 #include "imgui.h"
 #include "Map.h"
 
@@ -73,6 +75,83 @@ void EntityInfoWindow::Draw() {
     float f = friction->value;
     if (ImGui::DragFloat("Friction", &f)) {
       entity.set<Friction>({f});
+    }
+  }
+
+  if (const StatBlock *block = entity.get<StatBlock>()) {
+    ImGui::Separator();
+    ImGui::Text("Stats:");
+
+    const StatRegistry *registry = nullptr;
+    if (auto registryRes = entity.world().get<StatRegistryResource>()) {
+      registry = registryRes->registry;
+    }
+
+    // Editable so the simulation can be poked while it runs. The baseline is
+    // printed next to each value so "neutral" is visible rather than implied:
+    // whatever the baseline is, that value produces no effect.
+    StatBlock edited = *block;
+    bool changed = false;
+    for (StatValue &value : edited.values) {
+      const StatDef *def = registry ? registry->Get(value.id) : nullptr;
+      const float lo = def ? def->min : 0.0f;
+      const float hi = def ? def->max : 100.0f;
+
+      ImGui::PushID(value.id.c_str());
+      float v = value.value;
+      if (ImGui::DragFloat(value.id.c_str(), &v, 0.1f, lo, hi)) {
+        value.value = v;
+        changed = true;
+      }
+      ImGui::PopID();
+
+      if (def) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("base %.0f", def->baseline);
+      }
+    }
+    if (changed) {
+      entity.set<StatBlock>(edited);
+    }
+  }
+
+  if (const SkillBlock *block = entity.get<SkillBlock>()) {
+    ImGui::Separator();
+    ImGui::Text("Skills:");
+
+    const SkillRegistry *registry = nullptr;
+    if (auto registryRes = entity.world().get<SkillRegistryResource>()) {
+      registry = registryRes->registry;
+    }
+
+    // Editable, like the stats above: being able to set a level is the only way
+    // to see a skill's effect without playing through the progression. The stage
+    // is derived, so it follows the level as you drag it rather than being a
+    // second field to keep in sync.
+    SkillBlock edited = *block;
+    bool changed = false;
+    for (SkillValue &value : edited.values) {
+      const SkillDef *def = registry ? registry->Get(value.id) : nullptr;
+
+      ImGui::PushID(value.id.c_str());
+      int level = value.level;
+      if (ImGui::DragInt(value.id.c_str(), &level, 1.0f, 0,
+                         def ? def->MaxLevel() : 100)) {
+        value.level = level;
+        changed = true;
+      }
+      ImGui::PopID();
+
+      if (def) {
+        ImGui::SameLine();
+        ImGui::TextDisabled(
+            "%s %d/%d  (%d xp)",
+            def->StageName(def->StageForLevel(value.level)).c_str(),
+            def->LevelWithinStage(value.level), def->levelsPerStage, value.xp);
+      }
+    }
+    if (changed) {
+      entity.set<SkillBlock>(edited);
     }
   }
 

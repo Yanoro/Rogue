@@ -4,15 +4,37 @@
   "components": [
     "Interactable",
     "Harvestable",
-    "Obstacle"
+    "Obstacle",
+    "Trains"
   ],
   "amountRemaining": 5,
   "timer": 5.0,
   "drops": [
-    {"item": "apple", "chance": 1.0}
+    {
+      "item": "apple",
+      "chance": 1.0
+    }
   ],
   "character": "T",
-  "characterColor": [34, 139, 34, 255],
-  "backgroundColor": [0, 0, 0, 0],
-  "nameTagColor": [34, 139, 34, 255]
+  "characterColor": [
+    34,
+    139,
+    34,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    34,
+    139,
+    34,
+    255
+  ],
+  "trains": {
+    "farming": 3
+  }
 }

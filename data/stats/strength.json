@@ -1,0 +1,8 @@
+{
+  "name": "Strength",
+  "description": "Raw physical power. Heavy work comes easier to the strong, and they can carry more before it slows them down.",
+  "baseline": 10,
+  "scale": 1,
+  "min": 1,
+  "max": 20
+}

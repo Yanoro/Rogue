@@ -1,0 +1,8 @@
+{
+  "name": "Charisma",
+  "description": "Force of personality. Bends a negotiation, and decides whether a fair offer is read as fair or as an insult.",
+  "baseline": 10,
+  "scale": 1,
+  "min": 1,
+  "max": 20
+}

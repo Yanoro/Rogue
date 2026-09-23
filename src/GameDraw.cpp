@@ -63,7 +63,13 @@ void Game::DrawGameWindows() {
       const bool hasSeeInventory = contextMenuTarget.has<Storage>() ||
                                    contextMenuTarget.has<CharacterTag>();
 
-      if (interactions.empty() && !hasSeeInventory) {
+      // "Show Status" is the same kind of player-side shortcut, offered for any
+      // character. It opens straight away rather than walking the player over
+      // first, because reading a character sheet is inspection rather than an
+      // action on the world.
+      const bool hasShowStatus = contextMenuTarget.has<CharacterTag>();
+
+      if (interactions.empty() && !hasSeeInventory && !hasShowStatus) {
         ImGui::Text("No actions available");
       } else {
         for (const auto& interaction : interactions) {
@@ -77,6 +83,14 @@ void Game::DrawGameWindows() {
           }
           if (ImGui::Selectable(DEFAULT_SEE_INVENTORY_OPTION)) {
             selectInteraction(DEFAULT_SEE_INVENTORY_OPTION);
+          }
+        }
+        if (hasShowStatus) {
+          if (!interactions.empty() || hasSeeInventory) {
+            ImGui::Separator();
+          }
+          if (ImGui::Selectable(DEFAULT_SHOW_STATUS_OPTION)) {
+            OpenCharacterStatusWindow(contextMenuTarget);
           }
         }
       }

@@ -1,0 +1,11 @@
+{
+  "name": "Dexterity",
+  "description": "Fine control and quick hands. Matters wherever speed and precision do, from bringing in a harvest to finishing a piece of work.",
+  "baseline": 10,
+  "scale": 1,
+  "min": 1,
+  "max": 20,
+  "effects": [
+    { "point": "duration", "activity": "harvest", "op": "pct", "perPoint": -0.02 }
+  ]
+}

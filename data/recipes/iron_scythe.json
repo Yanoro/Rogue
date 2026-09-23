@@ -1,10 +1,19 @@
 {
   "name": "Iron Scythe",
   "inputs": [
-    {"item": "iron_ingot", "count": 3}
+    {
+      "item": "iron_ingot",
+      "count": 3
+    }
   ],
   "outputs": [
-    {"item": "iron_scythe", "chance": 1.0}
+    {
+      "item": "iron_scythe",
+      "chance": 1.0
+    }
   ],
-  "craftTime": 8.0
+  "craftTime": 8.0,
+  "trains": {
+    "blacksmithing": 8
+  }
 }

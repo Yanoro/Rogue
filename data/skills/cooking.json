@@ -1,0 +1,10 @@
+{
+  "name": "Cooking",
+  "description": "Turning stores into meals. Learned at the mill and the oven, and the reason a village eats better than it farms.",
+  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "levelsPerStage": 9,
+  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": ["craft"]
+}

@@ -13,10 +13,13 @@
 
 #include "AgentBrain.h"
 #include "AgentActions.h"
+#include "CharacterStatusWindow.h"
 #include "GlobalCommandRegistry.h"
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
+#include "EffectResolver.hpp"
 #include "Rng.hpp"
+#include "SkillTraining.hpp"
 #include "StringUtils.hpp"
 #include "flecs.h"
 #include "imgui.h"
@@ -32,6 +35,47 @@
 #include <queue>
 #include <regex>
 #include <vector>
+
+// Gives a character the full standard stat set at its neutral values.
+//
+// Every value is the registry baseline, so a freshly spawned character is
+// mechanically neutral: nothing is faster or slower until something raises a
+// stat. A future race that lacks a stat will simply omit it from this list, and
+// the baseline fallback in StatView makes that omission harmless -- which is why
+// there is deliberately no "default block" to keep in sync anywhere.
+static void GiveDefaultStats(flecs::entity character,
+                             const StatRegistry *registry) {
+  if (!registry) {
+    return;
+  }
+  StatBlock block;
+  for (const StatDef *def : registry->GetAll()) {
+    block.values.push_back({def->id, def->baseline});
+  }
+  character.set<StatBlock>(block);
+}
+
+// Gives a character every registered skill, untrained.
+//
+// Every character carries the full skill list at level 0, the way it carries the
+// full stat list at baseline. An absent skill means the same thing as level 0 --
+// untrained, and therefore neutral -- so this exists for visibility and to keep
+// the block's shape uniform, not because the effect system requires it.
+static void GiveStartingSkills(flecs::entity character,
+                               const SkillRegistry *registry) {
+  if (!registry) {
+    return;
+  }
+  SkillBlock block;
+  for (const SkillDef *def : registry->GetAll()) {
+    SkillValue value;
+    value.id = def->id;
+    value.level = 0;
+    value.xp = 0;
+    block.values.push_back(value);
+  }
+  character.set<SkillBlock>(block);
+}
 
 // TODO: Adding checks to see if we are not repeating values seems like a good
 // idea for instance we can't have two npcs with the same name
@@ -61,6 +105,15 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
           .add<BlocksTile>();
 
   entity.add<CharacterTag>();
+
+  // Stamped before the brain is built, so the agent's prompt and every later
+  // resolution see a complete and neutral sheet.
+  if (auto registryRes = ecs.get<StatRegistryResource>()) {
+    GiveDefaultStats(entity, registryRes->registry);
+  }
+  if (auto skillRes = ecs.get<SkillRegistryResource>()) {
+    GiveStartingSkills(entity, skillRes->registry);
+  }
 
   std::string locations = "";
   std::string characterNames = "";
@@ -768,7 +821,7 @@ Rng NextRollStream(flecs::world world) {
 // paths used to carry near-identical copies of this loop, which is exactly how
 // an effect applied to one path and not the other would have gone unnoticed.
 std::vector<std::string> RollLootTable(flecs::entity actor,
-                                       const std::vector<LootDrop> &drops,
+                                       const std::vector<LootEntry> &entries,
                                        ObjectFactory *factory, Rng &rng) {
   std::vector<std::string> dropped;
   if (!factory) {
@@ -777,26 +830,49 @@ std::vector<std::string> RollLootTable(flecs::entity actor,
   // flecs::world is a handle returned by value, so it cannot bind directly to
   // SpawnObject's flecs::world& parameter.
   flecs::world world = actor.world();
-  for (const LootDrop &drop : drops) {
+  for (const LootEntry &entry : entries) {
     // One roll per entry, in table order, engine-owned: an effect hook may
     // adjust a chance but must never roll the same entry itself.
-    if (!rng.Chance(drop.chance)) {
+    if (!rng.Chance(entry.chance)) {
       continue;
     }
     flecs::entity item =
-        factory->SpawnObject(world, actor, nullptr, drop.itemType);
+        factory->SpawnObject(world, actor, nullptr, entry.itemType);
     if (!item.is_alive()) {
       continue;
     }
     actor.add<Holds>(item);
-    dropped.push_back(drop.itemType);
+    dropped.push_back(entry.itemType);
   }
   return dropped;
 }
 
-// Comma-joined list of dropped item type ids. Empty when nothing dropped, so
-// each caller can decide how to phrase "nothing" (harvest says "nothing",
-// crafting says "nothing came out of it").
+// The registries every resolution needs, gathered in one place so a call site
+// cannot forget one and silently resolve as if nothing had any effect. Any of
+// them may be absent in a half-initialised world; the fallbacks keep the failure
+// mode "nothing changes" rather than "nothing works".
+struct ResolutionInputs {
+  SourceDefinitions definitions;
+  const HookRegistry *hooks = nullptr;
+};
+
+ResolutionInputs MakeResolutionInputs(flecs::world world) {
+  auto statsRes = world.get<StatRegistryResource>();
+  auto skillRes = world.get<SkillRegistryResource>();
+  auto hooksRes = world.get<HookRegistryResource>();
+
+  static const HookRegistry noHooks;
+  ResolutionInputs inputs;
+  inputs.definitions = SourceDefinitions(
+      statsRes ? statsRes->registry : nullptr,
+      skillRes ? skillRes->registry : nullptr);
+  inputs.hooks = (hooksRes && hooksRes->hooks) ? hooksRes->hooks : &noHooks;
+  return inputs;
+}
+
+// Comma-joined list of item type ids. Empty when there are none, so each caller
+// can decide how to phrase "nothing" (harvest says "nothing", crafting says
+// "nothing came out of it").
 std::string JoinItemTypes(const std::vector<std::string> &itemTypes) {
   std::string joined;
   for (const std::string &itemType : itemTypes) {
@@ -808,6 +884,90 @@ std::string JoinItemTypes(const std::vector<std::string> &itemTypes) {
   return joined;
 }
 
+// What one harvest produced: the items, and any skill progress it earned.
+//
+// Kept together so a caller can report both in one message, in the right order.
+// Granting inside the helper is what keeps the two harvest paths from drifting;
+// returning the progress rather than appending it is what lets the caller put the
+// skill line AFTER the harvest line instead of before it.
+struct HarvestOutcome {
+  std::string droppedItems;
+  std::vector<SkillGain> training;
+};
+
+// Applies a subject's training grants to the actor, if it teaches anything.
+//
+// Called from the commit points themselves rather than by their callers, so an
+// action that never commits earns nothing: a cancelled craft and the [CRAFT]
+// dry run both never reach here.
+std::vector<SkillGain> ApplySubjectTraining(flecs::entity actor,
+                                            const std::vector<SkillXp> &grants,
+                                            const std::string &activity) {
+  if (grants.empty()) {
+    return {};
+  }
+  auto skillRes = actor.world().get<SkillRegistryResource>();
+  if (!skillRes || !skillRes->registry) {
+    return {};
+  }
+  SkillBlock *block = actor.get_mut<SkillBlock>();
+  if (!block) {
+    return {};
+  }
+  return ApplyTraining(*block, grants, *skillRes->registry, activity);
+}
+
+// Resolves the loot table for one harvest and rolls it, returning the item type
+// ids that dropped. Internal to HarvestResult below.
+std::vector<std::string> HarvestDrops(flecs::entity actor, flecs::entity target,
+                                      const std::vector<LootDrop> &base) {
+  ObjectFactory *factory = nullptr;
+  if (auto factoryRes = actor.world().get<ObjectFactoryResource>()) {
+    factory = factoryRes->factory;
+  }
+
+  std::vector<LootEntry> table = ToLootEntries(base);
+
+  const ResolutionInputs inputs = MakeResolutionInputs(actor.world());
+
+  LootRequest request;
+  request.activity = "harvest";
+  request.subjectId = target.has<ItemType>() ? target.get<ItemType>()->id : "";
+  request.subject = target;
+
+  table = ResolveLoot(actor, request, base, inputs.definitions, *inputs.hooks)
+              .entries;
+
+  Rng rng = NextRollStream(actor.world());
+  return RollLootTable(actor, table, factory, rng);
+}
+
+// Resolves and rolls one harvest, and applies whatever the object teaches.
+//
+// BOTH harvest commit sites go through here -- the timed resolution and the
+// instant fallback. They used to carry separate copies of this sequence, and that
+// is precisely how an effect, or a training grant, ends up applying to a timed
+// harvest and silently doing nothing on an instant one.
+HarvestOutcome HarvestResult(flecs::entity actor, flecs::entity target,
+                             const std::vector<LootDrop> &base) {
+  HarvestOutcome outcome;
+  outcome.droppedItems = JoinItemTypes(HarvestDrops(actor, target, base));
+  if (outcome.droppedItems.empty()) {
+    outcome.droppedItems = "nothing";
+  }
+
+  if (const Trains *trains = target.get<Trains>()) {
+    outcome.training = ApplySubjectTraining(actor, trains->grants, "harvest");
+  }
+  return outcome;
+}
+
+// What one execution of a recipe produced, plus any skill progress it earned.
+struct RecipeOutcome {
+  std::string produced; // empty when every chance failed
+  std::vector<SkillGain> training;
+};
+
 // Rolls a recipe's outputs once and hands each success to the actor. Shared by
 // the instant path in the Craft interaction and by CraftResolutionSystem below,
 // so the two cannot drift. Returns the list actually produced ("Flour, Flour"),
@@ -818,9 +978,19 @@ std::string JoinItemTypes(const std::vector<std::string> &itemTypes) {
 // its own chance and three independent rolls are not the same as one roll times
 // three. The caller passes one stream for the whole batch, so the runs draw
 // successive values from it.
-std::string ProduceRecipeOutputs(flecs::entity actor, const CraftRecipe &recipe,
-                                 ObjectFactory *factory, Rng &rng) {
-  return JoinItemTypes(RollLootTable(actor, recipe.outputs, factory, rng));
+//
+// Training is earned here, before the rolls, and deliberately does not depend on
+// anything dropping: the materials are already spent and the work was still done,
+// so a recipe whose outputs all failed to appear still teaches what it teaches.
+// Called once per execution, which is what makes `[CRAFT bread 3]` worth three
+// times the XP.
+RecipeOutcome ProduceRecipeOutputs(flecs::entity actor, const CraftRecipe &recipe,
+                                   ObjectFactory *factory, Rng &rng) {
+  RecipeOutcome outcome;
+  outcome.produced = JoinItemTypes(
+      RollLootTable(actor, ToLootEntries(recipe.outputs), factory, rng));
+  outcome.training = ApplySubjectTraining(actor, recipe.trains, "craft");
+  return outcome;
 }
 
 // Name for a batch in a message: "3x Bread" for a batch, plain "Bread" for one,
@@ -960,22 +1130,16 @@ void Game::ECSInitAgentSystems() {
               Harvestable* h = target.get_mut<Harvestable>();
               if (h) {
                   h->amountRemaining--;
-                  auto factoryRes = actor.world().get<ObjectFactoryResource>();
-                  ObjectFactory *factory =
-                      factoryRes ? factoryRes->factory : nullptr;
 
-                  // One stream per harvest: every entry in the table draws the
-                  // next value from it. Shared with the instant path below.
-                  Rng rng = NextRollStream(actor.world());
-                  std::string droppedItemsStr =
-                      JoinItemTypes(RollLootTable(actor, h->lootTable.drops, factory, rng));
-                  if (droppedItemsStr.empty()) {
-                      droppedItemsStr = "nothing";
-                  }
+                  // Resolve, roll and train, through the same helper the instant
+                  // path uses.
+                  const HarvestOutcome outcome =
+                      HarvestResult(actor, target, h->lootTable.drops);
 
                   std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
-                  std::string msg = "System: You harvested " + droppedItemsStr + " from " + objName + ".\n";
-                  
+                  std::string msg = "System: You harvested " + outcome.droppedItems + " from " + objName + ".\n";
+                  msg += FormatTrainingGains(outcome.training);
+
                   if (h->amountRemaining <= 0) {
                       msg += "The " + objName + " is depleted and destroyed.\n";
                       actor.world().defer([target]() { target.destruct(); });
@@ -1069,11 +1233,16 @@ void Game::ECSInitAgentSystems() {
                       // shared across the batch so each run draws the next value.
                       Rng rng = NextRollStream(actor.world());
                       std::string produced;
+                      std::vector<SkillGain> training;
                       for (int i = 0; i < batches; ++i) {
-                          std::string run = ProduceRecipeOutputs(actor, *recipe, factory, rng);
-                          if (run.empty()) continue;
-                          if (!produced.empty()) produced += ", ";
-                          produced += run;
+                          RecipeOutcome run = ProduceRecipeOutputs(actor, *recipe, factory, rng);
+                          if (!run.produced.empty()) {
+                              if (!produced.empty()) produced += ", ";
+                              produced += run.produced;
+                          }
+                          for (const SkillGain &gain : run.training) {
+                              training.push_back(gain);
+                          }
                       }
                       if (produced.empty()) {
                           msg = "System: You crafted " +
@@ -1083,6 +1252,7 @@ void Game::ECSInitAgentSystems() {
                           msg = "System: You finished crafting " + produced +
                                 " and put it in your inventory.\n";
                       }
+                      msg += FormatTrainingGains(training);
                   }
 
                   if (actor.has<AgentBrainWrapper>()) {
@@ -1122,6 +1292,92 @@ std::string FormatSeconds(float seconds) {
     text.pop_back();
   }
   return text;
+}
+
+// Named C++ effects (docs/stat-effects-design.md section 4.4).
+//
+// Data references these by bare string in a stat's "effects" array, e.g.
+// `"effects": ["dexterous_grip"]`, and every stat carrying that id activates
+// them. This is the escape hatch for effects a declarative link cannot express:
+// conditional bonuses, gates, anything that has to read the world.
+//
+// Deliberately empty for now, and that is a real state rather than an oversight:
+// every effect the game currently ships is a declarative link in data/stats.
+// This is the place to add the ones that are not --
+//
+//   hookRegistry.OnDuration("dexterous_grip",
+//       [](DurationContext &ctx) {
+//         if (ctx.subjectId == "wheat_mature") ctx.out.Pct(-0.05f, "dexterous_grip");
+//       });
+//
+// Loot is structural rather than numeric, so its hooks edit the table:
+//
+//   hookRegistry.OnLoot("seed_finder",
+//       [](LootContext &ctx) {
+//         if (ctx.subjectId == "wheat_mature")
+//           ctx.out.Append("wheat_seed", 0.25f, ctx.sourceId);
+//       });
+//
+// Note there is no RNG in either context yet: a proc needs a stream identity, and
+// duration is resolved before the action entity exists. See the open question in
+// section 5.3 before adding a probabilistic hook here.
+void RegisterGameHooks(HookRegistry &hookRegistry) { (void)hookRegistry; }
+
+// Reports every training grant that can never be applied, once, at startup.
+//
+// A subject may name any skill, so without this a typo ("blacksmith" for
+// "blacksmithing") or a wrong activity -- a recipe claiming to train a
+// harvest-only skill -- would be a silent no-op on every single craft. That is
+// the same failure mode the named-hook check exists to prevent.
+//
+// This is the job the skill's `trainedBy` list does: a guard, not a selector. It
+// never decides who trains what, only whether the subject's claim is one the
+// skill accepts.
+void ValidateTrainingGrants(
+    const ObjectFactory &factory, const RecipeRegistry &recipes,
+    const SkillRegistry &skills,
+    const std::function<void(const std::string &)> &warn) {
+  auto checkGrant = [&](const std::string &owner, const std::string &activity,
+                        const std::string &skillId) {
+    const SkillDef *def = skills.Get(skillId);
+    if (!def) {
+      warn("Warning: " + owner + " trains unknown skill '" + skillId +
+           "', so the grant does nothing.");
+      return;
+    }
+    if (!AcceptsActivity(*def, activity)) {
+      warn("Warning: " + owner + " trains '" + skillId + "', which is not " +
+           "trained by " + activity + ". Add \"" + activity +
+           "\" to its trainedBy list if that is intended; otherwise the grant "
+           "does nothing.");
+    }
+  };
+
+  // Object templates are not entities until they are spawned, and an object that
+  // teaches nothing need not be spawned at all, so they are checked from the raw
+  // JSON the factory holds rather than from the world.
+  for (const auto &pair : factory.GetTemplates()) {
+    if (!pair.second.contains("trains")) {
+      continue;
+    }
+    const nlohmann::json &trains = pair.second["trains"];
+    if (!trains.is_object()) {
+      continue; // malformed; reported when the object is spawned
+    }
+    for (auto it = trains.begin(); it != trains.end(); ++it) {
+      checkGrant("Object template '" + pair.first + "'", "harvest", it.key());
+    }
+  }
+
+  for (const std::string &id : recipes.GetIds()) {
+    const CraftRecipe *recipe = recipes.Get(id);
+    if (!recipe) {
+      continue;
+    }
+    for (const SkillXp &grant : recipe->trains) {
+      checkGrant("Recipe '" + id + "'", "craft", grant.skillId);
+    }
+  }
 }
 
 // One line per recipe, written with content ids rather than display names,
@@ -1199,6 +1455,46 @@ void Game::ECSInit(std::string mapPath) {
   recipeRegistry.SetDebugLog(debugLog.get());
   recipeRegistry.LoadRecipes("data/recipes");
   ecs.set<RecipeRegistryResource>({&recipeRegistry});
+
+  statRegistry.SetDebugLog(debugLog.get());
+  statRegistry.LoadStats("data/stats");
+  ecs.set<StatRegistryResource>({&statRegistry});
+
+  skillRegistry.SetDebugLog(debugLog.get());
+  skillRegistry.LoadSkills("data/skills");
+  ecs.set<SkillRegistryResource>({&skillRegistry});
+
+  // Named C++ effects, then a check that every hook id the data references
+  // actually has a handler. An unregistered id would otherwise be a silent
+  // no-op -- the source would simply look like it does nothing -- which is the
+  // exact failure mode this report exists to prevent. Stats and skills are
+  // checked together, because either can declare a hook.
+  RegisterGameHooks(hookRegistry);
+  ecs.set<HookRegistryResource>({&hookRegistry});
+  std::vector<std::string> declaredHooks = statRegistry.GetAllHookIds();
+  for (const std::string &id : skillRegistry.GetAllHookIds()) {
+    declaredHooks.push_back(id);
+  }
+  std::sort(declaredHooks.begin(), declaredHooks.end());
+  declaredHooks.erase(std::unique(declaredHooks.begin(), declaredHooks.end()),
+                      declaredHooks.end());
+  for (const std::string &hookId : declaredHooks) {
+    if (!hookRegistry.HasAnyHook(hookId)) {
+      const std::string msg =
+          "Warning: stat or skill data references named effect '" + hookId +
+          "' but no hook is registered for it on any point, so it does nothing.";
+      if (debugLog) debugLog->LogWarning(msg);
+      else std::cerr << msg << std::endl;
+    }
+  }
+
+  // A skill's trainedBy list only guards; this is where a subject that names the
+  // wrong skill, or the right skill for the wrong activity, is reported.
+  ValidateTrainingGrants(objectFactory, recipeRegistry, skillRegistry,
+                         [this](const std::string &message) {
+                           if (debugLog) debugLog->LogWarning(message);
+                           else std::cerr << message << std::endl;
+                         });
 
   GlobalCommandRegistry::Clear();
 
@@ -1348,14 +1644,16 @@ void Game::ECSInit(std::string mapPath) {
     true
   });
 
-  LoadMap(mapPath, true);
-
+  // Component reflection has to exist before anything is spawned. LoadMap
+  // creates the NPCs, and a component added to an entity before its registration
+  // is auto-registered without metadata that a later registration cannot repair.
+  // StatBlock is stamped on every character at spawn, so this can no longer wait
+  // until after the map is loaded.
   RegisterComponents(ecs);
 
   // Seed every gameplay roll from one place, and log it. The seed is what makes
   // a run reproducible, so a surprising loot outcome can be replayed rather than
-  // argued about. Set after RegisterComponents so the component type exists with
-  // its registration rather than being auto-registered by the first set().
+  // argued about.
   {
     const uint64_t seed = static_cast<uint64_t>(
         std::chrono::high_resolution_clock::now().time_since_epoch().count());
@@ -1364,6 +1662,8 @@ void Game::ECSInit(std::string mapPath) {
       debugLog->Log("World RNG seed: " + std::to_string(seed));
     }
   }
+
+  LoadMap(mapPath, true);
 
   InteractionRegistry::Clear();
   
@@ -1391,17 +1691,48 @@ void Game::ECSInit(std::string mapPath) {
       }
 
       if (h->amountRemaining > 0) {
-        if (h->timer > 0.0f) {
+        // Resolve the wait once, here, and use that single number for the
+        // branch, the timer and the message. Resolving in more than one place is
+        // exactly how the advertised time and the real one drift apart.
+        float seconds = h->timer;
+        std::string breakdown;
+
+        const ResolutionInputs inputs = MakeResolutionInputs(actor.world());
+
+        DurationRequest request;
+        request.activity = "harvest";
+        request.subjectId =
+            target.has<ItemType>() ? target.get<ItemType>()->id : "";
+        request.subject = target;
+        request.baseSeconds = h->timer;
+
+        const DurationResolution resolved =
+            ResolveDuration(actor, request, inputs.definitions, *inputs.hooks);
+
+        // A gate refuses the action outright rather than adjusting it.
+        if (resolved.fold.blocked) {
+          return "System: You cannot harvest the " + objName + ": " +
+                 resolved.fold.blockReason + "\n";
+        }
+
+        seconds = resolved.fold.value;
+        breakdown = FormatDurationBreakdown(resolved.fold, h->timer);
+
+        // A resolved wait of zero means the work is instant: either it was
+        // authored that way, or bonuses brought it down to the floor.
+        if (seconds > 0.0f) {
             if (!actor.has<Busy>()) {
                 flecs::entity actionEntity = actor.world().entity()
                     .set<ActionActor>({actor})
                     .set<ActionTarget>({target})
-                    .set<ActionTimer>({h->timer})
+                    .set<ActionTimer>({seconds})
                     .add<HarvestAction>();
                 
                 actor.set<Busy>({actionEntity});
 
-                std::string msg = "System: Started harvesting " + objName + ". It will take " + std::to_string((int)h->timer) + " seconds.\n";
+                std::string msg = "System: Started harvesting " + objName +
+                                  ". It will take " + FormatSeconds(seconds) +
+                                  " seconds." + breakdown + "\n";
                 if (actor.has<AgentBrainWrapper>()) {
                     // Log it but do NOT append to the agent's context: the harvest
                     // completes on its own and HarvestResolutionSystem reports the
@@ -1417,21 +1748,17 @@ void Game::ECSInit(std::string mapPath) {
             }
         }
 
-        // Instant harvest fallback if timer == 0
+        // Instant harvest fallback: the resolved wait came out at zero.
         h->amountRemaining--;
-        auto factoryRes = actor.world().get<ObjectFactoryResource>();
-        ObjectFactory *factory = factoryRes ? factoryRes->factory : nullptr;
 
-        // The same shared helper the timed path uses: the two must roll
-        // identically or an effect would silently apply to one and not the other.
-        Rng rng = NextRollStream(actor.world());
-        std::string droppedItemsStr =
-            JoinItemTypes(RollLootTable(actor, h->lootTable.drops, factory, rng));
-        if (droppedItemsStr.empty()) {
-            droppedItemsStr = "nothing";
-        }
+        // The same shared helper the timed path uses: the two must resolve, roll
+        // and train identically or something would silently apply to one and not
+        // the other.
+        const HarvestOutcome outcome =
+            HarvestResult(actor, target, h->lootTable.drops);
 
-        std::string msg = "System: You harvested " + droppedItemsStr + " from " + objName + ".\n";
+        std::string msg = "System: You harvested " + outcome.droppedItems + " from " + objName + ".\n";
+        msg += FormatTrainingGains(outcome.training);
         if (h->amountRemaining <= 0) {
           msg += "The " + objName + " is depleted and destroyed.\n";
           target.destruct();
@@ -1559,18 +1886,26 @@ void Game::ECSInit(std::string mapPath) {
       }
       Rng rng = NextRollStream(actor.world());
       std::string produced;
+      std::vector<SkillGain> training;
       for (int i = 0; i < batches; ++i) {
-        std::string run = ProduceRecipeOutputs(actor, *recipe, factoryRes->factory, rng);
-        if (run.empty()) continue;
-        if (!produced.empty()) produced += ", ";
-        produced += run;
+        RecipeOutcome run = ProduceRecipeOutputs(actor, *recipe, factoryRes->factory, rng);
+        if (!run.produced.empty()) {
+          if (!produced.empty()) produced += ", ";
+          produced += run.produced;
+        }
+        for (const SkillGain &gain : run.training) {
+          training.push_back(gain);
+        }
       }
 
+      std::string msg;
       if (produced.empty()) {
-        return "System: You crafted " + FormatBatchedLabel(batches, recipe->id) +
-               " but nothing came out of it.\n";
+        msg = "System: You crafted " + FormatBatchedLabel(batches, recipe->id) +
+              " but nothing came out of it.\n";
+      } else {
+        msg = "System: You crafted " + produced + " and put it in your inventory.\n";
       }
-      return "System: You crafted " + produced + " and put it in your inventory.\n";
+      return msg + FormatTrainingGains(training);
   });
 
   InteractionRegistry::RegisterComponentInteraction<DisplayName>(
@@ -1790,6 +2125,12 @@ void Game::ECSInit(std::string mapPath) {
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<CharacterTag>();
+  if (auto registryRes = ecs.get<StatRegistryResource>()) {
+    GiveDefaultStats(playerEntity, registryRes->registry);
+  }
+  if (auto skillRes = ecs.get<SkillRegistryResource>()) {
+    GiveStartingSkills(playerEntity, skillRes->registry);
+  }
 
 
   // Initialize debug window entities
@@ -1887,6 +2228,39 @@ void Game::OpenStorageWindow(flecs::entity container) {
     if (!carrier.has<ActiveWindow>()) {
       carrier.set<ActiveWindow>(
           {std::make_shared<StorageWindow>(container, carrier)});
+    }
+  });
+}
+
+void Game::OpenCharacterStatusWindow(flecs::entity character) {
+  if (!character.is_alive()) {
+    return;
+  }
+  // Called from the context menu's draw pass, so the structural changes are
+  // deferred to the end of the stage, the same as OpenStorageWindow.
+  ecs.defer([this, character]() {
+    // One carrier per character, reused so asking twice does not stack a second
+    // window. A character's own ActiveWindow slot cannot be used for this: it
+    // already belongs to whichever chat or entity-info window is open on it.
+    flecs::entity carrier = flecs::entity::null();
+    ecs.filter<const CharacterStatusWindowTarget>().each(
+        [&](flecs::entity owner, const CharacterStatusWindowTarget &target) {
+          if (carrier.is_alive()) {
+            return;
+          }
+          if (target.character == character) {
+            carrier = owner;
+          }
+        });
+
+    if (!carrier.is_alive()) {
+      carrier = ecs.entity();
+      carrier.set<CharacterStatusWindowTarget>({character});
+    }
+
+    if (!carrier.has<ActiveWindow>()) {
+      carrier.set<ActiveWindow>(
+          {std::make_shared<CharacterStatusWindow>(character, carrier)});
     }
   });
 }

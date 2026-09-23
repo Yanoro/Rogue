@@ -63,6 +63,14 @@ constexpr size_t DEFAULT_ENTITY_VISUAL_HEIGHT = 16;
 // GameECS.cpp.
 constexpr const char *DEFAULT_SEE_INVENTORY_OPTION = "See Inventory";
 
+// Player-only context-menu option that opens the character status window: name,
+// starting context, stats and skills. Like DEFAULT_SEE_INVENTORY_OPTION it is
+// deliberately NOT registered in InteractionRegistry, so the AI never sees it in
+// its command list and can never issue it. Unlike that option it opens
+// immediately rather than after walking over, because inspecting a character is
+// not an action on the world.
+constexpr const char *DEFAULT_SHOW_STATUS_OPTION = "Show Status";
+
 // Timed-action progress bar, drawn just below the entity that is acting.
 constexpr float DEFAULT_ACTION_BAR_HEIGHT = 4.0f;
 constexpr float DEFAULT_ACTION_BAR_OFFSET_Y = 4.0f;

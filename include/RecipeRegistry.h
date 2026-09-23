@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "Components.h"
+#include "SkillXp.hpp"
 
 class DebugLog;
 
@@ -20,6 +21,13 @@ struct CraftRecipe {
   // carry a chance; a normal output uses chance 1.0.
   std::vector<LootDrop> outputs;
   float craftTimeSeconds = 0.0f; // 0 = instant; > 0 starts a timed CraftAction
+
+  // Skills this recipe teaches, and by how much. The amount lives here rather
+  // than on the skill because it is a fact about the work, and naming the skill
+  // here is what stops a blacksmithing skill from gaining XP for baking bread --
+  // bread.json names cooking and never mentions blacksmithing, so there is no
+  // matching to get wrong.
+  std::vector<SkillXp> trains;
 };
 
 // Content database for crafting, mirroring how ObjectFactory holds object

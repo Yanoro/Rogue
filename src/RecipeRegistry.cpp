@@ -6,6 +6,7 @@
 #include <iostream>
 
 #include "DebugLog.h"
+#include "TrainingParsing.h"
 
 void RecipeRegistry::LoadRecipes(const std::string& directoryPath) {
   if (!std::filesystem::exists(directoryPath)) {
@@ -65,6 +66,11 @@ void RecipeRegistry::LoadRecipes(const std::string& directoryPath) {
           }
           recipe.outputs.push_back(drop);
         }
+      }
+
+      if (j.contains("trains")) {
+        ParseTrainingGrants(j["trains"], "Recipe '" + recipe.id + "'",
+                            recipe.trains, warn);
       }
 
       // A recipe that cannot be satisfied or cannot produce anything is content
