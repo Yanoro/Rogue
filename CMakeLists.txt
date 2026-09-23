@@ -63,10 +63,22 @@ if(NOT imgui_POPULATED)
 endif()
 
 # Fetch rlImGui
+# Pinned to a specific commit so that the local patch below keeps applying
+# cleanly. When bumping this tag, re-create patches/rlimgui-*.patch against the
+# new revision.
+set(RLIMGUI_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/rlimgui-multi-monitor-display-fix.patch")
+set(RLIMGUI_APPLY_PATCH "${CMAKE_CURRENT_SOURCE_DIR}/patches/apply-patch.cmake")
 FetchContent_Declare(
     rlimgui
     GIT_REPOSITORY https://github.com/raylib-extras/rlImGui.git
-    GIT_TAG        main
+    GIT_TAG        ef129d1858373b6fe332c45f85a1dfc1421bebae
+    # Keep the ImGui overlay aligned with rayLib's real window/render size when
+    # more than one monitor is connected. apply-patch.cmake makes this
+    # idempotent, so re-running the patch step is always safe.
+    PATCH_COMMAND  ${CMAKE_COMMAND}
+                   -DSRC_DIR=<SOURCE_DIR>
+                   -DPATCH_FILE=${RLIMGUI_PATCH}
+                   -P "${RLIMGUI_APPLY_PATCH}"
 )
 FetchContent_GetProperties(rlimgui)
 if(NOT rlimgui_POPULATED)

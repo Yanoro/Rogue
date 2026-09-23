@@ -1,0 +1,51 @@
+diff --git a/rlImGui.cpp b/rlImGui.cpp
+index 018651e..44a978a 100644
+--- a/rlImGui.cpp
++++ b/rlImGui.cpp
+@@ -35,6 +35,7 @@
+ #include <math.h>
+ #include <limits>
+ #include <cstdint>
++#include <cstdio>
+ 
+ #ifndef NO_FONT_AWESOME
+ #include "extras/FA6FreeSolidFontData.h"
+@@ -121,26 +122,14 @@ static void ImGuiNewFrame(float deltaTime)
+ 
+     Vector2 resolutionScale = GetDisplayScale();
+ 
+-#ifndef PLATFORM_DRM
+-    if (IsWindowFullscreen())
+-    {
+-        int monitor = GetCurrentMonitor();
+-        io.DisplaySize.x = float(GetMonitorWidth(monitor));
+-        io.DisplaySize.y = float(GetMonitorHeight(monitor));
+-    }
+-    else
+-    {
+-        io.DisplaySize.x = float(GetScreenWidth());
+-        io.DisplaySize.y = float(GetScreenHeight());
+-    }
++    io.DisplaySize.x = float(GetScreenWidth());
++    io.DisplaySize.y = float(GetScreenHeight());
+ 
++#ifndef PLATFORM_DRM
+ #if !defined(__APPLE__)
+     if (!IsWindowState(FLAG_WINDOW_HIGHDPI))
+         resolutionScale = Vector2{ 1,1 };
+ #endif
+-#else
+-    io.DisplaySize.x = float(GetScreenWidth());
+-    io.DisplaySize.y = float(GetScreenHeight());
+ #endif
+ 
+     io.DisplayFramebufferScale = ImVec2(resolutionScale.x, resolutionScale.y);
+@@ -240,7 +229,7 @@ static void EnableScissor(float x, float y, float width, float height)
+ #endif
+ 
+     rlScissor((int)(x * scale.x),
+-        int((io.DisplaySize.y - (int)(y + height)) * scale.y),
++        GetRenderHeight() - (int)((y + height) * scale.y),
+         (int)(width * scale.x),
+         (int)(height * scale.y));
+ }
