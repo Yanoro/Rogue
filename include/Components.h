@@ -2,6 +2,7 @@
 
 #include "AI.h"
 #include "raylib-cpp.hpp"
+#include <cstdint>
 #include <flecs.h>
 #include <memory>
 #include <string>
@@ -406,6 +407,22 @@ struct TradeOffer {
   std::vector<ItemStack> receive; // responder -> offerer if accepted
 };
 
+// Seed for all gameplay randomness, plus a counter that hands each engine-owned
+// roll group its own stream.
+//
+// Every roll is derived from this rather than from a process-global generator,
+// so a run is reproducible from the logged seed and no call site can perturb
+// another's outcome. `groups` advances once per roll group: deriving each group
+// from its own counter value is what stops adding a new roll site from changing
+// the results of every existing one.
+//
+// Plain integers rather than an engine object on purpose: the component stays
+// trivially copyable and holds nothing that could not be serialized.
+struct WorldRandomness {
+  uint64_t seed = 0;
+  uint64_t groups = 0;
+};
+
 // Reusable reflection support for std::vector
 template <typename Elem, typename Vector = std::vector<Elem>>
 inline flecs::opaque<Vector, Elem> std_vector_support(flecs::world &world) {
@@ -488,6 +505,11 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<StorageWindowTarget>();
   ecs.component<PendingPlayerInteraction>();
   ecs.component<LastObjectsQuery>();
+
+  // Singleton resource: registered so it exists as a named type before ECSInit
+  // seeds it. Members are not reflected, so nothing here needs the std::string
+  // registration above.
+  ecs.component<WorldRandomness>();
 
   ecs.component<MapAuthored>().member<std::string>("templateKey");
 

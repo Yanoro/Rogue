@@ -16,12 +16,14 @@
 #include "GlobalCommandRegistry.h"
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
+#include "Rng.hpp"
 #include "StringUtils.hpp"
 #include "flecs.h"
 #include "imgui.h"
 #include "raylib-cpp.hpp"
 #include "raylib.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -737,6 +739,75 @@ RecipeInputClaim ClaimRecipeInputs(flecs::entity actor,
   return claim;
 }
 
+// Takes the next engine-owned roll group. Each group is derived from its own
+// counter value, so groups cannot share or shift each other's streams: adding a
+// new roll site does not change the outcome of any existing one.
+//
+// Falls back to a fixed seed when the world has not been seeded yet, which keeps
+// the result deterministic rather than merely accidental.
+Rng NextRollStream(flecs::world world) {
+  WorldRandomness *randomness = world.get_mut<WorldRandomness>();
+  if (!randomness) {
+    return Rng(0);
+  }
+  return Rng::Derived(randomness->seed, ++randomness->groups, 0);
+}
+
+// Spawns and hands over every entry of a loot table that passes its chance roll,
+// returning the item type ids that dropped, in table order.
+//
+// The ids come from the table, NOT from the spawned entities, and that is
+// deliberate: all of these call sites run inside a system iteration, which is a
+// deferred context. A freshly spawned entity there reports is_alive() == true
+// while none of its components are readable until the sync point, so reading
+// ItemType or DisplayName off it yields nothing for every drop -- which is
+// exactly how harvesting came to report "nothing" while still handing over the
+// items. The table's own id string is always available.
+//
+// This is the ONLY place a loot chance is rolled. The timed and instant harvest
+// paths used to carry near-identical copies of this loop, which is exactly how
+// an effect applied to one path and not the other would have gone unnoticed.
+std::vector<std::string> RollLootTable(flecs::entity actor,
+                                       const std::vector<LootDrop> &drops,
+                                       ObjectFactory *factory, Rng &rng) {
+  std::vector<std::string> dropped;
+  if (!factory) {
+    return dropped;
+  }
+  // flecs::world is a handle returned by value, so it cannot bind directly to
+  // SpawnObject's flecs::world& parameter.
+  flecs::world world = actor.world();
+  for (const LootDrop &drop : drops) {
+    // One roll per entry, in table order, engine-owned: an effect hook may
+    // adjust a chance but must never roll the same entry itself.
+    if (!rng.Chance(drop.chance)) {
+      continue;
+    }
+    flecs::entity item =
+        factory->SpawnObject(world, actor, nullptr, drop.itemType);
+    if (!item.is_alive()) {
+      continue;
+    }
+    actor.add<Holds>(item);
+    dropped.push_back(drop.itemType);
+  }
+  return dropped;
+}
+
+// Comma-joined list of dropped item type ids. Empty when nothing dropped, so
+// each caller can decide how to phrase "nothing" (harvest says "nothing",
+// crafting says "nothing came out of it").
+std::string JoinItemTypes(const std::vector<std::string> &itemTypes) {
+  std::string joined;
+  for (const std::string &itemType : itemTypes) {
+    if (!joined.empty()) {
+      joined += ", ";
+    }
+    joined += itemType;
+  }
+  return joined;
+}
+
 // Rolls a recipe's outputs once and hands each success to the actor. Shared by
 // the instant path in the Craft interaction and by CraftResolutionSystem below,
 // so the two cannot drift. Returns the list actually produced ("Flour, Flour"),
@@ -745,29 +816,11 @@ RecipeInputClaim ClaimRecipeInputs(flecs::entity actor,
 // One call is one run of the recipe. A batch craft calls this `batches` times
 // rather than multiplying the outputs in one pass, because each output carries
 // its own chance and three independent rolls are not the same as one roll times
-// three.
+// three. The caller passes one stream for the whole batch, so the runs draw
+// successive values from it.
 std::string ProduceRecipeOutputs(flecs::entity actor, const CraftRecipe &recipe,
-                                 ObjectFactory *factory) {
-  std::string produced;
-  flecs::world world = actor.world();
-  for (const LootDrop &output : recipe.outputs) {
-    float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-    if (roll > output.chance) continue;
-
-    flecs::entity crafted =
-        factory->SpawnObject(world, actor, nullptr, output.itemType);
-    if (crafted.is_alive()) {
-      actor.add<Holds>(crafted);
-      produced += crafted.has<DisplayName>() ? crafted.get<DisplayName>()->name
-                                             : output.itemType;
-      produced += ", ";
-    }
-  }
-  if (!produced.empty()) {
-    produced.pop_back();
-    produced.pop_back();
-  }
-  return produced;
+                                 ObjectFactory *factory, Rng &rng) {
+  return JoinItemTypes(RollLootTable(actor, recipe.outputs, factory, rng));
 }
 
 // Name for a batch in a message: "3x Bread" for a batch, plain "Bread" for one,
@@ -908,26 +961,15 @@ void Game::ECSInitAgentSystems() {
               if (h) {
                   h->amountRemaining--;
                   auto factoryRes = actor.world().get<ObjectFactoryResource>();
-                  std::string droppedItemsStr = "";
+                  ObjectFactory *factory =
+                      factoryRes ? factoryRes->factory : nullptr;
 
-                  if (factoryRes && factoryRes->factory) {
-                      flecs::world ecs = actor.world();
-                      for (const auto& drop : h->lootTable.drops) {
-                          float roll = (float)rand() / RAND_MAX;
-                          if (roll <= drop.chance) {
-                              flecs::entity spawned = factoryRes->factory->SpawnObject(ecs, actor, nullptr, drop.itemType);
-                              if (spawned.is_alive()) {
-                                  actor.add<Holds>(spawned);
-                                  droppedItemsStr += drop.itemType + ", ";
-                              }
-                          }
-                      }
-                  }
-
-                  if (!droppedItemsStr.empty()) {
-                      droppedItemsStr.pop_back();
-                      droppedItemsStr.pop_back();
-                  } else {
+                  // One stream per harvest: every entry in the table draws the
+                  // next value from it. Shared with the instant path below.
+                  Rng rng = NextRollStream(actor.world());
+                  std::string droppedItemsStr =
+                      JoinItemTypes(RollLootTable(actor, h->lootTable.drops, factory, rng));
+                  if (droppedItemsStr.empty()) {
                       droppedItemsStr = "nothing";
                   }
 
@@ -1023,10 +1065,12 @@ void Game::ECSInitAgentSystems() {
                       }
 
                       // One roll per batch item, not one roll scaled by the
-                      // batch: probability lives on each output.
+                      // batch: probability lives on each output. One stream is
+                      // shared across the batch so each run draws the next value.
+                      Rng rng = NextRollStream(actor.world());
                       std::string produced;
                       for (int i = 0; i < batches; ++i) {
-                          std::string run = ProduceRecipeOutputs(actor, *recipe, factory);
+                          std::string run = ProduceRecipeOutputs(actor, *recipe, factory, rng);
                           if (run.empty()) continue;
                           if (!produced.empty()) produced += ", ";
                           produced += run;
@@ -1308,6 +1352,19 @@ void Game::ECSInit(std::string mapPath) {
 
   RegisterComponents(ecs);
 
+  // Seed every gameplay roll from one place, and log it. The seed is what makes
+  // a run reproducible, so a surprising loot outcome can be replayed rather than
+  // argued about. Set after RegisterComponents so the component type exists with
+  // its registration rather than being auto-registered by the first set().
+  {
+    const uint64_t seed = static_cast<uint64_t>(
+        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    ecs.set<WorldRandomness>({seed, 0});
+    if (debugLog) {
+      debugLog->Log("World RNG seed: " + std::to_string(seed));
+    }
+  }
+
   InteractionRegistry::Clear();
   
   ItemInteractionRegistry::Clear();
@@ -1363,27 +1420,14 @@ void Game::ECSInit(std::string mapPath) {
         // Instant harvest fallback if timer == 0
         h->amountRemaining--;
         auto factoryRes = actor.world().get<ObjectFactoryResource>();
-        std::string droppedItemsStr = "";
+        ObjectFactory *factory = factoryRes ? factoryRes->factory : nullptr;
 
-        if (factoryRes && factoryRes->factory) {
-          flecs::world ecs = actor.world();
-          
-          for (const auto& drop : h->lootTable.drops) {
-              float roll = (float)rand() / RAND_MAX;
-              if (roll <= drop.chance) {
-                  flecs::entity spawned = factoryRes->factory->SpawnObject(ecs, actor, nullptr, drop.itemType);
-                  if (spawned.is_alive()) {
-                      actor.add<Holds>(spawned);
-                      droppedItemsStr += drop.itemType + ", ";
-                  }
-              }
-          }
-        }
-
-        if (!droppedItemsStr.empty()) {
-            droppedItemsStr.pop_back();
-            droppedItemsStr.pop_back();
-        } else {
+        // The same shared helper the timed path uses: the two must roll
+        // identically or an effect would silently apply to one and not the other.
+        Rng rng = NextRollStream(actor.world());
+        std::string droppedItemsStr =
+            JoinItemTypes(RollLootTable(actor, h->lootTable.drops, factory, rng));
+        if (droppedItemsStr.empty()) {
             droppedItemsStr = "nothing";
         }
 
@@ -1513,9 +1557,10 @@ void Game::ECSInit(std::string mapPath) {
         actor.remove<Holds>(item);
         item.destruct();
       }
+      Rng rng = NextRollStream(actor.world());
       std::string produced;
       for (int i = 0; i < batches; ++i) {
-        std::string run = ProduceRecipeOutputs(actor, *recipe, factoryRes->factory);
+        std::string run = ProduceRecipeOutputs(actor, *recipe, factoryRes->factory, rng);
         if (run.empty()) continue;
         if (!produced.empty()) produced += ", ";
         produced += run;
