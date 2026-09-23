@@ -126,6 +126,31 @@ std::string DescribeShortfall(const Trading::ShortfallInfo &shortfall) {
 
 } // namespace
 
+std::string TalkAction::getActionContext() const {
+  // Prefer the live partner's name over the spelling the model used, so a
+  // rename shows up in the label. Self-talk never resolves an entity.
+  std::string partner = targetName;
+  if (targetEntity.is_alive() && targetEntity.has<DisplayName>()) {
+    partner = targetEntity.get<DisplayName>()->name;
+  }
+
+  if (isTalkingToSelf) {
+    return partner + " (self)";
+  }
+
+  // A listener stores the person talking *to* it, so the partner is the same
+  // field in both directions; only whose turn it is differs.
+  switch (state) {
+  case ConversationState::Talking:
+    return partner + " (speaking)";
+  case ConversationState::Listening:
+    return partner + " (listening)";
+  case ConversationState::Ended:
+    return partner + " (ending)";
+  }
+  return partner;
+}
+
 ActionStatus TalkAction::update(float deltaTime, flecs::entity entity) {
   // "Stop brain" has to hold inside a conversation too. TalkAction is the only
   // action that drives the model itself, so without this guard a stopped pair

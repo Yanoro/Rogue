@@ -8,7 +8,8 @@ class DebugLog;
 
 class MapReloader {
 public:
-  MapReloader(const std::string &mapsDirectory = "./", DebugLog* debugLog = nullptr);
+  // An empty mapsDirectory falls back to MAPS_DIRECTORY (see Defaults.h).
+  MapReloader(const std::string &mapsDirectory = "", DebugLog* debugLog = nullptr);
 
   // Get list of available map files in the directory
   const std::vector<std::string> &GetMapList() const { return mapList; }

@@ -117,6 +117,7 @@ set(SOURCES
     src/AIChatWindow.cpp
     src/AgentContextWindow.cpp
     src/EntityInfoWindow.cpp
+    src/StorageWindow.cpp
     src/Command.cpp
     src/InteractionRegistry.cpp
     src/GlobalCommandRegistry.cpp

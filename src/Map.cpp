@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <unordered_map>
 
 inline void from_json(const nlohmann::json &j, Color &c) {
   if (j.is_array() && j.size() >= 3) {
@@ -138,8 +139,33 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
           if (!type.empty()) {
             // authored = true: these are the map's own objects, so the map
             // writer must write them back.
-            factoryRes->factory->SpawnObject(ecs, mapEntity, this, type,
-                                             GamePosition{x, y}, true);
+            flecs::entity obj = factoryRes->factory->SpawnObject(
+                ecs, mapEntity, this, type, GamePosition{x, y}, true);
+
+            // Optional starting contents, e.g. a chest that begins stocked with
+            // flour. Same "inventory" shape NPCs use, so a container's contents
+            // are authored in exactly one way. The units become Holds children
+            // of the object and are seen by [TAKE]/[STORE]/[CRAFT] normally.
+            if (obj.is_alive() && objData.contains("inventory")) {
+              std::vector<ItemStack> inventory;
+              for (const auto &itemJson : objData["inventory"]) {
+                ItemStack stack;
+                stack.item = itemJson.value("item", "");
+                stack.count = itemJson.value("count", 1);
+                if (stack.item.empty() || stack.count <= 0) {
+                  std::string warnStr =
+                      "Warning: object '" + type +
+                      "' at (" + std::to_string(x) + ", " + std::to_string(y) +
+                      ") has an invalid inventory entry (empty item or "
+                      "non-positive count); skipping it.\n";
+                  if (debugLog) debugLog->LogWarning(warnStr);
+                  else std::cerr << warnStr;
+                  continue;
+                }
+                inventory.push_back(stack);
+              }
+              factoryRes->factory->SpawnInventory(ecs, obj, inventory);
+            }
           }
         }
       }
@@ -214,9 +240,33 @@ nlohmann::json Map::BuildMapJson() const {
             });
 
   mapJson["objects"] = nlohmann::json::array();
+
+  // Authored objects may declare starting contents (e.g. a stocked chest). The
+  // live ECS knows only the object entity, not what the file asked it to start
+  // with, so the original "inventory" is re-attached here by type+position.
+  // Without this a save would silently empty every authored container.
+  std::unordered_map<std::string, nlohmann::json> authoredInventories;
+  if (rawMapJson.is_object() && rawMapJson.contains("objects") &&
+      rawMapJson["objects"].is_array()) {
+    for (const auto &rawObj : rawMapJson["objects"]) {
+      if (!rawObj.is_object() || !rawObj.contains("inventory")) continue;
+      authoredInventories[rawObj.value("type", std::string()) + "|" +
+                           std::to_string(rawObj.value("x", 0)) + "|" +
+                           std::to_string(rawObj.value("y", 0))] =
+          rawObj["inventory"];
+    }
+  }
+
   for (const AuthoredObject &obj : authoredObjects) {
-    mapJson["objects"].push_back(
-        {{"type", obj.type}, {"x", obj.pos.x}, {"y", obj.pos.y}});
+    nlohmann::json objJson = {
+        {"type", obj.type}, {"x", obj.pos.x}, {"y", obj.pos.y}};
+    auto authored = authoredInventories.find(obj.type + "|" +
+                                             std::to_string(obj.pos.x) + "|" +
+                                             std::to_string(obj.pos.y));
+    if (authored != authoredInventories.end()) {
+      objJson["inventory"] = authored->second;
+    }
+    mapJson["objects"].push_back(std::move(objJson));
   }
 
   // NPCs: the raw entries are already in the base document, so they are only

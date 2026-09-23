@@ -1,0 +1,11 @@
+{
+  "name": "Bread",
+  "description": "A warm loaf baked from milled flour. The staff of life, and the miller's trade.",
+  "components": [
+    "Portable"
+  ],
+  "character": "b",
+  "characterColor": [205, 133, 63, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [210, 180, 140, 255]
+}

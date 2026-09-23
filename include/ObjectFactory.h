@@ -22,6 +22,17 @@ public:
                             const std::string& type,
                             std::optional<GamePosition> pos = std::nullopt,
                             bool authored = false);
+
+  // Turns a list of ItemStacks into real entities held by `holder`: one entity
+  // per unit, spawned as a child of `holder` and attached with the Holds
+  // relationship. That is the same shape harvest drops and crafting outputs use,
+  // so [INVENTORY], [TAKE], [STORE] and [CRAFT] see these items with no special
+  // casing. Shared by map-defined NPC inventories and map-defined object
+  // (container) inventories. An unknown template id is reported by SpawnObject
+  // and skipped.
+  void SpawnInventory(flecs::world& ecs, flecs::entity holder,
+                      const std::vector<ItemStack>& inventory);
+
   bool ApplyTemplate(flecs::entity obj, const std::string& type, Map* map = nullptr);
   void SetDebugLog(DebugLog* log) { debugLog = log; }
   const std::unordered_map<std::string, nlohmann::json>& GetTemplates() const { return templates; }

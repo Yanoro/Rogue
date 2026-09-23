@@ -19,7 +19,7 @@ struct CraftRecipe {
   // Spawned on success. LootDrop is reused from harvest drops so byproducts can
   // carry a chance; a normal output uses chance 1.0.
   std::vector<LootDrop> outputs;
-  float craftTimeSeconds = 0.0f; // 0 = instant (no timed CraftAction yet)
+  float craftTimeSeconds = 0.0f; // 0 = instant; > 0 starts a timed CraftAction
 };
 
 // Content database for crafting, mirroring how ObjectFactory holds object

@@ -203,3 +203,19 @@ flecs::entity ObjectFactory::SpawnObject(flecs::world& ecs, flecs::entity parent
 
   return obj;
 }
+
+void ObjectFactory::SpawnInventory(flecs::world& ecs, flecs::entity holder,
+                                   const std::vector<ItemStack>& inventory) {
+  if (inventory.empty() || !holder.is_alive()) {
+    return;
+  }
+
+  for (const ItemStack& stack : inventory) {
+    for (int i = 0; i < stack.count; ++i) {
+      flecs::entity item = SpawnObject(ecs, holder, nullptr, stack.item);
+      if (item.is_alive()) {
+        holder.add<Holds>(item);
+      }
+    }
+  }
+}

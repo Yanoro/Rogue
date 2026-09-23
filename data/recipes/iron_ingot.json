@@ -6,5 +6,5 @@
   "outputs": [
     {"item": "iron_ingot", "chance": 1.0}
   ],
-  "craftTime": 0.0
+  "craftTime": 3.0
 }

@@ -992,18 +992,64 @@ void AIMenuWindow::Draw() {
   }
 }
 
-// Builds a short tag-style description of what an NPC is doing right now.
-// Prefers the timed action entity referenced by Busy (e.g. harvesting), then
-// falls back to the brain's current polymorphic action.
-static std::string GetNPCActionLabel(const flecs::entity &npc) {
+// What an NPC is doing right now, split so the table can style the verb
+// differently from its subject. `context` is always safe to display: it is
+// empty when the action has no interesting subject.
+struct NPCActionLabel {
+  std::string name;
+  std::string context;
+};
+
+// Builds the action description shown by the NPC menu. Prefers the timed action
+// entity referenced by Busy (e.g. harvesting), then falls back to the brain's
+// current polymorphic action. `registry` may be null; when it resolves the
+// recipe the craft label can name what is being made.
+static NPCActionLabel GetNPCActionLabel(const flecs::entity &npc,
+                                        const RecipeRegistry *registry = nullptr) {
+  NPCActionLabel label;
+
   if (const Busy *busy = npc.get<Busy>()) {
     if (busy->actionEntity.is_alive()) {
-      std::string label =
-          busy->actionEntity.has<HarvestAction>() ? "HARVEST" : "BUSY";
+      // A craft's subject is the recipe, not the station it happens at, so that
+      // branch fills the context itself and the generic ActionTarget fallback
+      // below has to leave it alone.
+      bool contextFromRecipe = false;
+      if (busy->actionEntity.has<HarvestAction>()) {
+        label.name = "HARVEST";
+      } else if (const CraftAction *craft = busy->actionEntity.get<CraftAction>()) {
+        label.name = "CRAFT";
+        // A batch craft reads as "3x Bread" in the subject slot below; the
+        // recipe id is the fallback when the registry cannot resolve it.
+        const CraftRecipe *recipe =
+            registry ? registry->Get(craft->recipeId) : nullptr;
+        const std::string craftName = recipe ? recipe->name : craft->recipeId;
+        if (craft->count > 1) {
+          label.context = std::to_string(craft->count) + "x " + craftName;
+        } else {
+          label.context = craftName;
+        }
+        contextFromRecipe = true;
+      } else {
+        label.name = "BUSY";
+      }
+
+      // Timed actions carry their subject as a real entity, which is the only
+      // place the target name survives: the interaction itself has already
+      // returned and its result string was consumed by the agent.
+      if (!contextFromRecipe) {
+        if (const ActionTarget *target = busy->actionEntity.get<ActionTarget>()) {
+          if (target->target.is_alive() && target->target.has<DisplayName>()) {
+            label.context = target->target.get<DisplayName>()->name;
+          }
+        }
+      }
       if (const ActionTimer *timer = busy->actionEntity.get<ActionTimer>()) {
         char buf[32];
-        std::snprintf(buf, sizeof(buf), " (%.1fs)", timer->timeRemaining);
-        label += buf;
+        std::snprintf(buf, sizeof(buf), "%.1fs left", timer->timeRemaining);
+        if (!label.context.empty()) {
+          label.context += " - ";
+        }
+        label.context += buf;
       }
       return label;
     }
@@ -1012,12 +1058,28 @@ static std::string GetNPCActionLabel(const flecs::entity &npc) {
   if (const AgentBrainWrapper *wrapper = npc.get<AgentBrainWrapper>()) {
     if (wrapper->agBrain) {
       if (AgentAction *current = wrapper->agBrain->getCurrentAction()) {
-        return current->getActionName();
+        label.name = current->getActionName();
+        label.context = current->getActionContext();
       }
     }
   }
 
-  return "IDLE";
+  if (label.name.empty()) {
+    label.name = "IDLE";
+    return label;
+  }
+
+  // MOVE_TO keeps its remaining route on the entity, so the label can say how
+  // much walking is left, not just where the NPC is headed.
+  if (label.name == "MOVE_TO") {
+    if (const MOVE_THROUGH_PATH_ACTION *path = npc.get<MOVE_THROUGH_PATH_ACTION>()) {
+      if (!path->path.empty()) {
+        label.context += " (" + std::to_string(path->path.size()) + " tiles)";
+      }
+    }
+  }
+
+  return label;
 }
 
 NPCMenuWindow::NPCMenuWindow(Game* game) : game(game) {}
@@ -1027,7 +1089,7 @@ void NPCMenuWindow::Draw() {
   if (!show)
     return;
 
-  ImGui::SetNextWindowSize(ImVec2(720, 440), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(840, 460), ImGuiCond_FirstUseEver);
   if (ImGui::Begin("NPC Menu", &show, ImGuiWindowFlags_None)) {
     static ImGuiTextFilter filter;
     filter.Draw("Filter", 180.0f);
@@ -1047,7 +1109,7 @@ void NPCMenuWindow::Draw() {
       ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthFixed,
                               90.0f);
       ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed,
-                              130.0f);
+                              240.0f);
       ImGui::TableSetupColumn("Stop Brain",
                               ImGuiTableColumnFlags_WidthFixed, 80.0f);
       ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed,
@@ -1055,7 +1117,7 @@ void NPCMenuWindow::Draw() {
       ImGui::TableHeadersRow();
 
       game->ecs.filter<AgentBrainWrapper>().each(
-          [&contextToToggle](flecs::entity npc, AgentBrainWrapper &wrapper) {
+          [&contextToToggle, this](flecs::entity npc, AgentBrainWrapper &wrapper) {
             if (!npc.is_alive()) {
               return;
             }
@@ -1088,15 +1150,30 @@ void NPCMenuWindow::Draw() {
             }
 
             ImGui::TableNextColumn();
-            const std::string action = GetNPCActionLabel(npc);
+            const NPCActionLabel action =
+                GetNPCActionLabel(npc, &game->recipeRegistry);
             ImVec4 color(0.4f, 1.0f, 0.6f, 1.0f);
-            if (action == "IDLE") {
+            if (action.name == "IDLE") {
               color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f);
-            } else if (action.find("HARVEST") != std::string::npos ||
-                       action.find("BUSY") != std::string::npos) {
+            } else if (action.name.find("HARVEST") != std::string::npos ||
+                       action.name.find("BUSY") != std::string::npos) {
               color = ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
             }
-            ImGui::TextColored(color, "%s", action.c_str());
+            // Verb and subject share the cell: the subject is dimmed and allowed
+            // to wrap, so a long destination stays readable instead of being
+            // clipped at the column edge.
+            ImGui::TextColored(color, "%s", action.name.c_str());
+            if (!action.context.empty()) {
+              ImGui::SameLine(0.0f, 8.0f);
+              ImGui::PushStyleColor(
+                  ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+              ImGui::TextWrapped("%s", action.context.c_str());
+              ImGui::PopStyleColor();
+            }
+            if (!action.context.empty() && ImGui::IsItemHovered()) {
+              ImGui::SetTooltip("%s %s", action.name.c_str(),
+                                action.context.c_str());
+            }
 
             ImGui::TableNextColumn();
             if (wrapper.agBrain) {

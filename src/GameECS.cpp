@@ -8,6 +8,7 @@
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "StorageWindow.h"
 #include "Game.h"
 
 #include "AgentBrain.h"
@@ -331,34 +332,6 @@ void Game::ECSInitLogicSystems() {
       });
 }
 
-namespace {
-
-// Turns a map-defined starting inventory into real entities held by the NPC.
-// Each unit is spawned as its own entity and attached with the Holds
-// relationship, which is the same shape harvest drops and crafting outputs use,
-// so [INVENTORY], [STORE], [TAKE] and [CRAFT] see these items with no special
-// casing. An unknown template id is reported by ObjectFactory::SpawnObject and
-// skipped here.
-void GiveStartingInventory(flecs::world &world, flecs::entity npc,
-                           const std::vector<ItemStack> &inventory) {
-  if (inventory.empty()) return;
-
-  auto factoryRes = world.get<ObjectFactoryResource>();
-  if (!factoryRes || !factoryRes->factory) return;
-
-  for (const ItemStack &stack : inventory) {
-    for (int i = 0; i < stack.count; ++i) {
-      flecs::entity item =
-          factoryRes->factory->SpawnObject(world, npc, nullptr, stack.item);
-      if (item.is_alive()) {
-        npc.add<Holds>(item);
-      }
-    }
-  }
-}
-
-} // namespace
-
 void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   hasClicked = false;
   validTileSelected = false;
@@ -380,7 +353,12 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
       for (const auto& npc : currentMap->GetNPCs()) {
         flecs::entity npcEntity =
             createNPC(npc.position, npc.name, npc.background);
-        GiveStartingInventory(ecs, npcEntity, npc.inventory);
+        // Starting inventory becomes real Holds children, the same shape
+        // crafting and storage use (see ObjectFactory::SpawnInventory).
+        auto factoryRes = ecs.get<ObjectFactoryResource>();
+        if (factoryRes && factoryRes->factory) {
+          factoryRes->factory->SpawnInventory(ecs, npcEntity, npc.inventory);
+        }
       }
     }
 
@@ -530,6 +508,13 @@ void Game::ECSInitActionSystems() {
                 if (interaction.name == pendingInt->interactionName) {
                   std::string msg = interaction.execute(entity, pendingInt->targetEntity, "");
                   if (debugLog && !msg.empty()) debugLog->Log(msg);
+                  // Examining a container also opens the storage window, so the
+                  // player sees the contents as ascii instead of only reading
+                  // the log line.
+                  if (interaction.name == "Examine" &&
+                      pendingInt->targetEntity.has<Storage>()) {
+                    OpenStorageWindow(pendingInt->targetEntity);
+                  }
                   break;
                 }
               }
@@ -697,6 +682,104 @@ void Game::ECSInitActionSystems() {
 
 static std::mutex g_AIResponseMutex;
 static std::vector<std::function<void()>> g_AIResponseQueue;
+
+namespace {
+
+// Every input entity a craft is about to spend, plus the human-readable shortage
+// when the actor cannot pay the full cost. `items` is empty exactly when
+// `missing` is non-empty.
+struct RecipeInputClaim {
+  std::vector<flecs::entity> items;
+  std::string missing;
+};
+
+// Walks the actor's inventory once and claims up to `count` units of every
+// input. Each entity is claimed at most once, so a recipe that lists the same
+// item twice cannot spend one unit twice. Used twice for a timed craft: once at
+// start to refuse unsatisfiable work before the wait, and once when the timer
+// ends to spend exactly what is still there.
+//
+// `batches` is how many times the recipe runs in one craft (the trailing number
+// in [CRAFT bread 3]), so every listed input is multiplied by it: 3 breads at
+// 1 flour each claim 3 flour, and the shortage message reports what the whole
+// batch is still missing.
+RecipeInputClaim ClaimRecipeInputs(flecs::entity actor,
+                                   const CraftRecipe &recipe, int batches = 1) {
+  if (batches < 1) batches = 1;
+
+  RecipeInputClaim claim;
+  for (const ItemStack &input : recipe.inputs) {
+    const int needed = input.count * batches;
+    std::vector<flecs::entity> found;
+    actor.each<Holds>([&](flecs::entity child) {
+      if (static_cast<int>(found.size()) >= needed) return;
+      if (!child.is_alive()) return;
+      if (std::find(claim.items.begin(), claim.items.end(), child) !=
+          claim.items.end()) {
+        return;
+      }
+      const ItemType *itemType = child.get<ItemType>();
+      if (itemType && StringUtils::EqualsIgnoreCase(itemType->id, input.item)) {
+        found.push_back(child);
+      }
+    });
+
+    if (static_cast<int>(found.size()) < needed) {
+      if (!claim.missing.empty()) claim.missing += ", ";
+      claim.missing +=
+          std::to_string(needed - static_cast<int>(found.size())) + " " +
+          input.item;
+      // Keep checking the other inputs so the shortage message is complete.
+      continue;
+    }
+    claim.items.insert(claim.items.end(), found.begin(), found.end());
+  }
+  return claim;
+}
+
+// Rolls a recipe's outputs once and hands each success to the actor. Shared by
+// the instant path in the Craft interaction and by CraftResolutionSystem below,
+// so the two cannot drift. Returns the list actually produced ("Flour, Flour"),
+// or empty when every chance failed.
+//
+// One call is one run of the recipe. A batch craft calls this `batches` times
+// rather than multiplying the outputs in one pass, because each output carries
+// its own chance and three independent rolls are not the same as one roll times
+// three.
+std::string ProduceRecipeOutputs(flecs::entity actor, const CraftRecipe &recipe,
+                                 ObjectFactory *factory) {
+  std::string produced;
+  flecs::world world = actor.world();
+  for (const LootDrop &output : recipe.outputs) {
+    float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
+    if (roll > output.chance) continue;
+
+    flecs::entity crafted =
+        factory->SpawnObject(world, actor, nullptr, output.itemType);
+    if (crafted.is_alive()) {
+      actor.add<Holds>(crafted);
+      produced += crafted.has<DisplayName>() ? crafted.get<DisplayName>()->name
+                                             : output.itemType;
+      produced += ", ";
+    }
+  }
+  if (!produced.empty()) {
+    produced.pop_back();
+    produced.pop_back();
+  }
+  return produced;
+}
+
+// Name for a batch in a message: "3x Bread" for a batch, plain "Bread" for one,
+// so a single-item craft reads exactly as it did before batching existed.
+std::string FormatBatchedLabel(int batches, const std::string &label) {
+  if (batches > 1) {
+    return std::to_string(batches) + "x " + label;
+  }
+  return label;
+}
+
+} // namespace
 
 void Game::ECSInitAgentSystems() {
   // System to flush background AI thread callbacks on the main thread safely
@@ -870,6 +953,108 @@ void Game::ECSInitAgentSystems() {
           }
           actionEntity.destruct();
       });
+
+  // Completes a timed craft started by the Craft interaction. The ingredients
+  // are spent here, immediately before the outputs are created, so a craft that
+  // cannot resolve never destroys them. Mirrors HarvestResolutionSystem,
+  // including the contract that the interaction itself returned an empty success
+  // message: the model is woken exactly once, here, with the result.
+  ecs.system<ActionActor, CraftAction>("CraftResolutionSystem")
+      .with<ActionCompleted>()
+      .each([this](flecs::entity actionEntity, ActionActor& a, CraftAction& craft) {
+          flecs::entity actor = a.actor;
+
+          if (actor.is_alive()) {
+              auto regRes = actor.world().get<RecipeRegistryResource>();
+              const RecipeRegistry* registry = regRes ? regRes->registry : nullptr;
+              // The recipe is looked up by id rather than captured as a pointer,
+              // so a registry reload between start and finish cannot dangle.
+              const CraftRecipe* recipe =
+                  registry ? registry->Get(craft.recipeId) : nullptr;
+              auto factoryRes = actor.world().get<ObjectFactoryResource>();
+              ObjectFactory* factory = factoryRes ? factoryRes->factory : nullptr;
+
+              if (!recipe || !factory) {
+                  // Engine-integrity failure, not a gameplay outcome: content or
+                  // the world was torn down under a running craft. It belongs in
+                  // the debug log, not in the NPC's conversation -- and since
+                  // nothing has been consumed at this point, the actor's
+                  // materials survive.
+                  if (this->debugLog) {
+                      std::string actorName = actor.has<DisplayName>()
+                                                  ? actor.get<DisplayName>()->name
+                                                  : "an unnamed actor";
+                      this->debugLog->LogError(
+                          "CraftResolutionSystem: craft of '" + craft.recipeId +
+                          "' by " + actorName + " produced nothing (" +
+                          (!recipe ? "recipe no longer exists"
+                                   : "no object factory is loaded") +
+                          ").");
+                  }
+              } else {
+                  // A batch craft is `count` copies of the same recipe executed
+                  // under one timer. The count is clamped here as well as at the
+                  // interaction, because it decides how much the loop below
+                  // spends: a zero or negative value from anywhere would
+                  // otherwise silently produce nothing.
+                  const int batches = craft.count > 0 ? craft.count : 1;
+
+                  // Claim again instead of trusting the interaction's dry run:
+                  // this is the copy that gets spent, so it is the only one that
+                  // has to still be valid when the timer ends. The claim covers
+                  // the whole batch, so a batch that can no longer be paid for in
+                  // full is canceled rather than partially executed.
+                  RecipeInputClaim claim = ClaimRecipeInputs(actor, *recipe, batches);
+                  std::string msg;
+                  if (!claim.missing.empty()) {
+                      // A real gameplay outcome: the actor spent the materials on
+                      // something else during the wait. Nothing is destroyed and
+                      // it is told why the craft came to nothing.
+                      msg = "System: You no longer have the materials to craft " +
+                            FormatBatchedLabel(batches, recipe->id) +
+                            ". Still needed: " + claim.missing +
+                            ". The craft was canceled.\n";
+                  } else {
+                      // Spend the materials only now, on the path that is about to
+                      // produce something.
+                      for (flecs::entity item : claim.items) {
+                          actor.remove<Holds>(item);
+                          item.destruct();
+                      }
+
+                      // One roll per batch item, not one roll scaled by the
+                      // batch: probability lives on each output.
+                      std::string produced;
+                      for (int i = 0; i < batches; ++i) {
+                          std::string run = ProduceRecipeOutputs(actor, *recipe, factory);
+                          if (run.empty()) continue;
+                          if (!produced.empty()) produced += ", ";
+                          produced += run;
+                      }
+                      if (produced.empty()) {
+                          msg = "System: You crafted " +
+                                FormatBatchedLabel(batches, recipe->id) +
+                                " but nothing came out of it.\n";
+                      } else {
+                          msg = "System: You finished crafting " + produced +
+                                " and put it in your inventory.\n";
+                      }
+                  }
+
+                  if (actor.has<AgentBrainWrapper>()) {
+                      actor.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
+                  }
+                  if (!actor.has<AgentBrainWrapper>() && this->debugLog) {
+                      this->debugLog->Log(msg);
+                  }
+              }
+          }
+
+          if (actor.is_alive()) {
+              actor.remove<Busy>();
+          }
+          actionEntity.destruct();
+      });
 };
 
 namespace {
@@ -881,6 +1066,18 @@ std::string TrimCopy(const std::string &text) {
   }
   size_t end = text.find_last_not_of(" \t\r\n");
   return text.substr(begin, end - begin + 1);
+}
+
+// Durations are written into messages a player and a model read, where
+// "3.000000 seconds" is noise. Whole seconds print bare, anything else keeps one
+// decimal: 3 -> "3", 2.5 -> "2.5".
+std::string FormatSeconds(float seconds) {
+  std::string text = std::to_string(seconds);
+  text.erase(text.find_last_not_of('0') + 1);
+  if (!text.empty() && text.back() == '.') {
+    text.pop_back();
+  }
+  return text;
 }
 
 // One line per recipe, written with content ids rather than display names,
@@ -902,6 +1099,11 @@ std::string FormatRecipe(const CraftRecipe &recipe) {
     }
   }
   line += ")";
+  // Surface the wait, because it differs per recipe and the model needs it to
+  // plan around being busy.
+  if (recipe.craftTimeSeconds > 0.0f) {
+    line += " takes " + FormatSeconds(recipe.craftTimeSeconds) + "s";
+  }
   return line;
 }
 
@@ -1197,7 +1399,7 @@ void Game::ECSInit(std::string mapPath) {
 
   InteractionRegistry::RegisterComponentInteraction<Workstation>(
       "Craft",
-      "Turn materials you are carrying into a finished good at this station. Name the recipe you want, e.g. [CRAFT flour]. Use [CRAFT] on its own to list what this station can make and what each recipe consumes.",
+      "Turn materials you are carrying into a finished good at this station. Crafting takes time and the wait depends on the recipe, during which you are busy and cannot start anything else; you are told the result when it finishes. Name the recipe you want, and optionally how many to make as a trailing number: the same materials are consumed per item and the wait multiplies, so 3 breads cost 3 times the materials and 3 times the time. Examples: [CRAFT flour], [CRAFT bread 3]. Use [CRAFT] on its own to list what this station can make, what each recipe consumes and how long it takes.",
       [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       const Workstation* station = target.get<Workstation>();
       if (!station) {
@@ -1223,53 +1425,37 @@ void Game::ECSInit(std::string mapPath) {
         std::string msg = "System: The " + stationName + " can craft:\n" +
                           FormatStationRecipes(*station, registry);
         msg += "Use [CRAFT $RECIPE] to make one, for example [CRAFT " +
-               station->recipes.front() + "].\n";
+               station->recipes.front() +
+               "]. Add a trailing number to make several in one go, e.g. [CRAFT " +
+               station->recipes.front() +
+               " 3], which consumes and takes that many times as much.\n";
         return msg;
       }
 
+      // "bread 3" -> {"bread", 3}; a bare "[CRAFT bread]" means one, and a
+      // trailing number that is not a count simply stays part of the recipe name.
+      std::pair<std::string, int> request = StringUtils::SplitTrailingCount(requested);
+      const std::string recipeName = request.first;
+      const int batches = request.second > 0 ? request.second : 1;
+
       const CraftRecipe* recipe =
-          ResolveStationRecipe(registry, *station, requested);
+          ResolveStationRecipe(registry, *station, recipeName);
       if (!recipe) {
-        return "System: The " + stationName + " has no recipe called " + requested +
+        return "System: The " + stationName + " has no recipe called " + recipeName +
                ". Use [CRAFT] to see what it can make.\n";
       }
 
-      // Verify the whole ingredient list before consuming anything: crafting is
-      // all-or-nothing, so a recipe that is only half satisfiable must not eat
-      // the materials it did find. Each entity is claimed at most once so a
-      // recipe that lists the same item twice cannot consume one unit twice.
-      std::vector<flecs::entity> toConsume;
-      std::string missing;
-      for (const ItemStack& input : recipe->inputs) {
-        std::vector<flecs::entity> found;
-        actor.each<Holds>([&](flecs::entity child) {
-          if (static_cast<int>(found.size()) >= input.count) return;
-          if (!child.is_alive()) return;
-          if (std::find(toConsume.begin(), toConsume.end(), child) !=
-              toConsume.end()) {
-            return;
-          }
-          const ItemType* itemType = child.get<ItemType>();
-          if (itemType &&
-              StringUtils::EqualsIgnoreCase(itemType->id, input.item)) {
-            found.push_back(child);
-          }
-        });
-
-        if (static_cast<int>(found.size()) < input.count) {
-          if (!missing.empty()) missing += ", ";
-          missing +=
-              std::to_string(input.count - static_cast<int>(found.size())) + " " +
-              input.item;
-          // Keep checking the other inputs so the shortage message is complete.
-          continue;
-        }
-        toConsume.insert(toConsume.end(), found.begin(), found.end());
-      }
-
-      if (!missing.empty()) {
-        return "System: You do not have enough materials to craft " + recipe->id +
-               ". Still needed: " + missing + ".\n";
+      // Refuse unsatisfiable work before the wait: a recipe that is only half
+      // satisfiable must fail now with a complete shortage list, not after the
+      // actor has stood at the station for the whole timer. This claim is a dry
+      // run for a timed craft -- CraftResolutionSystem claims and spends again
+      // when the timer ends. It is asked for the whole batch, so [CRAFT bread 3]
+      // is refused up front when only two loaves' worth of flour is carried.
+      RecipeInputClaim claim = ClaimRecipeInputs(actor, *recipe, batches);
+      if (!claim.missing.empty()) {
+        return "System: You do not have enough materials to craft " +
+               FormatBatchedLabel(batches, recipe->id) +
+               ". Still needed: " + claim.missing + ".\n";
       }
 
       auto factoryRes = actor.world().get<ObjectFactoryResource>();
@@ -1277,37 +1463,68 @@ void Game::ECSInit(std::string mapPath) {
         return "System: Crafting is unavailable: no object factory is loaded.\n";
       }
 
-      // Consume first, then produce. Removing Holds and destroying the spent
-      // entities mutates the relationship the scan above walked, which is why the
-      // entities were collected into toConsume first.
-      for (flecs::entity item : toConsume) {
+      // One timed action per actor. A craft takes real time, so it must not start
+      // on top of a harvest (or another craft) and leave two action entities
+      // fighting over Busy.
+      if (actor.has<Busy>()) {
+        return "System: You are already busy doing something else.\n";
+      }
+
+      if (recipe->craftTimeSeconds > 0.0f) {
+        // Nothing is consumed here. The materials have to survive a craft that
+        // fails to resolve, so CraftResolutionSystem spends them right before it
+        // creates the outputs; Busy is what keeps them from being spent twice in
+        // the meantime. The waiting time is the recipe's own, not a global
+        // constant: smelting one ore and forging a scythe should not take the
+        // same number of seconds. The id travels on the action entity because
+        // the definition lives in the registry, which is allowed to reload.
+        // A batch is the per-item wait times the item count, so [CRAFT bread 3]
+        // on a 5 second recipe waits 15 seconds.
+        const float totalSeconds = recipe->craftTimeSeconds * static_cast<float>(batches);
+        flecs::entity actionEntity = actor.world().entity()
+            .set<ActionActor>({actor})
+            .set<ActionTarget>({target})
+            .set<ActionTimer>({totalSeconds})
+            .set<CraftAction>({recipe->id, batches});
+
+        actor.set<Busy>({actionEntity});
+
+        std::string msg = "System: Started crafting " +
+                          FormatBatchedLabel(batches, recipe->name) +
+                          ". It will take " + FormatSeconds(totalSeconds) +
+                          " seconds.\n";
+        if (actor.has<AgentBrainWrapper>()) {
+          // Log it but do NOT append to the agent's context: the craft completes
+          // on its own and CraftResolutionSystem reports the outcome, so waking
+          // the model here only costs a request and lets the agent act while it
+          // is meant to be busy. Same contract as [HARVEST].
+          actor.get_mut<AgentBrainWrapper>()->agBrain->logNote(msg);
+          return ""; // Return empty so AI Action queue doesn't hold it
+        }
+        return msg; // Return msg so player queue logs it immediately
+      }
+
+      // Instant fallback for a recipe authored with craftTime 0: there is no
+      // window between claiming and producing, so the dry-run claim above is the
+      // one that gets spent. Destroying it before ProduceRecipeOutputs walks the
+      // same relationship is why the entities were collected first. The batch is
+      // executed one run at a time so each output rolls its own chance.
+      for (flecs::entity item : claim.items) {
         actor.remove<Holds>(item);
         item.destruct();
       }
-
       std::string produced;
-      flecs::world world = actor.world();
-      for (const LootDrop& output : recipe->outputs) {
-        float roll = static_cast<float>(rand()) / static_cast<float>(RAND_MAX);
-        if (roll > output.chance) continue;
-
-        flecs::entity crafted = factoryRes->factory->SpawnObject(
-            world, actor, nullptr, output.itemType);
-        if (crafted.is_alive()) {
-          actor.add<Holds>(crafted);
-          produced += crafted.has<DisplayName>()
-                          ? crafted.get<DisplayName>()->name
-                          : output.itemType;
-          produced += ", ";
-        }
+      for (int i = 0; i < batches; ++i) {
+        std::string run = ProduceRecipeOutputs(actor, *recipe, factoryRes->factory);
+        if (run.empty()) continue;
+        if (!produced.empty()) produced += ", ";
+        produced += run;
       }
 
       if (produced.empty()) {
-        return "System: You crafted " + recipe->id +
+        return "System: You crafted " + FormatBatchedLabel(batches, recipe->id) +
                " but nothing came out of it.\n";
       }
-      produced.pop_back();
-      produced.pop_back();
       return "System: You crafted " + produced + " and put it in your inventory.\n";
   });
 
@@ -1328,16 +1545,15 @@ void Game::ECSInit(std::string mapPath) {
       }
       if (target.has<Storage>()) {
           msg += "It can be used to [STORE $ITEM_NAME $COUNT] or [TAKE $ITEM_NAME $COUNT].\n";
-          std::string items = "";
+          std::vector<std::string> itemNames;
           target.each<Holds>([&](flecs::entity child) {
               if (child.is_alive() && child.has<DisplayName>()) {
-                  items += child.get<DisplayName>()->name + ", ";
+                  itemNames.push_back(child.get<DisplayName>()->name);
               }
           });
-          if (!items.empty()) {
-              items.pop_back();
-              items.pop_back();
-              msg += "It currently holds: " + items + ".\n";
+          if (!itemNames.empty()) {
+              msg += "It currently holds: " +
+                     StringUtils::FormatStackedNames(StringUtils::StackNames(itemNames)) + ".\n";
           } else {
               msg += "It is currently empty.\n";
           }
@@ -1543,6 +1759,7 @@ void Game::ECSInit(std::string mapPath) {
   mapEditorWindowEntity = ecs.entity("Map Editor Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
+  storageWindowEntity = ecs.entity("Storage Window");
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -1592,4 +1809,17 @@ void Game::ECSInit(std::string mapPath) {
     playerEntity.set<ActiveWindow>(
         {std::make_shared<EntityInfoWindow>(playerEntity)});
   }
+}
+
+void Game::OpenStorageWindow(flecs::entity container) {
+  if (!storageWindowEntity.is_alive()) {
+    return;
+  }
+  // This is called from inside the movement system's iteration, so the
+  // structural change (adding ActiveWindow) is deferred to the end of the
+  // stage. Setting rather than adding replaces any previously examined chest.
+  ecs.defer([this, container]() {
+    storageWindowEntity.set<ActiveWindow>(
+        {std::make_shared<StorageWindow>(container, storageWindowEntity)});
+  });
 }

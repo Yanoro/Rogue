@@ -43,6 +43,8 @@ constexpr GameCameraMode DEFAULT_STARTING_CAMERA_MODE = GameCameraMode::FollowMo
 constexpr double DEFAULT_DOUBLE_CLICK_TIME = 0.3;
 
 constexpr const char *DEFAULT_FONT_PATH = "./fonts/oldschool/otb - Bm (linux bitmap)/BmPlus_IBM_CGA.otb";
+constexpr const char *MAPS_DIRECTORY = "./maps";
+
 constexpr size_t DEFAULT_FONTSIZE = 32;
 constexpr size_t DEFAULT_PLAYER_HITBOX_WIDTH = 16;
 constexpr size_t DEFAULT_PLAYER_HITBOX_HEIGHT = 16; 

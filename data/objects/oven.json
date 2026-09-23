@@ -1,0 +1,16 @@
+{
+  "name": "Oven",
+  "description": "A stone bread oven, its mouth still warm. Feed it flour and it bakes bread.",
+  "components": [
+    "Interactable",
+    "Obstacle",
+    "Workstation"
+  ],
+  "recipes": [
+    "bread"
+  ],
+  "character": "O",
+  "characterColor": [200, 80, 40, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 80, 40, 255]
+}

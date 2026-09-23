@@ -312,6 +312,21 @@ struct ActionCanceled {};
 
 struct HarvestAction {};
 
+// A timed craft in progress, on the action entity that Busy points at. Unlike
+// HarvestAction this is not a bare tag: the recipe definition lives only in
+// data/recipes/*.json, so the id is carried here and resolved again when the
+// timer runs out (CraftResolutionSystem). An id, never a CraftRecipe*: the
+// registry is allowed to reload and invalidate its pointers.
+//
+// `count` is how many times the recipe is executed as one batch, so a single
+// timed craft can yield e.g. 3 loaves. It is at least 1. The ActionTimer is
+// already the *total* wait (recipe.craftTimeSeconds * count), and
+// CraftResolutionSystem spends the inputs and rolls the outputs `count` times.
+struct CraftAction {
+  std::string recipeId;
+  int count = 1;
+};
+
 struct Busy { flecs::entity actionEntity; };
 
 struct Workstation {

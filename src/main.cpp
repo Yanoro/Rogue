@@ -1,4 +1,5 @@
 #include "AI.h"
+#include "Defaults.h"
 #include "Game.h"
 #include "Window.hpp"
 #include "imgui.h"
@@ -8,7 +9,7 @@
 #include <string>
 
 int main(int argc, char *argv[]) {
-  std::string mapPath = "./Map_Trade.json";
+  std::string mapPath = std::string(MAPS_DIRECTORY) + "/Map_Miller.json";
   if (argc > 1) {
     mapPath = argv[1];
   }

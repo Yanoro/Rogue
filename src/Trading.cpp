@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "ObjectFactory.h"
+#include "StringUtils.hpp"
 #include "TradeGrammar.hpp"
 
 namespace Trading {
@@ -145,21 +146,15 @@ TradeOutcome ExecuteTrade(flecs::entity offerer, flecs::entity responder,
 
 std::string DescribeInventory(flecs::entity holder) {
   // Same shape as [INVENTORY]: one line per distinct name, count in brackets.
-  std::vector<std::pair<std::string, int>> counts;
+  // Shares the stacking rules with the inventory and examine text.
+  std::vector<std::string> names;
   holder.each<Holds>([&](flecs::entity child) {
     if (!child.is_alive() || !child.has<DisplayName>()) return;
-    const std::string &name = child.get<DisplayName>()->name;
-    for (auto &entry : counts) {
-      if (entry.first == name) {
-        entry.second++;
-        return;
-      }
-    }
-    counts.emplace_back(name, 1);
+    names.push_back(child.get<DisplayName>()->name);
   });
 
   std::string text;
-  for (const auto &entry : counts) {
+  for (const auto &entry : StringUtils::StackNames(names)) {
     text += "- " + entry.first;
     if (entry.second > 1) {
       text += " (" + std::to_string(entry.second) + ")";

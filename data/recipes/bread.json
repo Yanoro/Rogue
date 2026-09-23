@@ -1,0 +1,10 @@
+{
+  "name": "Bread",
+  "inputs": [
+    {"item": "flour", "count": 2}
+  ],
+  "outputs": [
+    {"item": "bread", "chance": 1.0}
+  ],
+  "craftTime": 4.0
+}

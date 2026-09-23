@@ -4,9 +4,10 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include "DebugLog.h"
+#include "Defaults.h"
 
 MapReloader::MapReloader(const std::string &mapsDir, DebugLog* debugLog) 
-    : mapsDirectory(mapsDir), debugLog(debugLog) {
+    : mapsDirectory(mapsDir.empty() ? MAPS_DIRECTORY : mapsDir), debugLog(debugLog) {
   RefreshMapList();
 }
 

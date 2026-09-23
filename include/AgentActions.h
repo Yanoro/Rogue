@@ -7,6 +7,7 @@
 #include "ObjectFactory.h"
 #include "InteractionRegistry.h"
 
+#include <cstdio>
 #include <flecs.h>
 #include <string>
 #include <utility>
@@ -30,6 +31,12 @@ public:
 
   // Tag-style name of the action (e.g. "MOVE_TO", "HARVEST"). Shown by the debug UI.
   virtual std::string getActionName() const { return "ACTION"; }
+
+  // What the action acts on (e.g. the destination of a MOVE_TO, the partner of
+  // a TALK_TO), shown next to the name by the debug UI. Empty when the action
+  // has no interesting subject. Called once per frame while the NPC menu is
+  // open, so keep it cheap and side-effect free.
+  virtual std::string getActionContext() const { return ""; }
       };
 
       class InvalidAction : public AgentAction {
@@ -79,6 +86,14 @@ public:
 
         std::string getActionName() const override { return "WAIT"; }
 
+        // The only interesting thing about a wait is how much of it is left.
+        // `time` is milliseconds, see the constructor.
+        std::string getActionContext() const override {
+          char buf[32];
+          std::snprintf(buf, sizeof(buf), "%.1fs left", time / 1000.0f);
+          return buf;
+        }
+
         ActionStatus update(float deltaTime, flecs::entity) override {
           time -= deltaTime;
           if (time <= 0.0f) {
@@ -106,6 +121,15 @@ public:
         MoveToEntityAction(std::string targetName) : targetName(targetName), lastKnownTargetPos({-1, -1}) {};
 
         std::string getActionName() const override { return "MOVE_TO"; }
+
+        std::string getActionContext() const override {
+          // Prefer the resolved entity's name so the label shows the canonical
+          // spelling. Locations have no entity, so fall back to the request.
+          if (targetEntity.is_alive() && targetEntity.has<DisplayName>()) {
+            return targetEntity.get<DisplayName>()->name;
+          }
+          return targetName;
+        }
 
         ActionStatus update(float, flecs::entity entity) override {
           Map *map = entity.world().get<MapResource>()->map;
@@ -217,6 +241,8 @@ public:
 
         std::string getActionName() const override { return "TALK_TO"; }
 
+        std::string getActionContext() const override;
+
         ActionStatus update(float deltaTime, flecs::entity entity) override;
         ActionStatus handleInterruption(flecs::entity entity) override;
         void resume(flecs::entity entity) override;
@@ -245,6 +271,12 @@ public:
             : verb(verbName) {}
 
         std::string getActionName() const override { return verb; }
+
+        // The verb alone does not explain why this action exists: it is always
+        // the "you are not in a conversation" reply to a trade verb.
+        std::string getActionContext() const override {
+          return "outside a conversation";
+        }
 
         ActionStatus update(float, flecs::entity) override {
           return ActionStatus::Done;
@@ -432,27 +464,21 @@ private:
         std::string getActionName() const override { return "INVENTORY"; }
 
         ActionStatus update(float, flecs::entity entity) override {
-          // Stack identical items: one line per distinct item name, with "(N)"
-          // appended when more than one is held.
-          std::vector<std::pair<std::string, int>> itemCounts;
+          // Stack identical items: one entry per distinct name, with "(N)"
+          // appended when more than one is held. Shared with the chest examine
+          // text so both readings of a container agree.
+          std::vector<std::string> itemNames;
           entity.each<Holds>([&](flecs::entity child) {
             if (child.is_alive() && child.has<DisplayName>()) {
-              const std::string& name = child.get<DisplayName>()->name;
-              for (auto& entry : itemCounts) {
-                if (entry.first == name) {
-                  entry.second++;
-                  return;
-                }
-              }
-              itemCounts.emplace_back(name, 1);
+              itemNames.push_back(child.get<DisplayName>()->name);
             }
           });
 
-          if (itemCounts.empty()) {
+          if (itemNames.empty()) {
             response = "System: Your inventory is empty.\n";
           } else {
             std::string inventoryList;
-            for (const auto& entry : itemCounts) {
+            for (const auto& entry : StringUtils::StackNames(itemNames)) {
               inventoryList += "- " + entry.first;
               if (entry.second > 1) {
                 inventoryList += " (" + std::to_string(entry.second) + ")";
@@ -485,6 +511,8 @@ private:
         ExamineItemAction(std::string itemName) : itemName(itemName) {}
 
         std::string getActionName() const override { return "EXAMINE_ITEM"; }
+
+        std::string getActionContext() const override { return itemName; }
 
         ActionStatus update(float, flecs::entity entity) override {
           flecs::entity targetItem = flecs::entity::null();
@@ -539,6 +567,20 @@ private:
 
         // Surfaces the actual verb the model emitted, e.g. "HARVEST" or "STORE".
         std::string getActionName() const override { return StringUtils::ToUpper(commandName); }
+
+        // update() resolves the verb against an inventory item first and the
+        // world InteractionTarget second; report whichever it landed on, plus
+        // any extra argument (e.g. a crafting recipe) it was called with.
+        std::string getActionContext() const override {
+          if (resolvedTargetName.empty()) {
+            return commandArgs;
+          }
+          if (commandArgs.empty()) {
+            return resolvedTargetName;
+          }
+          return resolvedTargetName + " (" + commandArgs + ")";
+        }
+
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
@@ -556,6 +598,9 @@ private:
               });
 
               if (targetItem.is_alive()) {
+                if (targetItem.has<DisplayName>()) {
+                  resolvedTargetName = targetItem.get<DisplayName>()->name;
+                }
                 auto itemInteractions = ItemInteractionRegistry::GetAvailableInteractions(targetItem);
                 for (const auto& interaction : itemInteractions) {
                   if (StringUtils::EqualsIgnoreCase(interaction.name, commandName)) {
@@ -576,6 +621,9 @@ private:
               }
 
               flecs::entity targetObj = target->targetEntity;
+              if (targetObj.has<DisplayName>()) {
+                resolvedTargetName = targetObj.get<DisplayName>()->name;
+              }
               auto interactions = InteractionRegistry::GetAvailableInteractions(targetObj);
 
               for (const auto& interaction : interactions) {
@@ -621,6 +669,9 @@ private:
         std::string commandArgs;
         bool isFirstUpdate = true;
         std::string successMsg;
+        // Name of the object/item update() matched the verb against. Empty until
+        // the first update, so the debug label fills in a frame later.
+        std::string resolvedTargetName;
       };
 
       class PlantAtAction : public AgentAction {
@@ -628,6 +679,10 @@ private:
         PlantAtAction(std::string coordsStr, std::string seedName) : coordsStr(coordsStr), seedName(seedName) {}
 
         std::string getActionName() const override { return "PLANT_AT"; }
+
+        // Which seed is going in the ground; the coordinates are already in the
+        // command the model wrote.
+        std::string getActionContext() const override { return seedName; }
 
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {

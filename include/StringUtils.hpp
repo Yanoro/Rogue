@@ -4,6 +4,7 @@
 #include <cctype>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace StringUtils {
 
@@ -88,6 +89,43 @@ inline std::pair<std::string, int> SplitTrailingCount(const std::string &args) {
   }
 
   return {trimmed, 1};
+}
+
+// Collapses identical names into a single counted entry, preserving the order in
+// which each name was first seen. Comparison ignores case, so "Wheat" and "wheat"
+// stack together and the first-seen spelling is the one reported.
+inline std::vector<std::pair<std::string, int>>
+StackNames(const std::vector<std::string> &names) {
+  std::vector<std::pair<std::string, int>> stacked;
+  for (const std::string &name : names) {
+    auto it = std::find_if(stacked.begin(), stacked.end(),
+                           [&name](const std::pair<std::string, int> &entry) {
+                             return EqualsIgnoreCase(entry.first, name);
+                           });
+    if (it != stacked.end()) {
+      it->second++;
+    } else {
+      stacked.emplace_back(name, 1);
+    }
+  }
+  return stacked;
+}
+
+// Renders stacked names as one comma-separated list: "Wheat (4), Apple".
+// Single items carry no count suffix.
+inline std::string
+FormatStackedNames(const std::vector<std::pair<std::string, int>> &stacked) {
+  std::string out;
+  for (const auto &entry : stacked) {
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += entry.first;
+    if (entry.second > 1) {
+      out += " (" + std::to_string(entry.second) + ")";
+    }
+  }
+  return out;
 }
 
 } // namespace StringUtils

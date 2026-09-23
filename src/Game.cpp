@@ -36,7 +36,7 @@ void Game::Init(std::string mapPath) {
   // Initialize debug systems early to read state
   debugLog = std::make_unique<DebugLog>();
   debugWindowState = std::make_unique<DebugWindowState>(debugLog.get());
-  mapReloader = std::make_unique<MapReloader>("./", debugLog.get());
+  mapReloader = std::make_unique<MapReloader>(MAPS_DIRECTORY, debugLog.get());
 
   // Load debug window state if it exists
   debugWindowState->LoadState("./debug_windows_state.json");

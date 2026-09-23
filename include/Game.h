@@ -149,6 +149,9 @@ private:
   flecs::entity mapEditorWindowEntity;
   flecs::entity aiMenuWindowEntity;
   flecs::entity npcMenuWindowEntity;
+  // Carrier for the read-only storage contents window. One is enough: examining
+  // another container replaces the ActiveWindow rather than opening a second.
+  flecs::entity storageWindowEntity;
 
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
@@ -171,6 +174,11 @@ private:
   std::unique_ptr<InputHandler> inputHandler;
 
   void LoadMap(std::string mapPath, bool spawnNPCs = false);
+
+  // Shows the ASCII contents of a Storage container in the storage window,
+  // replacing whatever it was showing before. No-op if the window entity is
+  // missing (i.e. before ECSInit has created it).
+  void OpenStorageWindow(flecs::entity container);
 
   void ECSInit(std::string mapPath);
   void ECSInitRenderSystems();
