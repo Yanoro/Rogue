@@ -5,6 +5,8 @@
 
 #include "Map.h"
 #include "DebugLog.h"
+#include "Defaults.h"
+#include "ItemRegistry.h"
 #include "TrainingParsing.h"
 
 ObjectFactory::ObjectFactory() {
@@ -25,6 +27,10 @@ void ObjectFactory::RegisterDefaultComponents() {
     Harvestable h;
     h.amountRemaining = tmpl.value("amountRemaining", 1);
     h.timer = tmpl.value("timer", 0.0f);
+    // Every harvestable has a cost; only an object that wants a different one
+    // from the default has to say so.
+    h.durabilityCost =
+        tmpl.value("durabilityCost", DEFAULT_HARVEST_DURABILITY_COST);
     if (tmpl.contains("drops")) {
       for (const auto& drop : tmpl["drops"]) {
         h.lootTable.drops.push_back({
@@ -54,8 +60,100 @@ void ObjectFactory::RegisterDefaultComponents() {
     obj.set<Evolvable>(e);
   });
   
-  RegisterComponent<Seed>("Seed", [](flecs::entity obj, const nlohmann::json& tmpl) {
-    obj.add<Seed>();
+  // Placement rules live in the template's "placement" block so the [PLACE]
+  // verb can stay generic: this is what makes an item settable in the world, and
+  // where it is allowed to go. A malformed block leaves the item unplaceable
+  // rather than guessing, and says so at load time.
+  RegisterComponent<Placeable>("Placeable", [this](flecs::entity obj, const nlohmann::json& tmpl) {
+    const std::string owner =
+        obj.has<ItemType>() ? obj.get<ItemType>()->id : std::string("object");
+    auto warn = [this](const std::string& message) {
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    };
+
+    if (!tmpl.contains("placement")) {
+      warn("Warning: object template '" + owner +
+           "' lists the Placeable component but has no placement block; "
+           "it cannot be placed.\n");
+      return;
+    }
+
+    const auto& placement = tmpl["placement"];
+    Placeable placeable;
+    placeable.becomes = placement.value("becomes", "");
+    if (placeable.becomes.empty()) {
+      warn("Warning: object template '" + owner +
+           "' has a placement block without 'becomes'; it cannot be placed.\n");
+      return;
+    }
+    if (placement.contains("surface")) {
+      for (const auto& surface : placement["surface"]) {
+        placeable.surface.push_back(surface.get<std::string>());
+      }
+    }
+    placeable.maxDistance =
+        placement.value("maxDistance", DEFAULT_PLACEMENT_MAX_DISTANCE);
+    obj.set<Placeable>(placeable);
+  });
+
+  // A capability gate: what an actor must satisfy before a verb on this object
+  // will run. The equipment clause is expressed in item tags (ItemDef::tags), so
+  // the requirement names a capability ("scythe") rather than a specific item id
+  // and any item carrying that tag satisfies it.
+  RegisterComponent<Requires>("Requires", [this](flecs::entity obj, const nlohmann::json& tmpl) {
+    const std::string owner =
+        obj.has<ItemType>() ? obj.get<ItemType>()->id : std::string("object");
+    auto warn = [this](const std::string& message) {
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    };
+
+    if (!tmpl.contains("requires")) {
+      warn("Warning: object template '" + owner +
+           "' lists the Requires component but has no 'requires' block; it is "
+           "ungated.\n");
+      return;
+    }
+
+    const auto& requiresJson = tmpl["requires"];
+    if (!requiresJson.is_object()) {
+      warn("Warning: object template '" + owner +
+           "' has a non-object 'requires'; it is ungated.\n");
+      return;
+    }
+
+    // Named `gate`, not `requires`: the latter is a C++20 keyword and cannot be
+    // an identifier.
+    Requires gate;
+    if (requiresJson.contains("equipped")) {
+      const auto& equippedJson = requiresJson["equipped"];
+      if (equippedJson.is_string()) {
+        gate.equippedTags.push_back(equippedJson.get<std::string>());
+      } else if (equippedJson.is_array()) {
+        for (const auto& tagJson : equippedJson) {
+          if (!tagJson.is_string() || tagJson.get<std::string>().empty()) {
+            warn("Warning: object template '" + owner +
+                 "' has a 'requires.equipped' entry that is not a non-empty "
+                 "string; skipping it.\n");
+            continue;
+          }
+          gate.equippedTags.push_back(tagJson.get<std::string>());
+        }
+      } else {
+        warn("Warning: object template '" + owner +
+             "' has a 'requires.equipped' that is neither a string nor an "
+             "array; ignoring it.\n");
+      }
+    }
+
+    if (!gate.equippedTags.empty()) {
+      obj.set<Requires>(gate);
+    } else {
+      warn("Warning: object template '" + owner +
+           "' lists the Requires component but requires nothing; it is "
+           "ungated.\n");
+    }
   });
 
   // What harvesting this object teaches. The subject-side half of skill
@@ -170,6 +268,19 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
   // other logic that must identify *what* this is match on this, so renaming a
   // display name in JSON cannot silently break them.
   obj.set<ItemType>({type});
+
+  // Durability is per-instance state seeded from the item definition: an item
+  // whose definition declares none never wears out and simply carries no
+  // component. Removed first so re-applying a template -- a placed item becoming
+  // a world object, say -- cannot leave a stale wear state behind.
+  obj.remove<Durability>();
+  if (itemRegistry) {
+    if (const ItemDef* def = itemRegistry->Get(type)) {
+      if (def->durability > 0) {
+        obj.set<Durability>({def->durability, def->durability});
+      }
+    }
+  }
 
   // Short blurb surfaced by the [EXAMINE] interaction.
   obj.set<ObjectDescription>(

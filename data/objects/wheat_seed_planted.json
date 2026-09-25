@@ -1,0 +1,11 @@
+{
+  "name": "Planted Wheat Seeds",
+  "description": "Seeds in the soil. Started growing recently.",
+  "character": ";",
+  "characterColor": [139, 69, 19, 255],
+  "nameTagColor": [255, 223, 0, 255],
+  "components": ["Evolvable"],
+  "evolveTime": 10.0,
+  "evolveTarget": "wheat_sprout",
+  "isActive": true
+}

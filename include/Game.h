@@ -14,6 +14,8 @@
 #include "MapReloader.h"
 #include "AgentBrain.h"
 #include "Hooks.hpp"
+#include "ItemRegistry.h"
+#include "RaceRegistry.h"
 #include "RecipeRegistry.h"
 #include "SkillRegistry.h"
 #include "StatRegistry.h"
@@ -62,8 +64,10 @@ public:
 
   void Shutdown();
 
-  flecs::entity createNPC(const GamePosition &gamePos, std::string name = "",
-                          std::string prompt = "");
+  // Spawns an NPC from its authored map data: name, background, starting skills,
+  // body slots/race and starting equipment. Passing the whole NPCData keeps a
+  // new authored field from needing a new parameter here.
+  flecs::entity createNPC(const NPCData &data);
 
   bool shouldClose() const;
 
@@ -76,6 +80,8 @@ private:
   RecipeRegistry recipeRegistry;
   StatRegistry statRegistry;
   SkillRegistry skillRegistry;
+  ItemRegistry itemRegistry;
+  RaceRegistry raceRegistry;
   HookRegistry hookRegistry;
 
   flecs::world ecs;

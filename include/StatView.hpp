@@ -25,6 +25,12 @@ struct ActiveSource {
   // False for pure-effect sources (race traits, items, buffs), which contribute
   // registered effects without having a numeric value of their own.
   bool hasMagnitude = true;
+  // Optional display label for this particular source, used by contribution
+  // breakdowns in preference to the registry's name for `id`. An equipped item
+  // fills this from its object template's display name, so a breakdown says
+  // "Iron Scythe" rather than the content id. Empty for stats and skills, whose
+  // name is a property of the definition rather than the carrying entity.
+  std::string label;
 };
 
 // The sources an entity carries, plus the definitions needed to fill in

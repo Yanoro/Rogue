@@ -76,6 +76,7 @@ void ParseEffectEntries(const nlohmann::json &effects,
     link.stat = ownerId;
     link.point = entryJson.value("point", "");
     link.activity = entryJson.value("activity", "");
+    link.item = entryJson.value("item", "");
     link.coef = entryJson.value("perPoint", 0.0f);
     link.exponent = entryJson.value("exponent", 2.0f);
     link.priority = entryJson.value("priority", 0);
@@ -122,6 +123,14 @@ void ParseEffectEntries(const nlohmann::json &effects,
            "' effect. It is scaled by the source's deviation and so resolves to "
            "0 at the neutral value; a named hook is usually what is wanted "
            "here.");
+    }
+
+    // The item filter belongs to the loot point. Anywhere else it would be
+    // accepted and then quietly ignored, which looks exactly like an effect that
+    // does nothing.
+    if (!link.item.empty() && link.point != "loot") {
+      warn("Warning: '" + ownerId + "' has an 'item' filter on a '" + link.point +
+           "' effect, where it is ignored. It only means something for 'loot'.");
     }
 
     out.links[ownerId].push_back(link);

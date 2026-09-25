@@ -1,5 +1,6 @@
 #pragma once
 #include "Components.h"
+#include "StartingSkills.hpp"
 #include <memory>
 #include <flecs.h>
 #include <nlohmann/json.hpp>
@@ -17,6 +18,26 @@ struct NPCData {
   // ObjectFactory template keys and each unit becomes its own entity, matching
   // how harvest drops and crafting outputs are held (see ItemStack).
   std::vector<ItemStack> inventory;
+  // Proficiency this NPC starts with, from the map's
+  // "skills": {"farming": {"stage": "Master", "level": 1}} object. The stage is
+  // a name from the skill's own data and the level is the position within it;
+  // createNPC derives the absolute level and stamps it over the untrained block
+  // every character is given (see StartingSkills.hpp).
+  std::vector<StartingSkill> startingSkills;
+  // The people this NPC belongs to, from the map's "race": "human". Its slots
+  // are the NPC's body when the NPC authors none of its own. Empty means the
+  // human default, so a map written before races existed still works.
+  std::string race;
+  // Body slots authored directly on the NPC, from
+  // "slots": ["head", {"id": "main_hand", "accepts": "hand"}]. Overrides the
+  // race's slots entirely when present, which is what lets a one-off creature
+  // have a body no race file describes.
+  std::vector<SlotSpec> slots;
+  // Object template ids spawned already worn, from
+  // "equipped": ["iron_scythe"]. Each is spawned as a held item and equipped by
+  // the same rules the [EQUIP] command uses, so authored gear cannot produce a
+  // state a player could not.
+  std::vector<std::string> equipped;
 };
 
 class Map {

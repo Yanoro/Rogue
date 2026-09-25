@@ -32,6 +32,13 @@ struct StatLink {
   std::string stat;
   std::string point;
   std::string activity;
+  // Which entry of a loot table this adjusts, by item type id. Empty means every
+  // entry, which is the "this source is simply lucky" reading; naming one item is
+  // how a skill boosts a specific drop without also boosting every other one.
+  //
+  // Only meaningful for the `loot` point -- the loader warns when it is set
+  // anywhere else, where it would be silently ignored.
+  std::string item;
   Op op = Op::Pct;
   // Effect per effective unit of deviation, so the same coefficient reads
   // sensibly across stats with very different ranges (section 3.2).

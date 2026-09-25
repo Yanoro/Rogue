@@ -5,6 +5,7 @@
 
 #include <flecs.h>
 
+#include "ItemTypes.h"
 #include "SkillTypes.h"
 #include "SourceDefinitions.hpp"
 #include "StatTypes.h"
@@ -12,10 +13,10 @@
 
 // Collects the effect-bearing sources an entity carries.
 //
-// Today that is its StatBlock and its SkillBlock. Races, classes, equipped items
-// and timed effects will be added HERE and nowhere else: every resolver goes
-// through this one door, so introducing a new source kind touches no call site.
-// See docs/stat-effects-design.md section 6.
+// Today that is its StatBlock, its SkillBlock, and the items it has equipped.
+// Races, classes and timed effects will be added HERE and nowhere else: every
+// resolver goes through this one door, so introducing a new source kind touches
+// no call site. See docs/stat-effects-design.md section 6.
 //
 // A source the entity lacks is deliberately NOT filled in from the definitions
 // here. Get() falls back to the baseline on demand, so omission is safe by
@@ -54,6 +55,37 @@ inline StatView GatherSources(flecs::entity entity,
       sources.push_back(std::move(source));
     }
   }
+
+  // Equipped items. An item is a magnitude-bearing source whose magnitude is its
+  // tier, so its declarative links flow through the ordinary fold with no
+  // resolver change; the explicit Equipped marker is what stops every carried
+  // item from stacking (section 6.3).
+  //
+  // The label is resolved HERE as well as the magnitude because this is the one
+  // place that has both the item's definition (through the facade) and the
+  // entity's own display name, which is the fallback the definition defers to.
+  entity.each<Holds>([&](flecs::entity item) {
+    if (!item.is_alive() || !item.has<Equipped>()) {
+      return;
+    }
+    const ItemType *type = item.get<ItemType>();
+    if (!type) {
+      return;
+    }
+
+    ActiveSource source;
+    source.id = type->id;
+    source.kind = SourceKind::Item;
+    source.magnitude = definitions.ItemMagnitudeFor(type->id);
+    source.hasMagnitude = true;
+    source.label = definitions.ItemNameFor(type->id);
+    if (source.label.empty()) {
+      if (const DisplayName *display = item.get<DisplayName>()) {
+        source.label = display->name;
+      }
+    }
+    sources.push_back(std::move(source));
+  });
 
   return StatView(std::move(sources), &definitions);
 }

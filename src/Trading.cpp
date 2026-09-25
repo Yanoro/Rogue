@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "EquipmentRuntime.hpp"
 #include "ObjectFactory.h"
 #include "StringUtils.hpp"
 #include "TradeGrammar.hpp"
@@ -132,11 +133,15 @@ TradeOutcome ExecuteTrade(flecs::entity offerer, flecs::entity responder,
   }
 
   for (flecs::entity item : fromResponder) {
+    // Traded away is no longer worn: Equipped lives on the item, so this is what
+    // stops a handed-over ring from still boosting the giver.
+    DropEquipped(item);
     responder.remove<Holds>(item);
     offerer.add<Holds>(item);
     item.child_of(offerer);
   }
   for (flecs::entity item : fromOfferer) {
+    DropEquipped(item);
     offerer.remove<Holds>(item);
     responder.add<Holds>(item);
     item.child_of(responder);

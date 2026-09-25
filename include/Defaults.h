@@ -35,6 +35,21 @@ constexpr float DEFAULT_MINIMUM_WAYPOINT_DISTANCE= 24.0f;
 constexpr float DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS = 10.0f;
 constexpr int DEFAULT_OBJECT_SEARCH_RADIUS = 10;
 
+// How many tiles in each direction [SURROUNDINGS] reports on. The placement
+// hint deliberately keeps a smaller radius of its own: its grid is meant to show
+// only the ground a single [PLACE] can reach, not everything in sight.
+constexpr int DEFAULT_SURROUNDINGS_RADIUS = 10;
+
+// How far from the actor [PLACE] may set an item down, in tiles. A template's
+// "placement" block may override this per item; see docs/placement-design.md.
+constexpr int DEFAULT_PLACEMENT_MAX_DISTANCE = 1;
+
+// Durability one harvest removes from each tool used for it, when the object
+// does not declare a "durabilityCost" of its own. Durability is opt-in per item
+// (an item whose definition declares no "durability" never wears out), so this
+// only matters for tools that already opted in.
+constexpr int DEFAULT_HARVEST_DURABILITY_COST = 1;
+
 constexpr int DEFAULT_INPUT_MOVEMENT = 10;
 constexpr float DEFAULT_INPUT_ZOOM = 1.0f;
 constexpr float DEFAULT_MINIMUM_INPUT_ZOOM = 1.0f;

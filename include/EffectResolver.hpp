@@ -60,8 +60,9 @@ inline bool LinkMatches(const StatLink &link, const std::string &point,
 // naming belongs to the prompt and [SKILLS], where the point is capability.
 inline std::string SourceLabel(const SourceDefinitions &definitions,
                                const ActiveSource &source) {
-  return definitions.NameFor(source.id) + " " +
-         std::to_string(std::lround(source.magnitude));
+  const std::string name =
+      source.label.empty() ? definitions.NameFor(source.id) : source.label;
+  return name + " " + std::to_string(std::lround(source.magnitude));
 }
 
 // Resolves how long an activity takes for one actor.
@@ -175,13 +176,14 @@ inline LootResolution ResolveLoot(flecs::entity actor,
       const Contributor contribution =
           MakeContribution(scaling, link, source.magnitude, source.id,
                            SourceLabel(definitions, source));
-      // A percentage scales every chance; a flat amount adds to every chance.
-      // Both accumulate inside the builder and are applied once, so the order
-      // sources are visited in cannot matter.
+      // A percentage scales the chance; a flat amount adds to it. `link.item`
+      // picks which entry, and an empty item means every entry -- which is the
+      // "this source is simply lucky" reading. Both accumulate inside the builder
+      // and are applied once, so the order sources are visited in cannot matter.
       if (contribution.op == Op::Pct) {
-        builder.ScaleChance("", 1.0f + contribution.requested, source.id);
+        builder.ScaleChance(link.item, 1.0f + contribution.requested, source.id);
       } else {
-        builder.AddChance("", contribution.requested, source.id);
+        builder.AddChance(link.item, contribution.requested, source.id);
       }
     }
   }

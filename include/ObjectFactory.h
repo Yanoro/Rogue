@@ -9,6 +9,7 @@
 
 class Map;
 class DebugLog;
+class ItemRegistry;
 
 class ObjectFactory {
 public:
@@ -35,6 +36,12 @@ public:
 
   bool ApplyTemplate(flecs::entity obj, const std::string& type, Map* map = nullptr);
   void SetDebugLog(DebugLog* log) { debugLog = log; }
+
+  // Item definitions, used to seed per-instance durability at spawn. Injected
+  // rather than included so the factory keeps no link dependency on the item
+  // registry; a null registry simply means nothing spawns with durability.
+  void SetItemRegistry(const ItemRegistry* registry) { itemRegistry = registry; }
+
   const std::unordered_map<std::string, nlohmann::json>& GetTemplates() const { return templates; }
 
   void RegisterDefaultComponents();
@@ -48,6 +55,7 @@ public:
 private:
   std::unordered_map<std::string, nlohmann::json> templates;
   DebugLog* debugLog = nullptr;
+  const ItemRegistry* itemRegistry = nullptr;
 
   std::unordered_map<std::string, std::function<void(flecs::entity, const nlohmann::json&)>> componentSetters;
   std::unordered_map<std::string, std::function<void(flecs::entity)>> componentRemovers;

@@ -1,6 +1,7 @@
 #include "Map.h"
 #include "Defaults.h"
 #include "Game.h"
+#include "StartingSkills.hpp"
 #include "raylib.h"
 #include "ObjectFactory.h"
 #include <algorithm>
@@ -105,6 +106,83 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
               continue;
             }
             data.inventory.push_back(stack);
+          }
+        }
+
+        // Reporting helper for every authored field below, captured under its
+        // own name because the constructor parameter `debugLog` shadows the
+        // member and an unqualified read inside a lambda would not resolve.
+        auto warn = [log = debugLog](const std::string &message) {
+          if (log) log->LogWarning(message);
+          else std::cerr << message;
+        };
+
+        // Authored starting proficiency. Map stays content-only: the stage name
+        // is kept as written and resolved against the SkillRegistry when the NPC
+        // is spawned, so an unknown skill is a spawn warning like a bad object
+        // type rather than a map-load failure.
+        if (npcJson.contains("skills")) {
+          ParseStartingSkills(npcJson["skills"], "NPC '" + data.name + "'",
+                              data.startingSkills, warn);
+        }
+
+        // The body. Like skills, kept as written and resolved against the
+        // RaceRegistry when the NPC is spawned, so an unknown race or a
+        // malformed slot is a spawn warning rather than a map-load failure.
+        data.race = npcJson.value("race", "");
+
+        if (npcJson.contains("slots")) {
+          if (!npcJson["slots"].is_array()) {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-array 'slots'; ignoring it.\n");
+          } else {
+            for (const auto &slotJson : npcJson["slots"]) {
+              SlotSpec slot;
+              if (slotJson.is_string()) {
+                // Shorthand for a slot whose kind is its own name, matching the
+                // race files: "head" rather than {"id":"head","accepts":"head"}.
+                slot.id = slotJson.get<std::string>();
+                slot.accepts = slot.id;
+              } else if (slotJson.is_object()) {
+                slot.id = slotJson.value("id", "");
+                slot.accepts = slotJson.value("accepts", slot.id);
+              } else {
+                warn("Warning: NPC '" + data.name +
+                     "' has a slot that is neither a string nor an object; "
+                     "skipping it.\n");
+                continue;
+              }
+              if (slot.id.empty()) {
+                warn("Warning: NPC '" + data.name +
+                     "' has a slot with no id; skipping it.\n");
+                continue;
+              }
+              if (slot.accepts.empty()) {
+                slot.accepts = slot.id;
+              }
+              data.slots.push_back(std::move(slot));
+            }
+          }
+        }
+
+        // Starting equipment, by object template id. Spawned and equipped at
+        // spawn time by the same rules [EQUIP] uses, so authored gear cannot
+        // reach a state a player could not.
+        if (npcJson.contains("equipped")) {
+          if (!npcJson["equipped"].is_array()) {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-array 'equipped'; ignoring it.\n");
+          } else {
+            for (const auto &equippedJson : npcJson["equipped"]) {
+              if (!equippedJson.is_string() ||
+                  equippedJson.get<std::string>().empty()) {
+                warn("Warning: NPC '" + data.name +
+                     "' has an equipped entry that is not a non-empty template "
+                     "id; skipping it.\n");
+                continue;
+              }
+              data.equipped.push_back(equippedJson.get<std::string>());
+            }
           }
         }
 
@@ -276,11 +354,46 @@ nlohmann::json Map::BuildMapJson() const {
       mapJson["npcs"].size() != npcs.size()) {
     mapJson["npcs"] = nlohmann::json::array();
     for (const NPCData &npc : npcs) {
-      mapJson["npcs"].push_back({
+      nlohmann::json npcJson = {
           {"name", npc.name},
           {"position", {npc.position.x, npc.position.y}},
           {"background", npc.background},
-      });
+      };
+      // Starting proficiency, unlike "inventory", is modelled by NPCData, so it
+      // is rebuilt here rather than left to the raw document. Written back in
+      // the authored stage/level shape, never as the derived absolute level, so
+      // a save stays readable and a later levelsPerStage change cannot silently
+      // reinterpret it.
+      if (!npc.startingSkills.empty()) {
+        nlohmann::json skills = nlohmann::json::object();
+        for (const StartingSkill &skill : npc.startingSkills) {
+          nlohmann::json entry = nlohmann::json::object();
+          if (!skill.stage.empty()) {
+            entry["stage"] = skill.stage;
+          }
+          entry["level"] = skill.levelInStage;
+          skills[skill.id] = std::move(entry);
+        }
+        npcJson["skills"] = std::move(skills);
+      }
+
+      // Race, authored body and starting equipment are modelled by NPCData too,
+      // so like "skills" they are rebuilt here rather than left to the raw
+      // document.
+      if (!npc.race.empty()) {
+        npcJson["race"] = npc.race;
+      }
+      if (!npc.slots.empty()) {
+        nlohmann::json slots = nlohmann::json::array();
+        for (const SlotSpec &slot : npc.slots) {
+          slots.push_back({{"id", slot.id}, {"accepts", slot.accepts}});
+        }
+        npcJson["slots"] = std::move(slots);
+      }
+      if (!npc.equipped.empty()) {
+        npcJson["equipped"] = npc.equipped;
+      }
+      mapJson["npcs"].push_back(std::move(npcJson));
     }
   }
 

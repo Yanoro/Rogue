@@ -23,10 +23,15 @@
   "components": [
     "Interactable",
     "Harvestable",
-    "Trains"
+    "Trains",
+    "Requires"
   ],
   "amountRemaining": 3,
   "timer": 5.0,
+  "durabilityCost": 1,
+  "requires": {
+    "equipped": "scythe"
+  },
   "drops": [
     {
       "item": "wheat",

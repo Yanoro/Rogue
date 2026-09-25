@@ -4,13 +4,18 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "Defaults.h"
+#include "EquipmentRuntime.hpp"
 #include "ObjectFactory.h"
 #include "InteractionRegistry.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <flecs.h>
+#include <map>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 #include "StringUtils.hpp"
 #include "GlobalCommandRegistry.h"
 
@@ -57,7 +62,7 @@ public:
           std::string msg = "System: Your previous action was invalid or unrecognized. Please remember to use one of the available commands: ";
           bool first = true;
           for (const auto& cmd : GlobalCommandRegistry::GetCommands()) {
-            // Hidden verbs (the trade commands, [PLANT_AT], [GENERIC_INTERACT])
+            // Hidden verbs (the trade commands, [PLACE], [GENERIC_INTERACT])
             // are surfaced contextually rather than advertised here.
             if (cmd.hidden || cmd.format.empty()) continue;
             
@@ -383,6 +388,12 @@ private:
         std::string response;
       };
 
+      // Glyph grid of the tiles around the agent. Kept for the placement hint,
+      // where [PLACE] consumes relative coordinates and a picture of the ground
+      // is exactly what the model needs. Agents asking what is around them want
+      // GetSurroundingsList instead: a grid renders one character per tile, so it
+      // cannot show an item lying on the agent's own tile, drops anything without
+      // a DrawAscii, and gives no coordinates to anchor offsets on.
       inline std::string GetSurroundingsRadar(flecs::entity entity, int radius) {
         const GamePosition currentPos = *entity.get<GamePosition>();
         Map *map = entity.world().get<MapResource>()->map;
@@ -400,21 +411,26 @@ private:
               continue;
             }
 
-            char tileChar = ' ';
+            char tileChar = '?';
             if (map && map->IsInBounds(x, y)) {
               auto tile = map->GetTile(x, y);
               if (tile) {
                 tileChar = tile->ascii->ch;
+                // Terrain is what placement validation checks against ("tilled
+                // soil", "path"), so the grid has to name it. Without this the
+                // agent can only see that two tiles look different, not which
+                // one it is allowed to place on.
+                legend[tileChar] = tile->name;
               }
+            } else {
+              legend['?'] = "outside the map";
             }
 
-            bool entityFound = false;
             entity.world().filter<GamePosition, DrawAscii, DisplayName>().each(
-              [&](flecs::entity other, const GamePosition& pos, const DrawAscii& ascii, const DisplayName& dName) {
+              [&](flecs::entity, const GamePosition& pos, const DrawAscii& ascii, const DisplayName& dName) {
                 if (pos.x == x && pos.y == y) {
                   tileChar = ascii.ch;
                   legend[tileChar] = dName.name;
-                  entityFound = true;
                 }
               }
             );
@@ -431,6 +447,110 @@ private:
         return result;
       }
 
+      // What is close enough to walk to and interact with, as exact names plus
+      // relative offsets. Names are the DisplayName verbatim, because that is the
+      // string [MOVE_TO] matches on; offsets are relative to the agent, +X East
+      // and +Y South, matching the convention [PLACE] uses.
+      inline std::string GetSurroundingsList(flecs::entity entity, int radius = DEFAULT_SURROUNDINGS_RADIUS) {
+        const GamePosition currentPos = *entity.get<GamePosition>();
+        Map *map = nullptr;
+        if (auto *mapRes = entity.world().get<MapResource>()) {
+          map = mapRes->map;
+        }
+
+        struct Nearby {
+          std::string name;
+          int dx;
+          int dy;
+          int distance;
+        };
+        std::vector<Nearby> objects;
+        std::vector<Nearby> items;
+        std::vector<Nearby> characters;
+
+        // One pass over every named thing, keeping whatever falls inside the
+        // radius. Chebyshev distance, so the four diagonal neighbours count as
+        // one tile away rather than two.
+        entity.world().filter<GamePosition, DisplayName>().each(
+            [&](flecs::entity other, const GamePosition &pos, const DisplayName &displayName) {
+              if (other == entity || displayName.name.empty()) {
+                return;
+              }
+              const int dx = pos.x - currentPos.x;
+              const int dy = pos.y - currentPos.y;
+              const int distanceX = dx < 0 ? -dx : dx;
+              const int distanceY = dy < 0 ? -dy : dy;
+              const int distance = distanceX > distanceY ? distanceX : distanceY;
+              if (distance > radius) {
+                return;
+              }
+              const Nearby found{displayName.name, dx, dy, distance};
+              if (other.has<CharacterTag>()) {
+                characters.push_back(found);
+              } else if (other.has<Portable>()) {
+                items.push_back(found);
+              } else {
+                objects.push_back(found);
+              }
+            });
+
+        const auto closestFirst = [](const Nearby &a, const Nearby &b) {
+          if (a.distance != b.distance) return a.distance < b.distance;
+          if (a.dy != b.dy) return a.dy < b.dy;
+          if (a.dx != b.dx) return a.dx < b.dx;
+          return a.name < b.name;
+        };
+        std::sort(objects.begin(), objects.end(), closestFirst);
+        std::sort(items.begin(), items.end(), closestFirst);
+        std::sort(characters.begin(), characters.end(), closestFirst);
+
+        const auto describe = [](const Nearby &found) {
+          std::string line = "- " + found.name + " at (" + std::to_string(found.dx) + "," +
+                             std::to_string(found.dy) + ")";
+          if (found.distance == 0) {
+            line += ", on your tile";
+          } else if (found.distance == 1) {
+            line += ", 1 tile away";
+          } else {
+            line += ", " + std::to_string(found.distance) + " tiles away";
+          }
+          return line;
+        };
+
+        std::string result = "System: You are at ";
+        if (Location *location = map ? map->GetLocation(currentPos) : nullptr) {
+          result += location->name;
+        } else {
+          result += "an unnamed spot";
+        }
+        result += " (" + std::to_string(currentPos.x) + "," + std::to_string(currentPos.y) + ").\n";
+
+        if (objects.empty() && items.empty() && characters.empty()) {
+          result += "System: Nothing within " + std::to_string(radius) +
+                    " tiles to move to or interact with. Use [LOCATIONS] for named places you "
+                    "can travel to.\n";
+          return result;
+        }
+
+        result += "Nearby within " + std::to_string(radius) +
+                  " tiles (offsets from you: +X East, +Y South):\n";
+        const auto appendSection = [&](const std::string &title, const std::vector<Nearby> &list) {
+          if (list.empty()) {
+            return;
+          }
+          result += title + ":\n";
+          for (const auto &found : list) {
+            result += describe(found) + "\n";
+          }
+        };
+        appendSection("Objects", objects);
+        appendSection("Items on the ground", items);
+        appendSection("Characters", characters);
+        result += "System: Use a name exactly as written with [MOVE_TO $NAME] to walk to it. "
+                  "Directions such as \"east\" and bare coordinates are not valid targets.\n";
+        return result;
+      }
+
       class SurroundingsAction : public AgentAction {
       public:
         std::string getActionName() const override { return "SURROUNDINGS"; }
@@ -438,8 +558,7 @@ private:
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
-            successMsg = GetSurroundingsRadar(entity, 2);
-            successMsg += "\nSystem: To interact with an object close to you, you may use the [MOVE_TO $OBJECT] command.\n";
+            successMsg = GetSurroundingsList(entity);
           }
           return ActionStatus::Done;
         }
@@ -467,10 +586,15 @@ private:
           // Stack identical items: one entry per distinct name, with "(N)"
           // appended when more than one is held. Shared with the chest examine
           // text so both readings of a container agree.
+          //
+          // A worn item is annotated rather than hidden: it is still carried, and
+          // the annotation is what makes "the equipped scythe" distinguishable
+          // from "a second scythe in the pack" (which stacks as its own entry).
           std::vector<std::string> itemNames;
           entity.each<Holds>([&](flecs::entity child) {
             if (child.is_alive() && child.has<DisplayName>()) {
-              itemNames.push_back(child.get<DisplayName>()->name);
+              itemNames.push_back(child.get<DisplayName>()->name +
+                                  EquippedSuffix(child));
             }
           });
 
@@ -532,6 +656,12 @@ private:
 
           std::string objName = targetItem.has<DisplayName>() ? targetItem.get<DisplayName>()->name : "Item";
           response = "System: Available actions for " + objName + ":\n";
+          if (const Durability* durability = targetItem.get<Durability>()) {
+            response += "System: " + objName + " has " +
+                        std::to_string(durability->current) + " of " +
+                        std::to_string(durability->max) +
+                        " durability left; it breaks at 0.\n";
+          }
 
           auto interactions = ItemInteractionRegistry::GetAvailableInteractions(targetItem);
           if (interactions.empty()) {
@@ -558,6 +688,94 @@ private:
 
       private:
         std::string itemName;
+        std::string response;
+      };
+
+      // Puts a carried item on. The slot rules -- which slot kind, how many
+      // instances, what to take off to make room -- live in Equipment.hpp and
+      // the item definition, so this verb knows nothing about particular items.
+      class EquipAction : public AgentAction {
+      public:
+        EquipAction(std::string itemName) : itemName(std::move(itemName)) {}
+
+        std::string getActionName() const override { return "EQUIP"; }
+
+        std::string getActionContext() const override { return itemName; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          flecs::entity item = FindHeldItem(entity, itemName);
+          if (!item.is_alive()) {
+            response = "System: You don't have an item named " + itemName + ".\n";
+            return ActionStatus::Done;
+          }
+          response = EquipItem(entity, item, ItemsOf(entity.world())).message;
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string itemName;
+        std::string response;
+      };
+
+      // Takes one worn item off, leaving it in inventory.
+      class UnequipAction : public AgentAction {
+      public:
+        UnequipAction(std::string itemName) : itemName(std::move(itemName)) {}
+
+        std::string getActionName() const override { return "UNEQUIP"; }
+
+        std::string getActionContext() const override { return itemName; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          flecs::entity item = FindHeldItem(entity, itemName);
+          if (!item.is_alive()) {
+            response = "System: You don't have an item named " + itemName + ".\n";
+            return ActionStatus::Done;
+          }
+          response = UnequipItem(entity, item);
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string itemName;
+        std::string response;
+      };
+
+      // Lists what the character is wearing and where.
+      class EquipmentAction : public AgentAction {
+      public:
+        std::string getActionName() const override { return "EQUIPMENT"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          response = FormatEquipment(entity);
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
         std::string response;
       };
 
@@ -674,95 +892,273 @@ private:
         std::string resolvedTargetName;
       };
 
-      class PlantAtAction : public AgentAction {
+      // Sets a carried item down in the world at one or more relative
+      // coordinates. What may be placed, where it may go and what it becomes are
+      // declared by the item template's "placement" block, so this verb knows
+      // nothing about particular items: "planting" is just placement where the
+      // placed form happens to grow. See docs/placement-design.md.
+      class PlaceAtAction : public AgentAction {
       public:
-        PlantAtAction(std::string coordsStr, std::string seedName) : coordsStr(coordsStr), seedName(seedName) {}
+        PlaceAtAction(std::string itemName, std::string coordsStr)
+            : itemName(itemName), coordsStr(coordsStr) {}
 
-        std::string getActionName() const override { return "PLANT_AT"; }
+        std::string getActionName() const override { return "PLACE"; }
 
-        // Which seed is going in the ground; the coordinates are already in the
-        // command the model wrote.
-        std::string getActionContext() const override { return seedName; }
+        // Which item is going down; the coordinates are already in the command
+        // the model wrote.
+        std::string getActionContext() const override { return itemName; }
 
         ActionStatus update(float, flecs::entity entity) override {
           if (isFirstUpdate) {
             isFirstUpdate = false;
-            
-            // Parse coordinates
-            std::vector<std::pair<int, int>> coords;
-            std::istringstream iss(coordsStr);
-            std::string coord;
-            while (iss >> coord) {
-              size_t comma = coord.find(',');
-              if (comma != std::string::npos) {
-                try {
-                  int x = std::stoi(coord.substr(0, comma));
-                  int y = std::stoi(coord.substr(comma + 1));
-                  coords.push_back({x, y});
-                } catch (...) {
-                  // ignore invalid
-                }
-              }
-            }
-
-            if (coords.empty()) {
-              successMsg = "System: Invalid coordinates format. Use [PLANT_AT X,Y ... " + seedName + "]\n";
-              return ActionStatus::Done;
-            }
-
-            int plantedCount = 0;
-            GamePosition currentPos = *entity.get<GamePosition>();
-
-            for (auto& c : coords) {
-              flecs::entity seedItem = flecs::entity::null();
-              entity.each<Holds>([&](flecs::entity child) {
-                if (!seedItem.is_alive() && child.is_alive() && child.has<DisplayName>()) {
-                  if (StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, seedName)) {
-                    seedItem = child;
-                  }
-                }
-              });
-
-              if (!seedItem.is_alive()) {
-                successMsg += "System: You ran out of " + seedName + " after planting " + std::to_string(plantedCount) + ".\n";
-                break;
-              }
-
-              // Plant it
-              entity.remove<Holds>(seedItem);
-              seedItem.remove(flecs::ChildOf, entity);
-              seedItem.remove<Portable>();
-              if (seedItem.has<Evolvable>()) {
-                seedItem.get_mut<Evolvable>()->isActive = true;
-              }
-              
-              GamePosition pos = {currentPos.x + c.first, currentPos.y + c.second};
-              seedItem.set<GamePosition>(pos);
-              seedItem.set<ScreenPosition>(entity.world().get<MapResource>()->map->GameCoordsToScreenCoords(pos.x, pos.y));
-              
-              plantedCount++;
-            }
-
-            if (plantedCount > 0) {
-              successMsg += "System: You successfully planted " + std::to_string(plantedCount) + " " + seedName + ".\n";
-            }
+            Place(entity);
           }
           return ActionStatus::Done;
         }
 
-        std::string getSuccessMessage() override {
-          return successMsg;
-        }
-        
+        std::string getSuccessMessage() override { return successMsg; }
+
         ActionStatus handleInterruption(flecs::entity) override {
           return ActionStatus::Interrupted;
         }
-        
+
         void resume(flecs::entity) override {}
 
       private:
+        // A coordinate that passed every rule, paired with the ground it will
+        // land on so the reply can name it.
+        struct Ready {
+          std::pair<int, int> offset;
+          std::string ground;
+        };
+
+        static std::string Offset(int dx, int dy) {
+          return "(" + std::to_string(dx) + "," + std::to_string(dy) + ")";
+        }
+
+        static std::string JoinList(const std::vector<std::string>& values) {
+          std::string joined;
+          for (size_t i = 0; i < values.size(); ++i) {
+            if (i > 0) joined += (i + 1 == values.size()) ? " or " : ", ";
+            joined += values[i];
+          }
+          return joined;
+        }
+
+        void Place(flecs::entity entity) {
+          std::vector<std::pair<int, int>> requested;
+          int malformed = 0;
+          std::istringstream iss(coordsStr);
+          std::string coord;
+          while (iss >> coord) {
+            const size_t comma = coord.find(',');
+            if (comma == std::string::npos) {
+              ++malformed;
+              continue;
+            }
+            try {
+              requested.push_back({std::stoi(coord.substr(0, comma)),
+                                   std::stoi(coord.substr(comma + 1))});
+            } catch (...) {
+              ++malformed;
+            }
+          }
+
+          if (requested.empty()) {
+            successMsg = "System: No usable coordinates. Use [PLACE " + itemName +
+                         " AT X,Y ...], for example [PLACE " + itemName + " AT 1,0].\n";
+            return;
+          }
+
+          Map *map = nullptr;
+          if (auto *mapRes = entity.world().get<MapResource>()) {
+            map = mapRes->map;
+          }
+          if (!map) {
+            successMsg = "System: There is no map here to place anything on.\n";
+            return;
+          }
+
+          // Collect first, then move: removing Holds mutates the relationship
+          // this scan walks, and this action runs inside a system iteration,
+          // which is a deferred context, so re-querying mid-loop would hand back
+          // the same item on every pass. Same shape as the [STORE] handler.
+          std::vector<flecs::entity> held;
+          entity.each<Holds>([&](flecs::entity child) {
+            if (child.is_alive() && child.has<DisplayName>() &&
+                StringUtils::EqualsIgnoreCase(child.get<DisplayName>()->name, itemName)) {
+              held.push_back(child);
+            }
+          });
+
+          if (held.empty()) {
+            successMsg = "System: You are not carrying any " + itemName + ".\n";
+            return;
+          }
+
+          // Resolve the display name to a single item type. The policy lives on
+          // the template and the project matches on ItemType rather than the
+          // display name, so a same-named item of another type is never consumed
+          // by this command.
+          std::vector<flecs::entity> candidates;
+          std::string targetType;
+          for (flecs::entity item : held) {
+            if (!item.has<Placeable>()) {
+              continue;
+            }
+            const std::string type =
+                item.has<ItemType>() ? item.get<ItemType>()->id : std::string();
+            if (candidates.empty()) {
+              targetType = type;
+            } else if (type != targetType) {
+              continue;
+            }
+            candidates.push_back(item);
+          }
+
+          if (candidates.empty()) {
+            successMsg = "System: " + itemName + " cannot be placed in the world.\n";
+            return;
+          }
+
+          const Placeable policy = *candidates.front().get<Placeable>();
+          const GamePosition currentPos = *entity.get<GamePosition>();
+
+          // Everything already standing on the map, gathered in one pass rather
+          // than rescanning per coordinate. Placements queued earlier in this
+          // same command are not visible here (deferred context), which is what
+          // the duplicate check below covers.
+          std::map<std::pair<int, int>, std::string> occupied;
+          entity.world().filter<GamePosition, DisplayName>().each(
+              [&](flecs::entity other, const GamePosition &pos, const DisplayName &name) {
+                if (other != entity) {
+                  occupied.emplace(std::make_pair(pos.x, pos.y), name.name);
+                }
+              });
+
+          std::vector<Ready> ready;
+          std::vector<std::string> rejected;
+          std::set<std::pair<int, int>> seen;
+
+          for (const auto &c : requested) {
+            const std::string at = Offset(c.first, c.second);
+
+            if (!seen.insert(c).second) {
+              rejected.push_back(at + ": duplicate coordinate");
+              continue;
+            }
+
+            const int distanceX = c.first < 0 ? -c.first : c.first;
+            const int distanceY = c.second < 0 ? -c.second : c.second;
+            const int distance = distanceX > distanceY ? distanceX : distanceY;
+            if (distance == 0) {
+              rejected.push_back(at + ": you are standing there");
+              continue;
+            }
+            if (distance > policy.maxDistance) {
+              rejected.push_back(at + ": " + std::to_string(distance) + " tiles away (max " +
+                                 std::to_string(policy.maxDistance) + ")");
+              continue;
+            }
+
+            const int x = currentPos.x + c.first;
+            const int y = currentPos.y + c.second;
+            if (!map->IsInBounds(x, y)) {
+              rejected.push_back(at + ": outside the map");
+              continue;
+            }
+
+            Tile *tile = map->GetTile(x, y);
+            const std::string ground =
+                (tile && !tile->name.empty()) ? tile->name : "unknown ground";
+            if (tile && tile->blocksTile) {
+              rejected.push_back(at + ": " + ground + " cannot be placed on");
+              continue;
+            }
+
+            if (!policy.surface.empty()) {
+              bool allowed = false;
+              for (const auto &surface : policy.surface) {
+                if (surface == ground) {
+                  allowed = true;
+                  break;
+                }
+              }
+              if (!allowed) {
+                rejected.push_back(at + ": " + ground + " is not " +
+                                   JoinList(policy.surface));
+                continue;
+              }
+            }
+
+            const auto occupant = occupied.find(std::make_pair(x, y));
+            if (occupant != occupied.end()) {
+              rejected.push_back(at + ": occupied by " + occupant->second);
+              continue;
+            }
+
+            ready.push_back({c, ground});
+          }
+
+          // Everything above is validation, so a rejected coordinate never costs
+          // an item. Only now is anything consumed.
+          ObjectFactory *factory = nullptr;
+          if (auto *factoryRes = entity.world().get<ObjectFactoryResource>()) {
+            factory = factoryRes->factory;
+          }
+
+          int placedCount = 0;
+          std::string placedDetail;
+          size_t next = 0;
+          for (const Ready &target : ready) {
+            if (next >= candidates.size()) {
+              rejected.push_back(Offset(target.offset.first, target.offset.second) +
+                                 ": no " + itemName + " left");
+              continue;
+            }
+            flecs::entity item = candidates[next++];
+
+            // Setting an item down takes it off first: the entity is reused as
+            // the placed object, so a leftover Equipped marker would ride along.
+            DropEquipped(item);
+            entity.remove<Holds>(item);
+            item.remove(flecs::ChildOf, entity);
+            if (factory) {
+              factory->ApplyTemplate(item, policy.becomes, map);
+            }
+
+            const GamePosition pos = {currentPos.x + target.offset.first,
+                                      currentPos.y + target.offset.second};
+            item.set<GamePosition>(pos);
+            item.set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y));
+
+            placedDetail += "- " + Offset(target.offset.first, target.offset.second) + " " +
+                            target.ground + "\n";
+            ++placedCount;
+          }
+
+          if (malformed > 0) {
+            rejected.push_back(std::to_string(malformed) +
+                               " coordinate(s) could not be read");
+          }
+
+          if (placedCount > 0) {
+            successMsg = "System: Placed " + std::to_string(placedCount) + " of " +
+                         std::to_string(requested.size()) + " " + itemName + ":\n" +
+                         placedDetail;
+          } else {
+            successMsg = "System: Nothing was placed.\n";
+          }
+          if (!rejected.empty()) {
+            successMsg += "System: Not placed:\n";
+            for (const auto &reason : rejected) {
+              successMsg += "- " + reason + "\n";
+            }
+          }
+        }
+
+        std::string itemName;
         std::string coordsStr;
-        std::string seedName;
         bool isFirstUpdate = true;
         std::string successMsg;
       };

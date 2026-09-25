@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "ItemStack.hpp"
+#include "ItemTypes.h"
 #include "LootDrop.hpp"
 #include "SkillTypes.h"
 #include "SkillXp.hpp"
@@ -154,10 +155,6 @@ struct MapResource {
   Map *map;
 };
 
-struct DisplayName {
-  std::string name;
-};
-
 struct NameTagColor {
   Color color;
 };
@@ -167,16 +164,6 @@ struct NameTagColor {
 // ObjectDescription, not Description, to stay clear of flecs::Description.
 struct ObjectDescription {
   std::string text;
-};
-
-// Stable content identity of a spawned object: the ObjectFactory template key it
-// was spawned from (e.g. "wheat", "flour"). Recipes and any other system that
-// needs to reason about *what* an entity is must match on this, not on
-// DisplayName: the display name is player-facing text and is safe to rename,
-// while this id is what data files reference. Stamped in
-// ObjectFactory::ApplyTemplate, which receives the template key.
-struct ItemType {
-  std::string id;
 };
 
 // Marks an object as authored map content: it came either from the map file's
@@ -283,6 +270,11 @@ struct Harvestable {
   int amountRemaining;
   LootTable lootTable;
   float timer = 0.0f;
+  // Durability removed from each tool used for one harvest of this object.
+  // Stamped by ObjectFactory from the template's "durabilityCost", defaulting to
+  // DEFAULT_HARVEST_DURABILITY_COST, so every harvestable has a cost without
+  // every template having to say one.
+  int durabilityCost = 0;
 };
 
 struct ActionActor { flecs::entity actor; };
@@ -362,6 +354,39 @@ struct Portable {
   bool canBePickedUp = true;
 };
 
+// Declared by a template's "placement" block and stamped by ObjectFactory. Its
+// presence marks the item as something [PLACE] can set down in the world; the
+// fields are the rules. The verb itself knows nothing about particular items, so
+// "planting" is just placement where the placed form happens to grow. See
+// docs/placement-design.md.
+struct Placeable {
+  // Template id the item becomes once placed. It must not itself be Portable,
+  // or the object would stay an item and could be picked up again.
+  std::string becomes;
+  // Allowed Tile::name values ("tilled soil", "grass", ...). Empty means any
+  // tile that does not block.
+  std::vector<std::string> surface;
+  // Chebyshev distance from the actor the target tile must fall within. Filled
+  // in by ObjectFactory from DEFAULT_PLACEMENT_MAX_DISTANCE when the template
+  // does not say.
+  int maxDistance = 1;
+};
+
+// Capability gate declared by an object template's "requires" block. A verb that
+// honours it refuses to run until the actor satisfies it, rather than silently
+// doing nothing -- which is what "you need a scythe to cut wheat" should be.
+//
+// The equipment clause is expressed in item TAGS (see ItemDef::tags), not item
+// ids or slot names, so a requirement names a capability ("scythe") and any item
+// carrying that tag satisfies it. This is the "requires" form section 3.7 of the
+// effect design reserved for exactly this case; skill and stat clauses attach
+// here later.
+struct Requires {
+  // Item tags the actor must have equipped. Empty means the requirement has no
+  // equipment clause (and is therefore always met).
+  std::vector<std::string> equippedTags;
+};
+
 struct InteractionTarget {
   flecs::entity targetEntity;
 };
@@ -377,8 +402,6 @@ struct Evolvable {
   bool isActive = true;
 };
 
-struct Seed {};
-
 // What harvesting this object teaches, and by how much. The subject-side half of
 // skill progression: the skill itself only declares which activities may train
 // it, while the amount and the choice of skill live next to the thing being
@@ -389,8 +412,6 @@ struct Trains {
   std::vector<SkillXp> grants;
 };
 
-
-struct Holds {};
 
 struct LastObjectsQuery {
   std::vector<flecs::entity> objects;
@@ -430,6 +451,22 @@ class HookRegistry;
 // (see Hooks.hpp). Same resource-component pattern as StatRegistryResource.
 struct HookRegistryResource {
   HookRegistry* hooks;
+};
+
+class ItemRegistry;
+// Equippable item definitions, loaded once at init from data/items/*.json (see
+// ItemRegistry.h). Same resource-component pattern as StatRegistryResource:
+// components carry item type ids, definitions live only in the registry.
+struct ItemRegistryResource {
+  ItemRegistry* registry;
+};
+
+class RaceRegistry;
+// Race definitions, loaded once at init from data/races/*.json (see
+// RaceRegistry.h). Supplies the body slots a character is born with, which is
+// what makes an NPC's slots a data question rather than an engine one.
+struct RaceRegistryResource {
+  RaceRegistry* registry;
 };
 
 // A live trade proposal between exactly two agents. Runtime-only: it holds
@@ -558,6 +595,24 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<SkillXp>().member<std::string>("skillId").member<int>("xp");
   ecs.component<std::vector<SkillXp>>().opaque(std_vector_support<SkillXp>);
   ecs.component<Trains>().member<std::vector<SkillXp>>("grants");
+
+  // Equipment reflection. SlotSpec is registered before the vector that holds
+  // it for the same reason as StatValue above: flecs resolves a member's type at
+  // registration time, so reflecting vector<SlotSpec> first would leave it
+  // pointing at a type with no EcsMetaType.
+  ecs.component<SlotSpec>()
+      .member<std::string>("id")
+      .member<std::string>("accepts");
+  ecs.component<std::vector<SlotSpec>>().opaque(std_vector_support<SlotSpec>);
+  ecs.component<EquipmentSlots>().member<std::vector<SlotSpec>>("slots");
+
+  // The instances an item occupies, by slot id. A plain vector<string>, so it is
+  // registered here once and shared by every future component that needs one.
+  ecs.component<std::vector<std::string>>().opaque(
+      std_vector_support<std::string>);
+  ecs.component<Equipped>().member<std::vector<std::string>>("slots");
+  ecs.component<Requires>().member<std::vector<std::string>>("equippedTags");
+  ecs.component<Durability>().member<int>("current").member<int>("max");
 
   ecs.component<Color>()
       .member<unsigned char>("r")

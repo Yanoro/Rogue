@@ -1,11 +1,13 @@
 {
   "name": "Wheat Seeds",
-  "description": "Planted seeds in the soil. Started growing recently.",
-  "character": ".",
+  "description": "A handful of wheat seeds. They can be planted in tilled soil.",
+  "character": "s",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],
-  "components": ["Evolvable", "Seed"],
-  "evolveTime": 10.0,
-  "evolveTarget": "wheat_sprout",
-  "isActive": false
+  "components": ["Portable", "Placeable"],
+  "placement": {
+    "becomes": "wheat_seed_planted",
+    "surface": ["tilled soil"],
+    "maxDistance": 1
+  }
 }

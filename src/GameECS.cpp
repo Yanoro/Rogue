@@ -18,8 +18,13 @@
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
 #include "EffectResolver.hpp"
+#include "Equipment.hpp"
+#include "EquipmentRuntime.hpp"
+#include "ItemRegistry.h"
+#include "RaceRegistry.h"
 #include "Rng.hpp"
 #include "SkillTraining.hpp"
+#include "StartingSkills.hpp"
 #include "StringUtils.hpp"
 #include "flecs.h"
 #include "imgui.h"
@@ -34,6 +39,7 @@
 #include <mutex>
 #include <queue>
 #include <regex>
+#include <set>
 #include <vector>
 
 // Gives a character the full standard stat set at its neutral values.
@@ -77,11 +83,88 @@ static void GiveStartingSkills(flecs::entity character,
   character.set<SkillBlock>(block);
 }
 
+// Stamps authored starting proficiency (the map's "skills" object) onto the
+// untrained block every character is given above.
+//
+// Content errors are reported and skipped rather than fatal, exactly like an
+// unknown object type in a map: a typo in one NPC's skills must not abort the
+// load. A skill the registry does not know and a stage name the skill does not
+// declare both land here, because both are only decidable against the registry
+// and the map deliberately does not hold one.
+static void ApplyStartingSkills(flecs::entity character,
+                                const SkillRegistry *registry,
+                                const std::vector<StartingSkill> &startingSkills,
+                                DebugLog *debugLog) {
+  if (!registry || startingSkills.empty() || !character.has<SkillBlock>()) {
+    return;
+  }
+  SkillBlock *block = character.get_mut<SkillBlock>();
+  if (!block) {
+    return;
+  }
+
+  auto warn = [debugLog](const std::string &message) {
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
+  };
+
+  for (const StartingSkill &spec : startingSkills) {
+    const SkillDef *def = registry->Get(spec.id);
+    if (!def) {
+      warn("Warning: Starting skill '" + spec.id +
+           "' is not a known skill; skipping it.");
+      continue;
+    }
+    std::string reason;
+    if (!ApplyStartingSkill(*block, *def, spec, &reason)) {
+      warn("Warning: Starting skill '" + spec.id +
+           "' could not be applied: " + reason + ".");
+    }
+  }
+}
+
+// Decides the body slots a character is born with.
+//
+// Precedence, and every fallback exists so a map written before races existed
+// still spawns a wearable character rather than a naked one: an authored list on
+// the NPC wins, otherwise the NPC's race, otherwise the "human" race, otherwise
+// the code-level humanoid body. A race is content like a skill, so an unknown id
+// is a warning and a fallback, never a load failure.
+static void GiveSlots(flecs::entity character, const RaceRegistry *races,
+                      const std::string &raceId,
+                      const std::vector<SlotSpec> &authored,
+                      DebugLog *debugLog) {
+  std::vector<SlotSpec> slots = authored;
+
+  if (slots.empty() && races) {
+    const std::string wanted = raceId.empty() ? std::string("human") : raceId;
+    if (const RaceDef *def = races->Get(wanted)) {
+      slots = def->slots;
+    } else if (!raceId.empty()) {
+      const std::string message =
+          "Warning: NPC race '" + raceId +
+          "' is not a known race; using the default humanoid body instead.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
+
+  if (slots.empty()) {
+    slots = DefaultHumanoidSlots();
+  }
+
+  EquipmentSlots block;
+  block.slots = std::move(slots);
+  character.set<EquipmentSlots>(block);
+}
+
 // TODO: Adding checks to see if we are not repeating values seems like a good
 // idea for instance we can't have two npcs with the same name
 
-flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
-                              std::string characterBackground) {
+flecs::entity Game::createNPC(const NPCData &data) {
+  const GamePosition &pos = data.position;
+  std::string name = data.name;
+  const std::string &characterBackground = data.background;
 
   flecs::entity entity =
       ecs.entity()
@@ -113,6 +196,40 @@ flecs::entity Game::createNPC(const GamePosition &pos, std::string name,
   }
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
     GiveStartingSkills(entity, skillRes->registry);
+    // Authored proficiency goes on top of the untrained block, before the brain
+    // exists, so the first action the agent takes already resolves against it.
+    ApplyStartingSkills(entity, skillRes->registry, data.startingSkills,
+                        debugLog.get());
+  }
+
+  // The body comes before any gear, because equipping needs to know which slots
+  // the character actually has.
+  GiveSlots(entity, &raceRegistry, data.race, data.slots, debugLog.get());
+
+  // Authored starting equipment. Each id is spawned as a real held item and put
+  // on through the same planner [EQUIP] uses, so a too-small body, an unknown
+  // template or a missing item definition reports instead of silently doing
+  // nothing.
+  if (!data.equipped.empty()) {
+    auto factoryRes = ecs.get<ObjectFactoryResource>();
+    if (factoryRes && factoryRes->factory) {
+      for (const std::string &typeId : data.equipped) {
+        flecs::entity item =
+            factoryRes->factory->SpawnObject(ecs, entity, nullptr, typeId);
+        if (!item.is_alive()) {
+          continue;
+        }
+        entity.add<Holds>(item);
+        const EquipOutcome outcome = EquipItem(entity, item, &itemRegistry);
+        if (!outcome.ok) {
+          const std::string message = "Warning: NPC '" + name +
+                                      "' could not equip '" + typeId +
+                                      "': " + outcome.message;
+          if (debugLog) debugLog->LogWarning(message);
+          else std::cerr << message;
+        }
+      }
+    }
   }
 
   std::string locations = "";
@@ -406,8 +523,7 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   if (currentMap) {
     if (spawnNPCs) {
       for (const auto& npc : currentMap->GetNPCs()) {
-        flecs::entity npcEntity =
-            createNPC(npc.position, npc.name, npc.background);
+        flecs::entity npcEntity = createNPC(npc);
         // Starting inventory becomes real Holds children, the same shape
         // crafting and storage use (see ObjectFactory::SpawnInventory).
         auto factoryRes = ecs.get<ObjectFactoryResource>();
@@ -859,13 +975,15 @@ struct ResolutionInputs {
 ResolutionInputs MakeResolutionInputs(flecs::world world) {
   auto statsRes = world.get<StatRegistryResource>();
   auto skillRes = world.get<SkillRegistryResource>();
+  auto itemRes = world.get<ItemRegistryResource>();
   auto hooksRes = world.get<HookRegistryResource>();
 
   static const HookRegistry noHooks;
   ResolutionInputs inputs;
   inputs.definitions = SourceDefinitions(
       statsRes ? statsRes->registry : nullptr,
-      skillRes ? skillRes->registry : nullptr);
+      skillRes ? skillRes->registry : nullptr,
+      itemRes ? itemRes->registry : nullptr);
   inputs.hooks = (hooksRes && hooksRes->hooks) ? hooksRes->hooks : &noHooks;
   return inputs;
 }
@@ -893,6 +1011,10 @@ std::string JoinItemTypes(const std::vector<std::string> &itemTypes) {
 struct HarvestOutcome {
   std::string droppedItems;
   std::vector<SkillGain> training;
+  // Tools that reached zero durability on this harvest, by display name. Kept
+  // alongside the drops so the caller can report the break in the same message,
+  // the way training gains already are.
+  std::vector<std::string> brokenTools;
 };
 
 // Applies a subject's training grants to the actor, if it teaches anything.
@@ -959,7 +1081,27 @@ HarvestOutcome HarvestResult(flecs::entity actor, flecs::entity target,
   if (const Trains *trains = target.get<Trains>()) {
     outcome.training = ApplySubjectTraining(actor, trains->grants, "harvest");
   }
+
+  // Wear is charged LAST, so the harvest that breaks a tool still yields: the
+  // work was done before the tool gave out. This is the one door both commit
+  // paths go through, so a tool cannot wear on a timed harvest and not on an
+  // instant one.
+  if (const Harvestable *harvestable = target.get<Harvestable>()) {
+    outcome.brokenTools =
+        WearEquipment(actor, "harvest", harvestable->durabilityCost,
+                      ItemsOf(actor.world()))
+            .broken;
+  }
   return outcome;
+}
+
+// "Your Iron Scythe broke and is destroyed." for each tool that gave out.
+std::string FormatBrokenTools(const std::vector<std::string> &broken) {
+  std::string message;
+  for (const std::string &name : broken) {
+    message += "Your " + name + " broke and is destroyed.\n";
+  }
+  return message;
 }
 
 // What one execution of a recipe produced, plus any skill progress it earned.
@@ -1139,6 +1281,7 @@ void Game::ECSInitAgentSystems() {
                   std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
                   std::string msg = "System: You harvested " + outcome.droppedItems + " from " + objName + ".\n";
                   msg += FormatTrainingGains(outcome.training);
+                  msg += FormatBrokenTools(outcome.brokenTools);
 
                   if (h->amountRemaining <= 0) {
                       msg += "The " + objName + " is depleted and destroyed.\n";
@@ -1380,6 +1523,86 @@ void ValidateTrainingGrants(
   }
 }
 
+// Reports every item whose required slot kind no body can accept.
+//
+// Slot kinds are an open vocabulary, so nothing stops an author writing
+// "main_hand" where the vocabulary says "hand". The item would then be
+// permanently unequippable, and -- because a body simply has no such slot -- the
+// failure would look like the item doing nothing. This turns that typo into a
+// startup report, the same job ValidateTrainingGrants does for skill grants.
+//
+// The bodies considered are every race plus the default humanoid set, which is
+// what a character with neither a race nor authored slots gets.
+void ValidateItemSlots(const ItemRegistry &items, const RaceRegistry &races,
+                       const std::function<void(const std::string &)> &warn) {
+  std::set<std::string> acceptedKinds;
+  for (const SlotSpec &slot : DefaultHumanoidSlots()) {
+    acceptedKinds.insert(slot.accepts);
+  }
+  for (const RaceDef *race : races.GetAll()) {
+    for (const SlotSpec &slot : race->slots) {
+      acceptedKinds.insert(slot.accepts);
+    }
+  }
+
+  for (const ItemDef *item : items.GetAll()) {
+    if (item->slot.empty()) {
+      continue; // already reported by the loader
+    }
+    if (acceptedKinds.find(item->slot) == acceptedKinds.end()) {
+      warn("Warning: Item '" + item->id + "' needs a '" + item->slot +
+           "' slot, which no race or the default humanoid body provides, so it "
+           "can never be equipped.");
+    }
+  }
+}
+
+// Reports every equipment requirement no item can satisfy.
+//
+// Requirements name item tags, so a typo ("syth" for "scythe") would make an
+// object permanently unharvestable in a way that looks exactly like the verb
+// being broken. Checking the shipped tags once at startup turns that into a
+// report, the same job ValidateTrainingGrants and ValidateItemSlots do.
+void ValidateObjectRequirements(
+    const ObjectFactory &factory, const ItemRegistry &items,
+    const std::function<void(const std::string &)> &warn) {
+  std::set<std::string> providedTags;
+  for (const ItemDef *item : items.GetAll()) {
+    for (const std::string &tag : item->tags) {
+      providedTags.insert(tag);
+    }
+  }
+
+  for (const auto &pair : factory.GetTemplates()) {
+    if (!pair.second.contains("requires")) {
+      continue;
+    }
+    const nlohmann::json &requiresJson = pair.second["requires"];
+    if (!requiresJson.is_object() || !requiresJson.contains("equipped")) {
+      continue; // malformed; reported when the object is spawned
+    }
+    const nlohmann::json &equippedJson = requiresJson["equipped"];
+
+    auto checkTag = [&](const std::string &tag) {
+      if (providedTags.find(tag) == providedTags.end()) {
+        warn("Warning: Object template '" + pair.first + "' requires a '" + tag +
+             "' to be equipped, but no item carries that tag, so the "
+             "requirement can never be met.");
+      }
+    };
+
+    if (equippedJson.is_string()) {
+      checkTag(equippedJson.get<std::string>());
+    } else if (equippedJson.is_array()) {
+      for (const auto &tagJson : equippedJson) {
+        if (tagJson.is_string()) {
+          checkTag(tagJson.get<std::string>());
+        }
+      }
+    }
+  }
+}
+
 // One line per recipe, written with content ids rather than display names,
 // because the id is the exact token [CRAFT ...] and the recipe files use.
 std::string FormatRecipe(const CraftRecipe &recipe) {
@@ -1464,15 +1687,31 @@ void Game::ECSInit(std::string mapPath) {
   skillRegistry.LoadSkills("data/skills");
   ecs.set<SkillRegistryResource>({&skillRegistry});
 
+  itemRegistry.SetDebugLog(debugLog.get());
+  itemRegistry.LoadItems("data/items");
+  ecs.set<ItemRegistryResource>({&itemRegistry});
+
+  // The factory seeds per-instance durability from the item definitions, so it
+  // needs the registry. Handed over here rather than pulled in at spawn time so
+  // the factory keeps no dependency on the item system.
+  objectFactory.SetItemRegistry(&itemRegistry);
+
+  raceRegistry.SetDebugLog(debugLog.get());
+  raceRegistry.LoadRaces("data/races");
+  ecs.set<RaceRegistryResource>({&raceRegistry});
+
   // Named C++ effects, then a check that every hook id the data references
   // actually has a handler. An unregistered id would otherwise be a silent
   // no-op -- the source would simply look like it does nothing -- which is the
-  // exact failure mode this report exists to prevent. Stats and skills are
-  // checked together, because either can declare a hook.
+  // exact failure mode this report exists to prevent. Stats, skills and items
+  // are checked together, because any of them can declare a hook.
   RegisterGameHooks(hookRegistry);
   ecs.set<HookRegistryResource>({&hookRegistry});
   std::vector<std::string> declaredHooks = statRegistry.GetAllHookIds();
   for (const std::string &id : skillRegistry.GetAllHookIds()) {
+    declaredHooks.push_back(id);
+  }
+  for (const std::string &id : itemRegistry.GetAllHookIds()) {
     declaredHooks.push_back(id);
   }
   std::sort(declaredHooks.begin(), declaredHooks.end());
@@ -1481,7 +1720,8 @@ void Game::ECSInit(std::string mapPath) {
   for (const std::string &hookId : declaredHooks) {
     if (!hookRegistry.HasAnyHook(hookId)) {
       const std::string msg =
-          "Warning: stat or skill data references named effect '" + hookId +
+          "Warning: stat, skill or item data references named effect '" +
+          hookId +
           "' but no hook is registered for it on any point, so it does nothing.";
       if (debugLog) debugLog->LogWarning(msg);
       else std::cerr << msg << std::endl;
@@ -1495,6 +1735,24 @@ void Game::ECSInit(std::string mapPath) {
                            if (debugLog) debugLog->LogWarning(message);
                            else std::cerr << message << std::endl;
                          });
+
+  // An item that needs a slot kind no body provides can never be equipped. That
+  // is a content typo -- "main_hand" as a kind rather than "hand" -- and is far
+  // cheaper to report once here than to debug from a command that silently
+  // refuses.
+  ValidateItemSlots(itemRegistry, raceRegistry,
+                    [this](const std::string &message) {
+                      if (debugLog) debugLog->LogWarning(message);
+                      else std::cerr << message << std::endl;
+                    });
+
+  // The subject-side counterpart: a requirement naming a tag no item carries can
+  // never be met, which would look like the verb itself being broken.
+  ValidateObjectRequirements(objectFactory, itemRegistry,
+                             [this](const std::string &message) {
+                               if (debugLog) debugLog->LogWarning(message);
+                               else std::cerr << message << std::endl;
+                             });
 
   GlobalCommandRegistry::Clear();
 
@@ -1548,7 +1806,7 @@ void Game::ECSInit(std::string mapPath) {
 
   GlobalCommandRegistry::Register({
     "[SURROUNDINGS]",
-    "Look around you to see the immediate area, its objects and any items lying about. Example: [SURROUNDINGS].",
+    "List what is close enough to interact with: nearby objects, items on the ground and characters, each with the exact name to use with [MOVE_TO] and its offset from you. Example: [SURROUNDINGS].",
     std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<SurroundingsAction>(); };
@@ -1575,13 +1833,42 @@ void Game::ECSInit(std::string mapPath) {
   });
 
   GlobalCommandRegistry::Register({
-    "[PLANT_AT X,Y ... $SEED]",
-    "- Plants a seed at one or more relative coordinates.",
-    std::regex(R"(\[PLANT_AT\s+((?:-?\d+,-?\d+\s*)+)\s+(.+)\])", std::regex_constants::icase),
+    "[EQUIP $ITEM_NAME]",
+    "Wear or wield an item you are carrying, so its effects apply to you. Replaces whatever is already in the slot it needs. Example: [EQUIP Iron Scythe].",
+    std::regex(R"(\[EQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
     [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
-      std::string coordsStr = match[1].str();
-      std::string seedName = match[2].str();
-      return [coordsStr, seedName](flecs::entity) { return std::make_unique<PlantAtAction>(coordsStr, seedName); };
+      std::string itemName = match[1].str();
+      return [itemName](flecs::entity) { return std::make_unique<EquipAction>(itemName); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[UNEQUIP $ITEM_NAME]",
+    "Take off an item you are wearing. Example: [UNEQUIP Iron Scythe].",
+    std::regex(R"(\[UNEQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string itemName = match[1].str();
+      return [itemName](flecs::entity) { return std::make_unique<UnequipAction>(itemName); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[EQUIPMENT]",
+    "List what you are wearing and which slot each item occupies. Example: [EQUIPMENT].",
+    std::regex(R"(\[EQUIPMENT\])", std::regex_constants::icase),
+    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<EquipmentAction>(); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[PLACE $ITEM AT X,Y ...]",
+    "- Sets an item you are carrying down in the world at one or more relative coordinates. What can be placed and where is up to the item.",
+    std::regex(R"(\[PLACE\s+(.+?)\s+AT\s+((?:-?\d+,-?\d+\s*)+)\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string itemName = match[1].str();
+      std::string coordsStr = match[2].str();
+      return [itemName, coordsStr](flecs::entity) { return std::make_unique<PlaceAtAction>(itemName, coordsStr); };
     },
     true
   });
@@ -1668,14 +1955,51 @@ void Game::ECSInit(std::string mapPath) {
   InteractionRegistry::Clear();
   
   ItemInteractionRegistry::Clear();
-  ItemInteractionRegistry::RegisterComponentInteraction<Seed>(
-      "Plant",
-      "Ask how to plant this seed in the ground next to you; it replies with the exact [PLANT_AT ...] command and the relative coordinates to use. Example: [PLANT Wheat Seeds]",
+
+  // An item is equippable exactly when a definition claims it, so this is
+  // registered by predicate rather than by component: the same object without a
+  // data/items/<id>.json is just a carried thing.
+  ItemInteractionRegistry::Register({
+      "Equip",
+      [](flecs::entity item) {
+        auto res = item.world().get<ItemRegistryResource>();
+        if (!res || !res->registry) return false;
+        const ItemType* type = item.get<ItemType>();
+        return type != nullptr && res->registry->Get(type->id) != nullptr;
+      },
+      [](flecs::entity, flecs::entity item) -> std::string {
+        const std::string name =
+            item.has<DisplayName>() ? item.get<DisplayName>()->name : "that item";
+        return "System: To wear " + name + ", use the command [EQUIP " + name +
+               "].\n";
+      },
+      "Wear or wield this item so its effects apply to you while it is on. Example: [EQUIP Iron Scythe]",
+  });
+
+  ItemInteractionRegistry::RegisterComponentInteraction<Placeable>(
+      "Place",
+      "Ask how to set this item down in the world; it replies with the exact [PLACE ...] command and the relative coordinates to use. Example: [PLACE Wheat Seeds AT 1,0]",
       [](flecs::entity actor, flecs::entity item) -> std::string {
-      std::string itemName = item.has<DisplayName>() ? item.get<DisplayName>()->name : "Seed";
+      std::string itemName = item.has<DisplayName>() ? item.get<DisplayName>()->name : "Item";
       std::string msg = GetSurroundingsRadar(actor, 2);
-      msg += "\nSystem: To plant " + itemName + ", please use the command [PLANT_AT X,Y X,Y ... " + itemName + "]\n";
-      msg += "where X and Y are relative coordinates from your position (e.g. -1,0 for West, 1,1 for South-East). You can provide multiple coordinates separated by spaces to plant multiple seeds at once.\n";
+      msg += "\nSystem: To place " + itemName + ", use the command [PLACE " + itemName + " AT X,Y ...]\n";
+      msg += "where X and Y are relative coordinates from your position (e.g. -1,0 for West, 1,1 for South-East). You can give several coordinates to place more than one at a time.\n";
+
+      // The rules come from the template, so the hint repeats them rather than
+      // assuming the agent can infer them from the grid.
+      const Placeable* policy = item.get<Placeable>();
+      if (policy && policy->maxDistance > 0) {
+        msg += "It has to go within " + std::to_string(policy->maxDistance) +
+               (policy->maxDistance == 1 ? " tile of you.\n" : " tiles of you.\n");
+      }
+      if (policy && !policy->surface.empty()) {
+        msg += "It can only be placed on: ";
+        for (size_t i = 0; i < policy->surface.size(); ++i) {
+          if (i > 0) msg += (i + 1 == policy->surface.size()) ? " or " : ", ";
+          msg += policy->surface[i];
+        }
+        msg += ".\n";
+      }
       return msg;
   });
 
@@ -1684,7 +2008,20 @@ void Game::ECSInit(std::string mapPath) {
       "Gather the resources this object holds. Harvesting can take a few seconds, and it yields nothing once the object is depleted. Example: [HARVEST]",
       [](flecs::entity actor, flecs::entity target, std::string args) -> std::string {
       std::string objName = target.has<DisplayName>() ? target.get<DisplayName>()->name : "Object";
-      
+
+      // A declared capability gate is checked before anything else, so an
+      // unqualified actor is told what it is missing instead of watching a timer
+      // and ending with nothing. Requirements are content (an object's "requires"
+      // block plus item tags), so nothing here knows what a scythe is.
+      if (const Requires* required = target.get<Requires>()) {
+        const std::string missing = FirstMissingEquippedTag(
+            actor, required->equippedTags, ItemsOf(actor.world()));
+        if (!missing.empty()) {
+          return "System: You cannot harvest the " + objName + ": you need a " +
+                 missing + " equipped.\n";
+        }
+      }
+
       Harvestable* h = target.get_mut<Harvestable>();
       if (h->lootTable.drops.empty()) {
           return "System: The " + objName + " cannot be harvested because it has no loot table.\n";
@@ -1759,6 +2096,7 @@ void Game::ECSInit(std::string mapPath) {
 
         std::string msg = "System: You harvested " + outcome.droppedItems + " from " + objName + ".\n";
         msg += FormatTrainingGains(outcome.training);
+        msg += FormatBrokenTools(outcome.brokenTools);
         if (h->amountRemaining <= 0) {
           msg += "The " + objName + " is depleted and destroyed.\n";
           target.destruct();
@@ -1988,6 +2326,9 @@ void Game::ECSInit(std::string mapPath) {
       for (flecs::entity item : itemsToStore) {
           if (stored >= spaceLeft) break;
 
+          // An item that leaves its holder stops being worn; otherwise it would
+          // keep contributing from inside the chest.
+          DropEquipped(item);
           actor.remove<Holds>(item);
           target.add<Holds>(item);
           item.child_of(target);
@@ -2027,6 +2368,7 @@ void Game::ECSInit(std::string mapPath) {
       }
 
       for (flecs::entity item : itemsToTake) {
+          DropEquipped(item);
           target.remove<Holds>(item);
           actor.add<Holds>(item);
           item.child_of(actor);
@@ -2131,6 +2473,9 @@ void Game::ECSInit(std::string mapPath) {
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
     GiveStartingSkills(playerEntity, skillRes->registry);
   }
+  // The player gets the same default body every other character does, so
+  // [EQUIPMENT] and [EQUIP] work from the first frame.
+  GiveSlots(playerEntity, &raceRegistry, "", {}, debugLog.get());
 
 
   // Initialize debug window entities

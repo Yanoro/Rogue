@@ -1,0 +1,15 @@
+{
+  "name": "Human",
+  "slots": [
+    "head",
+    "torso",
+    "legs",
+    "feet",
+    { "id": "main_hand", "accepts": "hand" },
+    { "id": "off_hand", "accepts": "hand" },
+    { "id": "ring_1", "accepts": "ring" },
+    { "id": "ring_2", "accepts": "ring" },
+    "neck",
+    "back"
+  ]
+}

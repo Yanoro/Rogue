@@ -1,0 +1,11 @@
+{
+  "slot": "hand",
+  "occupies": 2,
+  "tier": 1,
+  "tags": ["scythe"],
+  "durability": 100,
+  "consumedBy": ["harvest"],
+  "effects": [
+    { "point": "duration", "activity": "harvest", "op": "pct", "perPoint": -0.2 }
+  ]
+}
