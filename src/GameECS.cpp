@@ -20,6 +20,7 @@
 #include "EffectResolver.hpp"
 #include "Equipment.hpp"
 #include "EquipmentRuntime.hpp"
+#include "FloatingText.hpp"
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
 #include "Rng.hpp"
@@ -381,6 +382,63 @@ void Game::ECSInitRenderSystems() {
                        {barWidth * timer.Progress(), DEFAULT_ACTION_BAR_HEIGHT},
                        DEFAULT_ACTION_BAR_FILL);
       });
+
+  // Floating change numbers (XP today, damage later). Registered last so they
+  // draw above sprites and name tags, and inside the camera pass so they scale
+  // and scroll with the world instead of floating over the screen.
+  ecs.system<FloatingText>("FloatingTextRenderSystem")
+      .kind<Render>()
+      .each([this](const FloatingText &floating) {
+        // A live target wins; a dead one keeps the number at its last known
+        // spot, so the killing blow is still visible.
+        Vector2 anchor = floating.anchor;
+        bool haveAnchor = floating.anchored;
+        float entityWidth = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+        if (floating.target.is_alive()) {
+          if (const ScreenPosition *pos = floating.target.get<ScreenPosition>()) {
+            anchor = {pos->x, pos->y};
+            haveAnchor = true;
+          }
+          if (const DrawAscii *ascii = floating.target.get<DrawAscii>()) {
+            entityWidth = static_cast<float>(ascii->width);
+          } else if (const Hitbox *hitbox = floating.target.get<Hitbox>()) {
+            entityWidth = static_cast<float>(hitbox->width);
+          }
+        }
+        // Nothing to hang the number on: an entity that never had a screen
+        // position, and is no longer alive to gain one.
+        if (!haveAnchor) {
+          return;
+        }
+
+        const FloatingTextMotion motion = EvaluateFloatingTextMotion(
+            floating.elapsed, floating.lifetime, floating.rise,
+            floating.stackIndex, DEFAULT_FLOATING_TEXT_FAN_SPACING,
+            DEFAULT_FLOATING_TEXT_FADE_START);
+
+        const Vector2 textSize =
+            MeasureTextEx(gameFont, floating.text.c_str(),
+                          DEFAULT_FLOATING_TEXT_FONT_SIZE, 0);
+
+        const float centerX = anchor.x + entityWidth / 2.0f + motion.fan;
+        const Vector2 textPos = {
+            std::round(centerX - textSize.x / 2.0f),
+            std::round(anchor.y - DEFAULT_FLOATING_TEXT_OFFSET_Y - textSize.y -
+                       motion.rise)};
+
+        Color color = floating.color;
+        color.a = static_cast<unsigned char>(std::clamp(
+            static_cast<float>(color.a) * motion.alpha, 0.0f, 255.0f));
+
+        // A one-pixel drop shadow keeps a small number legible over a bright
+        // tile without needing a full outline pass.
+        const Color shadow = {0, 0, 0, color.a};
+        DrawTextEx(gameFont, floating.text.c_str(),
+                   {textPos.x + 1.0f, textPos.y + 1.0f},
+                   DEFAULT_FLOATING_TEXT_FONT_SIZE, 0, shadow);
+        DrawTextEx(gameFont, floating.text.c_str(), textPos,
+                   DEFAULT_FLOATING_TEXT_FONT_SIZE, 0, color);
+      });
 }
 
 float GetDistanceRecs(Rectangle rec1, Rectangle rec2) {
@@ -500,6 +558,25 @@ void Game::ECSInitLogicSystems() {
             map->ScreenCoordsToGameCoords(screenPos.x, screenPos.y);
         if (oldGamePos != newGamePos) {
           e.set<GamePosition>(newGamePos);
+        }
+      });
+
+  // Floating change numbers. Ages them out and keeps their anchor pinned to the
+  // target, so a living character drags its number along and a dead one leaves
+  // it where it fell. Advance-then-test means a number is always drawn at least
+  // once, even at a lifetime shorter than a frame.
+  ecs.system<FloatingText>("FloatingTextLifetimeSystem")
+      .each([](flecs::entity e, FloatingText &floating) {
+        if (floating.target.is_alive()) {
+          if (const ScreenPosition *pos = floating.target.get<ScreenPosition>()) {
+            floating.anchor = {pos->x, pos->y};
+            floating.anchored = true;
+          }
+        }
+
+        floating.elapsed += GetFrameTime();
+        if (floating.elapsed >= floating.lifetime) {
+          e.destruct();
         }
       });
 }
@@ -1036,6 +1113,29 @@ std::vector<SkillGain> ApplySubjectTraining(flecs::entity actor,
   if (!block) {
     return {};
   }
+
+  // Report the raw XP of every grant this actor will actually receive, not just
+  // the ones that cross a level. The whole point of the floating number is to
+  // make the small, frequent gains visible, and a grant that only banks progress
+  // toward the next level still earned something. GrantApplies is the same rule
+  // ApplyTraining uses below, so a number can never appear for XP that was
+  // silently dropped (unknown skill, wrong activity, skill not held).
+  //
+  // `spawned` keeps a single award that trains several skills from collapsing
+  // into one number: entities created earlier in this deferred frame are not yet
+  // visible to the stacking count, so the caller numbers the batch itself.
+  int spawned = 0;
+  for (const SkillXp &grant : grants) {
+    if (grant.xp <= 0 ||
+        !GrantApplies(*block, skillRes->registry->Get(grant.skillId),
+                      activity)) {
+      continue;
+    }
+    if (SpawnFloatingXp(actor, grant.xp, spawned).is_alive()) {
+      ++spawned;
+    }
+  }
+
   return ApplyTraining(*block, grants, *skillRes->registry, activity);
 }
 

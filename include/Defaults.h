@@ -92,3 +92,27 @@ constexpr float DEFAULT_ACTION_BAR_OFFSET_Y = 4.0f;
 constexpr float DEFAULT_ACTION_BAR_MIN_WIDTH = 24.0f;
 inline const Color DEFAULT_ACTION_BAR_BACKGROUND = {30, 30, 30, 200};
 inline const Color DEFAULT_ACTION_BAR_FILL = {90, 210, 90, 255};
+
+// Floating change numbers: the small "+N" that pops over an entity, drifts up
+// and fades (XP gains today, damage once combat exists). These are shared
+// defaults every spawn starts from; a caller can still override the per-number
+// fields on the FloatingText component itself.
+//
+// The rise is deliberately small and the lifetime deliberately short: the point
+// is a glanceable tick beside the thing it describes, not a second HUD.
+constexpr float DEFAULT_FLOATING_TEXT_LIFETIME = 1.0f;
+constexpr float DEFAULT_FLOATING_TEXT_RISE = 24.0f;
+// Fraction of the lifetime that stays fully opaque. The number is clearest
+// while it is near the entity, so it holds its colour and only fades on the way
+// out rather than dimming the whole journey.
+constexpr float DEFAULT_FLOATING_TEXT_FADE_START = 0.66f;
+// Baseline gap between the entity's visual top and the number's first frame.
+constexpr float DEFAULT_FLOATING_TEXT_OFFSET_Y = 4.0f;
+// Horizontal step used to fan out numbers that spawn on the same target at the
+// same moment, so a multi-skill award does not collapse into one number.
+constexpr float DEFAULT_FLOATING_TEXT_FAN_SPACING = 12.0f;
+constexpr float DEFAULT_FLOATING_TEXT_FONT_SIZE = 16.0f;
+// Green for a gain, red for damage: the same reading the chat already gives a
+// character's own progress.
+inline const Color DEFAULT_FLOATING_TEXT_XP_COLOR = {120, 230, 120, 255};
+inline const Color DEFAULT_FLOATING_TEXT_DAMAGE_COLOR = {235, 90, 90, 255};

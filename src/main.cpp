@@ -9,7 +9,7 @@
 #include <string>
 
 int main(int argc, char *argv[]) {
-  std::string mapPath = std::string(MAPS_DIRECTORY) + "/Map_Miller.json";
+  std::string mapPath = std::string(MAPS_DIRECTORY) + "/Map_Farm.json";
   if (argc > 1) {
     mapPath = argv[1];
   }

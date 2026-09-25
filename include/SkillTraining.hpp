@@ -34,6 +34,24 @@ inline bool AcceptsActivity(const SkillDef &def, const std::string &activity) {
   return false;
 }
 
+// True when this grant would actually reach `block`: the skill exists, it
+// accepts this activity, and the character has it. The three cases are skipped
+// rather than reported (see ApplyTraining), and this predicate is shared with
+// the reporting path so "what was awarded" and "what was shown" cannot drift --
+// a number must never appear over a character for XP that was silently dropped.
+inline bool GrantApplies(const SkillBlock &block, const SkillDef *def,
+                         const std::string &activity) {
+  if (!def || !AcceptsActivity(*def, activity)) {
+    return false;
+  }
+  for (const SkillValue &value : block.values) {
+    if (value.id == def->id) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Applies a subject's training grants to a character's SkillBlock, in place.
 //
 // Returns ONLY the skills that moved, so a caller can report those and ignore
@@ -60,7 +78,7 @@ inline std::vector<SkillGain> ApplyTraining(SkillBlock &block,
       continue;
     }
     const SkillDef *def = registry.Get(grant.skillId);
-    if (!def || !AcceptsActivity(*def, activity)) {
+    if (!GrantApplies(block, def, activity)) {
       continue;
     }
 
