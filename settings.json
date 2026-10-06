@@ -1,0 +1,69 @@
+{
+  "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
+
+  "map": {
+    "file": "./maps/Map_Farm.json",
+    "spawnNPCs": true,
+    "mapsDirectory": "./maps"
+  },
+
+  "model": {
+    "type": "openrouter",
+    "model": "deepseek/deepseek-v4-flash",
+    "apiKey": "",
+    "endpoint": "http://localhost:11434/api/generate",
+    "maxTokens": 1500,
+    "provider": {
+      "order": ["deepinfra", "novita", "siliconflow", "parasail", "gmicloud"],
+      "allow_fallbacks": false,
+      "require_parameters": true
+    }
+  },
+
+  "ai": {
+    "npcPromptFile": ""
+  },
+
+  "window": {
+    "title": "AIRogue",
+    "width": 1920,
+    "height": 1080,
+    "fullscreen": true,
+    "vsync": true,
+    "targetFPS": 60,
+    "monitor": -1
+  },
+
+  "render": {
+    "fontPath": "./fonts/oldschool/otb - Bm (linux bitmap)/BmPlus_IBM_CGA.otb",
+    "fontSize": 32,
+    "cameraMode": "follow",
+    "cameraZoom": 0.0
+  },
+
+  "player": {
+    "name": "playerCharacter",
+    "startX": 48,
+    "startY": 20,
+    "race": ""
+  },
+
+  "world": {
+    "seed": 0
+  },
+
+  "content": {
+    "objects": "data/objects",
+    "recipes": "data/recipes",
+    "stats": "data/stats",
+    "skills": "data/skills",
+    "items": "data/items",
+    "races": "data/races"
+  },
+
+  "debug": {
+    "windowStateFile": "./debug_windows_state.json",
+    "restServer": true,
+    "logMaxEntries": 1000
+  }
+}

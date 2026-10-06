@@ -1,5 +1,8 @@
 #include "StorageWindow.h"
+#include "AsciiArtDraw.hpp"
+#include "SpriteDraw.hpp"
 #include "Components.h"
+#include "ResourceManager.h"
 #include "StringUtils.hpp"
 #include "imgui.h"
 
@@ -16,6 +19,14 @@ struct StorageEntry {
   char ch = '?';
   Color characterColor = {255, 255, 255, 255};
   Color backgroundColor = {0, 0, 0, 0};
+  // Copied, not referenced: the rows are rebuilt from the live ECS every frame
+  // and the item entity can be destroyed in between.
+  AsciiArt art;
+  bool hasArt = false;
+  // The item's raster sprite, when it has one. Also copied for the same reason,
+  // and resolved once per rebuild rather than per draw so the row keeps looking
+  // like the item even if the entity goes away.
+  const Texture2D *sprite = nullptr;
   std::string name;
   int count = 0;
 };
@@ -29,8 +40,9 @@ constexpr float kGlyphSize = 32.0f;
 
 } // namespace
 
-StorageWindow::StorageWindow(flecs::entity container, flecs::entity owner)
-    : container(container), owner(owner) {}
+StorageWindow::StorageWindow(flecs::entity container, flecs::entity owner,
+                             ResourceManager *resources)
+    : container(container), owner(owner), resources(resources) {}
 
 void StorageWindow::Draw() {
   // The chest can be destroyed (map reload, editor delete) while the window is
@@ -91,6 +103,18 @@ void StorageWindow::Draw() {
       entry.characterColor = ascii->characterColor;
       entry.backgroundColor = ascii->backgroundColor;
     }
+    if (const AsciiArt *art = item.get<AsciiArt>()) {
+      entry.hasArt = !art->lines.empty();
+      entry.art = *art;
+    }
+    // The item's sprite, if it was given one at spawn. The path in the component
+    // was already validated when it was attached, so this is a cache hit; the
+    // null check is only for an item spawned while no manager was set.
+    if (resources != nullptr) {
+      if (const Sprite *sprite = item.get<Sprite>()) {
+        entry.sprite = resources->TryGetTexture(sprite->path);
+      }
+    }
     entry.count = 1;
     entries.push_back(entry);
   });
@@ -130,8 +154,21 @@ void StorageWindow::Draw() {
     ImGui::PushStyleColor(ImGuiCol_Button, background);
     ImGui::PushStyleColor(ImGuiCol_Text, ToImVec4(entry.characterColor));
 
-    const std::string glyph = std::string(1, entry.ch) + "##glyph";
-    ImGui::Button(glyph.c_str(), ImVec2(kGlyphSize, kGlyphSize));
+    // A sprite or an art block draws its own pixels over the plate; anything else
+    // keeps the single-glyph label. The button is only a coloured plate either
+    // way -- its return value is deliberately unused here.
+    if (entry.sprite != nullptr) {
+      ImGui::Button("##glyph", ImVec2(kGlyphSize, kGlyphSize));
+      DrawSpriteImGui(*entry.sprite, ImGui::GetItemRectMin(),
+                      ImGui::GetItemRectSize());
+    } else if (entry.hasArt) {
+      ImGui::Button("##glyph", ImVec2(kGlyphSize, kGlyphSize));
+      DrawAsciiArtImGui(entry.art, entry.characterColor,
+                        ImGui::GetItemRectMin(), ImGui::GetItemRectSize());
+    } else {
+      const std::string glyph = std::string(1, entry.ch) + "##glyph";
+      ImGui::Button(glyph.c_str(), ImVec2(kGlyphSize, kGlyphSize));
+    }
 
     ImGui::PopStyleColor(2);
     ImGui::PopID();

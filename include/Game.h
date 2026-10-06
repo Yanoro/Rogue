@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "Components.h"
+#include "AsciiArtFonts.hpp"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
 #include "Defaults.h"
@@ -17,6 +18,7 @@
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
+#include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "StatRegistry.h"
 
@@ -45,7 +47,10 @@ public:
   Game();
   ~Game();
 
-  void Init(std::string mapPath);
+  // Brings up the window, the debug systems and the ECS world using the settings
+  // loaded by LoadGameSettings (see Settings.h). Reads them through Settings()
+  // rather than taking a copy, so there is one source of truth for the run.
+  void Init();
   void handleInput();
 
   // Rewrites the map file with every map-editor change: tile layout, locations
@@ -83,6 +88,12 @@ private:
   ItemRegistry itemRegistry;
   RaceRegistry raceRegistry;
   HookRegistry hookRegistry;
+
+  // Sprite textures for the whole process, keyed by path and cached including
+  // failures (see ResourceManager). Declared before `ecs` on purpose: members are
+  // destroyed in reverse order, so the ECS world -- whose Sprite components name
+  // these paths -- goes first and nothing can outlive the cache it refers to.
+  ResourceManager resourceManager;
 
   flecs::world ecs;
   flecs::entity renderPipeline;
@@ -125,6 +136,10 @@ private:
   raylib::RenderTexture2D gameTexture;
 
   Font gameFont;
+  // One rasterization of gameFont per art cell size, so an art cell is drawn at
+  // the size it was rasterized at instead of being a downhill resample of the
+  // 32px gameFont. See AsciiArtFonts.hpp.
+  AsciiArtFonts artFonts;
   size_t virtualWidth;
   size_t virtualHeight;
 
@@ -195,8 +210,21 @@ private:
   // several can be open at once and reopening one already on screen is a no-op.
   void OpenCharacterStatusWindow(flecs::entity character);
 
-  void ECSInit(std::string mapPath);
+  void ECSInit();
   void ECSInitRenderSystems();
+
+  // The render systems that draw over the tile and entity layers (name tags and
+  // other overlays). Called at the end of ECSInitRenderSystems so the pipeline,
+  // which runs systems in registration order, keeps tiles under entities under
+  // overlays.
+  void ECSInitOverlaySystems();
+
+  // Draws one entity's look -- its plate, then its sprite or its ASCII art -- and
+  // the debug rectangles over it. Shared by the two render systems so the tile
+  // layer and the entity layer cannot drift apart; see MapTileVisual.
+  void DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
+                        const ScreenPosition &screenPos);
+
   void ECSInitPhysicsSystems();
   void ECSInitLogicSystems();
   void ECSInitAgentSystems();

@@ -1,6 +1,14 @@
 {
   "name": "Wheat Seeds",
   "description": "A handful of wheat seeds. They can be planted in tilled soil.",
+  "art": [
+    " , ",
+    ", ,",
+    " , "
+  ],
+  "palette": {
+    ",": [139, 69, 19, 255]
+  },
   "character": "s",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],

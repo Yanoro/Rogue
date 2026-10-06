@@ -1,6 +1,9 @@
 #include "DebugWindows.h"
 #include "Game.h"
 #include "AgentBrain.h"
+#include "AsciiArtDraw.hpp"
+#include "SpriteDraw.hpp"
+#include "SpritePaths.hpp"
 #include "ObjectFactory.h"
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -236,11 +239,99 @@ void DebugConsoleWindow::Draw() {
   ImGui::End();
 }
 
+namespace {
+
+// A small coloured plate showing what the tile actually looks like: the DrawAscii
+// background as a filled square with the glyph centred on it in the character
+// colour, so the window shows the tile's look and not just its name.
+void DrawGlyphSwatch(const DrawAscii &ascii, float size) {
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+  const ImVec2 bottomRight(topLeft.x + size, topLeft.y + size);
+
+  drawList->AddRectFilled(
+      topLeft, bottomRight,
+      IM_COL32(ascii.backgroundColor.r, ascii.backgroundColor.g,
+               ascii.backgroundColor.b, ascii.backgroundColor.a));
+  drawList->AddRect(topLeft, bottomRight, IM_COL32(140, 140, 140, 255));
+
+  const char glyph[2] = {ascii.ch, '\0'};
+  const ImVec2 glyphSize = ImGui::CalcTextSize(glyph);
+  drawList->AddText(ImVec2(topLeft.x + (size - glyphSize.x) * 0.5f,
+                           topLeft.y + (size - glyphSize.y) * 0.5f),
+                    IM_COL32(ascii.characterColor.r, ascii.characterColor.g,
+                             ascii.characterColor.b, ascii.characterColor.a),
+                    glyph);
+
+  // Reserve the space the plate was drawn into so the layout flows beside and
+  // below it instead of drawing on top of it.
+  ImGui::Dummy(ImVec2(size, size));
+}
+
+// One summary line for an entity standing on the clicked tile: what it is, plus
+// the per-instance state that is interesting at a glance. This is a summary, not
+// an inspector -- the full view stays in EntityInfoWindow.
+void DrawTileOccupant(flecs::entity occupant, flecs::entity playerEntity) {
+  const DisplayName *displayName = occupant.get<DisplayName>();
+  const ItemType *itemType = occupant.get<ItemType>();
+  const bool isPlayer = occupant == playerEntity;
+
+  std::string label = displayName != nullptr ? displayName->name : "";
+  if (label.empty()) {
+    label = isPlayer ? "Player"
+                     : (occupant.has<CharacterTag>() ? "Character" : "Entity");
+  }
+
+  const char *kind = "Entity";
+  if (isPlayer) {
+    kind = "Player";
+  } else if (occupant.has<CharacterTag>()) {
+    kind = "Character";
+  } else if (itemType != nullptr) {
+    kind = "Object";
+  }
+
+  ImGui::Bullet();
+  ImGui::Text("%s", label.c_str());
+  ImGui::SameLine();
+  ImGui::TextDisabled("(%s)", kind);
+
+  if (itemType != nullptr) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· %s", itemType->id.c_str());
+  }
+  if (occupant.has<MapAuthored>()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· authored");
+  }
+  if (const Harvestable *harvestable = occupant.get<Harvestable>()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· harvest %d left", harvestable->amountRemaining);
+  }
+  if (const Evolvable *evolvable = occupant.get<Evolvable>()) {
+    if (evolvable->isActive) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("· grows into %s",
+                          evolvable->nextStageTemplate.c_str());
+    }
+  }
+  if (const Storage *storage = occupant.get<Storage>()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· storage cap %d", storage->capacity);
+  }
+  if (occupant.has<Portable>()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("· portable");
+  }
+}
+
+} // namespace
+
 TileInfoWindow::TileInfoWindow(Game* game) : game(game) {}
 
 void TileInfoWindow::Draw() {
   bool isOpen = true;
-  ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(460, 560), ImGuiCond_FirstUseEver);
   ImGui::Begin("Tile Info", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->tileInfoWindowEntity.remove<ActiveWindow>();
@@ -248,34 +339,120 @@ void TileInfoWindow::Draw() {
     return;
   }
 
-  if (game->hasClicked) {
-    ImGui::Text("Map Coordinates: (%d, %d)", game->lastClickedPos.x, game->lastClickedPos.y);
+  if (!game->hasClicked || game->map == nullptr) {
+    ImGui::TextUnformatted("Click anywhere on the map to inspect.");
+    ImGui::End();
+    return;
+  }
 
-    if (Location *loc = game->map->GetLocation(game->lastClickedPos)) {
-      ImGui::Separator();
-      ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Location: %s", loc->name.c_str());
-      ImGui::TextWrapped("%s", loc->description.c_str());
+  Map *map = game->map.get();
+  const GamePosition pos = game->lastClickedPos;
+  const ScreenPosition clickedScreenPos =
+      map->GameCoordsToScreenCoords(pos.x, pos.y);
+
+  ImGui::Text("Map Coordinates: (%d, %d)", pos.x, pos.y);
+  ImGui::Text("Screen Position: (%.0f, %.0f)", clickedScreenPos.x,
+              clickedScreenPos.y);
+  ImGui::Text("Map Size: %d x %d tiles", map->GetWidth(), map->GetHeight());
+  ImGui::SameLine();
+  ImGui::TextDisabled("(%d x %d px each)", map->GetTileWidth(),
+                      map->GetTileHeight());
+
+  ImGui::Separator();
+
+  Tile *terrain = map->GetTile(pos.x, pos.y);
+  if (terrain == nullptr) {
+    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
+                       "Outside the map: there is no tile here.");
+    ImGui::End();
+    return;
+  }
+
+  flecs::entity tileEntity =
+      game->validTileSelected ? game->selectedTile : flecs::entity::null();
+  const bool hasTileEntity = tileEntity.is_alive();
+
+  // The tile entity's DrawAscii is the live look -- the map editor rewrites it
+  // when a tile is painted -- so it wins over the authored copy on the Tile.
+  const DrawAscii *glyph = terrain->ascii;
+  if (hasTileEntity) {
+    if (const DrawAscii *entityGlyph = tileEntity.get<DrawAscii>()) {
+      glyph = entityGlyph;
     }
+  }
 
-    ImGui::Separator();
+  ImGui::TextUnformatted("Terrain");
+  if (glyph != nullptr) {
+    DrawGlyphSwatch(*glyph, 52.0f);
+    ImGui::SameLine();
+  }
+  ImGui::BeginGroup();
+  ImGui::Text("%s", terrain->name.c_str());
+  if (terrain->blocksTile) {
+    ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "Blocks Path: YES");
+  } else {
+    ImGui::TextColored(ImVec4(0.45f, 1.0f, 0.45f, 1.0f), "Blocks Path: NO");
+  }
+  ImGui::Text("Collision Hitbox: %zu x %zu px", terrain->hitbox.width,
+              terrain->hitbox.height);
+  if (terrain->sprite.empty()) {
+    ImGui::TextDisabled("Sprite: none (convention path or glyph)");
+  } else {
+    ImGui::Text("Sprite: %s", terrain->sprite.c_str());
+  }
+  ImGui::EndGroup();
 
-    if (game->validTileSelected && game->selectedTile.is_alive()) {
-      ImGui::Text("Tile Entity ID: %lu", game->selectedTile.id());
-
-      if (const ScreenPosition *sPos = game->selectedTile.get<ScreenPosition>()) {
-        ImGui::Text("Screen Position: (%.2f, %.2f)", sPos->x, sPos->y);
-      }
-
-      if (game->selectedTile.has<BlocksTile>()) {
-        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Blocks Path: YES");
-      } else {
-        ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Blocks Path: NO");
-      }
+  ImGui::Separator();
+  ImGui::TextUnformatted("Tile Entity");
+  if (hasTileEntity) {
+    ImGui::Text("Entity ID: %lu", tileEntity.id());
+    if (const ScreenPosition *screenPos = tileEntity.get<ScreenPosition>()) {
+      ImGui::Text("Screen Position: (%.0f, %.0f)", screenPos->x, screenPos->y);
+    }
+    if (const Sprite *sprite = tileEntity.get<Sprite>()) {
+      ImGui::Text("Attached Sprite: %s", sprite->path.c_str());
     } else {
-      ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "No valid tile entity at this position.");
+      ImGui::TextDisabled("Attached Sprite: none (drawn from the glyph)");
     }
   } else {
-    ImGui::Text("Click anywhere on the map to inspect.");
+    ImGui::TextDisabled("No tile entity found at this position.");
+  }
+
+  ImGui::Separator();
+  if (Location *location = map->GetLocation(pos)) {
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Location: %s",
+                       location->name.c_str());
+    if (!location->description.empty()) {
+      ImGui::TextWrapped("%s", location->description.c_str());
+    } else {
+      ImGui::TextDisabled("(no description)");
+    }
+    ImGui::Text("Area: (%d, %d), %d x %d tiles", location->pos.x,
+                location->pos.y, location->width, location->height);
+  } else {
+    ImGui::TextDisabled("Not inside any named location.");
+  }
+
+  ImGui::Separator();
+
+  // Everything standing on the clicked tile. Tile entities are excluded for free:
+  // they carry a ScreenPosition but no GamePosition, and only the latter is
+  // queried here.
+  std::vector<flecs::entity> occupants;
+  game->ecs.filter<const GamePosition>().each(
+      [&pos, &occupants](flecs::entity e, const GamePosition &p) {
+        if (p.x == pos.x && p.y == pos.y) {
+          occupants.push_back(e);
+        }
+      });
+
+  ImGui::Text("Entities on This Tile: %zu", occupants.size());
+  if (occupants.empty()) {
+    ImGui::TextDisabled("Nothing is standing here.");
+  } else {
+    for (flecs::entity occupant : occupants) {
+      DrawTileOccupant(occupant, game->playerEntity);
+    }
   }
 
   ImGui::End();
@@ -804,10 +981,27 @@ void MapEditorWindow::Draw() {
           ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
         }
 
-        std::string label = std::string(1, tile->ascii->ch) + "##" + tile->name;
+        // The tile's texture, resolved through the very same helper the world
+        // uses -- an explicit "sprite" key, then data/sprites/tile_<name>.png --
+        // so the palette cannot offer a look the map would not draw. Null is the
+        // ordinary case for a tile that has no art, and it keeps the glyph.
+        const Texture2D *sprite = ResolveSpriteTexture(
+            tile->sprite, TileSpriteId(tile->name), game->resourceManager,
+            game->debugLog.get());
+
+        std::string label =
+            sprite != nullptr
+                ? ("##" + tile->name)
+                : (std::string(1, tile->ascii->ch) + "##" + tile->name);
         if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
           game->editorSelection.type = EditorSelectionType::Tile;
           game->editorSelection.name = tile->name;
+        }
+        // Drawn over the button's own plate, so the tile's background colour
+        // still shows through any transparency in the texture.
+        if (sprite != nullptr) {
+          DrawSpriteImGui(*sprite, ImGui::GetItemRectMin(),
+                          ImGui::GetItemRectSize());
         }
         
         ImGui::PopStyleColor(2);
@@ -836,20 +1030,40 @@ void MapEditorWindow::Draw() {
            std::string charStr = pair.second["character"];
            if (!charStr.empty()) ch = charStr[0];
         }
-        
+
+        // Parsed once, here, because the art preview's fallback colour is the
+        // template's characterColor and the ImGui text style wants the same value.
+        Color characterColor = {255, 255, 255, 255};
         if (pair.second.contains("characterColor")) {
-           auto& c = pair.second["characterColor"];
-           if (c.size() >= 3) {
-              fgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
-           }
+           characterColor = ParseAsciiColor(pair.second["characterColor"], characterColor);
+           fgColor = ImVec4(characterColor.r/255.0f, characterColor.g/255.0f, characterColor.b/255.0f, characterColor.a/255.0f);
         }
         if (pair.second.contains("backgroundColor")) {
-           auto& c = pair.second["backgroundColor"];
-           if (c.size() >= 3) {
-              bgColor = ImVec4(c[0].get<float>()/255.0f, c[1].get<float>()/255.0f, c[2].get<float>()/255.0f, c.size() > 3 ? c[3].get<float>()/255.0f : 1.0f);
-           }
+           const Color backgroundColor =
+               ParseAsciiColor(pair.second["backgroundColor"], Color{0, 0, 0, 0});
+           bgColor = ImVec4(backgroundColor.r/255.0f, backgroundColor.g/255.0f, backgroundColor.b/255.0f, backgroundColor.a/255.0f);
         }
-        
+
+        // Authored art is previewed through the same layout the world renderer
+        // uses, so the palette button shows what placing the object will actually
+        // look like. A template whose art is unusable falls back to its glyph
+        // here; ObjectFactory already reported why at load time.
+        AsciiArt art;
+        std::string artWarning;
+        const bool hasArt = ParseAsciiArt(pair.second, art, artWarning);
+
+        // A raster sprite wins over that art, resolved through the very same
+        // helper the world uses -- an explicit "sprite" key, then
+        // data/sprites/<templateKey>.png. Sharing the resolver is the point: the
+        // palette cannot promise a look the map would not deliver.
+        std::string spriteKey;
+        if (pair.second.contains("sprite") && pair.second["sprite"].is_string()) {
+          spriteKey = pair.second["sprite"].get<std::string>();
+        }
+        const Texture2D *sprite = ResolveSpriteTexture(
+            spriteKey, pair.first, game->resourceManager, game->debugLog.get());
+        const bool hasSprite = sprite != nullptr;
+
         ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
         ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
         
@@ -859,10 +1073,21 @@ void MapEditorWindow::Draw() {
           ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
         }
 
-        std::string label = std::string(1, ch) + "##" + pair.first;
+        // The plate is the same in every case; only its contents differ, so both
+        // image paths draw over an empty label.
+        const std::string label =
+            (hasSprite || hasArt) ? ("##" + pair.first)
+                                  : (std::string(1, ch) + "##" + pair.first);
         if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
           game->editorSelection.type = EditorSelectionType::ObjectTemplate;
           game->editorSelection.name = pair.first;
+        }
+        if (hasSprite) {
+          DrawSpriteImGui(*sprite, ImGui::GetItemRectMin(),
+                          ImGui::GetItemRectSize());
+        } else if (hasArt) {
+          DrawAsciiArtImGui(art, characterColor, ImGui::GetItemRectMin(),
+                            ImGui::GetItemRectSize());
         }
         
         ImGui::PopStyleColor(2);

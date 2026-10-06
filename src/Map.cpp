@@ -1,6 +1,8 @@
 #include "Map.h"
 #include "Defaults.h"
 #include "Game.h"
+#include "ResourceManager.h"
+#include "SpritePaths.hpp"
 #include "StartingSkills.hpp"
 #include "raylib.h"
 #include "ObjectFactory.h"
@@ -19,8 +21,9 @@ inline void from_json(const nlohmann::json &j, Color &c) {
   }
 }
 
-Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog) 
-  : ecs(mapEntity.world()), debugLog(debugLog) {
+Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
+         ResourceManager* resources)
+  : ecs(mapEntity.world()), debugLog(debugLog), resources(resources) {
 
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -65,6 +68,10 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
       newTile->ascii = newAscii;
       newTile->hitbox.width = tileInfo.value("hitboxWidth", tileWidth);
       newTile->hitbox.height = tileInfo.value("hitboxHeight", tileHeight);
+      // Optional authored texture. Absent is normal: the convention path
+      // data/sprites/tile_<name>.png is then tried, and the glyph is the last
+      // resort, so a tile with no art at all still draws.
+      newTile->sprite = tileInfo.value("sprite", "");
 
       uniqueTiles.push_back(std::move(newTile));
     }
@@ -186,6 +193,20 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
           }
         }
 
+        // The NPC's own look, by image path. There is no convention path for
+        // NPCs: a name-based lookup would break silently on a rename, so a
+        // character that should not look like its race has to say so. An entry
+        // that does not resolve is reported by AttachSprite at spawn and leaves
+        // the race's look in place.
+        if (npcJson.contains("sprite")) {
+          if (npcJson["sprite"].is_string()) {
+            data.sprite = npcJson["sprite"].get<std::string>();
+          } else {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-string 'sprite'; ignoring it.\n");
+          }
+        }
+
         npcs.push_back(data);
       }
     }
@@ -196,10 +217,23 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog)
       Tile *currentTile = uniqueTiles[pos].get();
       addTileToMap(currentTile, currPos.x, currPos.y);
 
-      ecs.entity()
-          .child_of(mapEntity)
-          .set<DrawAscii>(*currentTile->ascii)
-          .set<ScreenPosition>(GameCoordsToScreenCoords(currPos.x, currPos.y));
+      flecs::entity tileEntity =
+          ecs.entity()
+              .child_of(mapEntity)
+              .set<DrawAscii>(*currentTile->ascii)
+              .set<ScreenPosition>(
+                  GameCoordsToScreenCoords(currPos.x, currPos.y));
+      // Tagged so the renderer draws every tile before anything standing on it.
+      // A tile texture is opaque and full-bleed, so the order is load-bearing.
+      // Added rather than set: MapTileVisual is an empty struct, and flecs
+      // registers an empty type with size 0, which trips its
+      // "cpp_type<T>::size() != 0" assertion the moment a value is set on it.
+      // Every other tag in the codebase is added the same way.
+      tileEntity.add<MapTileVisual>();
+      if (resources != nullptr) {
+        AttachSprite(tileEntity, currentTile->sprite,
+                     TileSpriteId(currentTile->name), *resources, debugLog);
+      }
 
       if (++currPos.y == height) {
         currPos.y = 0;

@@ -1,6 +1,16 @@
 {
   "name": "Planted Wheat Seeds",
   "description": "Seeds in the soil. Started growing recently.",
+  "art": [
+    "    ",
+    "    ",
+    " ,, ",
+    "▓▓▓▓"
+  ],
+  "palette": {
+    ",": [110, 200, 110, 255],
+    "▓": [70, 45, 25, 255]
+  },
   "character": ";",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],

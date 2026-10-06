@@ -4,6 +4,14 @@
   "components": [
     "Portable"
   ],
+  "art": [
+    " o ",
+    "o o",
+    " o "
+  ],
+  "palette": {
+    "o": [205, 127, 50, 255]
+  },
   "character": "$",
   "characterColor": [205, 127, 50, 255],
   "backgroundColor": [0, 0, 0, 0],

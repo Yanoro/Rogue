@@ -31,6 +31,7 @@
         }
       ],
       "name": "Vera",
+      "sprite": "data/sprites/trader.png",
       "position": [
         7,
         7
@@ -53,6 +54,7 @@
         }
       ],
       "name": "Silas",
+      "sprite": "data/sprites/trader.png",
       "position": [
         8,
         7
@@ -354,7 +356,25 @@
         255
       ],
       "fontSize": 32,
-      "name": "wall"
+      "name": "wooden wall"
+    },
+    {
+      "backgroundColor": [
+        72,
+        50,
+        30,
+        255
+      ],
+      "blocksTile": false,
+      "character": ".",
+      "characterColor": [
+        186,
+        146,
+        96,
+        255
+      ],
+      "fontSize": 32,
+      "name": "wooden floor"
     }
   ],
   "tileWidth": 32

@@ -9,6 +9,8 @@
 #include "EntityInfoWindow.h"
 #include "MapReloader.h"
 #include "PathFinding.h"
+#include "Settings.h"
+#include "SpritePaths.hpp"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -20,71 +22,109 @@ Game::Game() {}
 
 Game::~Game() { Shutdown(); }
 
-void Game::Init(std::string mapPath) {
+void Game::Init() {
   if (window.IsReady())
     return;
 
-  mapFilePath = mapPath;
+  // Everything below reads from the one settings object main() filled in. Taken
+  // by reference rather than copied so there is exactly one place a setting can
+  // be read from.
+  const GameSettings &settings = Settings();
+
+  mapFilePath = settings.map.file;
 
   // Do not set borderless flag, we will use proper fullscreen with explicit
   // monitor positioning
-  raylib::Window::SetConfigFlags(FLAG_VSYNC_HINT);
+  raylib::Window::SetConfigFlags(settings.window.vsync ? FLAG_VSYNC_HINT : 0);
 
-  // TODO: Make this general
-  window.Init(1920, 1080, "AIRogue");
+  window.Init(settings.window.width, settings.window.height,
+              settings.window.title.c_str());
 
   // Initialize debug systems early to read state
-  debugLog = std::make_unique<DebugLog>();
+  debugLog = std::make_unique<DebugLog>(
+      static_cast<size_t>(settings.debug.logMaxEntries));
   debugWindowState = std::make_unique<DebugWindowState>(debugLog.get());
-  mapReloader = std::make_unique<MapReloader>(MAPS_DIRECTORY, debugLog.get());
+  mapReloader = std::make_unique<MapReloader>(settings.map.mapsDirectory,
+                                              debugLog.get());
 
   // Load debug window state if it exists
-  debugWindowState->LoadState("./debug_windows_state.json");
+  debugWindowState->LoadState(settings.debug.windowStateFile);
 
   // Remember that our font MUST be monofont
-  std::string fontPathToLoad = DEFAULT_FONT_PATH;
+  std::string fontPathToLoad = settings.render.fontPath;
   if (!debugWindowState->GetDefaultFontPath().empty() &&
       std::filesystem::exists(debugWindowState->GetDefaultFontPath())) {
     fontPathToLoad = debugWindowState->GetDefaultFontPath();
   }
 
-  gameFont = LoadFontEx(fontPathToLoad.c_str(), DEFAULT_FONTSIZE, NULL, 0);
+  gameFont =
+      LoadFontEx(fontPathToLoad.c_str(), settings.render.fontSize, NULL, 0);
   SetTextureFilter(gameFont.texture, TEXTURE_FILTER_POINT);
+
+  // Art cells are drawn at their own size from their own rasterization, and with
+  // the CP437 block, shade and box-drawing codepoints that raylib's default
+  // ASCII-only load leaves out. Both are what let a cell carry sub-cell detail;
+  // AsciiArtFonts.hpp explains why that matters at 8-10px.
+  artFonts.Load(fontPathToLoad);
+  {
+    const std::string coverage = artFonts.CoverageWarning();
+    if (coverage.empty()) {
+      debugLog->LogInfo("Art fonts: " +
+                        std::to_string(ArtGlyphCodepoints().size()) +
+                        " glyph codepoints rasterized at " +
+                        std::to_string(AsciiArtFonts::kSizeCount) + " sizes");
+    } else {
+      debugLog->LogWarning("Art fonts: " + coverage);
+    }
+  }
 
   gameTexture = raylib::RenderTexture2D(1920, 1080);
   SetTextureFilter(gameTexture.texture, TEXTURE_FILTER_POINT);
 
   // TODO: Feels weird that map initialization occurs here
-  ECSInit(mapPath);
+  ECSInit();
   // virtualWidth = gameFont.baseSize * map->GetWidth();
   // virtualHeight = gameFont.baseSize * map->GetHeight();
   virtualWidth = 640;
   virtualHeight = 512;
 
-  // Target the primary monitor (monitor 1) if there are multiple displays,
-  // since monitor 0 is the side monitor
-  currentMonitor = 0;
-  if (GetMonitorCount() > 1) {
-    currentMonitor = 1;
+  // window.monitor >= 0 forces that display. -1 keeps the original rule: the
+  // primary (monitor 1) when several are connected, because monitor 0 is the
+  // side monitor on the author's desk.
+  int monitor = settings.window.monitor;
+  if (monitor < 0) {
+    monitor = GetMonitorCount() > 1 ? 1 : 0;
+  }
+  if (monitor >= GetMonitorCount()) {
+    debugLog->LogWarning("Settings: window.monitor " + std::to_string(monitor) +
+                         " does not exist (" +
+                         std::to_string(GetMonitorCount()) +
+                         " connected); using monitor 0.");
+    monitor = 0;
+  }
+  currentMonitor = monitor;
+
+  if (settings.window.fullscreen) {
+    // Explicitly move the window to the correct monitor's origin before scaling
+    window.SetPosition(GetMonitorPosition(currentMonitor).x,
+                       GetMonitorPosition(currentMonitor).y);
+    window.SetSize(GetMonitorWidth(currentMonitor),
+                   GetMonitorHeight(currentMonitor));
+
+    // Mouse offset removed. Raylib already reports window-relative coordinates.
+
+    // Actually go fullscreen (locks correctly on the targeted monitor in most
+    // X11 setups)
+    ToggleFullscreen();
   }
 
-  // Explicitly move the window to the correct monitor's origin before scaling
-  window.SetPosition(GetMonitorPosition(currentMonitor).x,
-                     GetMonitorPosition(currentMonitor).y);
-  window.SetSize(GetMonitorWidth(currentMonitor),
-                 GetMonitorHeight(currentMonitor));
+  window.SetTargetFPS(settings.window.targetFPS);
 
-  // Mouse offset removed. Raylib already reports window-relative coordinates.
-
-  // Actually go fullscreen (locks correctly on the targeted monitor in most
-  // X11 setups)
-  ToggleFullscreen();
-
-  window.SetTargetFPS(60);
-
-  // Set the screen size to match our hardcoded monitor resolution (1920x1080)
-  float screenWidth = 1920.0f;
-  float screenHeight = 1080.0f;
+  // The camera fits the map to this reference resolution. It is the configured
+  // window size rather than the live screen size, which is what the original
+  // hardcoded 1920x1080 pair amounted to.
+  float screenWidth = static_cast<float>(settings.window.width);
+  float screenHeight = static_cast<float>(settings.window.height);
 
   float mapWidthPx = map->GetMapWidthPx();
   float mapHeightPx = map->GetMapHeightPx();
@@ -92,12 +132,17 @@ void Game::Init(std::string mapPath) {
   float zoomX = screenWidth / mapWidthPx;
   float zoomY = screenHeight / mapHeightPx;
 
-  cameraMode = GameCameraMode::FollowMode;
+  cameraMode = settings.render.cameraMode == "free" ? GameCameraMode::FreeRoamMode
+                                                    : GameCameraMode::FollowMode;
 
   camera.target = {0, 0};
   camera.offset = {0, 0};
   camera.rotation = 0.0f;
-  camera.zoom = std::max(1.0f, std::floor(std::min(zoomX, zoomY)));
+  // 0 means "fit the map to the window". Any other value is taken literally, so
+  // a fixed zoom can be authored without the fit maths fighting it.
+  camera.zoom = settings.render.cameraZoom > 0.0f
+                    ? settings.render.cameraZoom
+                    : std::max(1.0f, std::floor(std::min(zoomX, zoomY)));
 
   inputHandler = std::make_unique<InputHandler>(camera, cameraMode, mapWidthPx,
                                                 mapHeightPx);
@@ -134,9 +179,33 @@ void Game::Init(std::string mapPath) {
     }
   }
 
+  // A one-line record of what the run actually started from, so a surprising
+  // session can be explained from the Debug Log without opening the JSON. The
+  // API key is deliberately reduced to present/absent.
+  debugLog->LogInfo("Settings: map=" + settings.map.file + " spawnNPCs=" +
+                    (settings.map.spawnNPCs ? "true" : "false") + " model=" +
+                    settings.model.type + "/" + settings.model.model +
+                    (settings.model.apiKey.empty() ? " (no api key)"
+                                                   : " (api key present)") +
+                    " npcPrompt=" +
+                    (settings.ai.npcPromptTemplate.empty()
+                         ? std::string("built-in")
+                         : settings.ai.npcPromptFile));
+
   debugLog->LogInfo("Game initialized successfully");
 
   rlImGuiSetup(true);
+
+  // ImGui renders with its own font, which is ASCII-only, so without this the
+  // windows that preview art (the map editor's object palette, inventory rows)
+  // would show blanks wherever the art uses a block character. ImGui's built-in
+  // font cannot be extended, so this is a second font added from the same file.
+  ArtImGuiFont() = AsciiArtFonts::AddImGuiArtFont(fontPathToLoad, 16.0f);
+  if (ArtImGuiFont() == nullptr) {
+    debugLog->LogWarning(
+        "Art fonts: no ImGui art font could be added, so art that uses block "
+        "characters will show blanks in the map editor palette.");
+  }
 }
 
 void Game::UpdateGUI() {
@@ -340,6 +409,14 @@ void Game::UpdateGUI() {
             
             if (targetEntity.is_alive()) {
               targetEntity.set<DrawAscii>(*newTile->ascii);
+              // The sprite is display state like the glyph, so the previous
+              // tile's texture is cleared before the new one is resolved --
+              // otherwise painting wooden floor over grass would keep the grass
+              // texture and only swap the glyph underneath it.
+              targetEntity.remove<Sprite>();
+              AttachSprite(targetEntity, newTile->sprite,
+                           TileSpriteId(newTile->name), resourceManager,
+                           debugLog.get());
             }
           }
         }
@@ -390,9 +467,17 @@ void Game::UpdateGUI() {
       hasClicked = true;
       validTileSelected = false;
 
-      ecs.filter<Tile, const GamePosition>().each(
-          [this, gPos](flecs::entity e, const Tile &, const GamePosition &p) {
-            if (p.x == gPos.x && p.y == gPos.y) {
+      // Map tiles are the Map's own children, tagged MapTileVisual and given a
+      // ScreenPosition when the map loads; they carry no Tile component and no
+      // GamePosition. Matching on those two -- as this used to -- therefore never
+      // selected anything, so every consumer saw "no valid tile". Resolve the
+      // entity by the screen position it was created at instead.
+      const ScreenPosition clickedScreenPos =
+          map->GameCoordsToScreenCoords(gPos.x, gPos.y);
+      ecs.filter<MapTileVisual, const ScreenPosition>().each(
+          [this, &clickedScreenPos](flecs::entity e, MapTileVisual,
+                                    const ScreenPosition &sPos) {
+            if (sPos == clickedScreenPos) {
               selectedTile = e;
               validTileSelected = true;
             }
@@ -483,6 +568,10 @@ void Game::Shutdown() {
     UnloadFont(gameFont);
   }
 
+  // And every art-cell rasterization. UnloadFont is a no-op for raylib's default
+  // font, which is what a failed ladder load leaves behind.
+  artFonts.Unload();
+
   if (debugWindowState) {
     debugWindowState->SetShowDebugConsole(
         debugConsoleWindowEntity.has<ActiveWindow>());
@@ -505,7 +594,7 @@ void Game::Shutdown() {
     debugWindowState->SetShowNPCMenuWindow(
         npcMenuWindowEntity.has<ActiveWindow>());
 
-    debugWindowState->SaveState("./debug_windows_state.json");
+    debugWindowState->SaveState(Settings().debug.windowStateFile);
     if (debugLog) {
       debugLog->LogInfo("Debug window state saved on shutdown");
     }

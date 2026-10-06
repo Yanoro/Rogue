@@ -1,6 +1,17 @@
 {
   "name": "Wheat Sprout",
   "description": "A young wheat sprout. Has been growing for a while",
+  "art": [
+    "    ",
+    " ,, ",
+    " || ",
+    "▓▓▓▓"
+  ],
+  "palette": {
+    ",": [110, 200, 110, 255],
+    "|": [90, 170, 90, 255],
+    "▓": [70, 45, 25, 255]
+  },
   "character": "v",
   "characterColor": [144, 238, 144, 255],
   "nameTagColor": [144, 238, 144, 255],

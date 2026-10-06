@@ -4,6 +4,15 @@
   "components": [
     "Portable"
   ],
+  "art": [
+    "|||",
+    "███",
+    "|||"
+  ],
+  "palette": {
+    "|": [230, 200, 120, 255],
+    "█": [139, 90, 43, 255]
+  },
   "character": "w",
   "characterColor": [245, 222, 179, 255],
   "backgroundColor": [0, 0, 0, 0],

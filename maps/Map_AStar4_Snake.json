@@ -23,7 +23,7 @@
       "blocksTile": false
     },
     {
-      "name": "wall",
+      "name": "wooden wall",
       "character": "#",
       "characterColor": [
         255,

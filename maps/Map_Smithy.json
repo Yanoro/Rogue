@@ -28,6 +28,7 @@
   "npcs": [
     {
       "name": "Bryn",
+      "sprite": "data/sprites/smith.png",
       "position": [
         6,
         7
@@ -173,6 +174,24 @@
       ],
       "fontSize": 32,
       "blocksTile": true
+    },
+    {
+      "name": "wooden floor",
+      "character": ".",
+      "characterColor": [
+        186,
+        146,
+        96,
+        255
+      ],
+      "backgroundColor": [
+        72,
+        50,
+        30,
+        255
+      ],
+      "fontSize": 32,
+      "blocksTile": false
     }
   ],
   "positions": [

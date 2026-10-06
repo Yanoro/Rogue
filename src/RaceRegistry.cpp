@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "DebugLog.h"
+#include "AsciiArt.hpp"
 
 void RaceRegistry::LoadRaces(const std::string& directoryPath) {
   if (!std::filesystem::exists(directoryPath)) {
@@ -35,6 +36,18 @@ void RaceRegistry::LoadRaces(const std::string& directoryPath) {
       RaceDef def;
       def.id = entry.path().stem().string();
       def.name = j.value("name", def.id);
+
+      // The race's raster look. Optional, and independent of "art": a race may
+      // declare either, both or neither, and a missing file is not an error here
+      // -- AttachSprite decides that at spawn, where the fallback to art lives.
+      if (j.contains("sprite")) {
+        if (j["sprite"].is_string()) {
+          def.sprite = j["sprite"].get<std::string>();
+        } else {
+          warn("Warning: Race '" + def.id +
+               "' has a non-string 'sprite'; ignoring it.");
+        }
+      }
 
       if (j.contains("slots")) {
         if (!j["slots"].is_array()) {
@@ -74,6 +87,21 @@ void RaceRegistry::LoadRaces(const std::string& directoryPath) {
       if (def.slots.empty()) {
         warn("Warning: Race '" + def.id +
              "' declares no slots, so its characters can wear nothing.");
+      }
+
+      // The race's look, authored with the same "art"/"palette" keys an object
+      // template uses. Unusable art is a warning and leaves the race's characters
+      // on the code-level humanoid look (see ActorArt.hpp); it never fails a load,
+      // exactly like a bad art block on an object.
+      {
+        AsciiArt art;
+        std::string artWarning;
+        if (ParseAsciiArt(j, art, artWarning)) {
+          def.art = std::move(art);
+        }
+        if (!artWarning.empty()) {
+          warn("Warning: Race '" + def.id + "': " + artWarning + ".");
+        }
       }
 
       races[def.id] = std::move(def);

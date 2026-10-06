@@ -1,6 +1,16 @@
 {
   "name": "Mature Wheat",
   "description": "Ripe, golden wheat. Can be harvested.",
+  "art": [
+    " ██ ",
+    " || ",
+    " || ",
+    " || "
+  ],
+  "palette": {
+    "█": [230, 190, 90, 255],
+    "|": [180, 150, 80, 255]
+  },
   "character": "W",
   "characterColor": [
     245,

@@ -3,10 +3,13 @@
 #include <fstream>
 #include <iostream>
 
+#include "AsciiArt.hpp"
 #include "Map.h"
 #include "DebugLog.h"
 #include "Defaults.h"
 #include "ItemRegistry.h"
+#include "ResourceManager.h"
+#include "SpritePaths.hpp"
 #include "TrainingParsing.h"
 
 ObjectFactory::ObjectFactory() {
@@ -228,36 +231,80 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
     pair.second(obj);
   }
 
+  // Display state comes only from the template, so it is cleared with the rest.
+  // Without this, re-applying a template -- Evolvable growth, or a placed item
+  // becoming a world object -- keeps the previous stage's glyph or art whenever
+  // the next template happens to declare none. These two are handled here rather
+  // than through componentRemovers because they are driven by the display keys
+  // below, not by a template's "components" array.
+  obj.remove<DrawAscii>();
+  obj.remove<AsciiArt>();
+
   if (tmpl.contains("character")) {
     DrawAscii ascii;
     std::string charStr = tmpl.value("character", "?");
     ascii.ch = charStr.empty() ? '?' : charStr[0];
 
-    auto parseColor = [](const nlohmann::json& j) -> Color {
-      if (j.is_array() && j.size() >= 3) {
-        return { j[0].get<unsigned char>(), j[1].get<unsigned char>(), j[2].get<unsigned char>(), j.size() > 3 ? j[3].get<unsigned char>() : (unsigned char)255 };
-      }
-      return {255, 255, 255, 255};
-    };
+    ascii.characterColor = tmpl.contains("characterColor")
+                               ? ParseAsciiColor(tmpl["characterColor"],
+                                                 {255, 255, 255, 255})
+                               : Color{255, 255, 255, 255};
+    ascii.backgroundColor = tmpl.contains("backgroundColor")
+                                ? ParseAsciiColor(tmpl["backgroundColor"],
+                                                  {0, 0, 0, 0})
+                                : Color{0, 0, 0, 0};
 
-    if (tmpl.contains("characterColor")) {
-      ascii.characterColor = parseColor(tmpl["characterColor"]);
-    } else {
-      ascii.characterColor = {255, 255, 255, 255};
-    }
-
-    if (tmpl.contains("backgroundColor")) {
-      ascii.backgroundColor = parseColor(tmpl["backgroundColor"]);
-    } else {
-      ascii.backgroundColor = {0, 0, 0, 0};
-    }
-
+    // Defaults first, because an item is spawned without a map: harvest drops,
+    // crafting output and NPC starting gear all pass nullptr, and leaving these
+    // unset meant every such item carried indeterminate visual dimensions.
+    ascii.width = DEFAULT_ENTITY_VISUAL_WIDTH;
+    ascii.height = DEFAULT_ENTITY_VISUAL_HEIGHT;
     if (map) {
       ascii.width = map->GetTileWidth();
       ascii.height = map->GetTileHeight();
     }
-    
+
     obj.set<DrawAscii>(ascii);
+  }
+
+  // Optional multi-line art. Absent or unusable art leaves the single-glyph
+  // DrawAscii above as the whole visual, so this key can only add to a template.
+  {
+    AsciiArt art;
+    std::string artWarning;
+    const bool hasArt = ParseAsciiArt(tmpl, art, artWarning);
+    if (!artWarning.empty()) {
+      const std::string msg =
+          "Warning: object template '" + type + "': " + artWarning + "\n";
+      if (debugLog) debugLog->LogWarning(msg);
+      else std::cerr << msg;
+    }
+    if (hasArt) {
+      obj.set<AsciiArt>(art);
+    }
+  }
+
+  // A raster sprite, which replaces that art when one resolves. Cleared with the
+  // rest of the display state for the same reason DrawAscii and AsciiArt are: a
+  // re-applied template -- Evolvable growth, or a placed item becoming a world
+  // object -- must not keep the previous stage's sprite. When nothing resolves,
+  // no Sprite is attached and the art above stands, which is the fallback.
+  obj.remove<Sprite>();
+  if (resourceManager != nullptr) {
+    std::string explicitSprite;
+    if (tmpl.contains("sprite")) {
+      if (tmpl["sprite"].is_string()) {
+        explicitSprite = tmpl["sprite"].get<std::string>();
+      } else {
+        const std::string msg = "Warning: object template '" + type +
+                                "': 'sprite' is not a string; ignoring it.\n";
+        if (debugLog) debugLog->LogWarning(msg);
+        else std::cerr << msg;
+      }
+    }
+    // `type` doubles as the convention id, so data/sprites/<templateKey>.png is
+    // picked up with no "sprite" key at all.
+    AttachSprite(obj, explicitSprite, type, *resourceManager, debugLog);
   }
 
   // Assign Name

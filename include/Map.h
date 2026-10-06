@@ -8,6 +8,7 @@
 #include <vector>
 
 class DebugLog;
+class ResourceManager;
 
 struct NPCData {
   std::string name;
@@ -38,11 +39,19 @@ struct NPCData {
   // the same rules the [EQUIP] command uses, so authored gear cannot produce a
   // state a player could not.
   std::vector<std::string> equipped;
+  // The NPC's own raster sprite, from "sprite": "data/sprites/farmer.png". This
+  // is the only way a character gets a look of its own, because there is no
+  // convention path for NPCs -- a name-based data/sprites/Pietro.png would break
+  // silently the moment someone renamed the NPC. When it is empty or does not
+  // load, the race supplies the look and then the ASCII art does (see
+  // SpritePaths.hpp and GiveBody).
+  std::string sprite;
 };
 
 class Map {
 public:
-  Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog = nullptr);
+  Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog = nullptr,
+      ResourceManager* resources = nullptr);
 
   // Coordinate helpers
   int GetWidth() const { return width; }
@@ -102,6 +111,9 @@ public:
 
 private:
   DebugLog* debugLog;
+  // Texture cache for tile sprites, handed in by Game rather than reached for.
+  // Null is supported: tiles then keep their ASCII look.
+  ResourceManager* resources = nullptr;
   flecs::world ecs;
 
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 

@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "AsciiArtTypes.hpp"
 #include "ItemStack.hpp"
 #include "ItemTypes.h"
 #include "LootDrop.hpp"
@@ -111,6 +112,39 @@ struct DrawAscii {
   size_t height;
 };
 
+// AsciiArt (multi-line art drawn inside the DrawAscii box) lives in
+// AsciiArtTypes.hpp: RaceDef carries one too, and the race headers are included
+// by this file, so it cannot be defined here.
+
+// A raster sprite for an entity, drawn instead of its ASCII look.
+//
+// This component exists only when the image actually loaded. Resolution happens
+// once at spawn in AttachSprite (SpritePaths.hpp), which attaches it on success
+// and does nothing on failure -- which is what makes the ASCII art the fallback
+// rather than a special case in the renderer. An entity with no sprite has no
+// Sprite, so it falls through to AsciiArt and then to the single-glyph DrawAscii
+// exactly as it did before sprites existed.
+//
+// Only the path is stored, never a texture pointer: the renderer resolves it
+// through ResourceManager, which caches successes *and* failures, so entity and
+// texture lifetimes cannot dangle against one another and a bad path cannot spam
+// the log once per frame. Runtime state, so it is deliberately left out of
+// RegisterComponents -- like the flecs::entity handles in ActionActor.
+struct Sprite {
+  std::string path;
+};
+
+// Marks the map's own ground tiles, so the renderer can draw them before
+// everything that stands on them.
+//
+// This exists because drawing order became load-bearing the moment a tile could
+// have a sprite: a tile texture is full-bleed and opaque, so a floor drawn after
+// a character would hide it outright, where the old half-transparent glyph plate
+// would only have dimmed it. The render pipeline runs its systems in registration
+// order, so one system draws the entities carrying this tag and a second draws
+// the rest (see Game::ECSInitRenderSystems).
+struct MapTileVisual {};
+
 // Whats actually taken into account when handling collision
 struct Hitbox {
   size_t width;
@@ -124,6 +158,11 @@ struct Tile {
   bool blocksTile;
   DrawAscii *ascii;
   Hitbox hitbox;
+  // The tile's own raster texture, from a "sprite" key in the map's tileInfo.
+  // Empty is the normal case: the tile then falls back to
+  // data/sprites/tile_<slugified name>.png and, failing that, to its ASCII glyph,
+  // exactly like an object template. See SpritePaths.hpp.
+  std::string sprite;
 };
 
 struct Location {

@@ -1,42 +1,14 @@
 #include "Game.h"
 #include "Components.h"
-#include "DrawAsciiDebug.h"
 #include "raylib.h"
 #include "raylib-cpp.hpp"
 #include <algorithm>
 #include <cmath>
 
-void Game::SystemRenderDrawAscii(const DrawAscii &ascii, const ScreenPosition screenPos) {
-    DrawRectangleV(
-        {screenPos.x, screenPos.y},
-        {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
-        ascii.backgroundColor);
-
-    const char buf[2] = {ascii.ch, '\0'};
-    size_t fontSize = std::min(ascii.width, ascii.height);
-    Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
-    Vector2 textPos = {
-        std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
-        std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f)};
-
-    // Debug rectangles - now togglable
-    if (DrawAsciiDebug::GetShowOuterRectangles()) {
-        raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
-                                    ascii.height);
-        outerRect.DrawLines(RED, 1.0f);
-    }
-
-    if (DrawAsciiDebug::GetShowInnerRectangles()) {
-        raylib::Rectangle innerRect(
-            std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
-            std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f),
-            textSize.x, textSize.y);
-        innerRect.DrawLines(BLUE, 1.0f);
-    }
-
-    DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
-                        ascii.characterColor);
-}
+// The DrawAscii renderer that used to live here was a second copy of the one
+// inlined in GameECS.cpp. It has been replaced by the shared renderers in
+// AsciiArtDraw.hpp, which the world and the ImGui windows both use -- do not
+// reintroduce a local copy.
 
 static float GetDistanceRecs(Rectangle rec1, Rectangle rec2) {
   // Calculate horizontal distance

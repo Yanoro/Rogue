@@ -2,6 +2,10 @@
 #include "OllamaAI.h"
 #include "GeminiAI.h"
 #include "OpenRouterAI.h"
+#include "ActorArt.hpp"
+#include "AsciiArtDraw.hpp"
+#include "SpriteDraw.hpp"
+#include "SpritePaths.hpp"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
@@ -24,6 +28,7 @@
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
 #include "Rng.hpp"
+#include "Settings.h"
 #include "SkillTraining.hpp"
 #include "StartingSkills.hpp"
 #include "StringUtils.hpp"
@@ -124,23 +129,31 @@ static void ApplyStartingSkills(flecs::entity character,
   }
 }
 
-// Decides the body slots a character is born with.
+// Decides the body a character is born with: the slots it can wear, the look it
+// is drawn with, and whether it has a raster sprite instead of that ASCII look.
 //
 // Precedence, and every fallback exists so a map written before races existed
-// still spawns a wearable character rather than a naked one: an authored list on
-// the NPC wins, otherwise the NPC's race, otherwise the "human" race, otherwise
-// the code-level humanoid body. A race is content like a skill, so an unknown id
-// is a warning and a fallback, never a load failure.
-static void GiveSlots(flecs::entity character, const RaceRegistry *races,
-                      const std::string &raceId,
-                      const std::vector<SlotSpec> &authored,
-                      DebugLog *debugLog) {
-  std::vector<SlotSpec> slots = authored;
+// still spawns a wearable, visible character rather than a naked or invisible
+// one: an authored list on the NPC wins, otherwise the NPC's race, otherwise the
+// "human" race, otherwise the code-level humanoid body. A race is content like a
+// skill, so an unknown id is a warning and a fallback, never a load failure.
+//
+// Slots, art and the sprite follow that same precedence but independently: the
+// race is looked up even when the NPC authored its own slots, because a one-off
+// body should still look like its people. A race that declares no art leaves the
+// character on DefaultHumanoidArt(), which is also what the player gets.
+static void GiveBody(flecs::entity character, const RaceRegistry *races,
+                     const std::string &raceId,
+                     const std::vector<SlotSpec> &authored,
+                     const std::string &authorizedSprite,
+                     ResourceManager &resources, DebugLog *debugLog) {
+  const std::string wanted = raceId.empty() ? std::string("human") : raceId;
+  const RaceDef *race = races ? races->Get(wanted) : nullptr;
 
-  if (slots.empty() && races) {
-    const std::string wanted = raceId.empty() ? std::string("human") : raceId;
-    if (const RaceDef *def = races->Get(wanted)) {
-      slots = def->slots;
+  std::vector<SlotSpec> slots = authored;
+  if (slots.empty()) {
+    if (race != nullptr) {
+      slots = race->slots;
     } else if (!raceId.empty()) {
       const std::string message =
           "Warning: NPC race '" + raceId +
@@ -157,6 +170,22 @@ static void GiveSlots(flecs::entity character, const RaceRegistry *races,
   EquipmentSlots block;
   block.slots = std::move(slots);
   character.set<EquipmentSlots>(block);
+
+  character.set<AsciiArt>(race != nullptr && !race->art.lines.empty()
+                              ? race->art
+                              : DefaultHumanoidArt());
+
+  // A sprite replaces that art when one resolves; when none does, AttachSprite
+  // leaves the AsciiArt above in place and the character keeps the ASCII look.
+  // The NPC's own "sprite" wins, the race's is the fallback, and the race id is
+  // also the convention id -- so data/sprites/human.png, if it ever exists, gives
+  // every human a look with no JSON at all. The player passes no sprite path and
+  // takes the same route.
+  const std::string raceSprite = race != nullptr ? race->sprite : std::string();
+  const std::string conventionId = race != nullptr ? race->id : std::string();
+  AttachSprite(character,
+               authorizedSprite.empty() ? raceSprite : authorizedSprite,
+               conventionId, resources, debugLog);
 }
 
 // TODO: Adding checks to see if we are not repeating values seems like a good
@@ -173,13 +202,17 @@ flecs::entity Game::createNPC(const NPCData &data) {
           .set<GamePosition>(pos)
           .set<Hitbox>(
               {DEFAULT_ENTITY_HITBOX_WIDTH, DEFAULT_ENTITY_HITBOX_HEIGHT})
+          // Tile-sized, because an actor occupies a tile like any object and
+          // because the whole figure has to be drawn inside it. The glyph is the
+          // fallback for a race that supplies no art, and this colour is what
+          // DefaultHumanoidArt() deliberately leaves out of its palette: the
+          // tunic.
           .set<DrawAscii>({
               '@',
               {128, 0, 0, 255},
               {128, 128, 128, 0},
-              DEFAULT_ENTITY_VISUAL_WIDTH,
-              DEFAULT_ENTITY_VISUAL_HEIGHT,
-
+              static_cast<size_t>(map->GetTileWidth()),
+              static_cast<size_t>(map->GetTileHeight()),
           })
           .set<WindowOnClick>({WindowType::EntityInfoWindowType})
           .set<Velocity>({0, 0})
@@ -205,7 +238,8 @@ flecs::entity Game::createNPC(const NPCData &data) {
 
   // The body comes before any gear, because equipping needs to know which slots
   // the character actually has.
-  GiveSlots(entity, &raceRegistry, data.race, data.slots, debugLog.get());
+  GiveBody(entity, &raceRegistry, data.race, data.slots, data.sprite,
+           resourceManager, debugLog.get());
 
   // Authored starting equipment. Each id is spawned as a real held item and put
   // on through the same planner [EQUIP] uses, so a too-small body, an unknown
@@ -270,8 +304,15 @@ flecs::entity Game::createNPC(const NPCData &data) {
   std::regex re3("%CHARACTERS%");
   std::regex re4("%COMMANDS_LIST%");
 
+  // The template is the compiled-in DEFAULT_NPC_PROMPT unless settings.ai
+  // supplied a file. Either way the same four placeholders are substituted, so an
+  // authored prompt cannot silently lose the live command list or location list.
+  const std::string &promptTemplate = Settings().ai.npcPromptTemplate.empty()
+                                          ? DEFAULT_NPC_PROMPT
+                                          : Settings().ai.npcPromptTemplate;
+
   std::string startingPrompt =
-      std::regex_replace(DEFAULT_NPC_PROMPT, re1, locations);
+      std::regex_replace(promptTemplate, re1, locations);
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
   startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
@@ -295,39 +336,119 @@ flecs::entity Game::createNPC(const NPCData &data) {
 void Game::ECSInitRenderSystems() {
   renderPipeline = ecs.pipeline().with(flecs::System).with<Render>().build();
 
-  ecs.system<DrawAscii, ScreenPosition>().kind<Render>().each(
-      [this](const DrawAscii &ascii, const ScreenPosition screenPos) {
-        DrawRectangleV(
-            {screenPos.x, screenPos.y},
-            {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
-            ascii.backgroundColor);
-
-        const char buf[2] = {ascii.ch, '\0'};
-        size_t fontSize = std::min(ascii.width, ascii.height);
-        Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
-        Vector2 textPos = {
-            std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
-            std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f)};
-
-        // Debug rectangles - now togglable
-        if (DrawAsciiDebug::GetShowOuterRectangles()) {
-          raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
-                                      ascii.height);
-          outerRect.DrawLines(RED, 1.0f);
-        }
-
-        if (DrawAsciiDebug::GetShowInnerRectangles()) {
-          raylib::Rectangle innerRect(
-              std::round(screenPos.x + (ascii.width - textSize.x) / 2.0f),
-              std::round(screenPos.y + (ascii.height - textSize.y) / 2.0f),
-              textSize.x, textSize.y);
-          innerRect.DrawLines(BLUE, 1.0f);
-        }
-
-        DrawTextCodepoint(gameFont, (int)ascii.ch, textPos, fontSize,
-                          ascii.characterColor);
+  // Two systems, registered in this order, because a render pipeline runs its
+  // systems in registration order: the map's own tiles first, everything standing
+  // on them after.
+  //
+  // The split is not cosmetic. Tiles used to be glyphs on a half-transparent
+  // plate, so a tile drawn over a character only dimmed it. A tile with a sprite
+  // is a full-bleed opaque texture, and the same mistake would erase the
+  // character instead. Drawing order was previously incidental -- it happened to
+  // work because Map creates its tile entities before anything else -- so it is
+  // now stated rather than inherited.
+  //
+  // Both systems call the one method, so there is still a single implementation
+  // of "draw what this entity looks like"; only the order is separated.
+  ecs.system<DrawAscii, ScreenPosition>("DrawTileLayer")
+      .with<MapTileVisual>()
+      .kind<Render>()
+      .each([this](flecs::entity e, const DrawAscii &ascii,
+                   const ScreenPosition screenPos) {
+        DrawEntityVisual(e, ascii, screenPos);
       });
 
+  ecs.system<DrawAscii, ScreenPosition>("DrawEntityLayer")
+      .without<MapTileVisual>()
+      .kind<Render>()
+      .each([this](flecs::entity e, const DrawAscii &ascii,
+                   const ScreenPosition screenPos) {
+        DrawEntityVisual(e, ascii, screenPos);
+      });
+
+  // Name tags and the rest of the render work, registered last so they land on
+  // top of both layers. Kept in its own function only because DrawEntityVisual is
+  // defined between this point and there; the registration order, which is what
+  // the pipeline actually honours, is unchanged.
+  ECSInitOverlaySystems();
+}
+
+void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
+                            const ScreenPosition &screenPos) {
+  DrawRectangleV(
+      {screenPos.x, screenPos.y},
+      {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
+      ascii.backgroundColor);
+
+  // A raster sprite wins over the ASCII look when the entity has one.
+  // Sprite is only ever attached once its image loaded (SpritePaths.hpp),
+  // and the lookup is a cache hit, so a null here means the texture was
+  // evicted rather than that the path was bad -- and falling through to the
+  // art below is the right answer for that, not a blank tile.
+  const Sprite *sprite = e.get<Sprite>();
+  Rectangle spriteRect = {0.0f, 0.0f, 0.0f, 0.0f};
+  if (sprite != nullptr) {
+    if (raylib::Texture *texture = resourceManager.GetTexture(sprite->path)) {
+      spriteRect = DrawSpriteFitted(*texture, screenPos.x, screenPos.y,
+                                    static_cast<float>(ascii.width),
+                                    static_cast<float>(ascii.height));
+    }
+  }
+  const bool drewSprite = spriteRect.width > 0.0f;
+
+  // Multi-line art when the entity has it, the single glyph otherwise.
+  // Both paths live in AsciiArtDraw.hpp so the world, the storage window
+  // and the editor palettes lay an art block out identically. Art cells are
+  // drawn from the art font ladder, not from the 32px gameFont.
+  const AsciiArt *art = e.get<AsciiArt>();
+  if (!drewSprite) {
+    DrawAsciiEntityRaylib(artFonts, gameFont, ascii, art, screenPos.x,
+                          screenPos.y);
+  }
+
+  // Debug rectangles - now togglable
+  if (DrawAsciiDebug::GetShowOuterRectangles()) {
+    raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
+                                ascii.height);
+    outerRect.DrawLines(RED, 1.0f);
+  }
+
+  if (DrawAsciiDebug::GetShowInnerRectangles()) {
+    if (drewSprite) {
+      // The sprite's own drawn rect, which is what says whether it sits
+      // centred in the tile.
+      DrawRectangleLinesEx(spriteRect, 1.0f, BLUE);
+    } else if (art != nullptr && !art->lines.empty()) {
+      // With art the useful inner box is the drawn grid: it is what shows
+      // whether the cells are centred in the tile.
+      const AsciiGrid grid = ComputeAsciiGrid(
+          *art, screenPos.x, screenPos.y, static_cast<float>(ascii.width),
+          static_cast<float>(ascii.height));
+      raylib::Rectangle gridRect(
+          grid.originX, grid.originY,
+          static_cast<float>(grid.cellWidth * grid.cols),
+          static_cast<float>(grid.cellHeight * grid.rows));
+      gridRect.DrawLines(BLUE, 1.0f);
+    } else {
+      const char buf[2] = {ascii.ch, '\0'};
+      const float fontSize =
+          static_cast<float>(std::min(ascii.width, ascii.height));
+      const Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
+      raylib::Rectangle innerRect(
+          std::round(screenPos.x + (static_cast<float>(ascii.width) -
+                                    textSize.x) /
+                                       2.0f),
+          std::round(screenPos.y + (static_cast<float>(ascii.height) -
+                                    textSize.y) /
+                                       2.0f),
+          textSize.x, textSize.y);
+      innerRect.DrawLines(BLUE, 1.0f);
+    }
+  }
+}
+
+// The render work that draws over the tile and entity layers: name tags and the
+// other overlays. Registered by ECSInitRenderSystems, after both layers.
+void Game::ECSInitOverlaySystems() {
   ecs.system<ScreenPosition, DisplayName>().kind<Render>().each(
       [](flecs::entity e, const ScreenPosition &pos, const DisplayName &displayName) {
         Color tagColor = BLACK;
@@ -590,7 +711,8 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   ecs.defer([&]() {
     mapEntity.children([](flecs::entity child) { child.destruct(); });
   });
-  map = std::make_unique<Map>(mapEntity, mapPath, debugLog.get());
+  map = std::make_unique<Map>(mapEntity, mapPath, debugLog.get(),
+                              &resourceManager);
   ecs.set<MapResource>({map.get()});
 
   Map *currentMap = map.get();
@@ -1767,28 +1889,37 @@ const CraftRecipe *ResolveStationRecipe(const RecipeRegistry *registry,
 
 } // namespace
 
-void Game::ECSInit(std::string mapPath) {
+void Game::ECSInit() {
+  // Everything the run starts from comes out of the settings file; see
+  // Settings.h. Held by reference so there is one source of truth.
+  const GameSettings &settings = Settings();
+
   ecs.import <flecs::monitor>();
-  ecs.set<flecs::Rest>({});
+  // The REST server serves the live ECS world over unauthenticated HTTP. Handy
+  // locally, so it stays on by default, but it is a setting because a shared
+  // machine should be able to turn it off.
+  if (settings.debug.restServer) {
+    ecs.set<flecs::Rest>({});
+  }
 
   objectFactory.SetDebugLog(debugLog.get());
-  objectFactory.LoadTemplates("data/objects");
+  objectFactory.LoadTemplates(settings.content.objects);
   ecs.set<ObjectFactoryResource>({&objectFactory});
 
   recipeRegistry.SetDebugLog(debugLog.get());
-  recipeRegistry.LoadRecipes("data/recipes");
+  recipeRegistry.LoadRecipes(settings.content.recipes);
   ecs.set<RecipeRegistryResource>({&recipeRegistry});
 
   statRegistry.SetDebugLog(debugLog.get());
-  statRegistry.LoadStats("data/stats");
+  statRegistry.LoadStats(settings.content.stats);
   ecs.set<StatRegistryResource>({&statRegistry});
 
   skillRegistry.SetDebugLog(debugLog.get());
-  skillRegistry.LoadSkills("data/skills");
+  skillRegistry.LoadSkills(settings.content.skills);
   ecs.set<SkillRegistryResource>({&skillRegistry});
 
   itemRegistry.SetDebugLog(debugLog.get());
-  itemRegistry.LoadItems("data/items");
+  itemRegistry.LoadItems(settings.content.items);
   ecs.set<ItemRegistryResource>({&itemRegistry});
 
   // The factory seeds per-instance durability from the item definitions, so it
@@ -1796,8 +1927,13 @@ void Game::ECSInit(std::string mapPath) {
   // the factory keeps no dependency on the item system.
   objectFactory.SetItemRegistry(&itemRegistry);
 
+  // Sprites are resolved while a template is applied, so the factory needs the
+  // texture cache for the same reason it needs the item registry: injected rather
+  // than reached for, to keep the dependency one-way.
+  objectFactory.SetResourceManager(&resourceManager);
+
   raceRegistry.SetDebugLog(debugLog.get());
-  raceRegistry.LoadRaces("data/races");
+  raceRegistry.LoadRaces(settings.content.races);
   ecs.set<RaceRegistryResource>({&raceRegistry});
 
   // Named C++ effects, then a check that every hook id the data references
@@ -2040,17 +2176,23 @@ void Game::ECSInit(std::string mapPath) {
 
   // Seed every gameplay roll from one place, and log it. The seed is what makes
   // a run reproducible, so a surprising loot outcome can be replayed rather than
-  // argued about.
+  // argued about. A seed of 0 means "pick one from the clock", which is the
+  // original behaviour; any other value reproduces that exact run.
   {
-    const uint64_t seed = static_cast<uint64_t>(
-        std::chrono::high_resolution_clock::now().time_since_epoch().count());
+    const bool seedFromClock = settings.world.seed == 0;
+    const uint64_t seed =
+        seedFromClock
+            ? static_cast<uint64_t>(
+                  std::chrono::high_resolution_clock::now().time_since_epoch().count())
+            : settings.world.seed;
     ecs.set<WorldRandomness>({seed, 0});
     if (debugLog) {
-      debugLog->Log("World RNG seed: " + std::to_string(seed));
+      debugLog->Log("World RNG seed: " + std::to_string(seed) +
+                    (seedFromClock ? " (from clock)" : " (from settings)"));
     }
   }
 
-  LoadMap(mapPath, true);
+  LoadMap(settings.map.file, settings.map.spawnNPCs);
 
   InteractionRegistry::Clear();
   
@@ -2478,63 +2620,58 @@ void Game::ECSInit(std::string mapPath) {
   });
 
 
+  // The backend is built from the settings file's "model" block. The API key may
+  // have come from settings.json, settings.local.json (merged on top) or the old
+  // model.json, which LoadGameSettings still reads as a last resort.
+  const GameSettings::ModelSection &modelSettings = settings.model;
   std::unique_ptr<AI> ai;
-  std::ifstream f("model.json");
-  // TODO: Add more options
-  if (!f.is_open()) {
-    std::cerr << "Error: model.json not found! Falling back to default Ollama model." << std::endl;
-    ai = std::make_unique<OllamaAI>("llama3");
-    ai->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-  } else {
-    try {
-      nlohmann::json j;
-      f >> j;
 
-      std::string type = j.value("type", "ollama");
-      std::string model = j.value("model", "llama3");
-
-      if (type == "gemini") {
-        std::string apiKey = j.value("apiKey", "");
-        auto gemini = std::make_unique<GeminiAI>(apiKey, model);
-        gemini->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-        ai = std::move(gemini);
-      } else if (type == "openrouter") {
-        std::string apiKey = j.value("apiKey", "");
-        auto openrouter = std::make_unique<OpenRouterAI>(apiKey, model);
-        openrouter->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-        if (j.contains("temperature")) {
-          openrouter->setOption("temperature", j["temperature"]);
-        }
-        if (j.contains("max_tokens")) {
-          openrouter->setOption("max_tokens", j["max_tokens"]);
-        }
-        if (j.contains("provider")) {
-          openrouter->setOption("provider", j["provider"]);
-        }
-        ai = std::move(openrouter);
-      } else {
-        std::string endpoint = j.value("endpoint", "http://localhost:11434/api/generate");
-        auto ollama = std::make_unique<OllamaAI>(model, endpoint);
-        ollama->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-        
-        if (j.contains("temperature")) {
-          ollama->setOption("temperature", j["temperature"]);
-        }
-        ai = std::move(ollama);
-      }
-      
-      if (ai) {
-        ai->setErrorLogger([this](const std::string& err) {
-          if (this->debugLog) {
-            this->debugLog->LogError(err);
-          }
-        });
-      }
-    } catch (const std::exception& e) {
-      std::cerr << "Error parsing model.json: " << e.what() << std::endl;
-      ai = std::make_unique<OllamaAI>("llama3");
-      ai->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
+  if (modelSettings.type == "gemini") {
+    auto gemini = std::make_unique<GeminiAI>(modelSettings.apiKey, modelSettings.model);
+    gemini->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
+    ai = std::move(gemini);
+  } else if (modelSettings.type == "openrouter") {
+    auto openrouter =
+        std::make_unique<OpenRouterAI>(modelSettings.apiKey, modelSettings.model);
+    openrouter->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
+    if (modelSettings.hasTemperature) {
+      openrouter->setOption("temperature", modelSettings.temperature);
     }
+    if (modelSettings.hasMaxTokens) {
+      openrouter->setOption("max_tokens", modelSettings.maxTokens);
+    }
+    if (modelSettings.hasProvider) {
+      openrouter->setOption("provider", modelSettings.provider);
+    }
+    ai = std::move(openrouter);
+  } else {
+    auto ollama =
+        std::make_unique<OllamaAI>(modelSettings.model, modelSettings.endpoint);
+    ollama->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
+    if (modelSettings.hasTemperature) {
+      ollama->setOption("temperature", modelSettings.temperature);
+    }
+    ai = std::move(ollama);
+  }
+
+  if (ai) {
+    ai->setErrorLogger([this](const std::string& err) {
+      if (this->debugLog) {
+        this->debugLog->LogError(err);
+      }
+    });
+  }
+
+  // A hosted backend with no key cannot answer, so say so now rather than
+  // letting every NPC fail its first request with an opaque HTTP error.
+  if (modelSettings.apiKey.empty() &&
+      (modelSettings.type == "gemini" || modelSettings.type == "openrouter")) {
+    const std::string message =
+        "Settings: model.type is '" + modelSettings.type +
+        "' but model.apiKey is empty. Set it in settings.local.json (gitignored) "
+        "or model.json.";
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
   }
 
   ecs.set<AIBackend>({std::move(ai)});
@@ -2545,8 +2682,11 @@ void Game::ECSInit(std::string mapPath) {
   ECSInitAgentSystems();
   ECSInitActionSystems();
 
-  GamePosition startPlayerPos = {48, 20};
-  playerEntity = ecs.entity(DEFAULT_PLAYER_ENTITY_NAME.c_str());
+  // Starting tile and identity come from settings. The relocation pass inside
+  // LoadMap already moved every colliding entity to open ground, so a spawn
+  // authored on a wall is corrected rather than fatal.
+  GamePosition startPlayerPos = {settings.player.startX, settings.player.startY};
+  playerEntity = ecs.entity(settings.player.name.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
 
   playerEntity.set<ScreenPosition>(
@@ -2557,13 +2697,16 @@ void Game::ECSInit(std::string mapPath) {
   playerEntity.set<Acceleration>({0, 0});
   playerEntity.set<Hitbox>(
       {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT});
+  // Tile-sized and art-driven for the same reasons an NPC is. The purple glyph
+  // is the fallback, and that purple is what makes the player's tunic purple
+  // while every NPC's is dark red: DefaultHumanoidArt() leaves the tunic
+  // characters out of its palette on purpose.
   playerEntity.set<DrawAscii>({
       '@',
       {128, 0, 128, 255},
       {128, 128, 128, 0},
-      DEFAULT_PLAYER_VISUAL_WIDTH,
-      DEFAULT_PLAYER_VISUAL_HEIGHT,
-
+      static_cast<size_t>(map->GetTileWidth()),
+      static_cast<size_t>(map->GetTileHeight()),
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<CharacterTag>();
@@ -2573,9 +2716,14 @@ void Game::ECSInit(std::string mapPath) {
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
     GiveStartingSkills(playerEntity, skillRes->registry);
   }
-  // The player gets the same default body every other character does, so
-  // [EQUIPMENT] and [EQUIP] work from the first frame.
-  GiveSlots(playerEntity, &raceRegistry, "", {}, debugLog.get());
+  // The player gets the same default body every other character does -- slots and
+  // look -- so [EQUIPMENT] and [EQUIP] work from the first frame and a humanoid
+  // race's art applies to the player too. An authored race replaces both. No
+  // sprite path is passed: the player has no sprite of its own, so it follows the
+  // race convention and otherwise keeps the ASCII look, which is also what makes
+  // the two render paths visible side by side in one scene.
+  GiveBody(playerEntity, &raceRegistry, settings.player.race, {}, std::string(),
+           resourceManager, debugLog.get());
 
 
   // Initialize debug window entities
@@ -2671,8 +2819,10 @@ void Game::OpenStorageWindow(flecs::entity container) {
     }
 
     if (!carrier.has<ActiveWindow>()) {
-      carrier.set<ActiveWindow>(
-          {std::make_shared<StorageWindow>(container, carrier)});
+      // The texture cache is handed over so item rows can draw the same sprite
+      // the item shows on the map; without it they fall back to the ASCII look.
+      carrier.set<ActiveWindow>({std::make_shared<StorageWindow>(
+          container, carrier, &resourceManager)});
     }
   });
 }

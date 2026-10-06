@@ -10,6 +10,7 @@
 class Map;
 class DebugLog;
 class ItemRegistry;
+class ResourceManager;
 
 class ObjectFactory {
 public:
@@ -42,6 +43,12 @@ public:
   // registry; a null registry simply means nothing spawns with durability.
   void SetItemRegistry(const ItemRegistry* registry) { itemRegistry = registry; }
 
+  // Sprite textures, injected for the same reason as the item registry: applying
+  // a template is what resolves its "sprite" key, and with no manager nothing
+  // resolves and every object keeps its ASCII art. A null manager is therefore a
+  // supported state, not a bug.
+  void SetResourceManager(ResourceManager* manager) { resourceManager = manager; }
+
   const std::unordered_map<std::string, nlohmann::json>& GetTemplates() const { return templates; }
 
   void RegisterDefaultComponents();
@@ -56,6 +63,7 @@ private:
   std::unordered_map<std::string, nlohmann::json> templates;
   DebugLog* debugLog = nullptr;
   const ItemRegistry* itemRegistry = nullptr;
+  ResourceManager* resourceManager = nullptr;
 
   std::unordered_map<std::string, std::function<void(flecs::entity, const nlohmann::json&)>> componentSetters;
   std::unordered_map<std::string, std::function<void(flecs::entity)>> componentRemovers;
