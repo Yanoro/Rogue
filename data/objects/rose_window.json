@@ -1,0 +1,40 @@
+{
+  "name": "Rose Window",
+  "description": "A round stained-glass window in a stone frame.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " RR ",
+    "RRRR",
+    "RRRR",
+    " RR "
+  ],
+  "palette": {
+    "R": [
+      90,
+      110,
+      170,
+      255
+    ]
+  },
+  "character": "R",
+  "characterColor": [
+    90,
+    110,
+    170,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    90,
+    110,
+    170,
+    255
+  ]
+}

@@ -284,7 +284,9 @@ void OpenRouterAI::setOption(const std::string &key, const nlohmann::json &value
 
 std::string OpenRouterAI::generate(const std::string &contextId,
                                    const std::vector<ChatMessage> &history,
-                                   std::stop_token stoken) {
+                                   std::stop_token stoken,
+                                   const ImageList &images) {
+  (void)images; // See generateStream: this backend does not carry images today.
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
@@ -479,7 +481,12 @@ bool OpenRouterAI::isBusy(const std::string &contextId) {
 
 bool OpenRouterAI::generateStream(const std::string &contextId,
                                   const std::vector<ChatMessage> &history,
-                                  StreamCallback callback, std::stop_token stoken) {
+                                  StreamCallback callback, std::stop_token stoken,
+                                  const ImageList &images) {
+  // OpenRouter carries images as image_url content parts, a different shape from
+  // the bare base64 array Ollama wants, and this backend is not used for vision
+  // today. Ignoring them is better than mistranslating them; see AI.h.
+  (void)images;
   {
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);

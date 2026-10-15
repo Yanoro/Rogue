@@ -1,0 +1,40 @@
+{
+  "name": "Wall Banner",
+  "description": "A hanging banner on a wooden pole.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " gg ",
+    "gggg",
+    "gggg",
+    " gg "
+  ],
+  "palette": {
+    "g": [
+      180,
+      60,
+      55,
+      255
+    ]
+  },
+  "character": "g",
+  "characterColor": [
+    180,
+    60,
+    55,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    180,
+    60,
+    55,
+    255
+  ]
+}

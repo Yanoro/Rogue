@@ -1,0 +1,7 @@
+{
+  "name": "floor",
+  "character": ".",
+  "characterColor": [255, 255, 255, 255],
+  "backgroundColor": [128, 128, 128, 128],
+  "blocksTile": false
+}

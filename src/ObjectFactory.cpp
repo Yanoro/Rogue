@@ -8,6 +8,7 @@
 #include "DebugLog.h"
 #include "Defaults.h"
 #include "ItemRegistry.h"
+#include "RequiresParsing.h"
 #include "ResourceManager.h"
 #include "SpritePaths.hpp"
 #include "TrainingParsing.h"
@@ -112,50 +113,13 @@ void ObjectFactory::RegisterDefaultComponents() {
       else std::cerr << message << std::endl;
     };
 
-    if (!tmpl.contains("requires")) {
-      warn("Warning: object template '" + owner +
-           "' lists the Requires component but has no 'requires' block; it is "
-           "ungated.\n");
-      return;
-    }
-
-    const auto& requiresJson = tmpl["requires"];
-    if (!requiresJson.is_object()) {
-      warn("Warning: object template '" + owner +
-           "' has a non-object 'requires'; it is ungated.\n");
-      return;
-    }
-
-    // Named `gate`, not `requires`: the latter is a C++20 keyword and cannot be
-    // an identifier.
+    // Shared with the guide, which reports the same gate to an agent: if the two
+    // parsed it differently, [INFO] could promise a harvest the engine refuses.
     Requires gate;
-    if (requiresJson.contains("equipped")) {
-      const auto& equippedJson = requiresJson["equipped"];
-      if (equippedJson.is_string()) {
-        gate.equippedTags.push_back(equippedJson.get<std::string>());
-      } else if (equippedJson.is_array()) {
-        for (const auto& tagJson : equippedJson) {
-          if (!tagJson.is_string() || tagJson.get<std::string>().empty()) {
-            warn("Warning: object template '" + owner +
-                 "' has a 'requires.equipped' entry that is not a non-empty "
-                 "string; skipping it.\n");
-            continue;
-          }
-          gate.equippedTags.push_back(tagJson.get<std::string>());
-        }
-      } else {
-        warn("Warning: object template '" + owner +
-             "' has a 'requires.equipped' that is neither a string nor an "
-             "array; ignoring it.\n");
-      }
-    }
+    gate.equippedTags = ParseRequiredTags(tmpl, owner, warn);
 
     if (!gate.equippedTags.empty()) {
       obj.set<Requires>(gate);
-    } else {
-      warn("Warning: object template '" + owner +
-           "' lists the Requires component but requires nothing; it is "
-           "ungated.\n");
     }
   });
 
@@ -332,6 +296,16 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
   // Short blurb surfaced by the [EXAMINE] interaction.
   obj.set<ObjectDescription>(
       {tmpl.value("description", std::string("It looks unremarkable."))});
+
+  // Authored guide colour for [INFO]. Removed first for the same reason
+  // DrawAscii, AsciiArt and Sprite are: a re-applied template -- Evolvable
+  // growth, or a placed item becoming a world object -- must not keep the
+  // previous stage's hint. Set only when the template declares one, so an object
+  // with no hint carries no Hint component at all.
+  obj.remove<Hint>();
+  if (tmpl.contains("hint")) {
+    obj.set<Hint>({tmpl.value("hint", std::string(""))});
+  }
 
   if (tmpl.contains("nameTagColor")) {
     Color tagColor = {

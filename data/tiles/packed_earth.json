@@ -1,0 +1,7 @@
+{
+  "name": "packed earth",
+  "character": ".",
+  "characterColor": [154, 132, 106, 255],
+  "backgroundColor": [48, 42, 36, 255],
+  "blocksTile": false
+}

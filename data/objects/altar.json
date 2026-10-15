@@ -1,0 +1,41 @@
+{
+  "name": "Altar",
+  "description": "A stone altar under a white cloth.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " BB ",
+    "BBBB",
+    "BBBB",
+    " BB "
+  ],
+  "palette": {
+    "B": [
+      150,
+      150,
+      150,
+      255
+    ]
+  },
+  "character": "B",
+  "characterColor": [
+    150,
+    150,
+    150,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    150,
+    150,
+    150,
+    255
+  ]
+}

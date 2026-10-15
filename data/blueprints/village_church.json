@@ -1,0 +1,263 @@
+{
+  "id": "village_church",
+  "levels": 1,
+  "name": "Village Church",
+  "parts": [
+    {
+      "id": "nave_floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "nave_floor"
+    },
+    {
+      "id": "chancel_floor",
+      "op": {
+        "paint": "stone floor"
+      },
+      "region": "chancel_floor"
+    },
+    {
+      "id": "walls",
+      "op": {
+        "paint": "stone wall"
+      },
+      "region": "walls",
+      "role": "structural"
+    },
+    {
+      "id": "north_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            7,
+            0
+          ],
+          "to": [
+            7,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "north_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "rect_fill": {
+          "at": [
+            7,
+            0
+          ],
+          "to": [
+            7,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "pew_floor_left_front",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "pew_floor_right_front",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "pew_floor_left_back",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "pew_floor_right_back",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "altar",
+      "op": {
+        "place": "altar"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            12,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_pew_front",
+      "op": {
+        "place": "church_pew"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_pew_front",
+      "op": {
+        "place": "church_pew"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_pew_back",
+      "op": {
+        "place": "church_pew"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_pew_back",
+      "op": {
+        "place": "church_pew"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "lectern",
+      "op": {
+        "place": "lectern"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            10,
+            4
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "church",
+  "regions": {
+    "chancel_floor": {
+      "rect_fill": {
+        "at": [
+          10,
+          2
+        ],
+        "to": [
+          13,
+          6
+        ]
+      }
+    },
+    "footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          14,
+          8
+        ]
+      }
+    },
+    "nave_floor": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          14,
+          8
+        ]
+      }
+    },
+    "walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          14,
+          8
+        ]
+      }
+    }
+  }
+}

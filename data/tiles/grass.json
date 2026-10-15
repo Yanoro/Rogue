@@ -1,0 +1,7 @@
+{
+  "name": "grass",
+  "character": ",",
+  "characterColor": [110, 200, 110, 255],
+  "backgroundColor": [24, 52, 28, 255],
+  "blocksTile": false
+}

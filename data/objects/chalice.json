@@ -1,0 +1,40 @@
+{
+  "name": "Chalice",
+  "description": "A golden chalice.",
+  "components": [
+    "Portable"
+  ],
+  "art": [
+    " cc ",
+    "cccc",
+    "cccc",
+    " cc "
+  ],
+  "palette": {
+    "c": [
+      218,
+      175,
+      60,
+      255
+    ]
+  },
+  "character": "c",
+  "characterColor": [
+    218,
+    175,
+    60,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    218,
+    175,
+    60,
+    255
+  ]
+}

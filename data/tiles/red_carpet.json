@@ -1,0 +1,19 @@
+{
+  "name": "red carpet",
+  "description": "A worn crimson runner.",
+  "character": ",",
+  "characterColor": [
+    170,
+    40,
+    40,
+    255
+  ],
+  "backgroundColor": [
+    90,
+    24,
+    24,
+    255
+  ],
+  "blocksTile": false,
+  "sprite": "data/sprites/red_carpet.png"
+}

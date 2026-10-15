@@ -1,0 +1,12 @@
+{
+  "name": "Tilled Field",
+  "purpose": "farm field",
+  "levels": 1,
+  "parts": [
+    {
+      "id": "field",
+      "shape": { "rect_fill": { "at": [0, 0], "width": 4, "height": 4 } },
+      "op": { "paint": "tilled soil" }
+    }
+  ]
+}

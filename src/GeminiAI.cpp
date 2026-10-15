@@ -53,7 +53,9 @@ GeminiAI::GeminiAI(const std::string &apiKey, const std::string &model)
 
 std::string GeminiAI::generate(const std::string &contextId,
                                const std::vector<ChatMessage> &history,
-                               std::stop_token stoken) {
+                               std::stop_token stoken,
+                               const ImageList &images) {
+  (void)images; // See generateStream: this backend does not carry images today.
   std::string prompt = "";
   for (const auto& msg : history) {
     if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";
@@ -182,7 +184,12 @@ bool GeminiAI::isBusy(const std::string &contextId) {
 
 bool GeminiAI::generateStream(const std::string &contextId,
                               const std::vector<ChatMessage> &history,
-                              StreamCallback callback, std::stop_token stoken) {
+                              StreamCallback callback, std::stop_token stoken,
+                              const ImageList &images) {
+  // Gemini carries images as inline_data parts, a different shape from the bare
+  // base64 array Ollama wants, and this backend is not used for vision today.
+  // Ignoring them is better than mistranslating them; see AI.h.
+  (void)images;
   std::string prompt = "";
   for (const auto& msg : history) {
     if (msg.role == "assistant") prompt += "You: " + msg.content + "\n";

@@ -158,11 +158,45 @@ struct Tile {
   bool blocksTile;
   DrawAscii *ascii;
   Hitbox hitbox;
-  // The tile's own raster texture, from a "sprite" key in the map's tileInfo.
-  // Empty is the normal case: the tile then falls back to
-  // data/sprites/tile_<slugified name>.png and, failing that, to its ASCII glyph,
-  // exactly like an object template. See SpritePaths.hpp.
+  // The tile's own raster texture, from a "sprite" key in the catalog entry or
+  // the map's tileInfo override. Empty is the normal case: the tile then falls
+  // back to data/sprites/tile_<slugified name>.png and, failing that, to its
+  // ASCII glyph, exactly like an object template. See SpritePaths.hpp.
   std::string sprite;
+};
+
+// What a tile *is*, independently of the map that uses it: the entry in
+// data/tiles/<slug>.json, loaded by TileRegistry.
+//
+// Kept separate from Tile on purpose. Tile is one map's live instance -- it owns
+// a heap DrawAscii, a hitbox already scaled to that map's tile size, and an
+// identity that Map::tileMap indexes by pointer. TileDef is the shared, map-free
+// vocabulary: what a blueprint or a global agent means when it names a surface.
+// A map's "tileInfo" entries are field-level overrides on top of a definition,
+// which is why every field here is optional and has a "was it set" flag.
+//
+// hitboxSize is a TileDef-only field: a definition states the logical size and
+// Map scales it to whatever the map's tile size is, so one definition serves
+// maps with different tile dimensions.
+struct TileDef {
+  std::string name;
+  bool blocksTile = false;
+  std::string sprite;
+  size_t hitboxSize = 0;
+  // The file this definition came from, for reporting. Set by TileRegistry; a
+  // duplicate-name warning names both files, which is what makes it fixable.
+  std::string sourcePath;
+
+  // Absent fields are how an override says "leave the catalog's value alone",
+  // so presence has to survive parsing. An empty string or a zero alpha would
+  // otherwise be indistinguishable from "not authored".
+  bool hasCharacter = false;
+  char character = '?';
+  bool hasCharacterColor = false;
+  Color characterColor = {255, 255, 255, 255};
+  bool hasBackgroundColor = false;
+  Color backgroundColor = {0, 0, 0, 0};
+  bool hasHitboxSize = false;
 };
 
 struct Location {
@@ -202,6 +236,18 @@ struct NameTagColor {
 // key of an object's JSON template (see ObjectFactory::ApplyTemplate). Named
 // ObjectDescription, not Description, to stay clear of flecs::Description.
 struct ObjectDescription {
+  std::string text;
+};
+
+// Authored colour for the guide: a fact about obtaining this object that the
+// data model does not hold, loaded from the optional "hint" key of an object's
+// JSON template (see ObjectFactory::ApplyTemplate). [INFO] prints it beside the
+// raw-source line, so a raw material -- which has no recipe, and therefore
+// nowhere in data/recipes to carry a hint -- can still explain itself.
+//
+// Deliberately absent rather than empty when a template declares none, so
+// "no hint" and "a hint that happens to be empty" stay distinguishable.
+struct Hint {
   std::string text;
 };
 
@@ -490,6 +536,25 @@ class HookRegistry;
 // (see Hooks.hpp). Same resource-component pattern as StatRegistryResource.
 struct HookRegistryResource {
   HookRegistry* hooks;
+};
+
+class TileRegistry;
+// The world's tile vocabulary, loaded once at init from data/tiles/*.json (see
+// TileRegistry.h). Read by Map when it builds its uniqueTiles (a map's tileInfo
+// is a set of overrides on top of these definitions) and by anything that needs
+// to name a surface without owning a map -- blueprints, and the designer agent.
+// Same resource-component pattern as StatRegistryResource.
+struct TileRegistryResource {
+  TileRegistry* registry;
+};
+
+class BlueprintRegistry;
+// Building designs, loaded once at init from data/blueprints/*.json (see
+// BlueprintRegistry.h). Read by the blueprint placement window, and later by the
+// designer agent and by any agent that wants to build. Same resource-component
+// pattern as TileRegistryResource.
+struct BlueprintRegistryResource {
+  BlueprintRegistry* registry;
 };
 
 class ItemRegistry;

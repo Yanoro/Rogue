@@ -1,0 +1,41 @@
+{
+  "name": "Potted Plant",
+  "description": "A leafy plant in a clay pot.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " jj ",
+    "jjjj",
+    "jjjj",
+    " jj "
+  ],
+  "palette": {
+    "j": [
+      80,
+      150,
+      70,
+      255
+    ]
+  },
+  "character": "j",
+  "characterColor": [
+    80,
+    150,
+    70,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    80,
+    150,
+    70,
+    255
+  ]
+}

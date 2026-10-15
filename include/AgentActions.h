@@ -18,6 +18,18 @@
 #include <vector>
 #include "StringUtils.hpp"
 #include "GlobalCommandRegistry.h"
+#include "GuideBuilder.h"
+
+// Comma-separated list of names, for the "pick one of these" index and failure
+// messages the guide commands answer with.
+inline std::string FormatNameList(const std::vector<std::string> &names) {
+  std::string out;
+  for (const std::string &name : names) {
+    if (!out.empty()) out += ", ";
+    out += name;
+  }
+  return out;
+}
 
 enum class ActionStatus { Doing, Done, Failed, Interrupted };
 
@@ -385,6 +397,121 @@ private:
         void resume(flecs::entity) override {}
 
       private:
+        std::string response;
+      };
+
+      // Whole-chain know-how for an activity: every recipe that trains it,
+      // expanded down to raw materials, with each recipe's station and any
+      // authored hint. Read-only and stateless -- see GuideBuilder and
+      // docs/guide-command-design.md.
+      //
+      // Not the progression skill system: that is a numeric track the engine
+      // advances by doing work. This only answers a question, and changes nothing.
+      class GuideAction : public AgentAction {
+      public:
+        explicit GuideAction(std::string topic) : topic(std::move(topic)) {}
+
+        std::string getActionName() const override { return "GUIDE"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          // flecs::world is move-only, so bind the handle to a named local
+          // before handing it to the builder.
+          flecs::world world = entity.world();
+          const std::vector<std::string> topics = GuideBuilder::Topics(world);
+          if (topics.empty()) {
+            response = "System: No guides are available in this world.\n";
+            return ActionStatus::Done;
+          }
+
+          // An omitted argument is the discovery path. The valid set is listed on
+          // demand rather than carried in every spawn prompt, which is the whole
+          // point of a guide being a query.
+          if (topic.empty()) {
+            response = "System: You can ask for a guide on: " +
+                       FormatNameList(topics) + ".\n";
+            return ActionStatus::Done;
+          }
+
+          if (GuideBuilder::Resolve(topics, topic).empty()) {
+            response = "System: '" + topic +
+                       "' is not an activity you can ask about. Available: " +
+                       FormatNameList(topics) + ".\n";
+            return ActionStatus::Done;
+          }
+
+          response =
+              "System: " + GuideBuilder::BuildTopicGuide(world, topic) + "\n";
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string topic;
+        std::string response;
+      };
+
+      // General reference on an item TYPE: the recipe and station that makes it,
+      // or the objects that yield it when nothing crafts it.
+      //
+      // Deliberately does not recurse. A model that needs one step should not pay
+      // for the whole tree, and it walks further by asking about an input -- the
+      // answer names its ingredients, so the drill-down is self-teaching.
+      //
+      // Distinct from [EXAMINE_ITEM], which describes one specific item the agent
+      // is carrying and what can be done with it. This is about the kind.
+      class ItemInfoAction : public AgentAction {
+      public:
+        explicit ItemInfoAction(std::string item) : item(std::move(item)) {}
+
+        std::string getActionName() const override { return "INFO"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          // flecs::world is move-only, so bind the handle to a named local
+          // before handing it to the builder.
+          flecs::world world = entity.world();
+          const std::vector<std::string> items = GuideBuilder::ItemIds(world);
+          if (items.empty()) {
+            response =
+                "System: No item information is available in this world.\n";
+            return ActionStatus::Done;
+          }
+
+          if (item.empty()) {
+            response = "System: You can ask about these items: " +
+                       FormatNameList(items) + ".\n";
+            return ActionStatus::Done;
+          }
+
+          const std::string resolved = GuideBuilder::Resolve(items, item);
+          if (resolved.empty()) {
+            response = "System: '" + item +
+                       "' is not an item you can ask about. Available: " +
+                       FormatNameList(items) + ".\n";
+            return ActionStatus::Done;
+          }
+
+          response =
+              "System: " + GuideBuilder::BuildItemInfo(world, resolved) + "\n";
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string item;
         std::string response;
       };
 

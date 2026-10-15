@@ -1,6 +1,7 @@
 #include "Game.h"
 #include "AIChatWindow.h"
 #include "AgentContextWindow.h"
+#include "BlueprintExpansion.hpp"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
@@ -16,7 +17,10 @@
 #include "rlImGui.h"
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
+#include <unordered_map>
 
 Game::Game() {}
 
@@ -223,6 +227,15 @@ void Game::UpdateGUI() {
     pendingLocationHasFocus = false;
   }
 
+  // The blueprint ghost follows the mouse continuously, not only on click, so the
+  // preview has to be re-anchored every frame. Deliberately outside the
+  // button-pressed branch below: a ghost that only moved when you clicked would
+  // be useless for judging a site.
+  if (!selectedBlueprintId.empty() && map && !ImGui::GetIO().WantCaptureMouse) {
+    const Vector2 ghostWorld = GetScreenToWorld2D(GetMousePosition(), camera);
+    blueprintGhostOrigin = map->ScreenCoordsToGameCoords(ghostWorld.x, ghostWorld.y);
+  }
+
   if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
       !ImGui::GetIO().WantCaptureMouse) {
     Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
@@ -257,6 +270,37 @@ void Game::UpdateGUI() {
         }
         return;
       }
+    }
+
+    // Blueprint placement mode. The ghost is re-anchored to the mouse every
+    // frame, and this is the one place the mouse is read, so the preview and the
+    // commit always describe the same site. A left click commits when the site is
+    // legal; an illegal click is reported rather than silently ignored, because
+    // "nothing happened" is the least useful possible reply.
+    if (!selectedBlueprintId.empty()) {
+      if (auto *registryRes = ecs.get<BlueprintRegistryResource>()) {
+        const Blueprint *blueprint = registryRes->registry != nullptr
+                                         ? registryRes->registry->Get(selectedBlueprintId)
+                                         : nullptr;
+        if (blueprint != nullptr) {
+          blueprintGhostOrigin = gPos;
+          const BlueprintPlacement placement =
+              BuildBlueprintPlacement(*blueprint, gPos);
+          if (placement.allLegal) {
+            lastBlueprintPlacementMessage =
+                PlaceBlueprintAt(*blueprint, gPos);
+          } else {
+            lastBlueprintPlacementMessage =
+                "Cannot build " + blueprint->name + " at (" +
+                std::to_string(gPos.x) + "," + std::to_string(gPos.y) +
+                "): the site is blocked. See the Blueprints window for why.";
+          }
+          return;
+        }
+      }
+      // The selected id no longer resolves (registry reloaded, say): drop the
+      // mode rather than leaving a ghost that cannot be placed.
+      selectedBlueprintId.clear();
     }
 
     // Trash mode: delete the object sitting on the clicked tile. Only
@@ -382,44 +426,7 @@ void Game::UpdateGUI() {
           false; // Disable the mode after setting the target
     } else if (editorSelection.type != EditorSelectionType::None && !clickedWindow) {
       if (editorSelection.type == EditorSelectionType::Tile) {
-        Tile* newTile = nullptr;
-        for (const auto& uTile : map->GetUniqueTiles()) {
-          if (uTile->name == editorSelection.name) {
-            newTile = uTile.get();
-            break;
-          }
-        }
-        if (newTile) {
-          map->addTileToMap(newTile, gPos.x, gPos.y);
-          
-          // Update the visual representation
-          ScreenPosition targetScreenPos = map->GameCoordsToScreenCoords(gPos.x, gPos.y);
-          flecs::entity mapEntity = ecs.lookup("CurrentMap");
-          if (mapEntity.is_valid()) {
-            flecs::entity targetEntity = flecs::entity::null();
-            ecs.filter<const ScreenPosition>().each(
-                [&](flecs::entity e, const ScreenPosition& sPos) {
-                  // Background tiles are children of Map and don't have GamePosition
-                  if (e.parent() == mapEntity && !e.has<GamePosition>()) {
-                    if (sPos.x == targetScreenPos.x && sPos.y == targetScreenPos.y) {
-                      targetEntity = e;
-                    }
-                  }
-                });
-            
-            if (targetEntity.is_alive()) {
-              targetEntity.set<DrawAscii>(*newTile->ascii);
-              // The sprite is display state like the glyph, so the previous
-              // tile's texture is cleared before the new one is resolved --
-              // otherwise painting wooden floor over grass would keep the grass
-              // texture and only swap the glyph underneath it.
-              targetEntity.remove<Sprite>();
-              AttachSprite(targetEntity, newTile->sprite,
-                           TileSpriteId(newTile->name), resourceManager,
-                           debugLog.get());
-            }
-          }
-        }
+        PaintTile(gPos, editorSelection.name);
       } else if (editorSelection.type == EditorSelectionType::ObjectTemplate) {
         flecs::entity mapEntity = ecs.lookup("CurrentMap");
         if (mapEntity.is_valid()) {
@@ -591,6 +598,10 @@ void Game::Shutdown() {
         fontSelectionWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowMapEditorWindow(
         mapEditorWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowBlueprintWindow(
+        blueprintWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowDesignerWindow(
+        designerWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowNPCMenuWindow(
         npcMenuWindowEntity.has<ActiveWindow>());
 
@@ -617,3 +628,271 @@ void Game::Shutdown() {
 }
 
 bool Game::shouldClose() const { return window.ShouldClose(); }
+
+int Game::maxDesignAttempts() const { return Settings().designer.maxDesignAttempts; }
+
+std::string Game::BuildDesignerSystemPrompt() const {
+  const GameSettings &settings = Settings();
+
+  std::string prompt;
+  if (!settings.designer.promptFile.empty()) {
+    std::ifstream file(settings.designer.promptFile);
+    if (file.is_open()) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      prompt = buffer.str();
+    } else {
+      const std::string message =
+          "Designer: could not read the prompt file " +
+          settings.designer.promptFile +
+          "; the designer will run without its instructions.\n";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message;
+    }
+  }
+
+  // The palette is generated from the live content registries so it cannot drift
+  // from what the validator will accept. The %MATERIALS% placeholder is replaced
+  // when present, and appended when not, so a prompt file that forgets it still
+  // gets the list rather than silently losing the vocabulary.
+  std::string palette = "Tiles, for `paint` -- write the name exactly as shown:\n";
+  if (tileRegistry.Count() == 0) {
+    palette += "  (none: no tile catalog is loaded, so no design can be built)\n";
+  } else {
+    for (const TileDef *tile : tileRegistry.GetAll()) {
+      palette += "  - " + tile->name +
+                 (tile->blocksTile ? "  [blocks movement]" : "") + "\n";
+    }
+  }
+
+  palette += "\nObjects, for `place` -- each one costs a real item:\n";
+  const auto &templates = objectFactory.GetTemplates();
+  if (templates.empty()) {
+    palette += "  (none)\n";
+  } else {
+    std::vector<std::string> names;
+    names.reserve(templates.size());
+    for (const auto &entry : templates) {
+      names.push_back(entry.first);
+    }
+    std::sort(names.begin(), names.end());
+    for (const std::string &name : names) {
+      palette += "  - " + name + "\n";
+    }
+  }
+
+  const std::string placeholder = "%MATERIALS%";
+  const size_t at = prompt.find(placeholder);
+  if (at != std::string::npos) {
+    prompt.replace(at, placeholder.size(), palette);
+  } else if (!prompt.empty()) {
+    prompt +=
+        "\n\n## Available materials (generated from this world's content)\n\n" +
+        palette;
+  }
+  return prompt;
+}
+
+// ---------------------------------------------------------------------------
+// Blueprint placement
+// ---------------------------------------------------------------------------
+
+BlueprintPlacement Game::BuildBlueprintPlacement(const Blueprint &blueprint,
+                                                 GamePosition origin) {
+  BlueprintPlacement result;
+  const BlueprintExpansion::Expansion expansion = BlueprintExpansion::Expand(blueprint);
+
+  if (map == nullptr) {
+    result.allLegal = false;
+    result.summary = "No map is loaded.";
+    return result;
+  }
+
+  // Everything already standing on the map, gathered once rather than rescanned
+  // per cell. This is the same occupancy test PlaceAtAction uses, kept cheap on
+  // purpose: it runs every frame for the ghost, so it is bounds, a blocking tile,
+  // and an existing object -- not the structural validator, which is not written
+  // yet and which a debug tool must be able to bypass to show a broken design.
+  std::unordered_map<int, std::string> occupied;
+  ecs.filter<const GamePosition, const DisplayName>().each(
+      [&](flecs::entity, const GamePosition &pos, const DisplayName &name) {
+        occupied[pos.y * map->GetWidth() + pos.x] = name.name;
+      });
+
+  result.cells.reserve(expansion.cells.size());
+  for (const BlueprintExpansion::ExpandedCell &cell : expansion.cells) {
+    BlueprintGhostCell ghost;
+    ghost.position = {origin.x + cell.x, origin.y + cell.y};
+    ghost.tile = cell.tile;
+    ghost.object = cell.object;
+    ghost.carve = cell.carve;
+
+    if (!map->IsInBounds(static_cast<float>(ghost.position.x),
+                         static_cast<float>(ghost.position.y))) {
+      ghost.legal = false;
+      ghost.reason = "outside the map";
+    } else {
+      const auto occupant =
+          occupied.find(ghost.position.y * map->GetWidth() + ghost.position.x);
+      if (occupant != occupied.end()) {
+        ghost.legal = false;
+        ghost.reason = "occupied by " + occupant->second;
+      } else if (!cell.carve && !cell.tile.empty()) {
+        Tile *existing = map->GetTile(ghost.position.x, ghost.position.y);
+        // A cell the design only clears is never refused for its ground, and a
+        // cell that places an object still needs walkable ground under it.
+        if (existing != nullptr && existing->blocksTile) {
+          ghost.legal = false;
+          ghost.reason = existing->name + " blocks the site";
+        }
+      }
+    }
+
+    if (!ghost.legal) {
+      result.allLegal = false;
+    }
+    result.cells.push_back(std::move(ghost));
+  }
+
+  if (expansion.cells.empty()) {
+    result.allLegal = false;
+    result.summary = "This design expands to no cells.";
+  }
+  return result;
+}
+
+std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
+                                   GamePosition origin) {
+  if (map == nullptr) {
+    return "No map is loaded.";
+  }
+
+  const BlueprintPlacement placement = BuildBlueprintPlacement(blueprint, origin);
+  if (!placement.allLegal) {
+    return "Refused: the site is blocked.";
+  }
+
+  flecs::entity mapEntity = ecs.lookup("CurrentMap");
+  int tilesPainted = 0;
+  int objectsPlaced = 0;
+  int cellsCleared = 0;
+
+  for (const BlueprintGhostCell &cell : placement.cells) {
+    if (cell.carve) {
+      // A carve clears the cell's object so an opening really is an opening. The
+      // ground stays: "carve" removes what was built, not the earth under it.
+      flecs::entity target = flecs::entity::null();
+      ecs.filter<const GamePosition>().each([&](flecs::entity e, const GamePosition &pos) {
+        if (target.is_alive()) return;
+        if (pos.x == cell.position.x && pos.y == cell.position.y) {
+          target = e;
+        }
+      });
+      if (target.is_alive()) {
+        target.destruct();
+      }
+      ++cellsCleared;
+      continue;
+    }
+
+    if (!cell.object.empty()) {
+      // Objects are stamped authored so a save writes them back, which is what
+      // makes a placed building survive a reload. "authored" is exactly what the
+      // map loader and the map editor pass; a runtime spawn (a harvest drop)
+      // leaves it false and the writer ignores it.
+      if (mapEntity.is_valid()) {
+        objectFactory.SpawnObject(ecs, mapEntity, map.get(), cell.object,
+                                  cell.position, true);
+        ++objectsPlaced;
+      }
+      continue;
+    }
+
+    if (!cell.tile.empty() && PaintTile(cell.position, cell.tile)) {
+      ++tilesPainted;
+    }
+  }
+
+  // The checkbox governs terrain persistence only. Objects are always authored,
+  // because leaving them unmarked would strand an object the map cannot write
+  // back, which is never what a debug placement wants; the terrain flag exists
+  // because painting tiles is the half that mutates the map's own layout rather
+  // than adding to it.
+  if (blueprintPersistTerrain) {
+    map->SaveToFile(mapFilePath);
+  }
+
+  std::string message = "Built " + blueprint.name + " at (" +
+                        std::to_string(origin.x) + "," + std::to_string(origin.y) +
+                        "): " + std::to_string(tilesPainted) + " tiles, " +
+                        std::to_string(objectsPlaced) + " objects";
+  if (cellsCleared > 0) {
+    message += ", " + std::to_string(cellsCleared) + " cells cleared";
+  }
+  message += blueprintPersistTerrain
+                 ? ". Terrain written to " + mapFilePath + "."
+                 : ". Terrain is in memory only (persistence is off).";
+  return message;
+}
+
+flecs::entity Game::FindTileEntity(GamePosition position) {
+  flecs::entity mapEntity = ecs.lookup("CurrentMap");
+  if (!mapEntity.is_valid()) {
+    return flecs::entity::null();
+  }
+
+  const ScreenPosition target =
+      map->GameCoordsToScreenCoords(position.x, position.y);
+  flecs::entity found = flecs::entity::null();
+  ecs.filter<const ScreenPosition>().each([&](flecs::entity e, const ScreenPosition &sPos) {
+    if (found.is_alive()) return;
+    // Background tiles are children of the map and carry no GamePosition, which
+    // is what tells them apart from the things standing on them.
+    if (e.parent() != mapEntity || e.has<GamePosition>()) return;
+    if (sPos.x == target.x && sPos.y == target.y) {
+      found = e;
+    }
+  });
+  return found;
+}
+
+bool Game::PaintTile(GamePosition position, const std::string &tileName) {
+  if (map == nullptr) return false;
+  if (!map->IsInBounds(static_cast<float>(position.x),
+                       static_cast<float>(position.y))) {
+    return false;
+  }
+
+  // Prefer a tile the map already has, so a map full of wooden floor does not
+  // accumulate one duplicate tile definition per painted cell. Only a tile the
+  // map has never used is created from the catalog, and CreateTile refuses when
+  // there is no catalog rather than painting an invisible tile.
+  Tile *tile = nullptr;
+  for (const auto &candidate : map->GetUniqueTiles()) {
+    if (candidate->name == tileName) {
+      tile = candidate.get();
+      break;
+    }
+  }
+  if (tile == nullptr) {
+    tile = map->CreateTile(tileName);
+  }
+  if (tile == nullptr) {
+    return false;
+  }
+
+  map->addTileToMap(tile, position.x, position.y);
+
+  // Refresh the cell's visual. The sprite is display state like the glyph, so the
+  // previous tile's texture is removed before the new one is resolved --
+  // otherwise painting wooden floor over grass would keep the grass texture and
+  // only swap the glyph underneath it.
+  flecs::entity visual = FindTileEntity(position);
+  if (visual.is_alive()) {
+    visual.set<DrawAscii>(*tile->ascii);
+    visual.remove<Sprite>();
+    AttachSprite(visual, tile->sprite, TileSpriteId(tile->name), resourceManager,
+                 debugLog.get());
+  }
+  return true;
+}

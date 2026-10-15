@@ -30,10 +30,12 @@ public:
 
   std::string generate(const std::string &contextId,
                        const std::vector<ChatMessage> &history,
-                       std::stop_token stoken = {}) override;
+                       std::stop_token stoken = {},
+                       const ImageList &images = {}) override;
   bool generateStream(const std::string &contextId, const std::vector<ChatMessage> &history,
                       StreamCallback callback,
-                      std::stop_token stoken = {}) override;
+                      std::stop_token stoken = {},
+                      const ImageList &images = {}) override;
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;

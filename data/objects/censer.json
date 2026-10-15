@@ -1,0 +1,40 @@
+{
+  "name": "Censer",
+  "description": "An iron censer, swung on a chain.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " ee ",
+    "eeee",
+    "eeee",
+    " ee "
+  ],
+  "palette": {
+    "e": [
+      110,
+      110,
+      120,
+      255
+    ]
+  },
+  "character": "e",
+  "characterColor": [
+    110,
+    110,
+    120,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    110,
+    110,
+    120,
+    255
+  ]
+}

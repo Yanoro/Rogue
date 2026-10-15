@@ -1,0 +1,40 @@
+{
+  "name": "Cross",
+  "description": "A plain wooden cross.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " ++ ",
+    "++++",
+    "++++",
+    " ++ "
+  ],
+  "palette": {
+    "+": [
+      139,
+      90,
+      45,
+      255
+    ]
+  },
+  "character": "+",
+  "characterColor": [
+    139,
+    90,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    139,
+    90,
+    45,
+    255
+  ]
+}

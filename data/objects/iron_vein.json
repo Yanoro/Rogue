@@ -11,6 +11,7 @@
   "drops": [
     {"item": "iron_ore", "chance": 1.0}
   ],
+  "hint": "The vein will not follow you home: work it where it stands, and take only what you can carry.",
   "art": [
     " ▄▄ ",
     "░██▓",

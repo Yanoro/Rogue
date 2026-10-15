@@ -1,0 +1,97 @@
+{
+  "id": "farmers_house_north_field",
+  "levels": 1,
+  "name": "Farmer's House with North Field",
+  "parts": [
+    {
+      "id": "tilled_field",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "field"
+    },
+    {
+      "id": "house_floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "house_footprint"
+    },
+    {
+      "id": "house_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "house_walls",
+      "role": "structural"
+    },
+    {
+      "id": "doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            8
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "field": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          4,
+          4
+        ]
+      }
+    },
+    "house_footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          8
+        ],
+        "to": [
+          4,
+          12
+        ]
+      }
+    },
+    "house_walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          8
+        ],
+        "to": [
+          4,
+          12
+        ]
+      }
+    }
+  }
+}

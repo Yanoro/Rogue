@@ -28,6 +28,13 @@ struct CraftRecipe {
   // bread.json names cooking and never mentions blacksmithing, so there is no
   // matching to get wrong.
   std::vector<SkillXp> trains;
+
+  // Optional authored colour for [GUIDE]/[INFO], from the recipe's "hint" key.
+  // It exists only for facts the data model does not hold -- ordering wisdom,
+  // prerequisites, failure modes -- and must never restate a number the other
+  // fields already carry, because that is exactly the drift that deriving the
+  // chain exists to avoid. Empty when the recipe declares none.
+  std::string hint;
 };
 
 // Content database for crafting, mirroring how ObjectFactory holds object

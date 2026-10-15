@@ -9,6 +9,7 @@
 
 class DebugLog;
 class ResourceManager;
+class TileRegistry;
 
 struct NPCData {
   std::string name;
@@ -109,12 +110,32 @@ public:
   std::vector<Tile*> GetNeighbours(GamePosition p); 
   static bool AreNeighbours(GamePosition p1, GamePosition p2);
 
+  // The index of a tile in uniqueTiles, or -1. This is the id the map file's
+  // "positions" array stores, and the id a caller needs when it wants to write a
+  // *new* tile (a placed blueprint's wall, for instance) without owning one.
+  int GetTileId(const Tile *tile) const;
+
+  // Creates a tile on the map from a definition, and returns it. Used when
+  // something needs a tile the map did not already have -- placing a blueprint
+  // whose walls the map never used. Returns nullptr when the name is not in the
+  // catalog, because inventing a tile with no appearance would paint an
+  // invisible wall. A map with no catalog loaded cannot create tiles this way and
+  // says so.
+  Tile *CreateTile(const std::string &name);
+
 private:
+  // Declared in the order the constructor initialises them, so -Wreorder stays
+  // quiet: ecs first (it is the world handle), then the two injected pointers.
+  flecs::world ecs;
   DebugLog* debugLog;
   // Texture cache for tile sprites, handed in by Game rather than reached for.
   // Null is supported: tiles then keep their ASCII look.
   ResourceManager* resources = nullptr;
-  flecs::world ecs;
+  // The world's tile vocabulary, resolved from TileRegistryResource in the
+  // constructor. Null means this run has no catalog and every map tileInfo entry
+  // is a full definition, which keeps old maps working unchanged. Not part of the
+  // initialiser list: it is read out of the world the constructor just received.
+  TileRegistry* tileRegistry = nullptr;
 
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
   std::vector<std::unique_ptr<Location>> mapLocations; 
@@ -126,6 +147,17 @@ private:
   // only the four sections the editor owns (positions, locations, objects, npcs),
   // so tileInfo and any other key the loader ignores survive a save untouched.
   nlohmann::json rawMapJson;
+
+  // The "tileInfo" entries exactly as loaded, one per uniqueTiles entry. Kept so
+  // BuildMapJson can write back the *authored* fields of each override rather
+  // than reconstructing them from the live Tile, which would silently expand a
+  // one-key override into a full definition and re-duplicate the catalog into
+  // the map file on every save.
+  nlohmann::json allTileInfo = nlohmann::json::array();
+  // Whether each uniqueTiles entry differs from the catalog and therefore has to
+  // be written back. A catalog tile the map did not touch is omitted, so a save
+  // leaves no trace of tiles the map does not own.
+  std::vector<bool> tileOverridden;
 
   int width;
   int height;

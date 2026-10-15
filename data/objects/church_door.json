@@ -1,0 +1,40 @@
+{
+  "name": "Church Door",
+  "description": "A heavy arched oak door bound with iron.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " dd ",
+    "dddd",
+    "dddd",
+    " dd "
+  ],
+  "palette": {
+    "d": [
+      110,
+      70,
+      40,
+      255
+    ]
+  },
+  "character": "d",
+  "characterColor": [
+    110,
+    70,
+    40,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    110,
+    70,
+    40,
+    255
+  ]
+}

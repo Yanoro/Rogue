@@ -12,6 +12,11 @@
 #include <filesystem>
 #include <algorithm>
 #include "InteractionRegistry.h"
+#include "BlueprintExpansion.hpp"
+#include "SpriteDraw.hpp"
+#include "SpritePaths.hpp"
+#include "TileRegistry.h"
+#include "VisionChatWindow.h"
 
 void Game::DrawGameWindows() {
   // Draw any active component-based UI windows
@@ -190,6 +195,117 @@ void Game::Draw() {
                            3.0f, ORANGE);
     }
 
+    // Blueprint placement preview: the design's real tiles and objects, drawn at
+    // partial alpha and tinted by legality. It uses the real art rather than a
+    // flat rectangle because the point of the debug window is to see what the
+    // design *is* before committing it, and green/red still answers "can it go
+    // here" at a glance.
+    //
+    // Drawn here, in the world pass, so it lands on top of the tile and entity
+    // layers and under the ImGui windows -- the same reason the location preview
+    // is here rather than in a window's Draw().
+    if (!selectedBlueprintId.empty()) {
+      if (auto* registryRes = ecs.get<BlueprintRegistryResource>()) {
+        const Blueprint* blueprint =
+            registryRes->registry != nullptr
+                ? registryRes->registry->Get(selectedBlueprintId)
+                : nullptr;
+        if (blueprint != nullptr) {
+          const BlueprintPlacement placement =
+              BuildBlueprintPlacement(*blueprint, blueprintGhostOrigin);
+          for (const BlueprintGhostCell& cell : placement.cells) {
+            const ScreenPosition sPos =
+                map->GameCoordsToScreenCoords(cell.position.x, cell.position.y);
+            const Color tint =
+                cell.legal ? Color{110, 255, 110, 130} : Color{255, 90, 90, 130};
+
+            // The plate. Always drawn, so a carved cell and a cell with no art
+            // both still read as part of the footprint.
+            DrawRectangle(sPos.x, sPos.y, tileW, tileH, tint);
+
+            if (cell.carve) {
+              // An opening is shown as one, rather than as a tile.
+              DrawRectangleLines(sPos.x, sPos.y, tileW, tileH,
+                                 cell.legal ? GREEN : RED);
+              continue;
+            }
+
+            // Resolve the art exactly the way the renderer does, by reusing the
+            // real path helper on a throwaway entity: catalog "sprite", then the
+            // data/sprites/tile_<name>.png convention, and nothing when neither
+            // loads -- in which case the glyph below is what draws. Duplicating
+            // that resolution here would be the surest way for the ghost to
+            // disagree with what actually gets built.
+            const char* glyph = nullptr;
+            char glyphStorage = '?';
+            const TileDef* definition = nullptr;
+            if (!cell.tile.empty()) {
+              definition = tileRegistry.Get(cell.tile);
+            }
+            if (definition != nullptr) {
+              glyphStorage = definition->hasCharacter ? definition->character : '?';
+              glyph = &glyphStorage;
+            }
+            // An object's art comes from its template, which the ghost does not
+            // resolve; a placed fixture falls through to the plate and border
+            // only, which still shows where it lands.
+
+            std::string spritePath;
+            if (!cell.tile.empty()) {
+              flecs::entity probe = ecs.entity();
+              AttachSprite(probe, definition != nullptr ? definition->sprite : "",
+                           TileSpriteId(cell.tile), resourceManager, nullptr);
+              if (const Sprite* sprite = probe.get<Sprite>()) {
+                spritePath = sprite->path;
+              }
+              probe.destruct();
+            }
+
+            bool drewSprite = false;
+            if (!spritePath.empty()) {
+              if (raylib::Texture* texture = resourceManager.GetTexture(spritePath)) {
+                // DrawSpriteFitted cannot tint, and the whole point of this
+                // overlay is the tint, so the same fit is applied here with the
+                // ghost's alpha. The layout maths comes from SpriteDraw.hpp.
+                const SpriteRect fit = SpriteFitRect(*texture, sPos.x, sPos.y,
+                                                     static_cast<float>(tileW),
+                                                     static_cast<float>(tileH));
+                const Rectangle source = {
+                    0.0f, 0.0f, static_cast<float>(texture->width),
+                    static_cast<float>(texture->height)};
+                const Rectangle destination = {fit.x, fit.y, fit.width, fit.height};
+                DrawTexturePro(*texture, source, destination, Vector2{0.0f, 0.0f},
+                               0.0f, tint);
+                drewSprite = fit.width > 0.0f;
+              }
+            }
+
+            if (!drewSprite) {
+              const char buffer[2] = {glyph != nullptr ? *glyph : '?', '\0'};
+              const float fontSize = static_cast<float>(std::min(tileW, tileH));
+              const Vector2 size = MeasureTextEx(gameFont, buffer, fontSize, 0);
+              DrawTextEx(gameFont, buffer,
+                         Vector2{std::round(sPos.x + (tileW - size.x) / 2.0f),
+                                 std::round(sPos.y + (tileH - size.y) / 2.0f)},
+                         fontSize, 0, tint);
+            }
+          }
+
+          // The footprint border, so the extent of the design is readable even
+          // when every cell is the same colour.
+          const ScreenPosition originPos = map->GameCoordsToScreenCoords(
+              blueprintGhostOrigin.x, blueprintGhostOrigin.y);
+          DrawRectangleLinesEx(
+              Rectangle{static_cast<float>(originPos.x),
+                        static_cast<float>(originPos.y),
+                        static_cast<float>(blueprint->Width() * tileW),
+                        static_cast<float>(blueprint->Height() * tileH)},
+              2.0f, placement.allLegal ? Color{80, 255, 80, 220}
+                                       : Color{255, 80, 80, 220});
+        }
+      }
+    }
+
     if (debugWindowState && debugWindowState->GetShowLocations()) {
       const auto& locations = map->GetLocations();
       Color locationColors[] = { RED, GREEN, BLUE, YELLOW, MAGENTA, ORANGE, PURPLE, PINK };
@@ -235,6 +351,14 @@ void Game::Draw() {
                        1080.0f};
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 
+  // The one moment in the frame where the world is on screen and none of this
+  // frame's ImGui exists in the framebuffer yet (ImGui rasterises in rlImGuiEnd).
+  // That is what the Vision Chat window's "world only" screenshot needs. Placed
+  // before DrawFPS so the counter is not part of the image either.
+  if (visionChatWindow) {
+    visionChatWindow->OnWorldFrameRendered();
+  }
+
   DrawFPS(10, 10);
 }
 
@@ -243,3 +367,15 @@ void Game::Draw() {
 void Game::BeginDrawingGame() { BeginTextureMode(gameTexture); }
 
 void Game::EndDrawingGame() { EndTextureMode(); }
+
+Rectangle Game::GetWorldScreenRect() const {
+  // The world is blitted at a fixed 1920x1080 destination (see Draw), so on a
+  // smaller window it is clipped and on a larger one it leaves margins. Reporting
+  // the intersection keeps a screenshot free of that empty border.
+  const float worldWidth = static_cast<float>(gameTexture.texture.width);
+  const float worldHeight = static_cast<float>(gameTexture.texture.height);
+  const float screenWidth = static_cast<float>(GetScreenWidth());
+  const float screenHeight = static_cast<float>(GetScreenHeight());
+  return {0.0f, 0.0f, std::min(worldWidth, screenWidth),
+          std::min(worldHeight, screenHeight)};
+}

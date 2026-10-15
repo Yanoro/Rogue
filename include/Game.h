@@ -4,6 +4,7 @@
 #include "raylib-cpp.hpp"
 #include <filesystem>
 #include <flecs.h>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,8 @@
 #include "Defaults.h"
 #include "MapReloader.h"
 #include "AgentBrain.h"
+#include "Blueprint.hpp"
+#include "BlueprintRegistry.h"
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
@@ -21,6 +24,7 @@
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "StatRegistry.h"
+#include "TileRegistry.h"
 
 enum class EditorSelectionType {
   None,
@@ -40,6 +44,30 @@ struct PendingLocation {
   GamePosition bottomRight{0, 0};
   std::string name;
   std::string description;
+};
+
+// One cell of a blueprint's preview or placement: which cell it lands on, what
+// it paints or places, and whether that cell is a legal site right now. The
+// legality is what the debug window tints green or red, so the user sees why a
+// site is refused before clicking rather than after.
+struct BlueprintGhostCell {
+  GamePosition position{0, 0};
+  std::string tile;    // tile name to paint, empty when it places or carves
+  std::string object;  // object template to spawn, empty otherwise
+  bool carve = false;
+  bool legal = true;
+  // Why the cell is illegal, for the window's report. Empty when legal.
+  std::string reason;
+};
+
+// A blueprint expanded onto the map at one anchor, with a per-cell legality
+// verdict. Produced by Game::BuildBlueprintPlacement and consumed by both the
+// mouse-following preview and the click that commits it, so the picture and the
+// placement cannot disagree about what a click will do.
+struct BlueprintPlacement {
+  std::vector<BlueprintGhostCell> cells;
+  bool allLegal = true;
+  std::string summary;
 };
 
 class Game {
@@ -67,6 +95,12 @@ public:
   void BeginDrawingGame();
   void EndDrawingGame();
 
+  // The on-screen rectangle the world is blitted into: the 1920x1080 render
+  // target, clipped to the window. It is what the Vision Chat window crops to
+  // for a "world only" screenshot, and what a future region-select tool would
+  // clamp its selection to.
+  Rectangle GetWorldScreenRect() const;
+
   void Shutdown();
 
   // Spawns an NPC from its authored map data: name, background, starting skills,
@@ -78,6 +112,20 @@ public:
 
   raylib::Window *getWindow() { return &window; }
 
+  // The designer's system prompt: its instructions from settings.designer.promptFile
+  // (data/blueprints/DESIGNER.md by default) with the material palette appended,
+  // generated from the live tile catalog and object templates.
+  //
+  // The palette is generated rather than written into the prompt file because it
+  // has to match the registry exactly. A hand-written list drifts the moment a
+  // tile is added, and the failure is quiet: the designer asks for a material
+  // that does not exist and every design is refused.
+  std::string BuildDesignerSystemPrompt() const;
+
+  // settings.designer.maxDesignAttempts. Read by the designer window so the cap
+  // lives in one place.
+  int maxDesignAttempts() const;
+
 private:
   raylib::Window window;
   std::unique_ptr<Map> map;
@@ -88,6 +136,8 @@ private:
   ItemRegistry itemRegistry;
   RaceRegistry raceRegistry;
   HookRegistry hookRegistry;
+  TileRegistry tileRegistry;
+  BlueprintRegistry blueprintRegistry;
 
   // Sprite textures for the whole process, keyed by path and cached including
   // failures (see ResourceManager). Declared before `ecs` on purpose: members are
@@ -126,10 +176,27 @@ private:
   bool removeObjectMode = false;
   std::string lastRemovedObjectName;
 
+  // Blueprint placement (the Blueprint window). Non-empty means a design is
+  // selected and the mouse is carrying its preview; a left click on a legal site
+  // commits it. Empty means the mode is off, which is how the window deselects.
+  //
+  // Held here rather than in the window because Game::handleInput is what sees
+  // the mouse, exactly like the map editor's selection.
+  std::string selectedBlueprintId;
+  // Where the preview's origin currently sits, in game coordinates. Recomputed
+  // every frame from the mouse so the ghost stays under the cursor.
+  GamePosition blueprintGhostOrigin{0, 0};
+  // Persist painted terrain to the map file when the design is placed. Objects
+  // are always marked MapAuthored; this checkbox covers the tiles, which is the
+  // half that needs a save to survive. Off by default: a debug placement is
+  // usually throwaway, and writing the map on every experiment is not.
+  bool blueprintPersistTerrain = false;
+  // Result of the last placement, shown in the window.
+  std::string lastBlueprintPlacementMessage;
+
   // File the current map was loaded from, needed to write map edits back.
   // Refreshed on every LoadMap so the save always targets the map on screen.
   std::string mapFilePath;
-
   // Result of the last "Save Map to File" press, shown in the Map Editor window.
   std::string lastMapSaveMessage;
 
@@ -174,8 +241,27 @@ private:
   flecs::entity drawAsciiToggleWindowEntity;
   flecs::entity fontSelectionWindowEntity;
   flecs::entity mapEditorWindowEntity;
+  flecs::entity blueprintWindowEntity;
   flecs::entity aiMenuWindowEntity;
   flecs::entity npcMenuWindowEntity;
+
+  // The Vision Chat window is created once and kept alive for the whole run
+  // rather than rebuilt whenever it is toggled on, unlike the other debug
+  // windows: a rebuilt window would lose its transcript, and Game::Draw needs a
+  // stable pointer to hand the world-only capture to. ActiveWindow holds the same
+  // shared_ptr, so it must never be the only owner.
+  std::shared_ptr<class VisionChatWindow> visionChatWindow;
+  flecs::entity visionChatWindowEntity;
+  // Second, independent backend for that window (see Settings.h: VisionSection).
+  // Kept alive here so the window can borrow a raw pointer safely.
+  std::unique_ptr<AI> visionAI;
+
+  // The designer's backend and window, for the same reasons as the vision pair:
+  // the backend is owned for the whole run and the window is created once so its
+  // conversation survives a toggle.
+  std::unique_ptr<AI> designerAI;
+  std::shared_ptr<class DesignerChatWindow> designerWindow;
+  flecs::entity designerWindowEntity;
 
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
@@ -186,9 +272,12 @@ private:
   friend class DrawAsciiDebugWindow;
   friend class FontSelectionWindow;
   friend class MapEditorWindow;
+  friend class BlueprintWindow;
+  friend class DesignerChatWindow;
   friend class LocationNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
+  friend class VisionChatWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;
@@ -224,6 +313,30 @@ private:
   // layer and the entity layer cannot drift apart; see MapTileVisual.
   void DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                         const ScreenPosition &screenPos);
+
+  // The blueprint placement path, shared by the preview and the commit so the
+  // two cannot disagree: whatever the ghost tints green is exactly what a click
+  // will write. Both are public because the placement window draws the preview
+  // while Game::handleInput performs the click.
+  //
+  // BuildBlueprintPlacement expands a design at an anchor and marks each cell
+  // legal or not. "Legal" is deliberately cheap -- in bounds, and not already
+  // occupied by an object or by a blocking tile -- because the full structural
+  // validator is not written yet and a design that fails it still has to be
+  // placeable so a broken design can be eyeballed.
+  BlueprintPlacement BuildBlueprintPlacement(const Blueprint &blueprint,
+                                             GamePosition origin);
+  // Writes a placement to the world. Returns a one-line report for the window.
+  std::string PlaceBlueprintAt(const Blueprint &blueprint, GamePosition origin);
+
+  // Paints one tile onto one cell: points the map at a tile of that name,
+  // creating it from the catalog when the map did not already have one, and
+  // refreshes the cell's visual entity. Shared with the map editor.
+  bool PaintTile(GamePosition position, const std::string &tileName);
+
+  // The tile cell's own render entity -- the child of the map entity that draws
+  // this cell's ground. Null when the map entity or the cell's visual is missing.
+  flecs::entity FindTileEntity(GamePosition position);
 
   void ECSInitPhysicsSystems();
   void ECSInitLogicSystems();

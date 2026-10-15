@@ -1,0 +1,41 @@
+{
+  "name": "Pulpit",
+  "description": "A raised wooden pulpit for preaching.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " uu ",
+    "uuuu",
+    "uuuu",
+    " uu "
+  ],
+  "palette": {
+    "u": [
+      120,
+      80,
+      45,
+      255
+    ]
+  },
+  "character": "u",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    120,
+    80,
+    45,
+    255
+  ]
+}

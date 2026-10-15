@@ -1,0 +1,7 @@
+{
+  "name": "wooden floor",
+  "character": ".",
+  "characterColor": [186, 146, 96, 255],
+  "backgroundColor": [72, 50, 30, 255],
+  "blocksTile": false
+}

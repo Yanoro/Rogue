@@ -14,6 +14,8 @@
 #include "EntityInfoWindow.h"
 #include "StorageWindow.h"
 #include "Game.h"
+#include "DesignerChatWindow.h"
+#include "VisionChatWindow.h"
 
 #include "AgentBrain.h"
 #include "AgentActions.h"
@@ -27,6 +29,7 @@
 #include "FloatingText.hpp"
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
+#include "RecipeFormatting.h"
 #include "Rng.hpp"
 #include "Settings.h"
 #include "SkillTraining.hpp"
@@ -1647,18 +1650,6 @@ std::string TrimCopy(const std::string &text) {
   return text.substr(begin, end - begin + 1);
 }
 
-// Durations are written into messages a player and a model read, where
-// "3.000000 seconds" is noise. Whole seconds print bare, anything else keeps one
-// decimal: 3 -> "3", 2.5 -> "2.5".
-std::string FormatSeconds(float seconds) {
-  std::string text = std::to_string(seconds);
-  text.erase(text.find_last_not_of('0') + 1);
-  if (!text.empty() && text.back() == '.') {
-    text.pop_back();
-  }
-  return text;
-}
-
 // Named C++ effects (docs/stat-effects-design.md section 4.4).
 //
 // Data references these by bare string in a stat's "effects" array, e.g.
@@ -1825,33 +1816,6 @@ void ValidateObjectRequirements(
   }
 }
 
-// One line per recipe, written with content ids rather than display names,
-// because the id is the exact token [CRAFT ...] and the recipe files use.
-std::string FormatRecipe(const CraftRecipe &recipe) {
-  std::string line = recipe.id + " (";
-  for (size_t i = 0; i < recipe.inputs.size(); ++i) {
-    if (i > 0) line += " + ";
-    line += std::to_string(recipe.inputs[i].count) + " " + recipe.inputs[i].item;
-  }
-  line += " -> ";
-  for (size_t i = 0; i < recipe.outputs.size(); ++i) {
-    if (i > 0) line += " + ";
-    const LootDrop &output = recipe.outputs[i];
-    line += output.itemType;
-    if (output.chance < 1.0f) {
-      line += " (" + std::to_string(std::lround(output.chance * 100.0f)) +
-              "% chance)";
-    }
-  }
-  line += ")";
-  // Surface the wait, because it differs per recipe and the model needs it to
-  // plan around being busy.
-  if (recipe.craftTimeSeconds > 0.0f) {
-    line += " takes " + FormatSeconds(recipe.craftTimeSeconds) + "s";
-  }
-  return line;
-}
-
 // Bullet list of everything a station advertises. Recipe ids missing from the
 // registry are reported instead of skipped: a silent gap looks exactly like
 // "the station cannot do that" and hides a content bug.
@@ -1888,6 +1852,56 @@ const CraftRecipe *ResolveStationRecipe(const RecipeRegistry *registry,
 }
 
 } // namespace
+
+// Builds one AI backend from a settings block.
+//
+// Called twice in ECSInit: once for the NPC-facing text backend ("model") and
+// once for the Vision Chat window's own backend ("vision"). The two are built by
+// the same code on purpose -- a second hand-rolled copy is how the vision backend
+// would silently stop honouring temperature or a new provider.
+static std::unique_ptr<AI> BuildAIBackend(
+    const GameSettings::ModelSection &modelSettings, DebugLog *debugLog) {
+  std::unique_ptr<AI> ai;
+
+  if (modelSettings.type == "gemini") {
+    ai = std::make_unique<GeminiAI>(modelSettings.apiKey, modelSettings.model);
+  } else if (modelSettings.type == "openrouter") {
+    auto openrouter =
+        std::make_unique<OpenRouterAI>(modelSettings.apiKey, modelSettings.model);
+    if (modelSettings.hasTemperature) {
+      openrouter->setOption("temperature", modelSettings.temperature);
+    }
+    if (modelSettings.hasMaxTokens) {
+      openrouter->setOption("max_tokens", modelSettings.maxTokens);
+    }
+    if (modelSettings.hasProvider) {
+      openrouter->setOption("provider", modelSettings.provider);
+    }
+    ai = std::move(openrouter);
+  } else {
+    auto ollama =
+        std::make_unique<OllamaAI>(modelSettings.model, modelSettings.endpoint);
+    if (modelSettings.hasTemperature) {
+      ollama->setOption("temperature", modelSettings.temperature);
+    }
+    // Empty means "let Ollama decide", so a text backend is unaffected unless the
+    // settings file asks for something.
+    ollama->setKeepAlive(modelSettings.keepAlive);
+    ai = std::move(ollama);
+  }
+
+  if (ai) {
+    ai->setErrorLogger([debugLog](const std::string &err) {
+      if (debugLog) {
+        debugLog->LogError(err);
+      } else {
+        std::cerr << err << std::endl;
+      }
+    });
+  }
+
+  return ai;
+}
 
 void Game::ECSInit() {
   // Everything the run starts from comes out of the settings file; see
@@ -1935,6 +1949,24 @@ void Game::ECSInit() {
   raceRegistry.SetDebugLog(debugLog.get());
   raceRegistry.LoadRaces(settings.content.races);
   ecs.set<RaceRegistryResource>({&raceRegistry});
+
+  // The world's tile vocabulary. Loaded before LoadMap, because Map resolves its
+  // tileInfo entries against it while building uniqueTiles -- a map's tileInfo is
+  // an override set, not the sole definition. With no catalog present this is a
+  // warning and maps stay self-sufficient.
+  tileRegistry.SetDebugLog(debugLog.get());
+  tileRegistry.LoadTiles(settings.content.tiles);
+  ecs.set<TileRegistryResource>({&tileRegistry});
+
+  // Building designs. Loaded after the tile catalog and the object factory
+  // because it validates every design's materials against both: a "paint" naming
+  // a tile the world has never heard of would otherwise build an invisible wall,
+  // which reads exactly like a working design that places nothing.
+  blueprintRegistry.SetDebugLog(debugLog.get());
+  blueprintRegistry.SetTileRegistry(&tileRegistry);
+  blueprintRegistry.SetObjectFactory(&objectFactory);
+  blueprintRegistry.LoadBlueprints(settings.content.blueprints);
+  ecs.set<BlueprintRegistryResource>({&blueprintRegistry});
 
   // Named C++ effects, then a check that every hook id the data references
   // actually has a handler. An unregistered id would otherwise be a silent
@@ -2055,6 +2087,33 @@ void Game::ECSInit() {
     std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
     [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<InventoryAction>(); };
+    }
+  });
+
+  // Know-how lookups. Both are read-only queries against live content data, so
+  // they grant nothing and store nothing: learning HOW is deliberately separate
+  // from getting BETTER at it, which is the progression skill system.
+  //
+  // Registered here, with the other knowledge verbs, so they precede
+  // [GENERIC_INTERACT] -- that catch-all matches [A-Z_]+ and would otherwise
+  // swallow both.
+  GlobalCommandRegistry::Register({
+    "[GUIDE $ACTIVITY]",
+    "Ask how an activity is done in this world: every recipe that trains it and the full chain of ingredients down to raw materials, naming the station each step happens at. Omit the activity to list what guides exist. Examples: [GUIDE blacksmithing], [GUIDE].",
+    std::regex(R"(\[GUIDE(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string topic = match.size() > 1 ? match[1].str() : "";
+      return [topic](flecs::entity) { return std::make_unique<GuideAction>(topic); };
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    "[INFO $ITEM]",
+    "General reference on an item TYPE: which recipe and station makes it, or, for something that is gathered rather than made, which object yields it. This describes the kind of item; to inspect one specific item you are carrying, use [EXAMINE_ITEM]. Omit the item to list what can be asked about. Examples: [INFO iron_ingot], [INFO iron_ore], [INFO].",
+    std::regex(R"(\[INFO(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string item = match.size() > 1 ? match[1].str() : "";
+      return [item](flecs::entity) { return std::make_unique<ItemInfoAction>(item); };
     }
   });
 
@@ -2624,42 +2683,50 @@ void Game::ECSInit() {
   // have come from settings.json, settings.local.json (merged on top) or the old
   // model.json, which LoadGameSettings still reads as a last resort.
   const GameSettings::ModelSection &modelSettings = settings.model;
-  std::unique_ptr<AI> ai;
+  std::unique_ptr<AI> ai = BuildAIBackend(modelSettings, debugLog.get());
 
-  if (modelSettings.type == "gemini") {
-    auto gemini = std::make_unique<GeminiAI>(modelSettings.apiKey, modelSettings.model);
-    gemini->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-    ai = std::move(gemini);
-  } else if (modelSettings.type == "openrouter") {
-    auto openrouter =
-        std::make_unique<OpenRouterAI>(modelSettings.apiKey, modelSettings.model);
-    openrouter->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-    if (modelSettings.hasTemperature) {
-      openrouter->setOption("temperature", modelSettings.temperature);
+  // The Vision Chat window talks to its own backend, never to the NPC one.
+  // OllamaAI keys its conversation context by contextId alone, so serving a
+  // vision model and a text model from one instance would replay one model's
+  // context into the other's request.
+  if (settings.vision.enabled) {
+    GameSettings::ModelSection visionModel;
+    visionModel.type = "ollama";
+    visionModel.model = settings.vision.model;
+    visionModel.endpoint = settings.vision.endpoint;
+    visionModel.hasTemperature = settings.vision.hasTemperature;
+    visionModel.temperature = settings.vision.temperature;
+    visionModel.keepAlive = settings.vision.keepAlive;
+    visionAI = BuildAIBackend(visionModel, debugLog.get());
+    if (debugLog && visionAI) {
+      debugLog->LogInfo("Vision backend: " + visionAI->getAIName() + " / " +
+                        visionAI->getModelName() + " at " + visionModel.endpoint +
+                        " (keep_alive: " +
+                        (visionModel.keepAlive.empty() ? "ollama default"
+                                                       : visionModel.keepAlive) +
+                        ")");
     }
-    if (modelSettings.hasMaxTokens) {
-      openrouter->setOption("max_tokens", modelSettings.maxTokens);
-    }
-    if (modelSettings.hasProvider) {
-      openrouter->setOption("provider", modelSettings.provider);
-    }
-    ai = std::move(openrouter);
-  } else {
-    auto ollama =
-        std::make_unique<OllamaAI>(modelSettings.model, modelSettings.endpoint);
-    ollama->setErrorLogger([this](const std::string& err) { if (debugLog) debugLog->LogError(err); });
-    if (modelSettings.hasTemperature) {
-      ollama->setOption("temperature", modelSettings.temperature);
-    }
-    ai = std::move(ollama);
   }
 
-  if (ai) {
-    ai->setErrorLogger([this](const std::string& err) {
-      if (this->debugLog) {
-        this->debugLog->LogError(err);
-      }
-    });
+  // The Designer Chat window talks to its own backend. Its own section rather than
+  // a flag on `model`, for two reasons: OllamaAI keys conversation context by
+  // contextId alone, so one instance cannot serve two models, and producing valid
+  // blueprint JSON is a different skill from roleplay, so it is worth being able
+  // to point at a different model without retuning the NPCs.
+  //
+  // useMainModel leaves the designer sharing the NPC backend, which is the least
+  // surprising default for an unconfigured run.
+  {
+    GameSettings::ModelSection designerModel =
+        settings.designer.useMainModel ? modelSettings : settings.designer.model;
+    designerAI = BuildAIBackend(designerModel, debugLog.get());
+    if (debugLog && designerAI) {
+      debugLog->LogInfo(
+          "Designer backend: " + designerAI->getAIName() + " / " +
+          designerAI->getModelName() +
+          (settings.designer.useMainModel ? " (shares the NPC backend settings)"
+                                          : " at " + designerModel.endpoint));
+    }
   }
 
   // A hosted backend with no key cannot answer, so say so now rather than
@@ -2736,8 +2803,38 @@ void Game::ECSInit() {
   drawAsciiToggleWindowEntity = ecs.entity("DrawAscii Debug Window");
   fontSelectionWindowEntity = ecs.entity("Font Selection Window");
   mapEditorWindowEntity = ecs.entity("Map Editor Window");
+  blueprintWindowEntity = ecs.entity("Blueprint Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
+  visionChatWindowEntity = ecs.entity("Vision Chat Window");
+  designerWindowEntity = ecs.entity("Designer Window");
+
+  // Built once and kept, unlike the other debug windows: a rebuilt window would
+  // throw away its transcript, and Game::Draw needs a stable pointer to hand the
+  // "world only" capture to. ActiveWindow holds the same shared_ptr, so removing
+  // it hides the window without destroying it.
+  std::string visionLabel;
+  if (visionAI) {
+    visionLabel = visionAI->getAIName() + " / " + visionAI->getModelName();
+  }
+  visionChatWindow =
+      std::make_shared<VisionChatWindow>(this, visionAI.get(), visionLabel);
+  if (debugWindowState->GetShowVisionChatWindow()) {
+    visionChatWindowEntity.set<ActiveWindow>({visionChatWindow});
+  }
+
+  // Same treatment: built once and kept, so the designer conversation survives a
+  // toggle. Losing the transcript on every close would make iterating on a design
+  // impossible.
+  std::string designerLabel;
+  if (designerAI) {
+    designerLabel = designerAI->getAIName() + " / " + designerAI->getModelName();
+  }
+  designerWindow =
+      std::make_shared<DesignerChatWindow>(this, designerAI.get(), designerLabel);
+  if (debugWindowState->GetShowDesignerWindow()) {
+    designerWindowEntity.set<ActiveWindow>({designerWindow});
+  }
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {
@@ -2774,6 +2871,10 @@ void Game::ECSInit() {
   if (debugWindowState->GetShowMapEditorWindow()) {
     mapEditorWindowEntity.set<ActiveWindow>(
         {std::make_shared<MapEditorWindow>(this)});
+  }
+  if (debugWindowState->GetShowBlueprintWindow()) {
+    blueprintWindowEntity.set<ActiveWindow>(
+        {std::make_shared<BlueprintWindow>(this)});
   }
   if (debugWindowState->GetShowAIMenuWindow()) {
     aiMenuWindowEntity.set<ActiveWindow>(

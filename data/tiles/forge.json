@@ -1,0 +1,7 @@
+{
+  "name": "forge",
+  "character": "F",
+  "characterColor": [255, 138, 60, 255],
+  "backgroundColor": [64, 32, 24, 255],
+  "blocksTile": true
+}

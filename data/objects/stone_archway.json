@@ -1,0 +1,40 @@
+{
+  "name": "Stone Archway",
+  "description": "A freestanding arch of dressed stone.",
+  "components": [
+    "Obstacle"
+  ],
+  "art": [
+    " nn ",
+    "nnnn",
+    "nnnn",
+    " nn "
+  ],
+  "palette": {
+    "n": [
+      140,
+      140,
+      150,
+      255
+    ]
+  },
+  "character": "n",
+  "characterColor": [
+    140,
+    140,
+    150,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    140,
+    140,
+    150,
+    255
+  ]
+}

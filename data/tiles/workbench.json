@@ -1,0 +1,7 @@
+{
+  "name": "workbench",
+  "character": "w",
+  "characterColor": [186, 146, 96, 255],
+  "backgroundColor": [58, 42, 28, 255],
+  "blocksTile": true
+}

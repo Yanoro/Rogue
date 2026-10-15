@@ -1,0 +1,19 @@
+{
+  "name": "stained glass",
+  "description": "A fragment of coloured glass, set into the floor.",
+  "character": "'",
+  "characterColor": [
+    140,
+    110,
+    180,
+    255
+  ],
+  "backgroundColor": [
+    60,
+    40,
+    80,
+    255
+  ],
+  "blocksTile": false,
+  "sprite": "data/sprites/stained_glass_fragment.png"
+}

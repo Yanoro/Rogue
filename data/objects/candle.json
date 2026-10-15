@@ -1,0 +1,40 @@
+{
+  "name": "Candle",
+  "description": "A lit candle in a brass holder.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " ii ",
+    "iiii",
+    "iiii",
+    " ii "
+  ],
+  "palette": {
+    "i": [
+      235,
+      225,
+      190,
+      255
+    ]
+  },
+  "character": "i",
+  "characterColor": [
+    235,
+    225,
+    190,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    235,
+    225,
+    190,
+    255
+  ]
+}

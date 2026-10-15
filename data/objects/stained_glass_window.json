@@ -1,0 +1,40 @@
+{
+  "name": "Stained Glass Window",
+  "description": "An arched window of coloured glass.",
+  "components": [
+    "Interactable"
+  ],
+  "art": [
+    " yy ",
+    "yyyy",
+    "yyyy",
+    " yy "
+  ],
+  "palette": {
+    "y": [
+      90,
+      110,
+      170,
+      255
+    ]
+  },
+  "character": "y",
+  "characterColor": [
+    90,
+    110,
+    170,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    90,
+    110,
+    170,
+    255
+  ]
+}

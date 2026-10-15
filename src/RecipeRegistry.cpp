@@ -73,6 +73,11 @@ void RecipeRegistry::LoadRecipes(const std::string& directoryPath) {
                             recipe.trains, warn);
       }
 
+      // Optional authored colour for [GUIDE]/[INFO]. Never required, and never
+      // checked for content: a wrong hint is a wording problem, not a broken
+      // recipe, so it must not be able to fail the load.
+      recipe.hint = j.value("hint", std::string(""));
+
       // A recipe that cannot be satisfied or cannot produce anything is content
       // authoring error, not a runtime state: report it loudly instead of
       // letting a station advertise a dead recipe.

@@ -1,0 +1,41 @@
+{
+  "name": "Bell Tower",
+  "description": "The top of a stone tower, with a bell hanging in it.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " tt ",
+    "tttt",
+    "tttt",
+    " tt "
+  ],
+  "palette": {
+    "t": [
+      130,
+      130,
+      140,
+      255
+    ]
+  },
+  "character": "t",
+  "characterColor": [
+    130,
+    130,
+    140,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    130,
+    130,
+    140,
+    255
+  ]
+}

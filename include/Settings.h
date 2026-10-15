@@ -48,7 +48,64 @@ struct GameSettings {
     bool hasProvider = false;
     // Passed through to OpenRouter verbatim as its "provider" routing object.
     nlohmann::json provider;
+    // How long Ollama keeps the model resident after a request. Empty sends
+    // nothing, leaving Ollama's own default (5 minutes, or OLLAMA_KEEP_ALIVE) in
+    // charge. Only read for the ollama backend.
+    std::string keepAlive;
   } model;
+
+  // Settings for the second, independent backend behind the Vision Chat window.
+  //
+  // It is deliberately separate from `model` rather than a flag on it: the
+  // vision model is a local Ollama model (moondream) while the text backend is
+  // whatever the NPCs talk to, and OllamaAI keys its conversation context by
+  // contextId alone, so serving both from one instance would replay a vision
+  // model's context into a text model's request.
+  struct VisionSection {
+    // Off leaves the window usable but reporting that no backend is configured,
+    // which is friendlier than making the feature look broken when Ollama is not
+    // running.
+    bool enabled = true;
+    // The Ollama model tag. "moondream" resolves to the default tag; write e.g.
+    // "moondream:latest" or "moondream:v2" when the installed tag differs.
+    std::string model = "moondream";
+    // Only the ollama backend is supported for vision today; the field exists so a
+    // different host/port works without a rebuild. Point this at /api/chat instead
+    // and it will not work -- the payload built here is the /api/generate shape.
+    std::string endpoint = "http://localhost:11434/api/generate";
+    bool hasTemperature = false;
+    double temperature = 0.0;
+    // How long Ollama keeps the vision model resident, e.g. "30m". Warm by
+    // default: a vision model is several GB, so at Ollama's 5-minute default the
+    // first question after any pause pays the full load -- tens of seconds that
+    // look like slow inference but are disk I/O. Empty sends nothing and defers to
+    // Ollama. Costs VRAM/RAM while it sits there.
+    std::string keepAlive = "30m";
+  } vision;
+
+  // Settings for the backend behind the Designer Chat window.
+  //
+  // Its own section rather than reusing `model`, for the same reason Vision has
+  // one -- OllamaAI keys conversation context by contextId alone, so one instance
+  // cannot serve two different models -- but the reason it is *separately
+  // configurable* is different: producing a valid blueprint is a different skill
+  // from roleplay, so pointing the designer at a stronger (or cheaper) model
+  // without retuning the NPCs is a real thing to want.
+  //
+  // `useMainModel` defaults on, so an unconfigured run behaves as though the
+  // designer shared the NPC backend, which is the least surprising default.
+  struct DesignerSection {
+    bool useMainModel = true;
+    // Read only when useMainModel is false. Same shape and meaning as `model`.
+    ModelSection model;
+    // The designer's instructions: the grammar, the reply contract and the
+    // worked examples. Empty means the compiled-in default (see
+    // Game::BuildDesignerSystemPrompt), so a missing file is not a broken run.
+    std::string promptFile = "data/blueprints/DESIGNER.md";
+    // How many times the engine re-prompts after an invalid design before giving
+    // up. Every attempt is shown, so this bounds cost rather than hiding failure.
+    int maxDesignAttempts = 3;
+  } designer;
 
   struct AISection {
     // Path to a text file holding the NPC system prompt template. Empty means the
@@ -112,6 +169,12 @@ struct GameSettings {
     std::string skills = "data/skills";
     std::string items = "data/items";
     std::string races = "data/races";
+    // The world's tile vocabulary. A map's own "tileInfo" is a set of overrides
+    // on top of these; with no catalog, maps must declare every tile inline,
+    // which is how they all worked before the catalog existed.
+    std::string tiles = "data/tiles";
+    // Building designs. Optional: with none, the placement window lists nothing.
+    std::string blueprints = "data/blueprints";
   } content;
 
   struct DebugSection {

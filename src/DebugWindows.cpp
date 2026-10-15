@@ -14,7 +14,12 @@
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "VisionChatWindow.h"
 #include "AgentContextWindow.h"
+#include "BlueprintExpansion.hpp"
+#include "DesignerChatWindow.h"
+#include <algorithm>
+#include <map>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -219,6 +224,52 @@ void DebugConsoleWindow::Draw() {
     } else {
       game->npcMenuWindowEntity.remove<ActiveWindow>();
     }
+  }
+
+  ImGui::SameLine();
+
+  // Its own row for the same reason Vision Chat is on one: the row before it
+  // already fills a narrow Debug Console and ImGui clips anything past the right
+  // edge, which silently makes a checkbox unclickable. Later additions should
+  // open another row rather than append to this one.
+  bool showDesigner = game->designerWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Designer", &showDesigner)) {
+    if (showDesigner && game->designerWindow) {
+      // The instance is owned by Game, not by the component, so this only shows
+      // or hides it: the conversation survives a toggle. See Game.h.
+      game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+    } else {
+      game->designerWindowEntity.remove<ActiveWindow>();
+    }
+  }
+  ImGui::SameLine();
+
+  bool showBlueprint = game->blueprintWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Blueprints", &showBlueprint)) {
+    if (showBlueprint) {
+      game->blueprintWindowEntity.set<ActiveWindow>({std::make_shared<BlueprintWindow>(game)});
+    } else {
+      game->blueprintWindowEntity.remove<ActiveWindow>();
+      // Leaving the ghost armed with no window to deselect it from would be a
+      // trap, so the placement mode goes with the window.
+      game->selectedBlueprintId.clear();
+    }
+  }
+
+  // Deliberately *not* SameLine: the Font Selection / Map Editor / AI Menu / NPC
+  // Menu row already fills a narrow Debug Console, and ImGui clips (and makes
+  // unclickable) anything past the right edge, so appending to that row hid this
+  // checkbox entirely. Its own row fits at any window width.
+  bool showVisionChat = game->visionChatWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Vision Chat", &showVisionChat)) {
+    // The instance itself is owned by Game, not by the component, so this only
+    // shows or hides it: the transcript survives a toggle. See Game.h.
+    if (showVisionChat && game->visionChatWindow) {
+      game->visionChatWindowEntity.set<ActiveWindow>({game->visionChatWindow});
+    } else {
+      game->visionChatWindowEntity.remove<ActiveWindow>();
+    }
+    game->debugWindowState->SetShowVisionChatWindow(showVisionChat);
   }
 
   ImGui::Separator();
@@ -1454,4 +1505,292 @@ void NPCMenuWindow::Draw() {
   } else {
     game->debugWindowState->SetShowNPCMenuWindow(true);
   }
+}
+
+// Lists every blueprint in the registry and arms the placement ghost when one is
+// selected. See docs/blueprint-design.md.
+//
+// The window owns no placement state: Game::selectedBlueprintId is the mode, and
+// Game::handleInput performs the click, exactly like the map editor's selection.
+// That is what keeps the preview and the commit on one code path -- both go
+// through Game::BuildBlueprintPlacement.
+BlueprintWindow::BlueprintWindow(Game* game) : game(game) {}
+
+void BlueprintWindow::Draw() {
+  bool isOpen = true;
+  ImGui::SetNextWindowSize(ImVec2(680, 460), ImGuiCond_FirstUseEver);
+  ImGui::Begin("Blueprints", &isOpen, ImGuiWindowFlags_None);
+  if (!isOpen) {
+    game->blueprintWindowEntity.remove<ActiveWindow>();
+    // The placement mode goes with the window: leaving a ghost armed with no
+    // window to deselect it from would be a trap.
+    game->selectedBlueprintId.clear();
+    ImGui::End();
+    return;
+  }
+
+  auto* registryRes = game->ecs.get<BlueprintRegistryResource>();
+  const BlueprintRegistry* registry =
+      registryRes != nullptr ? registryRes->registry : nullptr;
+
+  if (registry == nullptr || registry->Count() == 0) {
+    ImGui::TextWrapped(
+        "No blueprints loaded. Expected data/blueprints/*.json -- see "
+        "docs/blueprint-design.md for the grammar.");
+    ImGui::End();
+    return;
+  }
+
+  const std::vector<const Blueprint*> all = registry->GetAll();
+
+  ImGui::Text("Selected: %s",
+              game->selectedBlueprintId.empty()
+                  ? "(none - click to arm placement)"
+                  : game->selectedBlueprintId.c_str());
+
+  if (ImGui::Checkbox("Persist painted terrain to map file",
+                      &game->blueprintPersistTerrain)) {
+    // Nothing to do: the flag is read when a placement commits. Objects are
+    // always marked MapAuthored, so this only governs the tiles.
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("(?)");
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Objects placed are always marked as authored map content and survive a "
+        "save.\nPainted tiles only survive if this is on, because terrain lives "
+        "in the map's\npositions array. Leave it off for throwaway experiments.");
+  }
+
+  ImGui::Separator();
+
+  // Left: the list. Right: the selected design's contents and status.
+  const float listWidth = 220.0f;
+  ImGui::BeginChild("blueprint_list", ImVec2(listWidth, 0), true);
+  for (const Blueprint* blueprint : all) {
+    const bool selected = blueprint->id == game->selectedBlueprintId;
+    // A blueprint that expands to nothing is rejected at load, so anything listed
+    // here has cells. The count is shown because it is the quickest way to see
+    // that a design parsed into what its author intended.
+    const std::string label = blueprint->name + " (" +
+                              std::to_string(blueprint->Width()) + "x" +
+                              std::to_string(blueprint->Height()) + ")" +
+                              "###" + blueprint->id;
+    if (ImGui::Selectable(label.c_str(), selected)) {
+      // Clicking the selected one again deselects, which is how the ghost is
+      // dismissed without a second control.
+      game->selectedBlueprintId = selected ? std::string() : blueprint->id;
+    }
+    // Right click unselects. Only the selected row responds: a right click on some
+    // other design means "not this one", not "clear my selection", so acting on
+    // any row would make the gesture do the opposite of what it looks like.
+    if (selected && ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+      game->selectedBlueprintId.clear();
+      game->lastBlueprintPlacementMessage.clear();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "%s\nLeft click to select, right click to unselect.\nid: %s\nsource: %s",
+          selected ? "Selected." : "Click to carry its preview.",
+          blueprint->id.c_str(),
+          blueprint->sourcePath.empty() ? "(runtime)" : blueprint->sourcePath.c_str());
+    }
+  }
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+  ImGui::BeginChild("blueprint_detail", ImVec2(0, 0), true);
+
+  const Blueprint* selected =
+      game->selectedBlueprintId.empty()
+          ? nullptr
+          : registry->Get(game->selectedBlueprintId);
+
+  if (selected == nullptr) {
+    ImGui::TextWrapped(
+        "Select a blueprint to carry its preview under the mouse. Left click a "
+        "green site to build it; red cells are out of bounds or already "
+        "occupied.");
+  } else {
+    ImGui::Text("%s", selected->name.c_str());
+    ImGui::TextDisabled("id: %s", selected->id.c_str());
+    if (!selected->owner.empty()) {
+      ImGui::TextDisabled("owner: %s", selected->owner.c_str());
+    }
+    if (!selected->purpose.empty()) {
+      ImGui::TextDisabled("purpose: %s", selected->purpose.c_str());
+    }
+    ImGui::Text("Footprint: %d x %d tiles, %d level(s)", selected->Width(),
+                selected->Height(), selected->levels);
+
+    const BlueprintExpansion::Expansion expansion =
+        BlueprintExpansion::Expand(*selected);
+    ImGui::Text("Cells: %zu", expansion.cells.size());
+    if (!expansion.errors.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+      for (const std::string& message : expansion.errors) {
+        ImGui::TextWrapped("%s", message.c_str());
+      }
+      ImGui::PopStyleColor();
+    }
+
+    // The legend is the whole point of listing the cells: it says what the
+    // footprint is made of, which is how a wrong material is spotted before
+    // anything is built.
+    ImGui::Separator();
+    ImGui::TextDisabled("Contents");
+    std::map<std::string, int> counts;
+    for (const BlueprintExpansion::ExpandedCell& cell : expansion.cells) {
+      if (cell.carve) {
+        counts["(carved opening)"]++;
+      } else if (!cell.tile.empty()) {
+        counts[cell.tile]++;
+      } else if (!cell.object.empty()) {
+        counts["object: " + cell.object]++;
+      }
+    }
+    for (const auto& entry : counts) {
+      ImGui::BulletText("%s x%d", entry.first.c_str(), entry.second);
+    }
+
+    const BlueprintPlacement preview = game->BuildBlueprintPlacement(
+        *selected, game->blueprintGhostOrigin);
+    ImGui::Separator();
+    if (preview.allLegal) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+      ImGui::TextWrapped("Site at (%d,%d) is clear to build.",
+                         game->blueprintGhostOrigin.x,
+                         game->blueprintGhostOrigin.y);
+      ImGui::PopStyleColor();
+    } else {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
+      ImGui::TextWrapped("Site at (%d,%d) is blocked:",
+                         game->blueprintGhostOrigin.x,
+                         game->blueprintGhostOrigin.y);
+      ImGui::PopStyleColor();
+      // The first few distinct reasons, deduplicated: a design overlapping a
+      // house reports the same reason for every cell it overlaps.
+      std::vector<std::string> shown;
+      for (const BlueprintGhostCell& cell : preview.cells) {
+        if (cell.legal || cell.reason.empty()) continue;
+        if (std::find(shown.begin(), shown.end(), cell.reason) != shown.end()) continue;
+        if (shown.size() >= 4) break;
+        shown.push_back(cell.reason);
+      }
+      for (const std::string& reason : shown) {
+        ImGui::BulletText("%s", reason.c_str());
+      }
+    }
+
+    if (!game->lastBlueprintPlacementMessage.empty()) {
+      ImGui::Separator();
+      ImGui::TextWrapped("%s", game->lastBlueprintPlacementMessage.c_str());
+    }
+
+    ImGui::Separator();
+    if (ImGui::Button("Deselect")) {
+      game->selectedBlueprintId.clear();
+      game->lastBlueprintPlacementMessage.clear();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Delete")) {
+      ImGui::OpenPopup("Delete blueprint?");
+    }
+    // Everything this needs is copied out of `selected` up front. `selected`
+    // points into the registry's map, and the delete reloads that map, so reading
+    // through it after the call would be a use-after-free -- which is exactly how
+    // this crashed the first time. Nothing below touches the pointer again.
+    const std::string deleteId = selected->id;
+    const std::string deleteSource = selected->sourcePath;
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Deletes %s from %s.\nThis removes the file and cannot be undone.",
+          deleteId.c_str(),
+          deleteSource.empty() ? "(runtime)" : deleteSource.c_str());
+    }
+
+    // Confirmed rather than immediate: this deletes a file from the content
+    // directory with no trash and no revision history behind it, and a stray
+    // click on a debug window should not be able to destroy a design.
+    //
+    // The modal's full-screen dimming is suppressed for this one popup. ImGui
+    // washes the whole viewport out behind a modal, which here hides the very
+    // window the question is about -- you cannot check which design is selected
+    // while deciding whether to delete it. The replacement is a border on the
+    // popup itself, so it still reads as modal without painting over the screen.
+    //
+    // Set on the style rather than through any internal handle: the modal copies
+    // ModalDimBgColor from this style colour when it is created, and the window is
+    // begun again every frame, so re-applying each frame covers the popup's whole
+    // life. Saved and restored rather than pushed, because there is no
+    // Begin/End pair to pop from.
+    ImVec4 &modalDim = ImGui::GetStyle().Colors[ImGuiCol_ModalWindowDimBg];
+    const ImVec4 savedDim = modalDim;
+    modalDim = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    const bool modalOpen = ImGui::BeginPopupModal(
+        "Delete blueprint?", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+    if (modalOpen) {
+      // A visible border in place of the dimming, so the popup is still
+      // unmistakably the thing asking for an answer.
+      const ImVec2 min = ImGui::GetWindowPos();
+      const ImVec2 size = ImGui::GetWindowSize();
+      ImGui::GetWindowDrawList()->AddRect(min, ImVec2(min.x + size.x, min.y + size.y),
+                                          IM_COL32(255, 120, 90, 255), 0.0f, 0, 2.0f);
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.6f, 1.0f));
+      ImGui::Text("Delete '%s'?", deleteId.c_str());
+      ImGui::PopStyleColor();
+      ImGui::TextDisabled("%s", deleteSource.empty() ? "(the design has no file)"
+                                                     : deleteSource.c_str());
+      ImGui::Separator();
+      if (ImGui::Button("Delete", ImVec2(120, 0))) {
+        BlueprintRegistry* registry = nullptr;
+        if (auto* res = game->ecs.get<BlueprintRegistryResource>()) {
+          registry = res->registry;
+        }
+        if (registry == nullptr) {
+          lastDeleteMessage = "No blueprint registry to delete from.";
+        } else {
+          const BlueprintRegistry::DeleteResult deleted =
+              registry->DeleteBlueprint(deleteId);
+          if (deleted.ok) {
+            lastDeleteMessage = "Deleted " + deleted.path;
+            // The selection is cleared with the design: leaving an id selected
+            // that no longer exists would leave the ghost armed with nothing to
+            // place, and handleInput would silently drop the mode anyway.
+            game->selectedBlueprintId.clear();
+            game->lastBlueprintPlacementMessage.clear();
+            if (game->debugLog) {
+              game->debugLog->LogInfo("Blueprint window: deleted " + deleted.path);
+            }
+          } else {
+            lastDeleteMessage = "Could not delete: " + deleted.error;
+            if (game->debugLog) {
+              game->debugLog->LogError("Blueprint window: " + lastDeleteMessage);
+            }
+          }
+        }
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+        ImGui::CloseCurrentPopup();
+      }
+      ImGui::EndPopup();
+    }
+
+    // Restored after the popup has been submitted for this frame. The dim colour
+    // is read at frame end, so restoring here is what keeps the suppression
+    // scoped to this popup rather than leaking to every other modal.
+    modalDim = savedDim;
+
+    if (!lastDeleteMessage.empty()) {
+      ImGui::TextDisabled("%s", lastDeleteMessage.c_str());
+    }
+  }
+
+  ImGui::EndChild();
+  ImGui::End();
+
+  game->debugWindowState->SetShowBlueprintWindow(true);
 }

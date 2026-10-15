@@ -15,5 +15,6 @@
   "craftTime": 3.0,
   "trains": {
     "blacksmithing": 5
-  }
+  },
+  "hint": "Smelt in batches when you can: the walk between the vein and the smeltery is the slow part, not the fire."
 }

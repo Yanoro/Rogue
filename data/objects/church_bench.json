@@ -1,0 +1,41 @@
+{
+  "name": "Church Bench",
+  "description": "A plain wooden bench for the congregation.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " hh ",
+    "hhhh",
+    "hhhh",
+    " hh "
+  ],
+  "palette": {
+    "h": [
+      120,
+      80,
+      45,
+      255
+    ]
+  },
+  "character": "h",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    120,
+    80,
+    45,
+    255
+  ]
+}

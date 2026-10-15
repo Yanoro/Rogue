@@ -1,0 +1,41 @@
+{
+  "name": "Lectern",
+  "description": "A wooden lectern holding an open book.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " ll ",
+    "llll",
+    "llll",
+    " ll "
+  ],
+  "palette": {
+    "l": [
+      120,
+      80,
+      45,
+      255
+    ]
+  },
+  "character": "l",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    120,
+    80,
+    45,
+    255
+  ]
+}

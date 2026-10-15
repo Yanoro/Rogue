@@ -4,6 +4,7 @@
 #include "ResourceManager.h"
 #include "SpritePaths.hpp"
 #include "StartingSkills.hpp"
+#include "TileRegistry.h"
 #include "raylib.h"
 #include "ObjectFactory.h"
 #include <algorithm>
@@ -24,6 +25,14 @@ inline void from_json(const nlohmann::json &j, Color &c) {
 Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
          ResourceManager* resources)
   : ecs(mapEntity.world()), debugLog(debugLog), resources(resources) {
+
+  // The world's tile vocabulary, if this run has one. Absent is supported: the
+  // map's own tileInfo then defines every tile it uses, which is how maps were
+  // authored before the catalog existed. Looked up here rather than passed in so
+  // that Map's constructor keeps its current signature.
+  if (auto *tileRes = ecs.get<TileRegistryResource>()) {
+    tileRegistry = tileRes->registry;
+  }
 
   std::ifstream jsonFile;
   jsonFile.exceptions(std::ifstream::failbit | std::ifstream::badbit);
@@ -53,27 +62,82 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
     // This implicitily forces the tileInfo given to be given with contiguous
     // IDS
 
-    for (const auto &tileInfo : json["tileInfo"]) {
+    // Every tile in this map, in the order "positions" indexes them. A map's
+    // "tileInfo" is a set of *overrides* on top of the shared catalog
+    // (data/tiles/*.json): the entry names a definition, and any field it
+    // authors replaces that definition's value. A map with no catalog loaded
+    // still works -- the entry is then the whole definition, which is how every
+    // map was authored before the catalog existed.
+    allTileInfo = json.value("tileInfo", nlohmann::json::array());
+
+    for (const auto &tileInfo : allTileInfo) {
+      const std::string tileName = tileInfo.value("name", "Unknown name");
+      const TileDef *definition =
+          tileRegistry ? tileRegistry->Get(tileName) : nullptr;
+
+      // Inherit, then let the map override field by field. `overridden` records
+      // whether anything was replaced, which is what BuildMapJson uses to decide
+      // whether this tile belongs in the saved file at all.
+      bool overridden = definition == nullptr;
+      TileDef resolved;
+      if (definition != nullptr) {
+        resolved = *definition;
+      }
+
+      if (tileInfo.contains("character")) {
+        const std::string glyph = tileInfo["character"].get<std::string>();
+        resolved.character = glyph.empty() ? '?' : glyph.at(0);
+        resolved.hasCharacter = true;
+        overridden = true;
+      }
+      if (tileInfo.contains("characterColor")) {
+        resolved.characterColor = tileInfo["characterColor"];
+        resolved.hasCharacterColor = true;
+        overridden = true;
+      }
+      if (tileInfo.contains("backgroundColor")) {
+        resolved.backgroundColor = tileInfo["backgroundColor"];
+        resolved.hasBackgroundColor = true;
+        overridden = true;
+      }
+      if (tileInfo.contains("blocksTile")) {
+        resolved.blocksTile = tileInfo.value("blocksTile", resolved.blocksTile);
+        overridden = true;
+      }
+      if (tileInfo.contains("sprite")) {
+        resolved.sprite = tileInfo.value("sprite", std::string());
+        overridden = true;
+      }
+      // The hitbox is scaled to this map's tile size, so authoring it is always
+      // a per-map decision and never inherited by accident.
+      if (tileInfo.contains("hitboxWidth") || tileInfo.contains("hitboxHeight")) {
+        overridden = true;
+      }
+
       auto newTile = std::make_unique<Tile>();
       // TODO: Memory leak here
       DrawAscii *newAscii = new DrawAscii();
-      newAscii->ch = tileInfo.value("character", "?").at(0);
-      newAscii->characterColor = tileInfo["characterColor"];
-      newAscii->backgroundColor = tileInfo["backgroundColor"];
+      newAscii->ch = resolved.hasCharacter ? resolved.character : '?';
+      newAscii->characterColor = resolved.characterColor;
+      newAscii->backgroundColor = resolved.backgroundColor;
       newAscii->width = tileWidth;
       newAscii->height = tileHeight;
 
-      newTile->name = tileInfo.value("name", "Unknown name");
-      newTile->blocksTile = tileInfo.value("blocksTile", false);
+      newTile->name = tileName;
+      newTile->blocksTile = resolved.blocksTile;
       newTile->ascii = newAscii;
-      newTile->hitbox.width = tileInfo.value("hitboxWidth", tileWidth);
-      newTile->hitbox.height = tileInfo.value("hitboxHeight", tileHeight);
+      const size_t authoredHitbox = resolved.hasHitboxSize ? resolved.hitboxSize : 0;
+      newTile->hitbox.width = tileInfo.value(
+          "hitboxWidth", authoredHitbox ? authoredHitbox : tileWidth);
+      newTile->hitbox.height = tileInfo.value(
+          "hitboxHeight", authoredHitbox ? authoredHitbox : tileHeight);
       // Optional authored texture. Absent is normal: the convention path
       // data/sprites/tile_<name>.png is then tried, and the glyph is the last
       // resort, so a tile with no art at all still draws.
-      newTile->sprite = tileInfo.value("sprite", "");
+      newTile->sprite = resolved.sprite;
 
       uniqueTiles.push_back(std::move(newTile));
+      tileOverridden.push_back(overridden);
     }
 
 
@@ -292,8 +356,8 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
 }
 
 nlohmann::json Map::BuildMapJson() const {
-  // Start from the file as loaded so section keys the editor does not manage -
-  // tileInfo above all - and any hand-written extras are carried through.
+  // Start from the file as loaded so section keys the editor does not manage and
+  // any hand-written extras are carried through.
   nlohmann::json mapJson = rawMapJson.is_object() ? rawMapJson
                                                   : nlohmann::json::object();
 
@@ -301,6 +365,20 @@ nlohmann::json Map::BuildMapJson() const {
   mapJson["mapHeight"] = height;
   mapJson["tileWidth"] = tileWidth;
   mapJson["tileHeight"] = tileHeight;
+
+  // tileInfo is rebuilt rather than carried through: entries the map did not
+  // override are pure catalog and are dropped, so saving cannot re-duplicate the
+  // shared vocabulary into the map file. The *authored* entry is written back
+  // verbatim for overridden tiles, so an override keeps exactly the keys it was
+  // authored with instead of being expanded into a full definition.
+  nlohmann::json tileInfo = nlohmann::json::array();
+  for (size_t i = 0; i < allTileInfo.size(); ++i) {
+    const bool overridden = i < tileOverridden.size() && tileOverridden[i];
+    if (overridden) {
+      tileInfo.push_back(allTileInfo[i]);
+    }
+  }
+  mapJson["tileInfo"] = std::move(tileInfo);
 
   // Tile layout. tileMap is indexed y*width+x but the file stores it
   // column-major, which is the order Map::Map consumes; see the header note.
@@ -547,6 +625,56 @@ Tile *Map::GetTile(int x, int y) {
   return tileMap[GetIndex(x, y)];
 }
 int Map::GetIndex(int x, int y) const { return y * width + x; }
+
+int Map::GetTileId(const Tile *tile) const {
+  if (tile == nullptr) return -1;
+  for (size_t i = 0; i < uniqueTiles.size(); ++i) {
+    if (uniqueTiles[i].get() == tile) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+Tile *Map::CreateTile(const std::string &name) {
+  const TileDef *definition = tileRegistry ? tileRegistry->Get(name) : nullptr;
+  if (definition == nullptr) {
+    const std::string errStr =
+        "Cannot create tile '" + name +
+        "': it is not in the tile catalog, so it would have no appearance.\n";
+    if (debugLog) debugLog->LogWarning(errStr);
+    else std::cerr << errStr;
+    return nullptr;
+  }
+
+  auto newTile = std::make_unique<Tile>();
+  // Same ownership shape as the loader: the DrawAscii is heap-allocated and the
+  // Tile is owned by uniqueTiles, so this tile outlives every cell that points at
+  // it and Map's destructor reclaims both.
+  DrawAscii *newAscii = new DrawAscii();
+  newAscii->ch = definition->hasCharacter ? definition->character : '?';
+  newAscii->characterColor = definition->characterColor;
+  newAscii->backgroundColor = definition->backgroundColor;
+  newAscii->width = tileWidth;
+  newAscii->height = tileHeight;
+
+  newTile->name = definition->name;
+  newTile->blocksTile = definition->blocksTile;
+  newTile->ascii = newAscii;
+  newTile->hitbox.width = definition->hasHitboxSize ? definition->hitboxSize : tileWidth;
+  newTile->hitbox.height =
+      definition->hasHitboxSize ? definition->hitboxSize : tileHeight;
+  newTile->sprite = definition->sprite;
+
+  Tile *raw = newTile.get();
+  uniqueTiles.push_back(std::move(newTile));
+  // Marked as an override so a save writes it: a tile the map created at runtime
+  // exists nowhere else, so dropping it would leave "positions" pointing at an
+  // id that is not defined on the next load.
+  allTileInfo.push_back({{"name", definition->name}});
+  tileOverridden.push_back(true);
+  return raw;
+}
 
 std::vector<Tile *> Map::GetNeighbours(GamePosition p) {
   static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};

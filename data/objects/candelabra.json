@@ -1,0 +1,41 @@
+{
+  "name": "Candelabra",
+  "description": "A brass candelabra holding three candles.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " DD ",
+    "DDDD",
+    "DDDD",
+    " DD "
+  ],
+  "palette": {
+    "D": [
+      218,
+      175,
+      60,
+      255
+    ]
+  },
+  "character": "D",
+  "characterColor": [
+    218,
+    175,
+    60,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    218,
+    175,
+    60,
+    255
+  ]
+}

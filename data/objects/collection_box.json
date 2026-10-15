@@ -1,0 +1,43 @@
+{
+  "name": "Collection Box",
+  "description": "A wooden box with a slot in the lid.",
+  "components": [
+    "Interactable",
+    "Storage",
+    "Obstacle"
+  ],
+  "art": [
+    " xx ",
+    "xxxx",
+    "xxxx",
+    " xx "
+  ],
+  "palette": {
+    "x": [
+      120,
+      80,
+      45,
+      255
+    ]
+  },
+  "character": "x",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "capacity": 20
+}

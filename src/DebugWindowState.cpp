@@ -18,8 +18,11 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showDrawAsciiToggleWindow(false),
     showFontSelectionWindow(false),
     showMapEditorWindow(false),
+    showBlueprintWindow(false),
+    showDesignerWindow(false),
     showAIMenuWindow(false),
     showNPCMenuWindow(false),
+    showVisionChatWindow(false),
     showLocations(false),
     stopAllAI(false),
     defaultFontPath("") {}
@@ -36,8 +39,11 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["drawAsciiToggle"] = showDrawAsciiToggleWindow;
   state["fontSelection"] = showFontSelectionWindow;
   state["mapEditor"] = showMapEditorWindow;
+  state["blueprint"] = showBlueprintWindow;
+  state["designer"] = showDesignerWindow;
   state["aiMenu"] = showAIMenuWindow;
   state["npcMenu"] = showNPCMenuWindow;
+  state["visionChat"] = showVisionChatWindow;
   state["showLocations"] = showLocations;
   state["stopAllAI"] = stopAllAI;
   state["defaultFontPath"] = defaultFontPath;
@@ -76,8 +82,11 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showDrawAsciiToggleWindow = state.value("drawAsciiToggle", false);
       showFontSelectionWindow = state.value("fontSelection", false);
       showMapEditorWindow = state.value("mapEditor", false);
+      showBlueprintWindow = state.value("blueprint", false);
+      showDesignerWindow = state.value("designer", false);
       showAIMenuWindow = state.value("aiMenu", false);
       showNPCMenuWindow = state.value("npcMenu", false);
+      showVisionChatWindow = state.value("visionChat", false);
       showLocations = state.value("showLocations", false);
       stopAllAI = state.value("stopAllAI", false);
       defaultFontPath = state.value("defaultFontPath", "");

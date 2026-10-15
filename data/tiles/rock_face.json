@@ -1,0 +1,7 @@
+{
+  "name": "rock face",
+  "character": "^",
+  "characterColor": [126, 126, 138, 255],
+  "backgroundColor": [38, 38, 44, 255],
+  "blocksTile": true
+}

@@ -1,0 +1,41 @@
+{
+  "name": "Church Pew",
+  "description": "A tall-backed pew for the congregation.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " pp ",
+    "pppp",
+    "pppp",
+    " pp "
+  ],
+  "palette": {
+    "p": [
+      120,
+      80,
+      45,
+      255
+    ]
+  },
+  "character": "p",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    120,
+    80,
+    45,
+    255
+  ]
+}

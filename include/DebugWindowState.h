@@ -47,11 +47,20 @@ public:
   bool GetShowMapEditorWindow() const { return showMapEditorWindow; }
   void SetShowMapEditorWindow(bool value) { showMapEditorWindow = value; }
 
+  bool GetShowBlueprintWindow() const { return showBlueprintWindow; }
+  void SetShowBlueprintWindow(bool value) { showBlueprintWindow = value; }
+
+  bool GetShowDesignerWindow() const { return showDesignerWindow; }
+  void SetShowDesignerWindow(bool value) { showDesignerWindow = value; }
+
   bool GetShowAIMenuWindow() const { return showAIMenuWindow; }
   void SetShowAIMenuWindow(bool value) { showAIMenuWindow = value; }
 
   bool GetShowNPCMenuWindow() const { return showNPCMenuWindow; }
   void SetShowNPCMenuWindow(bool value) { showNPCMenuWindow = value; }
+
+  bool GetShowVisionChatWindow() const { return showVisionChatWindow; }
+  void SetShowVisionChatWindow(bool value) { showVisionChatWindow = value; }
 
   bool GetShowLocations() const { return showLocations; }
   void SetShowLocations(bool value) { showLocations = value; }
@@ -74,8 +83,11 @@ private:
   bool showDrawAsciiToggleWindow;
   bool showFontSelectionWindow;
   bool showMapEditorWindow;
+  bool showBlueprintWindow;
+  bool showDesignerWindow;
   bool showAIMenuWindow;
   bool showNPCMenuWindow;
+  bool showVisionChatWindow;
   bool showLocations;
   bool stopAllAI;
   std::string defaultFontPath;

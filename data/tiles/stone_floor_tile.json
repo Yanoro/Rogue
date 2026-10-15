@@ -1,0 +1,19 @@
+{
+  "name": "stone floor",
+  "description": "Dressed stone flags.",
+  "character": ".",
+  "characterColor": [
+    170,
+    170,
+    175,
+    255
+  ],
+  "backgroundColor": [
+    80,
+    80,
+    86,
+    255
+  ],
+  "blocksTile": false,
+  "sprite": "data/sprites/stone_floor_tile.png"
+}

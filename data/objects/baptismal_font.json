@@ -1,0 +1,41 @@
+{
+  "name": "Baptismal Font",
+  "description": "A stone font holding blessed water.",
+  "components": [
+    "Interactable",
+    "Obstacle"
+  ],
+  "art": [
+    " EE ",
+    "EEEE",
+    "EEEE",
+    " EE "
+  ],
+  "palette": {
+    "E": [
+      150,
+      150,
+      150,
+      255
+    ]
+  },
+  "character": "E",
+  "characterColor": [
+    150,
+    150,
+    150,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    150,
+    150,
+    150,
+    255
+  ]
+}

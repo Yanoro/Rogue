@@ -2,6 +2,7 @@
 
 #include "Window.h"
 #include <flecs.h>
+#include <string>
 
 class Game;
 
@@ -67,6 +68,27 @@ public:
   void Draw() override;
 private:
   Game* game;
+};
+
+// Lists every blueprint in the registry. Selecting one arms a mouse-following
+// ghost in the world; a left click on a legal site builds it. See
+// docs/blueprint-design.md.
+//
+// A debug and curation tool rather than a game feature: its job is to make a
+// design's result visible so a bad design can be told apart from a bad grammar.
+// It therefore deliberately places designs without the full structural validator
+// -- only in-bounds and overlap are checked -- so a broken design can still be
+// seen.
+class BlueprintWindow : public Window {
+public:
+  explicit BlueprintWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+  // Result of the last delete, shown under the buttons. A member rather than a
+  // local because the confirmation runs in a popup that closes before the result
+  // is known.
+  std::string lastDeleteMessage;
 };
 
 class MapEditorWindow : public Window {

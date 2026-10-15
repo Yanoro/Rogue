@@ -1,0 +1,7 @@
+{
+  "name": "anvil",
+  "character": "a",
+  "characterColor": [120, 120, 132, 255],
+  "backgroundColor": [44, 40, 38, 255],
+  "blocksTile": true
+}

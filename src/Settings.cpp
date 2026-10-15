@@ -157,8 +157,58 @@ bool LoadGameSettings(const std::string &path) {
       settings.model.hasProvider = true;
       settings.model.provider = model["provider"];
     }
+    settings.model.keepAlive = model.value("keepAlive", settings.model.keepAlive);
     if (settings.model.apiKey.empty()) {
       settings.model.apiKey = ReadLegacyApiKey();
+    }
+
+    // The vision backend is a separate, independent Ollama model behind the
+    // Vision Chat window. An absent section keeps the built-in defaults, which
+    // already point at moondream on the default Ollama port.
+    const nlohmann::json &vision = Section(root, "vision");
+    settings.vision.enabled = vision.value("enabled", settings.vision.enabled);
+    settings.vision.model = vision.value("model", settings.vision.model);
+    settings.vision.endpoint = vision.value("endpoint", settings.vision.endpoint);
+    settings.vision.keepAlive = vision.value("keepAlive", settings.vision.keepAlive);
+    if (vision.contains("temperature")) {
+      settings.vision.hasTemperature = true;
+      settings.vision.temperature = vision["temperature"].get<double>();
+    }
+
+    // The designer backend. Absent keeps useMainModel on, so an unconfigured run
+    // has the designer share the NPC backend rather than failing to start.
+    const nlohmann::json &designer = Section(root, "designer");
+    settings.designer.useMainModel =
+        designer.value("useMainModel", settings.designer.useMainModel);
+    settings.designer.promptFile =
+        designer.value("promptFile", settings.designer.promptFile);
+    settings.designer.maxDesignAttempts = designer.value(
+        "maxDesignAttempts", settings.designer.maxDesignAttempts);
+    if (settings.designer.maxDesignAttempts < 1) {
+      std::cerr << "Settings: designer.maxDesignAttempts must be at least 1; "
+                   "using 1." << std::endl;
+      settings.designer.maxDesignAttempts = 1;
+    }
+    if (designer.contains("model")) {
+      const nlohmann::json &designerModel = designer["model"];
+      GameSettings::ModelSection &target = settings.designer.model;
+      target.type = designerModel.value("type", target.type);
+      target.model = designerModel.value("model", target.model);
+      target.apiKey = designerModel.value("apiKey", target.apiKey);
+      target.endpoint = designerModel.value("endpoint", target.endpoint);
+      target.keepAlive = designerModel.value("keepAlive", target.keepAlive);
+      if (designerModel.contains("temperature")) {
+        target.hasTemperature = true;
+        target.temperature = designerModel["temperature"].get<double>();
+      }
+      if (designerModel.contains("maxTokens")) {
+        target.hasMaxTokens = true;
+        target.maxTokens = designerModel["maxTokens"].get<int>();
+      }
+      if (designerModel.contains("provider")) {
+        target.hasProvider = true;
+        target.provider = designerModel["provider"];
+      }
     }
 
     const nlohmann::json &ai = Section(root, "ai");
@@ -218,6 +268,9 @@ bool LoadGameSettings(const std::string &path) {
     settings.content.skills = content.value("skills", settings.content.skills);
     settings.content.items = content.value("items", settings.content.items);
     settings.content.races = content.value("races", settings.content.races);
+    settings.content.tiles = content.value("tiles", settings.content.tiles);
+    settings.content.blueprints =
+        content.value("blueprints", settings.content.blueprints);
 
     const nlohmann::json &debug = Section(root, "debug");
     settings.debug.windowStateFile =
