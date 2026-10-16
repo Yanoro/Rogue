@@ -12,6 +12,7 @@
 #include "PathFinding.h"
 #include "Settings.h"
 #include "SpritePaths.hpp"
+#include "TileDesigner.hpp"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -21,6 +22,11 @@
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
+
+// The tile-art queue's completion callback. Declared here because Game::ECSInit
+// hands the queue a pointer to it; defined at the bottom with the rest of the
+// queue integration.
+void OnTileArtCompleted(void *context, const TileArtQueue::Job &job);
 
 Game::Game() {}
 
@@ -50,6 +56,20 @@ void Game::Init() {
   debugWindowState = std::make_unique<DebugWindowState>(debugLog.get());
   mapReloader = std::make_unique<MapReloader>(settings.map.mapsDirectory,
                                               debugLog.get());
+
+  // Opened here rather than where speech is set up: raylib's audio device is
+  // process-wide, everything that might play anything needs it to exist first, and
+  // this is the first point where there is a debug log to complain to.
+  //
+  // Silence is the failure mode, deliberately. No device -- a headless box, a busy
+  // PipeWire, a locked session -- must not stop the game from starting, so
+  // SpeechQueue::Init checks IsAudioDeviceReady() and refuses to enqueue rather
+  // than the game dying on the first utterance.
+  InitAudioDevice();
+  if (!IsAudioDeviceReady()) {
+    debugLog->LogWarning(
+        "Audio: no audio device could be opened; text to speech will be silent.");
+  }
 
   // Load debug window state if it exists
   debugWindowState->LoadState(settings.debug.windowStateFile);
@@ -536,6 +556,12 @@ void Game::UpdateGUI() {
 
 void Game::Update() {
   UpdateGUI();
+  // The speech pump lives here, not in the Designer window's Draw(): Draw only
+  // runs while that window is visible, so a pane closed to watch the world would
+  // silence the speech mid-sentence and it would look like the device failing.
+  if (speechQueue) {
+    speechQueue->Update();
+  }
   ecs.progress();
 }
 
@@ -602,6 +628,8 @@ void Game::Shutdown() {
         blueprintWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowDesignerWindow(
         designerWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowTileDesignerWindow(
+        tileDesignerWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowNPCMenuWindow(
         npcMenuWindowEntity.has<ActiveWindow>());
 
@@ -621,6 +649,20 @@ void Game::Shutdown() {
   //     npc.ptr.reset();
   //   }
   // });
+
+  // Speech goes down before the audio device does. Shutdown() joins the worker,
+  // which may be blocked inside a piper child waiting for output, so the child is
+  // killed and reaped here rather than left to outlive the game; and the Sound it
+  // produced is unloaded while the device is still up.
+  //
+  // The tile-art worker joins before that, and before the ECS quits: a batch in
+  // flight will post a completion whose callback touches the world, so it must be
+  // waited on while the world is still valid. Bounded inside Stop() -- a request
+  // can take tens of seconds, and a game that will not close is its own bug.
+  tileArtQueue.Stop();
+  speechQueue.reset();
+  speechBackend.reset();
+  CloseAudioDevice();
 
   rlImGuiShutdown();
   ecs.quit();
@@ -693,10 +735,18 @@ std::string Game::BuildDesignerSystemPrompt() const {
   return prompt;
 }
 
+std::string Game::BuildTileDesignerSystemPrompt() const {
+  // The writing of the prompt -- the file read, the %GLYPHS%/%TILES%
+  // substitution, the glyph grouping -- lives in TileDesigner so that the
+  // headless `--tile-design` mode and this window cannot disagree about what the
+  // model was told. This method is the seam that gives it the live registry.
+  return TileDesigner::BuildSystemPrompt(
+      Settings().content.tileDesignerPromptFile, tileRegistry);
+}
+
 // ---------------------------------------------------------------------------
 // Blueprint placement
 // ---------------------------------------------------------------------------
-
 BlueprintPlacement Game::BuildBlueprintPlacement(const Blueprint &blueprint,
                                                  GamePosition origin) {
   BlueprintPlacement result;
@@ -895,4 +945,175 @@ bool Game::PaintTile(GamePosition position, const std::string &tileName) {
                  debugLog.get());
   }
   return true;
+}
+
+size_t Game::RefreshTileVisuals(const std::string &tileName) {
+  if (map == nullptr || tileName.empty()) {
+    return 0;
+  }
+
+  // The Tile instances this name refers to. Usually one, but a map may hold two
+  // palette entries with the same name and different overrides (a deliberate
+  // non-goal of the palette work: duplicate names stay distinct tiles), and both
+  // should gain the art.
+  std::vector<Tile *> targets;
+  for (const auto &candidate : map->GetUniqueTiles()) {
+    if (candidate->name == tileName) {
+      targets.push_back(candidate.get());
+    }
+  }
+  if (targets.empty()) {
+    // Not on the map. Normal -- a tile can be designed and never painted -- and the
+    // art is still in the catalog and the generated layer, so the next PaintTile
+    // picks it up.
+    return 0;
+  }
+
+  // The cells, found through the map rather than by scanning render entities for a
+  // matching glyph. `GetTile` returns the Tile* the cell holds, so identity is
+  // exact: the four walls that share '#' are four different Tile instances and only
+  // the one being resolved changes.
+  const int width = map->GetWidth();
+  const int height = map->GetHeight();
+  size_t refreshed = 0;
+
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      Tile *cellTile = map->GetTile(x, y);
+      if (cellTile == nullptr) continue;
+      if (std::find(targets.begin(), targets.end(), cellTile) == targets.end()) {
+        continue;
+      }
+
+      const GamePosition position{x, y};
+      flecs::entity visual = FindTileEntity(position);
+      if (!visual.is_alive()) continue;
+
+      // The same refresh PaintTile performs, and for the same reason: a sprite is
+      // display state that has to be re-resolved when the tile changes, and the
+      // previous one removed first so a failed re-resolve cannot leave the old
+      // texture on screen.
+      //
+      // The targeted forget is what makes the re-resolve find the new file.
+      // ResourceManager memoises absence, which is exactly why a sprite added
+      // while the game runs "is not noticed until the next map load" -- so without
+      // this line AttachSprite would be told the file does not exist, from the
+      // cache, forever.
+      std::string resolvedPath;
+      SpriteResolves(cellTile->sprite, TileSpriteId(cellTile->name), &resolvedPath);
+      if (!resolvedPath.empty()) {
+        resourceManager.ForgetPath(resolvedPath);
+      }
+
+      visual.set<DrawAscii>(*cellTile->ascii);
+      visual.remove<Sprite>();
+      if (AttachSprite(visual, cellTile->sprite, TileSpriteId(cellTile->name),
+                       resourceManager, debugLog.get())) {
+        ++refreshed;
+      }
+      // Counted only when a Sprite was actually attached. A cell that still has no
+      // art is not "refreshed" in any sense the caller cares about, and reporting
+      // it as such would make the count a lie.
+    }
+  }
+
+  if (refreshed > 0 && debugLog) {
+    debugLog->LogInfo("Tile art: refreshed " + std::to_string(refreshed) +
+                      " cell(s) drawing '" + tileName + "'");
+  }
+  return refreshed;
+}
+
+// ---------------------------------------------------------------------------
+// Live tile-art generation
+// ---------------------------------------------------------------------------
+
+// The queue's completion callback. Runs on the main thread, inside the drain, and
+// is the only place the swap happens.
+//
+// A plain function with a void* rather than a capturing lambda because the queue
+// stores the callback as a raw pointer: the worker thread posts *data* and this
+// runs later on the main thread, so nothing here crosses a thread boundary.
+//
+// At file scope, not in an anonymous namespace, because Game::ECSInit takes its
+// address and a name with internal linkage in two translation units would be two
+// different functions. Declared near the top of this file for the same reason.
+void OnTileArtCompleted(void *context, const TileArtQueue::Job &job) {
+  Game *game = static_cast<Game *>(context);
+  if (game == nullptr) return;
+  // A one-line forwarder: all of the world-facing work is inside Game, where the
+  // private members it needs already live.
+  game->HandleTileArtGenerated(job);
+}
+
+void Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
+  // The sprite is already in the generated layer -- the tool put it there, because
+  // that is where the generated layer is and the tool writes PNGs. So the swap is
+  // the refresh: forget the memoised absence, re-resolve, attach.
+  const size_t cells = RefreshTileVisuals(job.tileName);
+  if (debugLog) {
+    debugLog->LogInfo("Tile art: '" + job.tileName + "' generated (" + job.path +
+                      "); " + std::to_string(cells) + " cell(s) updated");
+  }
+}
+
+void Game::ECSConfigureTileArtQueue() {
+  const GameSettings &settings = Settings();
+
+  TileArtQueue::Config queueConfig;
+  queueConfig.enabled = settings.art.generation.enabled;
+  queueConfig.command = settings.art.generation.command;
+  queueConfig.batchDelaySeconds = settings.art.generation.batchDelaySeconds;
+  queueConfig.maxRequestsPerSession =
+      settings.art.generation.maxRequestsPerSession;
+
+  const std::string workDirectory = settings.art.generation.workDirectory.empty()
+                                        ? "data/generated/work"
+                                        : settings.art.generation.workDirectory;
+  // The generated layer's sprites directory, resolved through the same roots the
+  // renderer uses rather than re-derived: the tool must write exactly where the
+  // engine looks, and there is already one place that knows where that is.
+  const SpriteRootsInfo roots = CurrentSpriteRoots();
+  const std::string spritesDirectory = roots.generatedSprites;
+
+  // The derived palette, which is what the cut stage locks to. Empty when none has
+  // been derived -- then the tool leaves the sprite unlocked and placement refuses
+  // it, which is the honest outcome rather than a sprite that claims to be locked
+  // and is not.
+  std::string paletteJson = "data/palette.json";
+  std::error_code ec;
+  if (!std::filesystem::exists(paletteJson, ec)) {
+    paletteJson.clear();
+  }
+
+  tileArtQueue.Configure(queueConfig, workDirectory, spritesDirectory, paletteJson);
+  // A member function pointer is just a function pointer with a bound context, so
+  // the callback needs no trampoline and nothing crosses a thread boundary but the
+  // job data.
+  tileArtQueue.SetCompletion([this](const TileArtQueue::Job &job) {
+    // `this` is captured rather than passed as a context pointer: the queue lives
+    // exactly as long as the Game that owns it, and Stop() joins the worker before
+    // the Game is destroyed.
+    HandleTileArtGenerated(job);
+  });
+  tileArtCompletionWired = true;
+}
+
+bool Game::RequestTileArt(const std::string &tileName, std::string *reason) {
+  return tileArtQueue.Request(tileName, reason);
+}
+
+Game::TileArtPumpResult Game::PumpTileArtQueue(float deltaSeconds) {
+  TileArtPumpResult result;
+
+  // Drain first, then update. A completion that arrived during the last worker
+  // step is swapped in this frame, before the batch window is even considered --
+  // so a swap is never delayed by the window.
+  result.completed = tileArtQueue.DrainCompleted();
+
+  // The state changes the drain just made are the window's business; nothing else
+  // is notified, because the only consequence of a completed job is the swap that
+  // already happened.
+  result.startedBatch = tileArtQueue.Update(deltaSeconds);
+  return result;
 }

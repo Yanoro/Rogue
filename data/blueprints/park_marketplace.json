@@ -1,0 +1,220 @@
+{
+  "id": "park_marketplace",
+  "levels": 1,
+  "name": "Park Marketplace",
+  "parts": [
+    {
+      "id": "park_grass",
+      "op": {
+        "paint": "grass"
+      },
+      "region": "park_grass"
+    },
+    {
+      "id": "market_floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "market_footprint"
+    },
+    {
+      "id": "fence",
+      "op": {
+        "paint": "fence"
+      },
+      "region": "fence_ring",
+      "role": "structural"
+    },
+    {
+      "id": "gateway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            13
+          ]
+        }
+      }
+    },
+    {
+      "id": "gate_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            13
+          ]
+        }
+      }
+    },
+    {
+      "id": "aisle",
+      "op": {
+        "paint": "path"
+      },
+      "region": "main_aisle"
+    },
+    {
+      "id": "stall_row_west",
+      "op": {
+        "paint": "workbench"
+      },
+      "role": "fixture",
+      "shape": {
+        "line": {
+          "at": [
+            3,
+            2
+          ],
+          "to": [
+            3,
+            12
+          ]
+        }
+      }
+    },
+    {
+      "id": "stall_row_east",
+      "op": {
+        "paint": "workbench"
+      },
+      "role": "fixture",
+      "shape": {
+        "line": {
+          "at": [
+            16,
+            2
+          ],
+          "to": [
+            16,
+            12
+          ]
+        }
+      }
+    },
+    {
+      "id": "west_chests",
+      "op": {
+        "place": "chest"
+      },
+      "role": "fixture",
+      "shape": {
+        "line": {
+          "at": [
+            4,
+            4
+          ],
+          "to": [
+            4,
+            10
+          ]
+        }
+      }
+    },
+    {
+      "id": "east_chests",
+      "op": {
+        "place": "chest"
+      },
+      "role": "fixture",
+      "shape": {
+        "line": {
+          "at": [
+            15,
+            4
+          ],
+          "to": [
+            15,
+            10
+          ]
+        }
+      }
+    },
+    {
+      "id": "south_tree",
+      "op": {
+        "place": "apple_tree"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "north_tree",
+      "op": {
+        "place": "apple_tree"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            19,
+            14
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "marketplace",
+  "regions": {
+    "fence_ring": {
+      "rect_outline": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          18,
+          13
+        ]
+      }
+    },
+    "main_aisle": {
+      "rect_fill": {
+        "at": [
+          7,
+          2
+        ],
+        "to": [
+          12,
+          12
+        ]
+      }
+    },
+    "market_footprint": {
+      "rect_fill": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          18,
+          13
+        ]
+      }
+    },
+    "park_grass": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          19,
+          14
+        ]
+      }
+    }
+  }
+}

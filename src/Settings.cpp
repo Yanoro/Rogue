@@ -38,6 +38,59 @@ bool ReadTextFile(const std::string &path, std::string &out) {
   return true;
 }
 
+// The repository root: the nearest ancestor of the working directory that holds a
+// `tools/gen_tile_art.py`.
+//
+// Searched rather than hardcoded because the game is normally launched from the
+// root (`./build/AIRogue`) but nothing enforces that, and an absolute path baked in
+// at configure time would break the moment the tree is moved or copied. A few
+// `is_directory` calls once, at settings load, is nothing.
+std::string RepoRoot() {
+  std::error_code ec;
+  std::filesystem::path directory = std::filesystem::current_path(ec);
+  if (ec) return ".";
+  while (!directory.empty()) {
+    if (std::filesystem::exists(directory / "tools" / "gen_tile_art.py", ec)) {
+      return directory.string();
+    }
+    const std::filesystem::path parent = directory.parent_path();
+    if (parent == directory) break;
+    directory = parent;
+  }
+  return ".";
+}
+
+// Quotes for `sh -c`.
+std::string QuoteForShell(const std::string &text) {
+  std::string out = "'";
+  for (const char c : text) {
+    if (c == '\'') {
+      out += "'\\''";
+    } else {
+      out += c;
+    }
+  }
+  out += "'";
+  return out;
+}
+
+}  // namespace
+
+std::string BuiltinTileArtCommand() {
+  const std::string root = RepoRoot();
+  const std::string script =
+      (std::filesystem::path(root) / "tools" / "gen_tile_art.py").string();
+  // ImageMagick and Pillow are not on the default PATH on this machine, so the
+  // default command brings its own via nix-shell -- which means generation works
+  // from a plain `./build/AIRogue` launch. The worklist placeholder is quoted and
+  // substituted by TileArtQueue.
+  return "(cd " + QuoteForShell(root) + " && nix-shell -p python3Packages.pillow "
+         "imagemagick --run " +
+         QuoteForShell("python3 " + QuoteForShell(script) +
+                       " --from-worklist " + QuoteForShell("{worklist}")) +
+         ")";
+}
+
 // The last-resort source of the API key, kept only so a checkout that already
 // has model.json keeps working after settings.json takes over the rest of the
 // model block. Anything it supplies is overridden by settings.json or
@@ -61,8 +114,6 @@ std::string ToLower(std::string text) {
                  [](unsigned char c) { return static_cast<char>(::tolower(c)); });
   return text;
 }
-
-} // namespace
 
 GameSettings &MutableSettings() {
   static GameSettings instance;
@@ -211,6 +262,44 @@ bool LoadGameSettings(const std::string &path) {
       }
     }
 
+    // Reading the reply aloud. Nested one level deeper than everything else in
+    // this section, so that the whole `tts` object can be absent and the defaults
+    // still describe a working run -- just a silent one.
+    const nlohmann::json &tts = Section(designer, "tts");
+    settings.designer.tts.enabled =
+        tts.value("enabled", settings.designer.tts.enabled);
+    settings.designer.tts.binary = tts.value("binary", settings.designer.tts.binary);
+    settings.designer.tts.voice = tts.value("voice", settings.designer.tts.voice);
+    settings.designer.tts.volume =
+        tts.value("volume", settings.designer.tts.volume);
+    settings.designer.tts.content = tts.value("content", settings.designer.tts.content);
+
+    // Clamped rather than rejected: the failure modes are both quiet and nasty.
+    // Above 1.0 raylib amplifies into clipping, which sounds like a broken voice
+    // rather than like a loud one; below 0 it inverts the signal phase.
+    if (settings.designer.tts.volume < 0.0f) {
+      std::cerr << "Settings: designer.tts.volume must not be negative; using 0."
+                << std::endl;
+      settings.designer.tts.volume = 0.0f;
+    } else if (settings.designer.tts.volume > 1.0f) {
+      std::cerr << "Settings: designer.tts.volume is above 1.0 and would clip; "
+                   "using 1.0." << std::endl;
+      settings.designer.tts.volume = 1.0f;
+    }
+
+    // Validated here, at load, so the designer window never has to guess what an
+    // unrecognised value meant. Unknown content falls back to the default rather
+    // than to "everything", because "everything" reads the JSON aloud.
+    if (settings.designer.tts.content != "notes" &&
+        settings.designer.tts.content != "prose_and_notes" &&
+        settings.designer.tts.content != "everything") {
+      std::cerr << "Settings: designer.tts.content is '" +
+                       settings.designer.tts.content +
+                       "', which is not one of notes, prose_and_notes or "
+                       "everything; using notes." << std::endl;
+      settings.designer.tts.content = "notes";
+    }
+
     const nlohmann::json &ai = Section(root, "ai");
     settings.ai.npcPromptFile = ai.value("npcPromptFile", settings.ai.npcPromptFile);
     if (!settings.ai.npcPromptFile.empty()) {
@@ -269,8 +358,39 @@ bool LoadGameSettings(const std::string &path) {
     settings.content.items = content.value("items", settings.content.items);
     settings.content.races = content.value("races", settings.content.races);
     settings.content.tiles = content.value("tiles", settings.content.tiles);
+    settings.content.generatedTiles =
+        content.value("generatedTiles", settings.content.generatedTiles);
+    settings.content.tileDesignerPromptFile = content.value(
+        "tileDesignerPromptFile", settings.content.tileDesignerPromptFile);
     settings.content.blueprints =
         content.value("blueprints", settings.content.blueprints);
+
+    const nlohmann::json &art = Section(root, "art");
+    settings.art.pack = art.value("pack", settings.art.pack);
+    settings.art.generated = art.value("generated", settings.art.generated);
+    {
+      const nlohmann::json &generation = Section(art, "generation");
+      settings.art.generation.enabled =
+          generation.value("enabled", settings.art.generation.enabled);
+      settings.art.generation.command =
+          generation.value("command", settings.art.generation.command);
+      settings.art.generation.batchDelaySeconds = generation.value(
+          "batchDelaySeconds", settings.art.generation.batchDelaySeconds);
+      settings.art.generation.maxRequestsPerSession =
+          generation.value("maxRequestsPerSession",
+                           settings.art.generation.maxRequestsPerSession);
+      settings.art.generation.workDirectory = generation.value(
+          "workDirectory", settings.art.generation.workDirectory);
+      if (settings.art.generation.enabled &&
+          settings.art.generation.command.empty()) {
+        settings.art.generation.command = BuiltinTileArtCommand();
+      }
+      if (settings.art.generation.maxRequestsPerSession < 1) {
+        std::cerr << "Settings: art.generation.maxRequestsPerSession must be at "
+                     "least 1; using 1." << std::endl;
+        settings.art.generation.maxRequestsPerSession = 1;
+      }
+    }
 
     const nlohmann::json &debug = Section(root, "debug");
     settings.debug.windowStateFile =

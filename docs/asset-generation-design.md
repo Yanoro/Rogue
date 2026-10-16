@@ -52,6 +52,38 @@ The two axes recombine, and each combination is meaningful:
 - **the gap-filling pipeline is what makes the second case practical.** See §3 — this is the part
   that is not obvious, and it is why this document still exists after the split.
 
+### 1.2 Three runtime layers, and the generated layer is never a reference
+
+Whatever else changes, the art pack the player selected is **the style**, and the generator's job is
+to emulate it. That only works if generated output can never feed back into the thing being emulated.
+So resolution is layered, and the layers are separate on disk:
+
+| layer | contains | authority |
+|---|---|---|
+| **data pack** | definitions: identity, mechanics, glyph, description | the vocabulary. Agents design against it. |
+| **art pack** | sprites, palette, fonts, LoRA | **the style.** Authoritative appearance. |
+| **generated layer** | generated sprite overlays + generated definitions | additive. Fills what the layer above lacks. |
+
+Two rules make the first two layers stay a clean reference:
+
+1. **The art pack always wins.** The generated layer is strictly additive — it supplies an appearance
+   only for names the art pack has none for, and it **yields silently** if the art pack later ships
+   the real sprite. A generated image can never shadow hand-authored art, so "loaded a pack with more
+   art" is always a strict improvement.
+2. **The generated layer is never an input to anything that models style.** Not the LoRA training
+   set, not the palette derivation (§7.3), not the style reference images. This is what "undiluted"
+   means operationally, and it is why the layer is a sibling directory rather than a subdirectory of
+   the art pack's `sprites/`: `sprites/` stays a hand-curated set that a script may safely read.
+
+**The generated layer is scoped to the art pack, and persists.** One `bed` invented in one world looks
+the same in the next world that uses that art pack, and is not regenerated. The cost is that agent
+invention is a property of the pack rather than of a save — accepted deliberately, because the
+alternative is the same object looking different in every world.
+
+The same two rules apply **symmetrically to definitions** (§4.2). Agent-created vocabulary lives in a
+generated overlay and never in the hand-authored catalog, so the data pack a designer designs against
+stays exactly as written.
+
 ---
 
 ## 2. What separates cleanly, and the one thing that does not
@@ -175,49 +207,257 @@ prompt hint at most (§11), and it must remain advisory rather than a gate.
 
 ---
 
-## 4. The rule that keeps the art pipeline from corrupting the data pack
+## 4. Creating content: two writers, the overlay, and the prerequisites
 
-A specific hazard, because the current tooling already does the wrong thing.
+This section is the one that changed most when agent-created content was put in scope. The engine must
+support **two different writers** with **different powers**, and it must do so without letting either
+one corrupt the vocabulary the other depends on.
 
-`gen_tile.py --emit-tile-json` writes **`data/tiles/<name>.json`** — the art generator currently
-writes into the *data* catalog. Under this split an art pipeline must **not** create or edit data
-definitions, for two reasons:
+### 4.1 The hazard that already exists
 
-1. **It would violate §3.2** — art generation would be adding to the vocabulary the designer designs
-   against.
-2. **It would renumber tiles.** `todo`'s "Map/tile id bug" documents that a map stores terrain as
-   `"positions"` holding integer **indices** into `tileInfo`, and `Map::uniqueTiles` order *is* tile
-   identity. `Map::CreateTile` is safe today only because it appends to both containers in lockstep.
-   An art pack injecting definitions would add entries to one and change what an existing index
-   means — **every wall becomes floor.**
+`gen_tile.py --emit-tile-json` writes **`data/tiles/<name>.json`**, and `import_church.py` writes both
+`data/tiles/` and `data/objects/`. So the art tooling today writes into the *data* catalog — it is
+already the first writer, by accident, without the rules.
 
-So the boundary is:
+Left alone under the split, that causes two failures:
 
-| the pipeline may write | the pipeline may never write |
+1. **It violates §3.2** — art generation silently adds to the vocabulary the designer designs against.
+2. **It renumbers tiles.** Per `todo`'s "Map/tile id bug", a map stores terrain as `"positions"` whose
+   values are integer **indices**, and `Map::uniqueTiles` order *is* tile identity. Injecting
+   definitions changes what an existing index means.
+
+So the boundary has to be explicit, and it has to be enforced in code rather than by convention.
+
+### 4.2 Writer one: the bulk pipeline can write art, and only art
+
+| the bulk pipeline may write | the bulk pipeline may never write |
 |---|---|
-| `sprites/<name>.png` in the art pack | `tiles/*.json` |
-| the art pack's `palette` | `objects/*.json` `components` |
-| the art pack's `pack.json` style block | any `content.*` definition it did not create deliberately |
+| `sprites/<name>.png` in the generated layer | `tiles/*.json` |
+| a `palette` entry | `objects/*.json` `components` |
+| a record of which data-pack name the sprite answers to | any definition it did not create deliberately |
 
-When a gap is genuinely a *new material* rather than a missing sprite for an existing one, that is a
-**data pack change**, made deliberately and reviewed, and it must never be an automatic side effect of
-generating a PNG.
+A generated PNG is cheap and reversible. A generated *mechanic* is neither. So the bulk pipeline never
+touches vocabulary, and `--emit-tile-json` should be removed rather than merely discouraged.
+
+### 4.3 Writer two: a designer agent may create vocabulary, gated
+
+The bedroom case is real and in scope: a designer told to build a bedroom invents a bed. That is a
+**deliberate, single-item, agent-driven** act — different in kind from a batch of 40 sprites, and it
+gets different rules.
+
+**What it may create:** a new object or tile, in the generated overlay (§1.2), never in the
+hand-authored catalog.
+
+**What it may attach to an object** — an allowlist, not a denylist. Ten components are reachable from
+JSON via `RegisterComponent<T>` in `src/ObjectFactory.cpp:21-132`, and every one of them is in use
+somewhere in `data/objects/`. Exactly two are permitted:
+
+| component | what it does | created objects |
+|---|---|---|
+| `Interactable` | examination and social interaction | ✅ **permitted** |
+| `Obstacle` | blocks movement; affects pathing, not resources — furniture that can be walked through reads as broken | ✅ **permitted** |
+| `Portable` | carried in an inventory | ❌ economic |
+| `Storage` | holds items, with capacity | ❌ economic |
+| `Harvestable` | yields loot | ❌ economic |
+| `Workstation` | provides crafting recipes | ❌ economic |
+| `Evolvable` | grows into a `nextStageTemplate` | ❌ economic |
+| `Placeable` | an item that becomes an object on a surface — this is the planting mechanic | ❌ economic |
+| `Requires` | gates use on equipped item tags | ❌ access control |
+| `Trains` | grants skill XP | ❌ **progression** — the sharpest of the lot |
+
+That is the line "decorative only, no balance effect" drawn precisely: a created bed may be examined
+and may block movement, and it can never hold, harvest, craft, grow, be carried, gate access, or award
+XP.
+
+> A stale note worth correcting while here: `airogue-direction` describes this set as eight components
+> including `Seed`. There is no `struct Seed` in `Components.h` and no `"Seed"` anywhere in `data/` —
+> it was replaced by `Placeable` (`data/objects/wheat_seed.json` is `Portable` + `Placeable`, with
+> `placement.becomes: "wheat_seed_planted"` and `surface: ["tilled soil"]`). The real set is the ten
+> above, and `Trains` and `Requires` are easy to miss when reasoning about balance because they are not
+> resource components.
+
+**Tiles need no allowlist at all.** A `TileDef` carries `name`, `blocksTile`, `hitboxSize`, `sprite`
+and its glyph plus foreground/background colours (`Components.h:181-201`) — there is no economy
+component a tile could smuggle in. So a created tile is **balance-safe by construction**, and the real
+risk with tiles is *identity*, which is why §4.5 is a prerequisite rather than a nicety.
+
+**Refusals are cheap and must be explained.** The designer already has a bounded re-prompt loop
+(`designer.maxDesignAttempts`, `include/Settings.h`), and `DESIGNER.md` already specifies that a
+refused design is re-sent whole with the engine's reason. A created object carrying `Storage` should
+come back as a refusal naming the component, in exactly that channel — not as a silent downgrade,
+which would teach the agent nothing.
+
+### 4.4 Glyph allocation is part of creation
+
+Per §2.1 the single `character` is the LLM's symbol table and must be unique across the world. So
+creating an object is not only "generate a picture" — it must **allocate an unused glyph** from the
+data pack's existing set, and the allocator has to treat a collision as a hard failure.
+
+The bed cannot be `#`, `w`, `.` or any of the 20 catalog glyphs already in use. Practically: pick from
+a reserved decorative range, check against the union of catalog glyphs *and* the generated overlay's,
+and record the allocation so two created objects cannot race to the same character. `extract_sheet.py`
+already states the consequence of getting this wrong: *"a collision makes that grid unreadable."*
+
+### 4.5 Prerequisite: give tiles a stable identity
+
+Agent-created tiles are only safe once tile identity stops being a fragile array index. This is
+`todo`'s "Map/tile id bug". The fix below is the one specified here; it was implemented on
+2026-10-15 and `src/Map.cpp` now carries the reasoning inline.
+
+**The old contract.** `Map::GetTileId(const Tile*)` returns the tile's index in `uniqueTiles`, and its
+own comment said so: *"This is the id the map file's `positions` array stores."* Load built
+`uniqueTiles` one entry per `tileInfo` entry in file order, with `allTileInfo` kept parallel.
+
+**The defect.** `BuildMapJson` produced the two arrays by **two different loops over two different
+containers**: `positions` by searching `uniqueTiles` for each cell's pointer (correct), and `tileInfo`
+from `allTileInfo` **filtered by `tileOverridden`**. A catalog tile the map never overrode was
+omitted, so the written `tileInfo` came out *shorter* than `uniqueTiles` while the indices in
+`positions` still addressed the longer array. The **next** load renumbered the map — every wall became
+floor.
+
+Reading `positions` was also **unchecked**: `uniqueTiles[pos]` on a shortened array is an
+out-of-bounds `std::vector::operator[]`, so the same defect was undefined behaviour and an ASan
+report waiting to happen, not only silent corruption.
+
+**The fix as implemented — one container, one loop, both views derived from it.**
+
+- The map file's terrain is declared by **`tilePalette`**, one entry per `uniqueTiles` slot, in the
+  order `positions` indexes. An entry is **either** a bare catalog name (`"grass"`) **or** an object
+  carrying a name plus the fields this map overrides (`{ "name": "path", "character": ":" }`).
+- **The palette and `positions` are both written from `uniqueTiles`**, so they cannot disagree. That
+  is the root cause fix; correcting the ordering alone would have left the bug reachable.
+- **`tileInfo` is gone from new files** — `BuildMapJson` erases it. It was the older positional
+  spelling of the same list, and a file carrying both is a file with two sources of truth.
+- An entry is written as a bare name when the tile is unmodified catalog and as the authored override
+  object otherwise, so a save still cannot re-duplicate the shared vocabulary into the map file, and
+  an override keeps exactly the keys it was authored with.
+- On load: cell value -> palette index -> (bare name -> `TileRegistry::Get(name)`, or the override
+  object resolved over its catalog definition). The resolve logic is one lambda used by both the
+  palette path and the legacy path.
+- **Migration:** a map with no `tilePalette` is read from its positional `tileInfo` exactly as before,
+  and is written back in the new shape on its next save. Every map in `maps/` loads unchanged and
+  needs no hand-editing. `MapReloader::IsJsonMapFile` accepts either key, so old maps still list.
+- **Reading is now bounds-checked.** An out-of-range index warns once and falls back to the first
+  tile; an empty palette stops the layout walk rather than building null cells. A file that previously
+  read out of bounds is now a warning.
+
+Two things this buys beyond the bug fix:
+
+- **An agent adding a tile appends a palette entry and cannot renumber anything.** Every existing cell
+  keeps its meaning, whether or not the generated tile is present on a later load.
+- **A missing tile becomes a named, reportable gap** rather than a silently different floor. The
+  loader knows *which* name it wanted, so a generated tile whose definition is gone is a gap-log entry
+  (§6) instead of corruption.
+
+One deliberate non-goal: **duplicate names remain distinct tiles.** Two palette entries may both be
+"path" and are still two `uniqueTiles` slots, because identity is the palette index and both arrays
+now come from one container. `todo` raised this as an ambiguity; with the arrays aligned it is a
+non-issue, and keying overrides by name (an earlier idea here) would have *introduced* a bug by
+collapsing two genuinely different overrides of the same material.
+
+Agent-created tiles also already have their insertion point: `Map::CreateTile(name)` exists for exactly
+this case — *"when something needs a tile the map did not already have"* — and returns `nullptr` for a
+name not in the catalog, with the comment that inventing a tile with no appearance *"would paint an
+invisible wall."* Read together with §4.3, that is the whole contract: the name must be in a catalog
+(the generated overlay's counts), and the appearance must exist or be scheduled.
+
+### 4.6 The creation path, end to end
+
+```
+designer decides it needs a "bed"
+        |
+        v
+[ ALLOWLIST ]  components in {Interactable, Obstacle}?   -- no --> refuse, reason fed back
+        |                                                            (designer re-prompts)
+        yes
+        v
+[ GLYPH ]      allocate an unused character (§4.4)        -- collision --> hard fail
+        |
+        v
+[ DEFINITION ] write into the generated overlay, never the hand-authored catalog
+        |
+        v
+[ ART ]        generate a sprite in the art pack's style -> generated layer
+        |         (pack-level, persists, art pack still wins if it has one)
+        v
+[ BALANCE ]    (not built yet -- §4.7) assess the addition, then accept or refuse
+        |
+        v
+the bed exists, is visible, is examinable and blocks movement -- and does nothing else
+```
+
+The order matters: the allowlist and the glyph check come **before** art generation, because both are
+cheap and deterministic, while generating art for something that will be refused is the expensive
+mistake.
+
+### 4.7 The Game Balance agent (planned, not now)
+
+The intended second line of defence once the pipeline is real. It receives a proposed new object —
+definition, components, description, and optionally art — and returns **accept / reject / amend**.
+
+One design constraint is worth recording now, because it shapes the brief. The project's hybrid-economy
+decision means **prices and deals emerge from agent dialogue**, so there is no price table for a
+balance agent to consult. It cannot reason about numbers that do not exist. What it *can* check is
+structural:
+
+- does the proposal smuggle in a forbidden component (§4.3), or a **second** route to one
+- does its description **promise a mechanic that does not exist** — the hallucination boundary, which
+  becomes load-bearing the moment the engine builds what an agent names
+- does an allowed component have a **disallowed effect** — an `Obstacle` that seals the only doorway
+  is decorative in name and a trap in practice
+- does it **duplicate or undercut** an existing object by name or role
+
+Start it advisory — log a verdict and let the creation through — and promote it to blocking once its
+judgements have been checked against a few dozen real creations. A gate nobody has calibrated is worse
+than no gate.
 
 ---
 
 ## 5. What already exists
 
-Do not rebuild these. Each is a working stage of the pipeline, built by hand for the church.
+**An earlier version of this section listed five scripts. There are eight, plus a validator, and the
+pipelines they encode are more mature than that list implied** — each carries a *measured* reason for
+the thing it does, which is why the correct move here is composition rather than replacement.
+Verified 2026-10-15 by reading them.
 
-| file | stage | what it does | evidence it works |
-|---|---|---|---|
-| `sprite_preview/gen_object_sheet.py` | source | prompts `google/gemini-2.5-flash-image` for **one** 1024px sheet of many objects, with `data/sprites/farmer.png` passed as a **style reference image** | produced the 19-object object set |
-| `tools/sprites/extract_sheet.py` | cut | slices a sheet into 32x32 RGBA sprites: edge-seeded flood-fill background removal (JPEG-safe), crop-to-content, `NEAREST` downscale, centre on a 32x32 canvas | the 22 church sprites in `data/sprites/` |
-| `tools/sprites/import_church.py` | catalog | writes object/tile templates with ASCII glyph fallbacks and palette entries | the 38 object and 20 tile definitions |
-| `tools/gen_tile.py` | source (local) | SD 1.5 + a pixel-art LoRA via diffusers, at 512px, quantise-then-downscale, contact sheet at true game scale | the design-time tile experiment |
-| `tools/workflows/pixelart_sd15.json` | source (ComfyUI) | the equivalent fixed graph, if the GUI is preferred | — |
+### Source (generate)
 
-Measured facts from `tools/README.md` that govern the design and are not re-litigated here:
+| file | what it does |
+|---|---|
+| `sprite_preview/gen_object_sheet.py` | prompts `google/gemini-2.5-flash-image` for **one** sheet of many objects, with `data/sprites/farmer.png` as a **style reference image**. Reads its key from `model.json`; the image model is a hardcoded constant, not `model.json`'s `model` |
+| `sprite_preview/gen_tile_sheet.py` | the tile equivalent, with four constraints each tied to a named failure: **seamless** (else a visible grid across a floor), **flat top-down** (else a stack of pictures), **no props** (else the tree repeats on every tile), **clear gutter** (so full-bleed cells can be separated at all) |
+| `sprite_preview/gen_lineup.py`, `gen_sprite.py` | the agent sprites |
+| `tools/gen_tile.py` | SD 1.5 + a pixel-art LoRA via diffusers, 512px, quantise-then-`NEAREST`, contact sheet at true game scale |
+| `tools/workflows/pixelart_sd15.json` | the same graph for ComfyUI |
+
+### Cut (slice a sheet into 32px sprites)
+
+Three different matte strategies, and which is right depends on the source. See §7.2.
+
+| file | strategy |
+|---|---|
+| `sprite_preview/slice_object_sheet.py` | direct colour match + despill along the silhouette only |
+| `sprite_preview/slice_tile_sheet.py` | crop to blob then **inset**; no keying needed inside a full-bleed tile |
+| `sprite_preview/make_sheet.py` | corner flood fill + connected-component slicing clustered by x-range |
+| `tools/sprites/extract_sheet.py` | the original hand-mapped slicer that produced the church set. **Superseded** for objects by `slice_object_sheet.py` |
+
+### Catalog and palette
+
+| file | what it does |
+|---|---|
+| `tools/sprites/import_church.py` | writes object/tile templates with ASCII glyph fallbacks and palette entries. Writes *both halves* of the record, so it is the clearest example of the §1 conflation |
+| **`tools/palette.py`** | **new**: derives one shared palette from a sprite set, and snaps sprites to it. See §7.3 |
+
+### Detect and verify — do not rebuild these either
+
+| where | what it already does |
+|---|---|
+| `CheckVocabulary` (`src/BlueprintRegistry.cpp:455`) | already finds vocabulary misses and **already deduplicates them** into `{kind, material, partIds}` groups, keyed by `kind\|material` so a tile and an object of the same name stay separate problems. It runs at load and its output currently becomes prose warnings — §6 needs the records, not a new detector |
+| `gen_tile.py --dry-run` + `build_contact_sheet` | a contact sheet at true game scale, and a dry run that needs no model |
+| `slice_tile_sheet.py`'s 3x3 tiling proof | every tile printed as a 3x3 repeat, because a seam or a frame is invisible on one tile and obvious on a floor |
+| `make_sheet.py`'s fringe metric | the share of semi-transparent pixels, as an objective number for the chroma-key rim |
+
+Measured facts that govern the design and are not re-litigated here:
 
 - **1 usable tile in 5–10**, at **10–30 s each** on the 8 GB RTX 3050. Fine for design time,
   unusable for anything live (§10.1).
@@ -226,15 +466,19 @@ Measured facts from `tools/README.md` that govern the design and are not re-liti
   output** — measured), so **batching many assets into one sheet is a ~19x saving** and, more
   importantly, makes the batch internally consistent by construction.
 
-Note that `import_church.py` writes *both* halves of the record — it is the clearest example of the
-conflation §1 describes, and splitting it in two is part of the work.
+**Neither slicer trusts the model's cell order.** Both say so explicitly: the model returned 20 cells
+when asked for 19 and for 11, duplicating and shifting entries, so the cell-to-name mapping is
+verified by eye against a labelled index sheet (`--number`) rather than assumed from prompt order.
+Any pipeline built on these must keep that step, or replace it with something equally explicit.
 
 ---
 
-## 6. The gap: what actually triggers generation
+## 6. The gap: three kinds of unresolved reference
 
-Agents never "need a new asset" in the abstract. They name something specific whose **art** does not
-resolve, and that is enumerable.
+An earlier draft of this document claimed "agents never need a new asset in the abstract", and split
+every unresolved reference into a coverage miss or a mistake. **That was wrong**, and the bedroom case
+is the counter-example: a designer tasked with a bedroom legitimately needs a bed that does not exist
+yet. With creation in scope (§4.3) there are three cases, with three different responses.
 
 A blueprint references:
 
@@ -243,21 +487,40 @@ A blueprint references:
 - **objects** by string — `"op": { "place": "altar" }`, resolved against the data pack's
   `objects/*.json`
 
-and separately, the **art pack** is asked for an appearance for each. There are therefore **two
-distinct kinds of miss**, and conflating them is the mistake §4 exists to prevent:
+and separately, the **art pack** is asked for an appearance for each. The three outcomes:
 
-| miss | means | action |
+| case | means | response |
 |---|---|---|
-| **vocabulary miss** | no data definition exists | a deliberate data pack change; never automatic |
-| **coverage miss** | the definition exists; the art pack has no sprite for it | generate art, in the art pack's style |
+| **coverage miss** | the definition exists; the art pack has no sprite for it | generate art, in the art pack's style (§7) |
+| **creation** | no definition exists, and the designer legitimately needs one | the gated path in §4.3 — deliberate, single-item, allowlisted |
+| **invalid reference** | the agent named something that is neither, and should not be built | refuse, and feed the reason back |
 
-The gap log exists to make the **coverage** misses visible and countable. `ResourceManager` already
-exposes the predicate that finds them — `IsKnownMissing` is public (`include/ResourceManager.h`), and
-`SpritePaths.cpp` already distinguishes "authored but absent" from "convention probe that was always
-expected to fail."
+Conflating any two of them is the mistake §4 exists to prevent:
 
-Output: an append-only `gap.log` plus a deduplicated `gap.json`, **stored in the art pack** (§8.3) —
-because the coverage it describes is a property of the art pack against one data pack, not of either
+- Reading **creation as a coverage miss** would let the bulk pipeline invent vocabulary — §4.2 forbids
+  exactly that, for the tile-renumbering reason in §4.1.
+- Reading **creation as invalid** blocks the bedroom case outright.
+- Reading **invalid as creation** is the hallucination risk, and it is the most dangerous of the three:
+  before this feature, a hallucinated name safely failed to resolve; once the engine will *build* what
+  an agent names, the guard has to be structural (§4.3's allowlist, §4.7's balance agent).
+
+**Telling coverage from creation is mechanical.** Does `TileRegistry::Get(name)` / the object template
+map resolve? `nullptr` means creation-or-invalid. Separating those two is a judgement about the
+*designer's* intent against what the engine permits — which is precisely why §4.3 is an allowlist plus
+an explained refusal rather than a free-for-all, and why the balance agent (§4.7) is the real answer at
+scale.
+
+**The gap log records coverage misses only.** They are a batch worklist to drain. Creation events are a
+separate log — what an agent invented, when, and later what the balance agent judged — because they are
+single deliberate acts with a review trail. Merging them would make a 40-sprite batch
+indistinguishable from 40 agent inventions.
+
+Detecting coverage misses needs no new plumbing: `ResourceManager::IsKnownMissing` is public
+(`include/ResourceManager.h`), and `SpritePaths.cpp` already distinguishes *"authored but absent"* from
+the convention probe that was always expected to fail.
+
+Output: an append-only `gap.log` plus a deduplicated `gap.json`, **in the generated layer, keyed by
+the art pack and data pack pair** (§9.3) — because coverage is a property of that pair, not of either
 alone.
 
 ---
@@ -301,56 +564,103 @@ renders. Raw renders are kept, always (§11.2).
 loses the internal consistency that comes from a single generation. The gap log is accumulated
 precisely so it can be drained in batches.
 
-### 7.2 CUT
+### 7.2 CUT — three strategies, not one
 
-`extract_sheet.py` generalised. Its two hard-won details are load-bearing:
+**This section previously said "edge-seeded flood fill, not colour replacement" as a universal rule.
+That was wrong, and it was wrong in the direction of confidently stating the opposite of what the
+newer tooling does.** There is no single matte strategy; which is right depends on the source, and
+each of the three carries a measurement:
 
-- **Edge-seeded flood fill, not colour replacement.** The sheet is JPEG-ish, so the background is not
-  one colour and bleeds around grid lines; a global replacement misses pixels while a wide fuzz eats
-  real magenta inside a sprite (stained glass, the red carpet). Only background *connected to the
-  outside* is removed.
-- **Crop to content before downscaling.** A tall thin sprite like the cross otherwise shrinks to fit
-  padding and loses its pixels.
+| source | strategy | why, measured |
+|---|---|---|
+| **silhouetted objects** | **direct colour match**, then despill along the silhouette only (`slice_object_sheet.py`) | a flood fill chains through the anti-aliased rim and eats into the art once the fuzz is high enough to clear it — *"measured on the agents: 15% leaves pockets, 20% reaches skin"*. A direct match cannot chain. Despill only along the silhouette because the same rule applied everywhere erased real artwork (the trader's tunic) |
+| **full-bleed tiles** | crop to blob, then **inset** a few pixels (`slice_tile_sheet.py`) | there is nothing to key *inside* a tile — the magenta is only the gutter between cells. The inset removes the anti-aliased rim and any frame the model drew. A frame is fatal for a tile in a way it never is for an object: it repeats on every cell and reads as a grid across the whole floor |
+| **agent lineups** | corner flood fill + connected components clustered by x-range (`make_sheet.py`) | clustering rather than "the four biggest blobs" because a held prop can detach into its own blob and would otherwise be sliced off as a separate sprite |
 
-Its weakness is a hand-maintained `NAMES` dict for the cell-to-name mapping — see §11.1.
+Shared and still load-bearing in all three: **crop to content before downscaling**, or a tall thin
+sprite like the cross shrinks to fit padding and loses its pixels. And **`NEAREST`** wherever the
+intent is hard pixel edges.
 
-### 7.3 PALETTE — the cheap stage that does the most work
+`tools/sprites/extract_sheet.py` is the flood-fill one, and it is the source of the correction above:
+it produced the church set, and `slice_object_sheet.py` was written afterwards precisely because that
+approach failed on objects. Treat `extract_sheet.py` as superseded for objects.
 
-Snap every generated sprite to a palette derived from the art pack. A LoRA is probabilistic and will
-drift; palette snapping is deterministic and cannot. Colour harmony is the single strongest "same
-artist" signal at 32px — far stronger than outline weight or shading idiom, which are hard to see at
-that size anyway.
+Its other weakness is a hand-maintained `NAMES` dict for the cell-to-name mapping — see §11.1. The
+newer slicers replaced that with an explicit index-and-eyeball step, which is more honest about the
+model's unreliable cell ordering (§5) but is still manual.
 
-Palette derivation, in order of preference:
+### 7.3 PALETTE — implemented, and the numbers changed the guidance
 
-1. **The art pack's published palette**, if it ships one. Extract once from the pack's atlases with
-   median-cut to a fixed size (32–48 colours is right for this art).
-2. **Median-cut over the art pack's own sprites**, excluding transparent pixels, written to the art
-   pack's `palette.json` as an explicit list, so it is reviewable and versioned.
-3. **The `palette` entries already in the definitions**, which `import_church.py` writes today.
+**Status: built.** `tools/palette.py`, with three subcommands:
 
-Snapping is nearest-neighbour in a perceptual space (OKLab is worth the few lines over RGB), applied
-at 512px **before** the downscale, in the same position in the chain as quantisation.
+```
+derive  --sprites <dir> [--colors N] [--out stem]   # -> <stem>.json + <stem>.png
+lock    --palette <json> --sprites <in> --out <dir> # snap, never in place
+report  --palette <json> --sprites <dir>            # measure without writing
+```
 
-The payoff: a weak LoRA with palette lock still reads as belonging to the set; a strong LoRA without
-it can still look imported. If only one of the two is built, build this one.
+Snapping is nearest-colour in **OKLab**, memoised by source colour, and it **binarises alpha** at the
+same time (the same anti-aliased rim `make_sheet.py` measures as a fringe metric). `tools/gen_tile.py`
+reuses `palette.py`'s conversion and search rather than reimplementing them, and both slicers now pass
+ImageMagick `-remap palette.png` instead of `-colors 16` — so all three backends snap by one rule.
+
+#### What measuring the existing art showed
+
+`data/sprites/`: **17,050 distinct colours across 34,756 opaque pixels**, and **46 of 57 sprites use
+more than 16 distinct colours** (top offenders ~700–780, i.e. nearly every pixel a unique colour).
+
+| palette size | covers this art | verdict against the original |
+|---|---|---|
+| 32 | **0.0%** | destroys texture — grass flattens to a single green, flagstones and leaves merge |
+| 64 | 9.4% | still visibly flat |
+| 128 | 17.5% | reasonable compromise |
+| 256 | 23.9% | close to the original |
+
+So the numbers that decide the palette size are the *art's own*, and this pack is **smooth-shaded, not
+limited-palette**. The earlier guidance here ("32–48 colours is right for this art") was wrong for it.
+
+Two consequences, and the second is the important one:
+
+1. **Size the palette to the pack, not to pixel-art orthodoxy.** A limited-palette pack wants 16–32; a
+   smooth-shaded one needs 128–256 or the lock is a reskin. `derive` prints the coverage number and
+   warns when the palette is small relative to the art, so the choice is informed rather than guessed.
+2. **Palette lock is aimed at GENERATED art, never at the pack.** Median-cut picks *representative*
+   colours, so at 32 colours a 17,050-colour pack has 0% of its pixels in the palette — snapping it
+   recolours essentially every pixel. Applied to the pack that is destruction; applied to a generated
+   sprite it is exactly the intended harmonisation, and it costs the pack nothing. `lock` therefore
+   refuses an `--out` equal to its input, which is the tool enforcing §1.2 rather than trusting a
+   convention.
+
+`DEFAULT_ALPHA_THRESHOLD` is 128: a pixel is opaque or it is not. Measured on the current art, this
+changes nothing — all 57 sprites already have binary alpha — but the generators produce a soft rim, so
+it is the stage that removes one.
+
+**A bug worth recording, because it was in this document's own metric.** The first version of the
+recolour share divided by *all* pixels rather than opaque ones, and read 59.5% for a palette that in
+fact contained none of the art's colours. The denominator mattered more than the numerator: a 32x32
+sprite fills about 60% of its cell. Any per-sprite colour statistic must divide by opaque pixels.
+
+The payoff is unchanged: a weak LoRA with palette lock still reads as belonging to the set, and a
+strong LoRA without it can still look imported. If only one of the two is built, build this one.
 
 ### 7.4 CATALOG — and its hard boundary
 
-`import_church.py` generalised, with §4's boundary enforced in code. For each gap the pipeline may
-write **only** into the art pack:
+`import_church.py` generalised, with §4.2's boundary enforced in code. For each gap the pipeline may
+write **only** into the generated layer:
 
 - `sprites/<name>.png`
 - a `palette` entry
 - an entry recording which data-pack name the sprite answers to
 
-It may **not** write `components`, `blocksTile`, `description`, `slots` or `character`. Those are data
-(§2). A generator that infers `Interactable` vs `Obstacle` from a picture is guessing at mechanics,
-and generated art is cheap while generated mechanics are not.
+It may **not** write `components`, `blocksTile`, `description`, `slots` or `character`, and it may not
+write into the art pack's own `sprites/` — doing so would put generated output inside the set the LoRA
+and the palette are derived from, which is what §1.2 forbids. Nor may it write definitions: that is
+§4.3's separate, gated path, not this one. A generator that infers `Interactable` vs `Obstacle` from a
+picture is guessing at mechanics, and generated art is cheap while generated mechanics are not.
 
-**Nothing enters the art pack unreviewed.** Unreviewed art is drawn to the player and to the designer's
-editor immediately, and a bad sprite in the set is a permanent invitation to the next generation run
-to imitate it (§11.4).
+**Nothing enters the generated layer unreviewed.** Unreviewed art is drawn to the player and to the
+designer's editor immediately, and a bad sprite in the layer is a permanent invitation to the next
+generation run to imitate it — for as long as the layer persists (§1.2).
 
 ---
 
@@ -497,16 +807,48 @@ So **a data pack is already almost expressible as a settings file today**:
 | designer prompt | `designer.promptFile` -> `data/blueprints/DESIGNER.md` | already data ✅ |
 | NPC prompt | `ai.npcPromptFile` (empty = compiled-in) | already externalisable ✅ |
 | map | `map.file`, plus the `argv[1]` override | already per-launch ✅ |
-| **sprite convention path** | `inline constexpr const char *SPRITE_DIRECTORY = "data/sprites/"` (`include/SpritePaths.hpp:12`) | **compile-time, and the only blocker** ❌ |
+| **sprite convention path** | was `inline constexpr const char *SPRITE_DIRECTORY`; now `GameSettings::ArtSection` + `SpriteCandidatePaths` | **done** ✅ (§9.2) |
 
-### 9.2 The one blocker is one string
+### 9.2 The art root — implemented 2026-10-15
 
-Give `SpritePaths`' resolution the art pack's sprite root — a parameter, or a new `art.pack` setting —
-instead of reading a `constexpr`, and both pack kinds exist. One string, one function signature.
+Built as described here, and it was as small as this section predicted: `SPRITE_DIRECTORY` turned out
+to have exactly **one** use site (`src/SpritePaths.cpp`), so the constexpr survives only as the
+no-art-pack fallback.
 
-That is a far smaller change than "build a content-root concept", which is how `airogue-direction`'s
-first open question frames it. The registries were already built for this; only the sprite half was
-missed — which is, in hindsight, exactly the half that the art pack split needs.
+What was added:
+
+| where | what |
+|---|---|
+| `GameSettings::ArtSection` (`include/Settings.h`) | `art.pack` and `art.generated`, parsed at `src/Settings.cpp` and documented in `SETTINGS.md` under a new `## art` heading |
+| `SpriteCandidatePaths(conventionId)` (`include/SpritePaths.hpp`) | the layering, in one place, **as paths** |
+| `ResolveSpriteTexture` | iterates the candidates instead of building one string |
+| `src/main.cpp` | `--art-pack <dir>`, same shape as the existing `--settings` |
+
+**Why the candidates are exposed as paths rather than textures.** §6's gap report has to ask "would
+this resolve?" without loading an image, and it must ask in the same order the renderer does or its
+report is a lie. Fusing path resolution to texture loading — which is what `TryPath` does internally —
+would have forced the report to reimplement the rules and drift from them.
+
+The order, and an empty `art.pack` meaning "exactly as before":
+
+```
+explicit "sprite" path        (warns when missing -- somebody meant it)
+  -> <pack>/sprites/<id>.png  (the art pack: wins)
+  -> <generated>/<id>.png     (additive: fills only what the pack lacks)
+  -> data/sprites/<id>.png    (only when art.pack is empty -- the pre-split behaviour)
+```
+
+`art.generated` defaults to `<pack's grandparent>/generated/<pack dir name>/sprites`, so
+`packs/art/pixel_crawler` gets `packs/generated/pixel_crawler/sprites` with no configuration. The
+roots are read once and cached: the editor's template palette asks for a candidate list per template
+per frame, which is the same reason `ResourceManager` memoises absent paths.
+
+**One flag, `--art-pack`, and it must be set before the first sprite resolves.** That is not a
+limitation worth fixing — settings are read once at startup — but it is worth knowing.
+
+That the whole thing was one string is the point this section made before it was written, and it held
+up: the registries were already built for this and only the sprite half was missed, which is exactly
+the half an art pack needs.
 
 ### 9.3 Proposed layout
 
@@ -520,25 +862,43 @@ packs/
         designer.md          # from data/blueprints/DESIGNER.md
         npc.md               # from DEFAULT_NPC_PROMPT
   art/
-    pixel_crawler/
-      pack.json              # style block (§8.3) + palette
-      sprites/               # 57 PNGs, 32x32
-      palette.json           # derived once, reviewable, versioned
+    pixel_crawler/           # PRISTINE: nothing here is ever written by the pipeline
+      pack.json              # style block (§8.3)
+      sprites/               # 57 PNGs, 32x32 -- the only thing a LoRA or palette is derived from
+      palette.json           # derived once: tools/palette.py derive. Reviewable, versioned
+      palette.png            # the same list as a swatch sheet -- what ImageMagick -remap takes
       lora/
         pxcrawler.safetensors
         train/
           dataset/
           config.toml
       fonts/                 # optional: render.fontPath, chat colours
-      gap.json               # coverage misses against whichever data pack ran
-      gap.log
-    dark_fantasy/
+    dark_fantasy/            # may cover only part of the village data pack -- normal (§3)
       pack.json
-      sprites/               # may cover only part of the village data pack -- normal (§3)
+      sprites/
       palette.json
+      palette.png
       lora/
       fonts/
+  generated/                 # the generated layer, keyed by art pack id, outside the pack (§1.2)
+    pixel_crawler/
+      sprites/               # additive; the art pack's own sprites always win
+      definitions/           # agent-created objects/tiles from §4.3, never the hand-authored catalog
+      glyphs.json            # glyph allocations (§4.4), so two creations cannot collide
+      gaps/
+        village.json         # coverage misses: a property of the PAIR, not of either pack alone
+        cyberpunk_shop.json
+      creations.log          # what an agent invented, when, and any balance verdict (§6, §4.7)
 ```
+
+The split between `art/<pack>/sprites/` and `generated/<pack>/sprites/` is the operational meaning of
+"undiluted": **only the former is ever read as a style reference.** Everything that models style — the
+LoRA training set, the palette derivation, the reference images passed to the sheet API — reads
+`art/<pack>/`, and nothing else. The pack directory therefore stays exactly as its author curated it,
+and can be replaced or upgraded wholesale without losing generated work or migrating it.
+
+`gaps/` is per-pair because the *inventory of misses* depends on which data pack was loaded. A
+generated `bed` sprite is not, so it is stored flat and reused across data packs (§1.2).
 
 `--data-pack village --art-pack dark_fantasy` expands to `--settings packs/data/village/settings.json`
 plus an `art.pack` override, added to the same `for` loop in `src/main.cpp` that already handles
@@ -552,6 +912,9 @@ struct ArtSection {
   // Art pack directory. Empty means "sprites straight from the data pack", which
   // is today's behaviour and keeps an art-pack-less run working.
   std::string pack;
+  // Generated layer root. Empty means "generated/ beside packs/", which is the
+  // default; never inside the art pack (§1.2).
+  std::string generated;
 } art;
 ```
 
@@ -588,7 +951,7 @@ entity spawns with its data-pack glyph  <- already happens today, already warns,
 coverage gap enqueued at low priority
         |
         v
-worker generates + cuts  ->  PNG lands in the art pack's sprites/
+worker generates + cuts  ->  PNG lands in the generated layer's sprites/
         |
         v
 texture cache invalidated  ->  next frame draws the sprite
@@ -652,29 +1015,39 @@ left in a file.
 
 Each stage is useful alone, and none requires the next.
 
-| stage | what it delivers | depends on |
-|---|---|---|
-| **0. Gap log** | a worklist of coverage misses, and the count from §11.3 | nothing |
-| **1. Art root** | `art.pack` + `--art-pack`, replacing the one `constexpr`; data pack unchanged | nothing |
-| **2. Palette lock** | generated art that matches the art pack's colour harmony | stage 1, plus a generated batch to snap |
-| **3. Drained pipeline** | `gap.json` -> sheet -> cut -> palette, one command, writing art only | stages 0–2 |
-| **4. Field split** | `sprite`/`art`/colours moved out of data definitions into the art pack | stage 1, and a format decision |
-| **5. LoRA training** | offline, deterministic, API-free style reproduction | a coherent art pack with source-res art |
-| **6. Live queue** | art arrives during play | `ResourceManager` memo invalidation |
+| stage | status | what it delivers | depends on |
+|---|---|---|---|
+| **1. Art root** | ✅ **done** (§9.2) | `art.pack` + `art.generated` + `--art-pack`, replacing the one `constexpr` | nothing |
+| **2. Palette lock** | ✅ **done** (§7.3) | `tools/palette.py`; both slicers and `gen_tile.py` snap to one shared palette | stage 1 for the art root, but independently testable — it accepts any sprite directory |
+| **4. Tile identity** | ✅ **done** (§4.5) | `tilePalette` + one-loop load/save, bounds-checked; legacy `tileInfo` still read | nothing |
+| **0. Gap log** | next | a worklist of coverage misses, and the count from §11.3 | nothing. Vocabulary half already exists in `CheckVocabulary` (§5) |
+| **3. Drained pipeline** | | `gap.json` -> sheet -> cut -> palette, one command, writing art only | stages 0–2 |
+| **5. Field split** | | `sprite`/`art`/colours moved out of data definitions into the art pack | stage 1, and a format decision |
+| **6. Creation path** | | allowlist + glyph allocation + generated definitions (§4.3–4.6) | stages 4 and 5 — 4 is now done |
+| **7. LoRA training** | | offline, deterministic, API-free style reproduction | a coherent art pack with source-res art |
+| **8. Live queue** | | art arrives during play | `ResourceManager` memo invalidation |
+| **9. Balance agent** | | a second opinion on every creation (§4.7) | stage 6, and a few dozen real creations to calibrate on |
 
-Two notes on ordering:
+**The order actually taken was 1, 2, 4 — not 0 first.** That reverses the note that used to sit here,
+and the reason is that §5 turned out to be wrong about stage 0: `CheckVocabulary` already detects and
+deduplicates vocabulary misses, so the gap log is mostly a matter of *exposing records that already
+exist* rather than building a detector. Stages 1, 2 and 4 were all smaller than their sections
+predicted, and 2 and 4 are independently testable without any pack existing at all — which made them
+the better things to do while the shape of the gap log was still open.
 
-- **Stage 0 first**, because it is cheap, invisible when idle, and the only stage that says what the
-  feature is actually for. One church is one data point; whether agents ask for ten more buildings or
-  ten thousand props changes the design, and today that is unknown.
-- **Stage 4 is deliberately after the pipeline, not before it.** Moving the art fields out of the data
+Notes on the remaining ordering:
+
+- **Stage 0 next.** Cheap, invisible when idle, and the only stage that says what the feature is
+  actually for. One church is one data point; whether agents ask for ten more buildings or ten
+  thousand props changes the design, and today that is unknown.
+- **Stage 5 is still deliberately after the pipeline.** Moving the art fields out of the data
   definitions is the "proper" version of the split, but it is a **format migration** across 20 tile, 38
-  object and 1 race file, and it buys nothing that stage 1 does not already buy — because stage 1 makes
-  the *sprite root* independent, which is the part that changes what recombines. Doing stage 4 first
-  would be a large migration funded before the gap log has proven the pipeline is worth having.
-- **Stage 5 is deliberately late.** Most expensive, least urgent: the sheet-API backend reaches the
+  object and 1 race file, and it buys nothing that stage 1 does not already buy — stage 1 made the
+  *sprite root* independent, which is the part that changes what recombines.
+- **Stage 7 is deliberately late.** Most expensive, least urgent: the sheet-API backend reaches the
   same bar without it, and it is only worth the GPU hours once an art pack is coherent, has
   source-resolution art, and the volume justifies removing the API.
+- **Stage 9 last, and advisory first.** §4.7 — a gate nobody has calibrated is worse than no gate.
 
 ---
 
@@ -682,28 +1055,37 @@ Two notes on ordering:
 
 Deliberately not resolved here.
 
-1. **Does moving the art fields (stage 4) use a per-name override file or per-definition split?**
-   A single `art/<artpack>/overrides.json` keyed by name is easy to layer and diff; splitting every
-   definition into `<name>.data.json` + `<name>.art.json` is more honest about the model but triples
-   the file count and needs a merge story. Not decided, and stage 1 defers it safely.
-2. **Does the art pack own the font and chat colours?** `render.fontPath` is already a setting and
-   `Defaults.h` holds chat colours. A dark fantasy pack plausibly wants both; they are art by
-   §2's test, but they are also *legibility*, which is closer to accessibility than to style.
-3. **Who reviews a generated batch?** §7.4 says nothing enters an art pack unreviewed. Human at a
-   contact sheet, or a second model asked "does this match the art pack?" — open, and the contact
+1. **Where does a generated definition lose to a hand-authored one?** §1.2 says the packs always win
+   for *art*. For definitions the case is sharper: if an agent generated a `bed`, and a later data pack
+   ships its own `bed` with different components, the hand-authored one must win — but the generated
+   `bed` may then have been built into a saved world. Whether that is a benign substitution or a
+   compatibility problem is unexamined.
+2. **Does a generated tile survive the data pack it was made for?** Generated tiles are decorations,
+   so they are reusable in principle. But tile ids interact with the catalog in a way object ids do
+   not, and §4.5's migration has to decide whether a generated tile is part of the *palette* or an
+   overlay on top of it.
+3. **Does moving the art fields (stage 5) use a per-name override file or per-definition split?**
+   A single `overrides.json` keyed by name is easy to layer and diff; splitting every definition into
+   `<name>.data.json` + `<name>.art.json` is more honest about the model but triples the file count and
+   needs a merge story. Stage 1 defers it safely.
+4. **Does the art pack own the font and chat colours?** `render.fontPath` is already a setting and
+   `Defaults.h` holds chat colours. A dark fantasy pack plausibly wants both; they are art by §2's
+   test, but they are also *legibility*, which is closer to accessibility than to style.
+5. **Who reviews a generated batch?** §7.4 says nothing enters the generated layer unreviewed. Human
+   at a contact sheet, or a second model asked "does this match the art pack?" — open, and the contact
    sheet already exists so the human path is nearly free.
-4. **Can an art pack be trained on its own generated output?** Tempting — it would let a pack
-   bootstrap from one good batch. It is also the standard way to collapse a model into its own
-   artefacts. Probably no, but it should be written down rather than assumed.
-5. **Should the designer agent see the gap log?** Today `%MATERIALS%` is the data pack's catalog.
+6. **Should the designer agent see the gap log?** Today `%MATERIALS%` is the data pack's catalog.
    Showing the designer the art pack's coverage would let it prefer materials that already have art —
    but §3.2 forbids letting that become a gate. Advisory-only is the constraint; whether it is worth
    doing at all is open.
-6. **Does an art pack carry a semantic hint at all?** A "dark fantasy" pack might reasonably want the
+7. **Does an art pack carry a semantic hint at all?** A "dark fantasy" pack might reasonably want the
    designer to favour certain materials. That is taste, not coverage, and it must not reduce the
    vocabulary. If it happens, it belongs in the art pack's `pack.json` as prose added to the designer
    prompt, clearly marked advisory.
-7. **Multi-art-pack layering** (a base pack plus a small override pack) falls out of name-keyed
+8. **What happens to the generated layer when the art pack is replaced?** The layer is keyed by pack
+   id, so a pack upgraded in place inherits generated art made against the *old* style. That is
+   probably wrong — the layer may need to be keyed by pack id **and version**.
+9. **Multi-art-pack layering** (a base pack plus a small override pack) falls out of name-keyed
    overrides almost for free. Worth one line in `pack.json` when someone wants it; not now.
 
 ---
@@ -714,8 +1096,19 @@ Deliberately not resolved here.
   Changing it changes agent reasoning; colliding it corrupts `[SURROUNDINGS]`.
 - **Do not let an art pack gate the data pack's vocabulary.** Swapping art must never change what can
   be built (§3.2).
-- **Do not let the art pipeline write data definitions.** §4, and note that `gen_tile.py
-  --emit-tile-json` does exactly this today — it is the first thing to fix.
+- **Do not let the bulk art pipeline write data definitions.** §4.2 — and note that `gen_tile.py
+  --emit-tile-json` and `import_church.py` both do exactly this today. Removing that is the first fix.
+- **Do not write generated art into the art pack.** It goes in the generated layer, outside the pack
+  (§1.2). Anything a style model reads must be hand-curated.
+- **Do not train a LoRA or derive a palette from the generated layer.** That is the dilution this
+  whole layering exists to prevent, and it is the standard way a model collapses into its own output.
+- **Do not let the generated layer shadow the art pack.** Additive only; the pack always wins, and a
+  generated sprite yields silently when the pack ships the real one.
+- **Do not let a created object carry an economy component.** Allowlist is `Interactable` +
+  `Obstacle`, nothing else (§4.3). Refuse with the reason; never silently downgrade.
+- **Do not allocate a glyph without checking the whole world's `character` set.** §4.4.
+- **Do not allow agent-created tiles before tile identity is fixed.** §4.5 — the corruption is silent
+  and turns every wall into floor.
 - **Do not generate one asset per request.** Measured at 1,290 image tokens per output regardless of
   subject count, and internal consistency is lost. Batch.
 - **Do not train on `data/sprites/`.** Derived, mixed-origin, 32x32. Train on the art pack's source.

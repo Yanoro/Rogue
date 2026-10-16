@@ -60,3 +60,25 @@ raylib::Texture *ResourceManager::TryGetTexture(const std::string &filePath) {
   return GetTexture(filePath);
 }
 
+bool ResourceManager::ForgetPath(const std::string &filePath) {
+  // Both containers, because either one alone still answers "no texture": a
+  // remembered absence short-circuits in TryGetTexture before the texture map is
+  // consulted, and a remembered failure is returned from GetTexture. Forgetting
+  // one and not the other is the bug this method exists to make impossible.
+  const bool forgotMissing = missing.erase(filePath) > 0;
+  // erase() on the unique_ptr unloads the raylib::Texture, which is intended: the
+  // caller is about to read the file again and must not be handed the old image.
+  const bool forgotTexture = textures.erase(filePath) > 0;
+  return forgotMissing || forgotTexture;
+}
+
+size_t ResourceManager::ForgetAll() {
+  const size_t count = textures.size() + missing.size();
+  // Clearing `textures` releases every loaded texture. Anything holding a
+  // raylib::Texture* from GetTexture across this call is left dangling, which is
+  // why this is for a wholesale reload of the world and not for anything routine.
+  textures.clear();
+  missing.clear();
+  return count;
+}
+

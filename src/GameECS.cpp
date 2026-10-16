@@ -6,6 +6,7 @@
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "GapLog.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
@@ -15,6 +16,11 @@
 #include "StorageWindow.h"
 #include "Game.h"
 #include "DesignerChatWindow.h"
+#include "TileDesigner.hpp"
+#include "TileDesignerWindow.h"
+#include "TileArtQueue.hpp"
+#include "PiperSpeech.h"
+#include "SpeechQueue.h"
 #include "VisionChatWindow.h"
 
 #include "AgentBrain.h"
@@ -1371,8 +1377,26 @@ std::string FormatBatchedLabel(int batches, const std::string &label) {
 
 } // namespace
 
-void Game::ECSInitAgentSystems() {
-  // System to flush background AI thread callbacks on the main thread safely
+// The main-thread half of the tile-art queue: a swap happens here and nowhere else.
+//
+// Registered unconditionally, even when generation is off, so the queue's state
+// machine has exactly one pump whether or not anything is in it -- a system that
+// only exists when a setting is on is a system whose behaviour differs between two
+// otherwise identical runs.
+//
+// One iter system rather than an each: this is a per-frame pump, not per-entity, and
+// it is placed here (with the agent systems) because the AI handoff is the shape it
+// mirrors: a worker thread produces, the main thread applies.
+void Game::ECSInitTileArtSystems() {
+  ecs.system("TileArtQueuePump").iter([this](flecs::iter &it) {
+    // Unscaled seconds, matching the convention the other per-frame systems use
+    // (see the delta-time note in .agents/known-issues.md #3). The queue only
+    // accumulates this against a batch window, so the unit is local to it.
+    PumpTileArtQueue(it.delta_time());
+  });
+}
+
+void Game::ECSInitAgentSystems() {  // System to flush background AI thread callbacks on the main thread safely
   ecs.system("AIResponseQueueFlusher").iter([](flecs::iter &) {
     std::vector<std::function<void()>> queue_copy;
     {
@@ -1956,6 +1980,22 @@ void Game::ECSInit() {
   // warning and maps stay self-sufficient.
   tileRegistry.SetDebugLog(debugLog.get());
   tileRegistry.LoadTiles(settings.content.tiles);
+
+  // Then the generated overlay: agent-created tiles, additive on top of the
+  // catalog and never inside it (docs/asset-generation-design.md sections 4.3 and
+  // 4.5). It has to happen here rather than in any window -- a map loaded after
+  // this resolves overlay names from the palette exactly as it resolves catalog
+  // ones, and Map::CreateTile can only create what is already in the catalog.
+  // A missing directory is the normal case and is not reported.
+  {
+    const size_t generated = TileDesigner::LoadOverlayDirectory(
+        settings.content.generatedTiles, tileRegistry, debugLog.get());
+    if (generated > 0 && debugLog) {
+      debugLog->LogInfo("Tile overlay: loaded " + std::to_string(generated) +
+                        " generated tile definition(s) from " +
+                        settings.content.generatedTiles);
+    }
+  }
   ecs.set<TileRegistryResource>({&tileRegistry});
 
   // Building designs. Loaded after the tile catalog and the object factory
@@ -1967,6 +2007,19 @@ void Game::ECSInit() {
   blueprintRegistry.SetObjectFactory(&objectFactory);
   blueprintRegistry.LoadBlueprints(settings.content.blueprints);
   ecs.set<BlueprintRegistryResource>({&blueprintRegistry});
+
+  // Stage 0 of docs/asset-generation-design.md: make the art gaps visible rather
+  // than implied. A summary line only -- the report is derived entirely from the
+  // content, so a session cannot change it and there is nothing to gain by
+  // rewriting the file on every launch. `AIRogue --gaps` writes it on demand, and
+  // that is also the version a script or the generator can call.
+  {
+    const GapLog::Report gapReport =
+        GapLog::Build(&tileRegistry, &objectFactory, &blueprintRegistry);
+    if (debugLog) {
+      debugLog->LogInfo(GapLog::Summary(gapReport));
+    }
+  }
 
   // Named C++ effects, then a check that every hook id the data references
   // actually has a handler. An unregistered id would otherwise be a silent
@@ -2729,6 +2782,55 @@ void Game::ECSInit() {
     }
   }
 
+  // Text to speech for the designer's replies. Built here, beside the backend it
+  // speaks for, because it is the same kind of thing: per-window state that Game
+  // owns for the whole run.
+  //
+  // Every failure below is a log line and a silent game, never a startup failure.
+  // A missing voice is an unfinished download, not a broken install, and nothing
+  // else in the game depends on speech existing.
+  if (settings.designer.tts.enabled) {
+    std::string speechError;
+    std::unique_ptr<PiperSpeech> piper = PiperSpeech::Create(
+        settings.designer.tts.binary, settings.designer.tts.voice, speechError);
+    if (!speechError.empty()) {
+      // Also the non-fatal path: Create reports an unreadable voice config this
+      // way and still returns a usable engine, because a guessed sample rate is
+      // worth more than a silent window.
+      if (debugLog) debugLog->LogWarning("Speech: " + speechError);
+      else std::cerr << "Speech: " << speechError << std::endl;
+    }
+
+    if (piper) {
+      if (debugLog) {
+        debugLog->LogInfo("Speech: " + piper->getEngineName() + " / " +
+                          piper->getVoiceName() + " @ " +
+                          std::to_string(piper->SampleRate()) + " Hz, reading \"" +
+                          settings.designer.tts.content + "\"");
+      }
+      speechBackend = std::move(piper);
+      speechQueue = std::make_unique<SpeechQueue>(speechBackend.get(),
+                                                  settings.designer.tts.volume);
+      speechQueue->Init();
+      // Init() failing is not fatal -- the game runs, it just cannot speak -- so
+      // the reason is kept for the window to show. It carries the null-device case
+      // too, where raylib reports a working device that produces no sound.
+      if (!speechQueue->AudioWarning().empty()) {
+        speechUnavailableReason = speechQueue->AudioWarning();
+        if (debugLog) debugLog->LogWarning("Speech: " + speechUnavailableReason);
+        else std::cerr << "Speech: " << speechUnavailableReason << std::endl;
+      }
+    } else {
+      // Create() failed. speechError holds the reason unless it was only the
+      // non-fatal unreadable-config case, in which case piper is null for another
+      // reason and the message below says so.
+      speechUnavailableReason =
+          speechError.empty() ? std::string("the speech engine could not be "
+                                            "started.")
+                             : speechError;
+    }
+  }
+
   // A hosted backend with no key cannot answer, so say so now rather than
   // letting every NPC fail its first request with an opaque HTTP error.
   if (modelSettings.apiKey.empty() &&
@@ -2748,6 +2850,7 @@ void Game::ECSInit() {
   ECSInitRenderSystems();
   ECSInitAgentSystems();
   ECSInitActionSystems();
+  ECSInitTileArtSystems();
 
   // Starting tile and identity come from settings. The relocation pass inside
   // LoadMap already moved every colliding entity to open ground, so a spawn
@@ -2808,6 +2911,7 @@ void Game::ECSInit() {
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
   visionChatWindowEntity = ecs.entity("Vision Chat Window");
   designerWindowEntity = ecs.entity("Designer Window");
+  tileDesignerWindowEntity = ecs.entity("Tile Designer Window");
 
   // Built once and kept, unlike the other debug windows: a rebuilt window would
   // throw away its transcript, and Game::Draw needs a stable pointer to hand the
@@ -2835,6 +2939,22 @@ void Game::ECSInit() {
   if (debugWindowState->GetShowDesignerWindow()) {
     designerWindowEntity.set<ActiveWindow>({designerWindow});
   }
+
+  // The tile designer borrows the same backend as the blueprint designer, and its
+  // own provider context (assigned in its constructor), so the two conversations
+  // cannot see each other's tokens. It gets no backend of its own on purpose:
+  // producing a valid definition is the same skill as producing a valid design,
+  // and asking for a second API key to do it would be a worse trade than sharing.
+  tileDesignerWindow = std::make_shared<TileDesignerWindow>(this, designerAI.get(),
+                                                            designerLabel);
+  if (debugWindowState->GetShowTileDesignerWindow()) {
+    tileDesignerWindowEntity.set<ActiveWindow>({tileDesignerWindow});
+  }
+
+  // Live tile-art generation. Configured through Game so the callback and the
+  // world-facing half stay in one translation unit; the queue itself is a Game
+  // member, so it is per-world rather than a process global (see TileArtQueue.hpp).
+  ECSConfigureTileArtQueue();
 
   // Apply loaded state to the entities
   if (debugWindowState->GetShowDebugConsole()) {

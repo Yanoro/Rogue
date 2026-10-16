@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    110,
+    90,
+    70,
+    255
+  ],
+  "blocksTile": false,
+  "character": "=",
+  "characterColor": [
+    80,
+    170,
+    230,
+    255
+  ],
+  "name": "puddle"
+}

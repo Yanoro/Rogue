@@ -1,0 +1,188 @@
+{
+  "id": "town_hall",
+  "levels": 1,
+  "name": "Town Hall",
+  "parts": [
+    {
+      "id": "floor",
+      "op": {
+        "paint": "stone floor"
+      },
+      "region": "footprint"
+    },
+    {
+      "id": "walls",
+      "op": {
+        "paint": "stone wall"
+      },
+      "region": "walls",
+      "role": "structural"
+    },
+    {
+      "id": "entrance_carve",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "entrance_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "speaker_area",
+      "op": {
+        "paint": "red carpet"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            4,
+            1
+          ],
+          "to": [
+            7,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": "lectern",
+      "op": {
+        "place": "lectern"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_bench",
+      "op": {
+        "place": "church_bench"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            2,
+            4
+          ],
+          "to": [
+            3,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_bench",
+      "op": {
+        "place": "church_bench"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            8,
+            4
+          ],
+          "to": [
+            9,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "records_chest",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            10,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "civic_banner",
+      "op": {
+        "place": "wall_banner"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": "plant",
+      "op": {
+        "place": "potted_plant"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            1,
+            7
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "civic",
+  "regions": {
+    "footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          11,
+          8
+        ]
+      }
+    },
+    "walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          11,
+          8
+        ]
+      }
+    }
+  }
+}

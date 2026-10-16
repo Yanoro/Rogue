@@ -80,9 +80,14 @@ public:
   std::string RemoveLocationAt(GamePosition pos);
 
   // Builds the complete map as JSON, exactly as the map file format expects it.
-  // Tile layout, locations and authored objects come from live state, so editor
-  // edits are included; tileInfo and the NPC list are carried over from what was
-  // loaded, so unknown keys and hand-written fields survive a save.
+  // Tile layout, the tile palette, locations and authored objects come from live
+  // state, so editor edits are included; the NPC list is carried over from what
+  // was loaded, so unknown keys and hand-written fields survive a save.
+  //
+  // "tilePalette" and "positions" are written from the same container in the same
+  // pass -- a palette index IS the id a cell stores -- because writing them from
+  // two different sources is what used to renumber a map's terrain on reload.
+  // The older positional "tileInfo" spelling is read on load and never written.
   //
   // The "positions" array is written in the order Map::Map consumes it, which is
   // COLUMN-major (index = x * height + y), not row-major. Emitting it row-major
@@ -111,7 +116,8 @@ public:
   static bool AreNeighbours(GamePosition p1, GamePosition p2);
 
   // The index of a tile in uniqueTiles, or -1. This is the id the map file's
-  // "positions" array stores, and the id a caller needs when it wants to write a
+  // "positions" array stores -- an index into "tilePalette", which is uniqueTiles
+  // written out name-wise -- and the id a caller needs when it wants to write a
   // *new* tile (a placed blueprint's wall, for instance) without owning one.
   int GetTileId(const Tile *tile) const;
 
@@ -137,6 +143,10 @@ private:
   // initialiser list: it is read out of the world the constructor just received.
   TileRegistry* tileRegistry = nullptr;
 
+  // Ordered one entry per uniqueTiles slot: this IS the map's tile palette, and
+  // the index of an entry is the id "positions" stores. Built by the loader from
+  // "tilePalette" -- or, for a map written before that key existed, from the
+  // positional "tileInfo".
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
   std::vector<std::unique_ptr<Location>> mapLocations; 
   std::vector<NPCData> npcs;
@@ -144,19 +154,21 @@ private:
   std::vector<Tile *> tileMap;
 
   // The map file exactly as loaded. BuildMapJson starts from this and overwrites
-  // only the four sections the editor owns (positions, locations, objects, npcs),
-  // so tileInfo and any other key the loader ignores survive a save untouched.
+  // only the sections the editor owns (tilePalette, positions, locations,
+  // objects, npcs), so any key the loader ignores survives a save untouched.
+  // "tileInfo" is the exception and is erased: the palette supersedes it, and a
+  // file must not carry two spellings of one map's terrain.
   nlohmann::json rawMapJson;
 
-  // The "tileInfo" entries exactly as loaded, one per uniqueTiles entry. Kept so
+  // The palette entries exactly as loaded, one per uniqueTiles entry. Kept so
   // BuildMapJson can write back the *authored* fields of each override rather
   // than reconstructing them from the live Tile, which would silently expand a
   // one-key override into a full definition and re-duplicate the catalog into
   // the map file on every save.
   nlohmann::json allTileInfo = nlohmann::json::array();
-  // Whether each uniqueTiles entry differs from the catalog and therefore has to
-  // be written back. A catalog tile the map did not touch is omitted, so a save
-  // leaves no trace of tiles the map does not own.
+  // Whether each uniqueTiles entry differs from the catalog. It decides how the
+  // entry is spelled in the palette -- the override object when true, a bare
+  // catalog name when false -- and never whether the tile is written at all.
   std::vector<bool> tileOverridden;
 
   int width;

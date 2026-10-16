@@ -1,0 +1,272 @@
+{
+  "id": "family_house",
+  "levels": 1,
+  "name": "Family House",
+  "parts": [
+    {
+      "id": "outer_floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "outer_footprint"
+    },
+    {
+      "id": "outer_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "outer_walls",
+      "role": "structural"
+    },
+    {
+      "id": "left_bedroom_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "left_bedroom_walls",
+      "role": "structural"
+    },
+    {
+      "id": "right_bedroom_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "right_bedroom_walls",
+      "role": "structural"
+    },
+    {
+      "id": "front_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            7
+          ]
+        }
+      }
+    },
+    {
+      "id": "front_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            7
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_bedroom_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_bedroom_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_bedroom_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_bedroom_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_carpet",
+      "op": {
+        "paint": "red carpet"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            4,
+            5
+          ],
+          "to": [
+            6,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_sleeping_carpet",
+      "op": {
+        "paint": "red carpet"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            2,
+            3
+          ],
+          "to": [
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_sleeping_carpet",
+      "op": {
+        "paint": "red carpet"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            7,
+            3
+          ],
+          "to": [
+            8,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "left_chest",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "right_chest",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            8,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "potted_plant",
+      "op": {
+        "place": "potted_plant"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "left_bedroom_walls": {
+      "rect_outline": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          4,
+          5
+        ]
+      }
+    },
+    "outer_footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          10,
+          7
+        ]
+      }
+    },
+    "outer_walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          10,
+          7
+        ]
+      }
+    },
+    "right_bedroom_walls": {
+      "rect_outline": {
+        "at": [
+          6,
+          1
+        ],
+        "to": [
+          9,
+          5
+        ]
+      }
+    }
+  }
+}

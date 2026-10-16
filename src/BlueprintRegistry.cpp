@@ -442,47 +442,40 @@ bool BlueprintRegistry::ParseBlueprint(const nlohmann::json& json,
   return true;
 }
 
-namespace {
-
 // Vocabulary check. A material that does not exist is a warning rather than a
 // hard failure: it makes the design place fewer cells, and refusing the whole
 // blueprint would leave the designer agent with no way to see what it got wrong.
 // The warning names the part, which is what points at the fix.
 //
-// A free function taking the two registries rather than a member, because
-// ParseBlueprint is static -- it has to be reachable from the designer agent's
-// reply path later, where no registry instance is in scope.
-void CheckVocabulary(const Blueprint &blueprint, const TileRegistry *tiles,
-                     const ObjectFactory *objects,
-                     std::vector<std::string> &warnings) {
-  // Grouped by the material that is missing, with the parts that name it listed
-  // afterwards. Reporting per part is what made this spam: one wrong material
-  // used by six parts produced six near-identical lines. One line per distinct
-  // problem, naming who is affected, is both shorter and more useful -- it says
-  // the material once, which is the thing that needs fixing.
-  //
+// Grouped by the material that is missing, with the parts that name it listed
+// afterwards. Reporting per part is what made this spam: one wrong material used
+// by six parts produced six near-identical lines. One line per distinct problem,
+// naming who is affected, is both shorter and more useful -- it says the material
+// once, which is the thing that needs fixing.
+//
+// The records themselves come from FindMissingVocabulary, which the gap report
+// also uses. Formatting is all that happens here.
+std::vector<MissingMaterial> FindMissingVocabulary(const Blueprint &blueprint,
+                                                   const TileRegistry *tiles,
+                                                   const ObjectFactory *objects) {
   // Keyed by "kind|material" so a tile and an object template of the same name
-  // stay separate problems.
-  struct Missing {
-    std::string material;
-    std::string kind;
-    std::vector<std::string> partIds;
-  };
-  std::map<std::string, Missing> missing;
+  // stay separate problems. std::map, so the order is stable from run to run and
+  // a regenerated gap report diffs cleanly.
+  std::map<std::string, MissingMaterial> missing;
 
   const auto check = [&](const std::string &partId, const std::string &kind,
                          const std::string &material) {
     if (material.empty()) return;
     if (kind == "paint") {
       if (tiles != nullptr && tiles->Get(material) == nullptr) {
-        Missing &entry = missing[kind + "|" + material];
+        MissingMaterial &entry = missing[kind + "|" + material];
         entry.material = material;
         entry.kind = kind;
         entry.partIds.push_back(partId);
       }
     } else if (kind == "place") {
       if (objects != nullptr && objects->GetTemplates().count(material) == 0) {
-        Missing &entry = missing[kind + "|" + material];
+        MissingMaterial &entry = missing[kind + "|" + material];
         entry.material = material;
         entry.kind = kind;
         entry.partIds.push_back(partId);
@@ -498,8 +491,23 @@ void CheckVocabulary(const Blueprint &blueprint, const TileRegistry *tiles,
     }
   }
 
-  for (const auto &entry : missing) {
-    const Missing &problem = entry.second;
+  std::vector<MissingMaterial> out;
+  out.reserve(missing.size());
+  for (auto &entry : missing) {
+    out.push_back(std::move(entry.second));
+  }
+  return out;
+}
+
+namespace {
+
+void CheckVocabulary(const Blueprint &blueprint, const TileRegistry *tiles,
+                     const ObjectFactory *objects,
+                     std::vector<std::string> &warnings) {
+  const std::vector<MissingMaterial> problems =
+      FindMissingVocabulary(blueprint, tiles, objects);
+
+  for (const MissingMaterial &problem : problems) {
     std::string parts;
     for (size_t i = 0; i < problem.partIds.size(); ++i) {
       if (i > 0) parts += (i + 1 == problem.partIds.size()) ? " and " : ", ";

@@ -56,12 +56,16 @@ bool MapReloader::IsJsonMapFile(const std::filesystem::path &filePath) const {
 
   try {
     auto j = nlohmann::json::parse(file);
+    // A map declares its terrain either as "tilePalette" (current) or as the
+    // positional "tileInfo" that key replaced (older files). Both are accepted so
+    // every map in the repo still lists; Map::Map reads whichever is present.
+    const bool hasTiles = j.contains("tilePalette") || j.contains("tileInfo");
     return j.contains("mapWidth") &&
            j.contains("mapHeight") &&
            j.contains("tileWidth") &&
            j.contains("tileHeight") &&
            j.contains("locations") &&
-           j.contains("tileInfo") &&
+           hasTiles &&
            j.contains("positions");
   } catch (...) {
     return false;

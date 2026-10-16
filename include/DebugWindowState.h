@@ -53,6 +53,32 @@ public:
   bool GetShowDesignerWindow() const { return showDesignerWindow; }
   void SetShowDesignerWindow(bool value) { showDesignerWindow = value; }
 
+  bool GetShowTileDesignerWindow() const { return showTileDesignerWindow; }
+  void SetShowTileDesignerWindow(bool value) { showTileDesignerWindow = value; }
+
+  // Designer window layout: the width of the blueprint pane and the size of one
+  // cell in it. Layout state lives here rather than in the window because the
+  // other windows are rebuilt on every toggle while the designer is kept alive,
+  // and because a layout you have to redo every launch is worse than no layout
+  // control. Clamped on read, so a hand-edited file cannot produce a pane that
+  // cannot be grabbed or a zoom of zero.
+  float GetDesignerPaneWidth() const { return designerPaneWidth; }
+  void SetDesignerPaneWidth(float value) { designerPaneWidth = value; }
+  float GetDesignerZoom() const { return designerZoom; }
+  void SetDesignerZoom(float value) { designerZoom = value; }
+  bool GetDesignerShowJson() const { return designerShowJson; }
+  void SetDesignerShowJson(bool value) { designerShowJson = value; }
+  bool GetDesignerShowThoughts() const { return designerShowThoughts; }
+  void SetDesignerShowThoughts(bool value) { designerShowThoughts = value; }
+
+  // The same two values for the Blueprints window, kept separate rather than
+  // shared: the two windows hold different content, so a width that suits one
+  // does not suit the other. Clamped on use, not here.
+  float GetBlueprintPaneWidth() const { return blueprintPaneWidth; }
+  void SetBlueprintPaneWidth(float value) { blueprintPaneWidth = value; }
+  float GetBlueprintZoom() const { return blueprintZoom; }
+  void SetBlueprintZoom(float value) { blueprintZoom = value; }
+
   bool GetShowAIMenuWindow() const { return showAIMenuWindow; }
   void SetShowAIMenuWindow(bool value) { showAIMenuWindow = value; }
 
@@ -85,6 +111,18 @@ private:
   bool showMapEditorWindow;
   bool showBlueprintWindow;
   bool showDesignerWindow;
+  bool showTileDesignerWindow;
+
+  // Clamped to the ranges in DesignerChatWindow when read; the stored value is
+  // whatever the user last dragged to.
+  float designerPaneWidth = 380.0f;
+  float designerZoom = 64.0f;
+  bool designerShowJson = true;
+  // Off by default: the reasoning is noise while watching a design being produced,
+  // and it is always in the log when it is wanted.
+  bool designerShowThoughts = false;
+  float blueprintPaneWidth = 420.0f;
+  float blueprintZoom = 64.0f;
   bool showAIMenuWindow;
   bool showNPCMenuWindow;
   bool showVisionChatWindow;

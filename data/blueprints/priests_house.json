@@ -1,0 +1,183 @@
+{
+  "id": "priests_house",
+  "levels": 1,
+  "name": "Priest's House",
+  "parts": [
+    {
+      "id": "floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "footprint"
+    },
+    {
+      "id": "exterior_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "exterior_walls",
+      "role": "structural"
+    },
+    {
+      "id": "interior_wall",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "interior_wall",
+      "role": "structural"
+    },
+    {
+      "id": "front_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "front_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "interior_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "interior_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "altar",
+      "op": {
+        "place": "altar"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "candelabra",
+      "op": {
+        "place": "candelabra"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "study_table",
+      "op": {
+        "place": "workbench"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "bed",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            4
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "exterior_walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          8,
+          6
+        ]
+      }
+    },
+    "footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          8,
+          6
+        ]
+      }
+    },
+    "interior_wall": {
+      "line": {
+        "at": [
+          4,
+          1
+        ],
+        "to": [
+          4,
+          5
+        ]
+      }
+    }
+  }
+}

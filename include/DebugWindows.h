@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Window.h"
+#include "BlueprintExpansion.hpp"
 #include <flecs.h>
+#include <optional>
 #include <string>
 
 class Game;
@@ -70,9 +72,9 @@ private:
   Game* game;
 };
 
-// Lists every blueprint in the registry. Selecting one arms a mouse-following
-// ghost in the world; a left click on a legal site builds it. See
-// docs/blueprint-design.md.
+// Lists every blueprint in the registry and previews the one you are looking at.
+// The Select button on a design arms a mouse-following ghost in the world; a left
+// click on a legal site builds it. See docs/blueprint-design.md.
 //
 // A debug and curation tool rather than a game feature: its job is to make a
 // design's result visible so a bad design can be told apart from a bad grammar.
@@ -89,6 +91,31 @@ private:
   // local because the confirmation runs in a popup that closes before the result
   // is known.
   std::string lastDeleteMessage;
+
+  // Which design the preview pane shows, and its expansion.
+  //
+  // Deliberately separate from Game::selectedBlueprintId: browsing a design and
+  // arming one for placement are different acts now, so clicking a row previews it
+  // while the Select button is what arms the ghost. The expansion is cached because
+  // the preview redraws every frame and rasterising a shape set per frame would be
+  // wasted work.
+  std::string previewedBlueprintId;
+  std::optional<BlueprintExpansion::Expansion> previewedExpansion;
+
+  // A design awaiting deletion, applied at the top of the next Draw.
+  //
+  // Deferred because deleting reloads the registry, and this window is mid-frame
+  // holding a `registry` pointer and a `selected` pointer into the map it frees.
+  // Applying it later means the frame that requests the delete never reads either
+  // one again.
+  std::string pendingDeleteId;
+
+  // Layout, persisted. paneWidth is the preview pane; zoom is the cell size in it.
+  float paneWidth = 420.0f;
+  float zoom = 64.0f;
+  // Read on the first frame rather than in the constructor, because the state file
+  // is loaded during Init and this window is built as part of it.
+  bool layoutLoaded = false;
 };
 
 class MapEditorWindow : public Window {

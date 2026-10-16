@@ -1,0 +1,373 @@
+{
+  "id": "two_bedroom_house",
+  "levels": 1,
+  "name": "Two Bedroom House",
+  "parts": [
+    {
+      "id": "floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "footprint"
+    },
+    {
+      "id": "outer_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "outer_walls",
+      "role": "structural"
+    },
+    {
+      "id": "interior_wall_bedrooms",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "role": "structural",
+      "shape": {
+        "line": {
+          "at": [
+            1,
+            4
+          ],
+          "to": [
+            9,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "interior_wall_living",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "role": "structural",
+      "shape": {
+        "line": {
+          "at": [
+            4,
+            4
+          ],
+          "to": [
+            4,
+            7
+          ]
+        }
+      }
+    },
+    {
+      "id": "interior_wall_kitchen_bath",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "role": "structural",
+      "shape": {
+        "line": {
+          "at": [
+            7,
+            4
+          ],
+          "to": [
+            7,
+            7
+          ]
+        }
+      }
+    },
+    {
+      "id": "interior_wall_kitchen_top",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "role": "structural",
+      "shape": {
+        "line": {
+          "at": [
+            5,
+            4
+          ],
+          "to": [
+            6,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "front_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "front_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bedroom_west_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bedroom_west_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            3,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bedroom_east_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            8,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bedroom_east_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            8,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "kitchen_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "kitchen_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "bathroom_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            8,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "bathroom_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            8,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "kitchen_floor",
+      "op": {
+        "paint": "stone floor"
+      },
+      "region": "kitchen"
+    },
+    {
+      "id": "bathroom_floor",
+      "op": {
+        "paint": "stone floor"
+      },
+      "region": "bathroom"
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "bathroom": {
+      "rect_fill": {
+        "at": [
+          8,
+          5
+        ],
+        "to": [
+          9,
+          7
+        ]
+      }
+    },
+    "bedroom_east": {
+      "rect_fill": {
+        "at": [
+          6,
+          1
+        ],
+        "to": [
+          9,
+          3
+        ]
+      }
+    },
+    "bedroom_west": {
+      "rect_fill": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          4,
+          3
+        ]
+      }
+    },
+    "footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          10,
+          8
+        ]
+      }
+    },
+    "kitchen": {
+      "rect_fill": {
+        "at": [
+          5,
+          5
+        ],
+        "to": [
+          6,
+          7
+        ]
+      }
+    },
+    "living_room": {
+      "rect_fill": {
+        "at": [
+          1,
+          5
+        ],
+        "to": [
+          4,
+          7
+        ]
+      }
+    },
+    "outer_walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          10,
+          8
+        ]
+      }
+    }
+  }
+}

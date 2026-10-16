@@ -59,26 +59,52 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
 
     tileMap.resize(width * height);
 
-    // This implicitily forces the tileInfo given to be given with contiguous
-    // IDS
+    // The map's tile palette: one entry per uniqueTiles slot, in the order
+    // "positions" indexes them. An entry is either a bare catalog name
+    // ("grass") or an object naming a definition plus the fields this map
+    // overrides ({ "name": "path", "character": ":" }). A map that overrides
+    // nothing therefore writes only names, so a save still cannot re-duplicate
+    // the shared vocabulary into the map file.
+    //
+    // Files written before "tilePalette" existed spell the same list
+    // "tileInfo", positionally and with no bare-name shorthand. That spelling is
+    // read here and never written again: carrying both is precisely the bug
+    // BuildMapJson documents.
+    const nlohmann::json palette =
+        json.contains("tilePalette")
+            ? json["tilePalette"]
+            : json.value("tileInfo", nlohmann::json::array());
 
-    // Every tile in this map, in the order "positions" indexes them. A map's
-    // "tileInfo" is a set of *overrides* on top of the shared catalog
-    // (data/tiles/*.json): the entry names a definition, and any field it
-    // authors replaces that definition's value. A map with no catalog loaded
-    // still works -- the entry is then the whole definition, which is how every
-    // map was authored before the catalog existed.
-    allTileInfo = json.value("tileInfo", nlohmann::json::array());
+    auto appendTile = [&](const nlohmann::json &entry) {
+      // A bare string is a catalog reference with nothing overridden. Everything
+      // else is an override object, which is the only spelling that can carry
+      // fields, so normalise the string case into one.
+      nlohmann::json tileInfo;
+      if (entry.is_string()) {
+        tileInfo = nlohmann::json::object();
+        tileInfo["name"] = entry.get<std::string>();
+      } else {
+        tileInfo = entry;
+      }
 
-    for (const auto &tileInfo : allTileInfo) {
       const std::string tileName = tileInfo.value("name", "Unknown name");
       const TileDef *definition =
           tileRegistry ? tileRegistry->Get(tileName) : nullptr;
 
       // Inherit, then let the map override field by field. `overridden` records
       // whether anything was replaced, which is what BuildMapJson uses to decide
-      // whether this tile belongs in the saved file at all.
+      // whether this palette entry is written as an object or as a bare name.
       bool overridden = definition == nullptr;
+      if (definition == nullptr && entry.is_string()) {
+        // A named catalog tile that the catalog cannot resolve would draw
+        // nothing at all. Same reasoning as Map::CreateTile's refusal: an
+        // invisible tile is worse than a visible placeholder.
+        const std::string errStr =
+            "Map palette names tile '" + tileName +
+            "' but no catalog definition was found; it draws as '?'.\n";
+        if (debugLog) debugLog->LogWarning(errStr);
+        else std::cerr << errStr;
+      }
       TileDef resolved;
       if (definition != nullptr) {
         resolved = *definition;
@@ -138,6 +164,14 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
 
       uniqueTiles.push_back(std::move(newTile));
       tileOverridden.push_back(overridden);
+      // Kept parallel to uniqueTiles and holding the entry *as authored*, so
+      // BuildMapJson writes an override back with exactly the keys it came in
+      // with instead of expanding it into a full definition.
+      allTileInfo.push_back(std::move(tileInfo));
+    };
+
+    for (const auto &entry : palette) {
+      appendTile(entry);
     }
 
 
@@ -277,8 +311,34 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
 
     GamePosition currPos = {0, 0};
 
+    // A position is an index into the palette built above. An out-of-range one
+    // means the file and its palette disagree -- a hand-edited map, or one saved
+    // by a build that produced the two arrays from different sources. It used to
+    // index past the end unchecked, which is undefined behaviour rather than a
+    // wrong tile, so fall back to the first tile and say so once instead of once
+    // per cell.
+    bool reportedBadPosition = false;
     for (const int pos : json["positions"]) {
-      Tile *currentTile = uniqueTiles[pos].get();
+      Tile *currentTile = nullptr;
+      if (pos >= 0 && static_cast<size_t>(pos) < uniqueTiles.size()) {
+        currentTile = uniqueTiles[pos].get();
+      } else if (!uniqueTiles.empty()) {
+        currentTile = uniqueTiles.front().get();
+        if (!reportedBadPosition) {
+          reportedBadPosition = true;
+          const std::string errStr =
+              "Map \"positions\" holds index " + std::to_string(pos) +
+              " but the palette has " + std::to_string(uniqueTiles.size()) +
+              " entries; using the first tile for the affected cells.\n";
+          if (debugLog) debugLog->LogWarning(errStr);
+          else std::cerr << errStr;
+        }
+      }
+      if (currentTile == nullptr) {
+        // No palette at all, so nothing can be placed. Stop rather than walk the
+        // rest of the layout building null cells.
+        break;
+      }
       addTileToMap(currentTile, currPos.x, currPos.y);
 
       flecs::entity tileEntity =
@@ -366,31 +426,60 @@ nlohmann::json Map::BuildMapJson() const {
   mapJson["tileWidth"] = tileWidth;
   mapJson["tileHeight"] = tileHeight;
 
-  // tileInfo is rebuilt rather than carried through: entries the map did not
-  // override are pure catalog and are dropped, so saving cannot re-duplicate the
-  // shared vocabulary into the map file. The *authored* entry is written back
-  // verbatim for overridden tiles, so an override keeps exactly the keys it was
-  // authored with instead of being expanded into a full definition.
-  nlohmann::json tileInfo = nlohmann::json::array();
-  for (size_t i = 0; i < allTileInfo.size(); ++i) {
+  // The palette and the layout are two views of one container, uniqueTiles, and
+  // a palette index IS the id "positions" stores -- so they cannot disagree.
+  //
+  // That invariant is the fix. This used to write "positions" by searching
+  // uniqueTiles for each cell's pointer while writing "tileInfo" from a
+  // *filtered* copy of a parallel array. A save therefore dropped every catalog
+  // tile the map had not overridden, leaving the layout's indices addressing the
+  // longer list, and the next load renumbered the map -- every wall became floor.
+  // Writing both from uniqueTiles removes the possibility rather than repairing
+  // an instance of it.
+  //
+  // An entry is a bare name when the tile is pure catalog and the authored
+  // override object otherwise, so saving still cannot re-duplicate the shared
+  // vocabulary and an override keeps exactly the keys it was authored with.
+  nlohmann::json tilePalette = nlohmann::json::array();
+  for (size_t i = 0; i < uniqueTiles.size(); ++i) {
     const bool overridden = i < tileOverridden.size() && tileOverridden[i];
-    if (overridden) {
-      tileInfo.push_back(allTileInfo[i]);
+    if (overridden && i < allTileInfo.size()) {
+      tilePalette.push_back(allTileInfo[i]);
+    } else {
+      tilePalette.push_back(uniqueTiles[i]->name);
     }
   }
-  mapJson["tileInfo"] = std::move(tileInfo);
+  mapJson["tilePalette"] = std::move(tilePalette);
+  // "tileInfo" was the older positional spelling of the same list. Dropped
+  // rather than written alongside the palette, so one map's terrain never has
+  // two sources of truth in the file.
+  mapJson.erase("tileInfo");
 
   // Tile layout. tileMap is indexed y*width+x but the file stores it
   // column-major, which is the order Map::Map consumes; see the header note.
   nlohmann::json positions = nlohmann::json::array();
+  bool reportedUntrackedCell = false;
   for (int x = 0; x < width; ++x) {
     for (int y = 0; y < height; ++y) {
       const Tile *tile = tileMap[GetIndex(x, y)];
       int tileId = 0;
+      bool found = false;
       for (size_t i = 0; i < uniqueTiles.size(); ++i) {
         if (uniqueTiles[i].get() == tile) {
           tileId = static_cast<int>(i);
+          found = true;
           break;
+        }
+      }
+      // A cell holding a tile that is not in the palette has no correct index,
+      // and writing 0 would silently claim it is a different tile. Say so once,
+      // so the wrong answer is at least visible.
+      if (!found && !reportedUntrackedCell) {
+        reportedUntrackedCell = true;
+        if (debugLog != nullptr) {
+          debugLog->LogWarning(
+              "Map save: cell (" + std::to_string(x) + "," + std::to_string(y) +
+              ") holds a tile that is not in the palette; writing tile 0.\n");
         }
       }
       positions.push_back(tileId);
@@ -668,11 +757,13 @@ Tile *Map::CreateTile(const std::string &name) {
 
   Tile *raw = newTile.get();
   uniqueTiles.push_back(std::move(newTile));
-  // Marked as an override so a save writes it: a tile the map created at runtime
-  // exists nowhere else, so dropping it would leave "positions" pointing at an
-  // id that is not defined on the next load.
+  // A created tile is a catalog tile with nothing overridden, so it is written
+  // as a bare name and resolves from the catalog again on the next load. It
+  // needs no override entry to survive: the palette lists every uniqueTiles slot
+  // whether or not it was overridden, which is why "positions" can address it.
+  // (The entry below exists to keep allTileInfo parallel to uniqueTiles.)
   allTileInfo.push_back({{"name", definition->name}});
-  tileOverridden.push_back(true);
+  tileOverridden.push_back(false);
   return raw;
 }
 

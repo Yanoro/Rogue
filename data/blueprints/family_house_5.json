@@ -1,0 +1,339 @@
+{
+  "id": "family_house_5",
+  "levels": 1,
+  "name": "Family House",
+  "parts": [
+    {
+      "id": "outer_floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            0,
+            0
+          ],
+          "to": [
+            11,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "outer_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "outer_walls",
+      "role": "structural"
+    },
+    {
+      "id": "interior_walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "interior_walls",
+      "role": "structural"
+    },
+    {
+      "id": "bedroom_divider",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "bedroom_divider",
+      "role": "structural"
+    },
+    {
+      "id": "front_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "front_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_to_parents_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            7,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_to_parents_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            7,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_to_children_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            7,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "living_to_children_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            7,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "parents_bedroom_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "parents_bedroom_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "children_bedroom_doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "children_bedroom_door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "interior_door",
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "hearth",
+      "op": {
+        "place": "forge"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "workbench",
+      "op": {
+        "place": "workbench"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "parents_bed",
+      "op": {
+        "place": "church_bench"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "children_beds",
+      "op": {
+        "place": "church_bench"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            9,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "chest",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            6
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "bedroom_divider": {
+      "line": {
+        "at": [
+          8,
+          4
+        ],
+        "to": [
+          10,
+          4
+        ]
+      }
+    },
+    "children_bedroom": {
+      "rect_fill": {
+        "at": [
+          8,
+          5
+        ],
+        "to": [
+          10,
+          7
+        ]
+      }
+    },
+    "interior_walls": {
+      "line": {
+        "at": [
+          7,
+          1
+        ],
+        "to": [
+          7,
+          7
+        ]
+      }
+    },
+    "living_floor": {
+      "rect_fill": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          7,
+          7
+        ]
+      }
+    },
+    "outer_walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          11,
+          8
+        ]
+      }
+    },
+    "parents_bedroom": {
+      "rect_fill": {
+        "at": [
+          8,
+          1
+        ],
+        "to": [
+          10,
+          4
+        ]
+      }
+    }
+  }
+}

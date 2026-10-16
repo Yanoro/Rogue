@@ -20,6 +20,7 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showMapEditorWindow(false),
     showBlueprintWindow(false),
     showDesignerWindow(false),
+    showTileDesignerWindow(false),
     showAIMenuWindow(false),
     showNPCMenuWindow(false),
     showVisionChatWindow(false),
@@ -41,6 +42,13 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["mapEditor"] = showMapEditorWindow;
   state["blueprint"] = showBlueprintWindow;
   state["designer"] = showDesignerWindow;
+  state["tileDesigner"] = showTileDesignerWindow;
+  state["designerPaneWidth"] = designerPaneWidth;
+  state["designerZoom"] = designerZoom;
+  state["designerShowJson"] = designerShowJson;
+  state["designerShowThoughts"] = designerShowThoughts;
+  state["blueprintPaneWidth"] = blueprintPaneWidth;
+  state["blueprintZoom"] = blueprintZoom;
   state["aiMenu"] = showAIMenuWindow;
   state["npcMenu"] = showNPCMenuWindow;
   state["visionChat"] = showVisionChatWindow;
@@ -84,6 +92,14 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showMapEditorWindow = state.value("mapEditor", false);
       showBlueprintWindow = state.value("blueprint", false);
       showDesignerWindow = state.value("designer", false);
+      showTileDesignerWindow = state.value("tileDesigner", false);
+      designerPaneWidth = state.value("designerPaneWidth", designerPaneWidth);
+      designerZoom = state.value("designerZoom", designerZoom);
+      designerShowJson = state.value("designerShowJson", designerShowJson);
+      designerShowThoughts =
+          state.value("designerShowThoughts", designerShowThoughts);
+      blueprintPaneWidth = state.value("blueprintPaneWidth", blueprintPaneWidth);
+      blueprintZoom = state.value("blueprintZoom", blueprintZoom);
       showAIMenuWindow = state.value("aiMenu", false);
       showNPCMenuWindow = state.value("npcMenu", false);
       showVisionChatWindow = state.value("visionChat", false);

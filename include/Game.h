@@ -23,7 +23,10 @@
 #include "RecipeRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
+#include "TileArtQueue.hpp"
+#include "SpeechQueue.h"
 #include "StatRegistry.h"
+#include "TextToSpeech.h"
 #include "TileRegistry.h"
 
 enum class EditorSelectionType {
@@ -121,6 +124,16 @@ public:
   // tile is added, and the failure is quiet: the designer asks for a material
   // that does not exist and every design is refused.
   std::string BuildDesignerSystemPrompt() const;
+
+  // The tile designer's system prompt: settings.content.tileDesignerPromptFile
+  // (data/tiles/TILEDESIGNER.md by default) with the glyph table and the tile
+  // list substituted for %GLYPHS% and %TILES%.
+  //
+  // Generated rather than written into the prompt file for the same reason the
+  // material palette is: the glyph table has to match the live catalog, and a
+  // hand-written one drifts the moment a tile is created -- which then has an
+  // agent pick a glyph that is already in use, or a name that is already taken.
+  std::string BuildTileDesignerSystemPrompt() const;
 
   // settings.designer.maxDesignAttempts. Read by the designer window so the cap
   // lives in one place.
@@ -263,6 +276,41 @@ private:
   std::shared_ptr<class DesignerChatWindow> designerWindow;
   flecs::entity designerWindowEntity;
 
+  // The tile designer's window. Same lifetime rules as the pair above: created
+  // once and kept so a tile conversation survives a toggle, borrowing
+  // `designerAI` with its own provider context. It owns no backend of its own --
+  // see the comment where it is constructed in Game::ECSInit.
+  std::shared_ptr<class TileDesignerWindow> tileDesignerWindow;
+  flecs::entity tileDesignerWindowEntity;
+
+  // Live tile-art generation. Owned by Game rather than held in file-scope globals
+  // the way the AI path's response queue is (see TileArtQueue.hpp and
+  // .agents/known-issues.md #13): the queue is per-world by construction, so a
+  // second `flecs::world` cannot share one by accident.
+  //
+  // Declared here, next to the windows that use it, and configured in ECSInit. The
+  // worker thread it may own is joined in Shutdown, before the ECS goes down, or a
+  // batch in flight would outlive the world its completion touches.
+  TileArtQueue tileArtQueue;
+  // Set once at Init. Not read anywhere else, so it is not exposed.
+  bool tileArtCompletionWired = false;
+
+  // Reading the designer's reply aloud. Owned for the whole run for the same
+  // reason as the pair above, and borrowed by the window through `game`.
+  //
+  // `speechBackend` is null when designer.tts.enabled is false, or when the piper
+  // binary or the voice model could not be found. That is a supported state -- the
+  // window says so in its status line instead of the game failing to start, which
+  // is the same treatment a null designer backend already gets.
+  std::unique_ptr<TextToSpeech> speechBackend;
+  std::unique_ptr<SpeechQueue> speechQueue;
+
+  // Why speech is unavailable, when it is. Empty means either it is working or it
+  // was never asked for (tts.enabled is false). The Designer window shows this, so
+  // a missing voice or a missing piper binary is visible in the UI rather than
+  // only in the console the game may not have been launched from.
+  std::string speechUnavailableReason;
+
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
@@ -274,6 +322,7 @@ private:
   friend class MapEditorWindow;
   friend class BlueprintWindow;
   friend class DesignerChatWindow;
+  friend class TileDesignerWindow;
   friend class LocationNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
@@ -287,6 +336,7 @@ private:
   std::unique_ptr<InputHandler> inputHandler;
 
   void LoadMap(std::string mapPath, bool spawnNPCs = false);
+
 
   // Opens a read-only window showing the items the entity holds (a Storage
   // container's contents or a character's inventory). Each entity gets its own
@@ -338,8 +388,86 @@ private:
   // this cell's ground. Null when the map entity or the cell's visual is missing.
   flecs::entity FindTileEntity(GamePosition position);
 
+public:
+  // Gives every map cell drawing the tile named `tileName` its sprite, now.
+  //
+  // This is the "attach Sprite to the entities that already exist" half of the
+  // hot-swap (docs/tile-art-wiring-design.md §3, check 2). It is needed because
+  // render entities are created once, when the map loads, and `Sprite` is only
+  // attached when an image actually resolves at that moment -- so a tile whose art
+  // arrives later has entities that will never grow one on their own.
+  //
+  // Deliberately keyed on the *tile*, not on a position: a generated sprite belongs
+  // to a tile definition, and every cell drawing that tile should gain it at once.
+  // Looking the cells up through the map, rather than matching `DrawAscii` values,
+  // is what makes that reliable -- several walls share the glyph '#' (see the parked
+  // glyph-collision note in .agents/tile-designer-handover.md), so a glyph match
+  // would repaint cells belonging to a different tile.
+  //
+  // Safe to call when the tile is not on the map at all: it does nothing and
+  // returns 0, which is the common case for a tile that was created and never
+  // painted. Must be called from the main thread -- it touches the ECS.
+  //
+  // Public because the swap has to be drivable from outside the render path: the
+  // tile designer's window on the main thread, and the headless mode that exists
+  // precisely so this can be exercised without one.
+  //
+  // Returns the number of cells whose visual changed.
+  size_t RefreshTileVisuals(const std::string &tileName);
+
+  // Asks for generated art for `tileName`, if generation is enabled. Returns false
+  // and fills `reason` when it is not: off, already queued, already generated, or
+  // the session's request cap is reached.
+  //
+  // Never blocks and never talks to the network. The request joins a batch window
+  // and a worker thread draws it; the sprite is swapped in from the main-thread
+  // drain when it lands, so the tile renders as its glyph until then -- which is a
+  // legitimate rendering, not a placeholder (phase 1).
+  //
+  // The one way to spend money in this feature, which is why it is gated on
+  // art.generation.enabled and capped by art.generation.maxRequestsPerSession.
+  bool RequestTileArt(const std::string &tileName, std::string *reason = nullptr);
+
+  // The queue, for the window that shows its state. Const because the window only
+  // reads; requesting goes through RequestTileArt so the gating lives in one place.
+  const TileArtQueue &TileArtQueueState() const { return tileArtQueue; }
+
+  // The main-thread half of the queue, called once per frame by the ECS system
+  // registered in ECSInitTileArtSystems. Public because the headless queue test
+  // drives it directly.
+  //
+  // `deltaSeconds` advances the batch window. Returns the number of jobs whose
+  // swap completed and the number of new batch requests started, so a caller can
+  // tell "nothing happened" from "something was spent".
+  struct TileArtPumpResult {
+    size_t completed = 0;
+    bool startedBatch = false;
+  };
+  TileArtPumpResult PumpTileArtQueue(float deltaSeconds);
+
+  // Called from the queue's completion callback, on the main thread, for each job
+  // that settled. Swaps the sprite in and reports what changed.
+  //
+  // A member rather than work done in the callback itself: the callback is a free
+  // function so its address can be handed to the queue, and `debugLog` is private
+  // -- this keeps the world-facing half inside Game where it belongs, and the
+  // callback a one-line forwarder.
+  void HandleTileArtGenerated(const TileArtQueue::Job &job);
+
+private:
+
   void ECSInitPhysicsSystems();
   void ECSInitLogicSystems();
   void ECSInitAgentSystems();
   void ECSInitActionSystems();
+
+  // Registers the tile-art queue's main-thread pump. Separate from the agent
+  // systems because it is not part of the AI path -- it mirrors that path's shape,
+  // it does not share its globals (see TileArtQueue.hpp).
+  void ECSInitTileArtSystems();
+
+  // Reads art.generation.* into the queue and wires its completion callback. Called
+  // from ECSInit; separate only so the queue's configuration and the world-facing
+  // completion live in the same file as the queue's owner.
+  void ECSConfigureTileArtQueue();
 };

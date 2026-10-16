@@ -1,0 +1,425 @@
+{
+  "id": "small_forest",
+  "levels": 1,
+  "name": "Small Forest",
+  "parts": [
+    {
+      "id": "forest_floor",
+      "op": {
+        "paint": "grass"
+      },
+      "region": "ground"
+    },
+    {
+      "id": "winding_path",
+      "op": {
+        "paint": "path"
+      },
+      "region": "path"
+    },
+    {
+      "id": "winding_path2",
+      "op": {
+        "paint": "path"
+      },
+      "region": "path2"
+    },
+    {
+      "id": "winding_path3",
+      "op": {
+        "paint": "path"
+      },
+      "region": "path3"
+    },
+    {
+      "id": "clearing",
+      "op": {
+        "paint": "packed earth"
+      },
+      "region": "clearing"
+    },
+    {
+      "id": "pond",
+      "op": {
+        "paint": "water"
+      },
+      "region": "pond"
+    },
+    {
+      "id": "rocks",
+      "op": {
+        "paint": "rock face"
+      },
+      "region": "rocks"
+    },
+    {
+      "id": "trees",
+      "op": {
+        "place": "apple_tree"
+      },
+      "region": "trees"
+    },
+    {
+      "id": "crop_soil",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "crops"
+    },
+    {
+      "id": "crop_plants",
+      "op": {
+        "place": "wheat_sprout"
+      },
+      "region": "crops"
+    }
+  ],
+  "regions": {
+    "clearing": {
+      "disk_fill": {
+        "at": [
+          14,
+          5
+        ],
+        "radius": 3
+      }
+    },
+    "crops": {
+      "rect_fill": {
+        "at": [
+          10,
+          10
+        ],
+        "height": 2,
+        "width": 3
+      }
+    },
+    "ground": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "height": 20,
+        "width": 20
+      }
+    },
+    "path": {
+      "line": {
+        "at": [
+          2,
+          0
+        ],
+        "to": [
+          2,
+          5
+        ]
+      }
+    },
+    "path2": {
+      "line": {
+        "at": [
+          2,
+          5
+        ],
+        "to": [
+          9,
+          12
+        ]
+      }
+    },
+    "path3": {
+      "line": {
+        "at": [
+          9,
+          12
+        ],
+        "to": [
+          9,
+          19
+        ]
+      }
+    },
+    "pond": {
+      "disk_fill": {
+        "at": [
+          4,
+          14
+        ],
+        "radius": 2
+      }
+    },
+    "rocks": {
+      "union": [
+        {
+          "point": {
+            "at": [
+              17,
+              3
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              16,
+              17
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              1,
+              8
+            ]
+          }
+        }
+      ]
+    },
+    "trees": {
+      "union": [
+        {
+          "point": {
+            "at": [
+              0,
+              1
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              1,
+              3
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              0,
+              6
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              3,
+              0
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              5,
+              0
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              8,
+              1
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              10,
+              0
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              12,
+              2
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              14,
+              0
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              15,
+              2
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              19,
+              1
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              18,
+              5
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              19,
+              8
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              17,
+              9
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              19,
+              11
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              15,
+              8
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              13,
+              7
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              11,
+              5
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              0,
+              11
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              0,
+              13
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              1,
+              15
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              0,
+              18
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              2,
+              19
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              6,
+              19
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              10,
+              18
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              12,
+              16
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              14,
+              19
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              17,
+              18
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              18,
+              14
+            ]
+          }
+        },
+        {
+          "point": {
+            "at": [
+              19,
+              16
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

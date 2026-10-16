@@ -1,0 +1,124 @@
+{
+  "id": "fields_6_3x2",
+  "levels": 1,
+  "name": "Six 4x4 Fields",
+  "parts": [
+    {
+      "id": "field_a",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_a"
+    },
+    {
+      "id": "field_b",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_b"
+    },
+    {
+      "id": "field_c",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_c"
+    },
+    {
+      "id": "field_d",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_d"
+    },
+    {
+      "id": "field_e",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_e"
+    },
+    {
+      "id": "field_f",
+      "op": {
+        "paint": "tilled soil"
+      },
+      "region": "plot_f"
+    }
+  ],
+  "purpose": "farm",
+  "regions": {
+    "plot_a": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          3,
+          3
+        ]
+      }
+    },
+    "plot_b": {
+      "rect_fill": {
+        "at": [
+          5,
+          0
+        ],
+        "to": [
+          8,
+          3
+        ]
+      }
+    },
+    "plot_c": {
+      "rect_fill": {
+        "at": [
+          10,
+          0
+        ],
+        "to": [
+          13,
+          3
+        ]
+      }
+    },
+    "plot_d": {
+      "rect_fill": {
+        "at": [
+          0,
+          5
+        ],
+        "to": [
+          3,
+          8
+        ]
+      }
+    },
+    "plot_e": {
+      "rect_fill": {
+        "at": [
+          5,
+          5
+        ],
+        "to": [
+          8,
+          8
+        ]
+      }
+    },
+    "plot_f": {
+      "rect_fill": {
+        "at": [
+          10,
+          5
+        ],
+        "to": [
+          13,
+          8
+        ]
+      }
+    }
+  }
+}

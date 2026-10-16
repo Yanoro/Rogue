@@ -48,6 +48,33 @@ public:
   // Whether the path is already known not to exist on disk.
   bool IsKnownMissing(const std::string &filePath) const;
 
+  // Forgets everything known about one path, so the next lookup re-stats the
+  // filesystem and reloads.
+  //
+  // This is what makes a hot-swap possible. The memo above is a deliberate
+  // performance decision with a documented cost -- "a sprite file added while the
+  // game is running is not noticed until the next map load" -- and this is the
+  // other half of that decision: a way to say "this one specifically has changed
+  // on disk". Both halves matter, because forgetting only the `missing` mark
+  // would still be beaten to the answer by a remembered *load failure* in
+  // `textures`, and forgetting only `textures` would leave the absent mark that
+  // TryGetTexture checks first.
+  //
+  // A loaded texture is released here, which is the point: the caller is about to
+  // re-resolve the path and wants the new file, not the old image. Anything still
+  // drawing the old texture from a raw pointer will dangle, so callers re-resolve
+  // and re-attach rather than holding pointers -- which is exactly what the
+  // Sprite component does (it stores a path, never a texture).
+  //
+  // Returns true when anything was actually forgotten, so a caller can tell
+  // "there was nothing cached" from "the cache was invalidated".
+  bool ForgetPath(const std::string &filePath);
+
+  // Forgets every path. For a wholesale reload -- MapReloader's map swap -- rather
+  // than for a single new sprite, and coarse on purpose: after it, the next frame
+  // re-stats everything the world draws. Prefer ForgetPath when one thing changed.
+  size_t ForgetAll();
+
 private:
   // A null value is a remembered failure; see GetTexture.
   std::unordered_map<std::string, std::unique_ptr<raylib::Texture>> textures;

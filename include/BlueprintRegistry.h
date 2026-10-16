@@ -12,6 +12,28 @@ class DebugLog;
 class TileRegistry;
 class ObjectFactory;
 
+// A material or object a blueprint names that the world's vocabulary does not
+// define. Grouped by material rather than by part: one wrong material used by six
+// parts is one problem, and reporting it six times is what made the original
+// warnings unreadable.
+struct MissingMaterial {
+  std::string material;
+  std::string kind;               // "paint" (a tile) or "place" (an object)
+  std::vector<std::string> partIds;
+};
+
+// Every vocabulary miss in one blueprint, deduplicated by (kind, material), in a
+// stable order.
+//
+// A free function rather than a member for two reasons. ParseBlueprint is static
+// and has to be reachable from the designer agent's reply path, where no registry
+// instance is in scope; and the gap report needs the same records, so exposing
+// them here is what stops a second, subtly different vocabulary check growing
+// beside this one.
+std::vector<MissingMaterial> FindMissingVocabulary(const Blueprint &blueprint,
+                                                   const TileRegistry *tiles,
+                                                   const ObjectFactory *objects);
+
 // Content database for blueprints, loaded once at init from
 // data/blueprints/*.json. Same shape as the other registries (StatRegistry,
 // SkillRegistry, TileRegistry): a plain database loaded from a directory,

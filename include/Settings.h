@@ -105,6 +105,30 @@ struct GameSettings {
     // How many times the engine re-prompts after an invalid design before giving
     // up. Every attempt is shown, so this bounds cost rather than hiding failure.
     int maxDesignAttempts = 3;
+
+    // Reading the designer's reply aloud. Off by default: it is a development
+    // window, and a feature that starts making noise on first launch is a
+    // feature people turn off before judging.
+    //
+    // Every field here can be absent, and the whole section can be absent, in
+    // which case the game runs exactly as it did before this existed.
+    struct TtsSection {
+      bool enabled = false;
+      // The piper CLI. A bare name is resolved on PATH, which is what the
+      // nix-shell environment provides; an absolute path also works.
+      std::string binary = "piper";
+      // The voice model. Piper resolves "<voice>.onnx.json" beside it for the
+      // sample rate, so both files must be present.
+      std::string voice = "models/tts/en_GB-alba-medium.onnx";
+      // Playback gain, 0..1.
+      float volume = 1.0f;
+      // What gets read out, because the reply is a bad thing to read literally:
+      // most of its bytes are the blueprint JSON, and its prose restates the
+      // notes. "notes" speaks the verdict and the model's own critique;
+      // "prose_and_notes" adds the prose the notes summarise; "everything"
+      // exists only for debugging the pipeline and will read the JSON aloud.
+      std::string content = "notes";
+    } tts;
   } designer;
 
   struct AISection {
@@ -172,10 +196,84 @@ struct GameSettings {
     // The world's tile vocabulary. A map's own "tileInfo" is a set of overrides
     // on top of these; with no catalog, maps must declare every tile inline,
     // which is how they all worked before the catalog existed.
+    //
+    // This is the HAND-AUTHORED catalog and nothing else. Agent-created tiles go
+    // to `generatedTiles` below -- see docs/asset-generation-design.md §4.3 --
+    // because the vocabulary a designer designs against has to stay exactly as
+    // it was written.
     std::string tiles = "data/tiles";
+    // The generated overlay for agent-created tiles: loaded additively on top of
+    // the catalog at startup, and where the tile designer writes what it makes.
+    //
+    // Deliberately a sibling of data/tiles rather than a subdirectory of it.
+    // TileRegistry::LoadTiles reads every .json in one directory and is not
+    // recursive, so a nested overlay would either be picked up as catalog (which
+    // would defeat the split) or never be read at all. A separate path also makes
+    // the two layers separately deletable: removing this directory reverts the
+    // world to hand-authored vocabulary exactly.
+    std::string generatedTiles = "data/generated/tiles";
+    // The tile designer's instructions: the field grammar, the reply contract and
+    // the glyph table. Empty falls back to the generated vocabulary alone, the
+    // same way designer.promptFile does.
+    std::string tileDesignerPromptFile = "data/tiles/TILEDESIGNER.md";
     // Building designs. Optional: with none, the placement window lists nothing.
     std::string blueprints = "data/blueprints";
   } content;
+
+  // Where the art comes from. Two roots, tried in this order for a convention
+  // sprite, so a generated image can never shadow hand-authored art:
+  //
+  //   1. <pack>/sprites/<id>.png   the art pack: authoritative, wins
+  //   2. <generated>/<id>.png      the generated layer: additive, fills only gaps
+  //
+  // An empty `pack` keeps the pre-split arrangement exactly as it was: every
+  // sprite resolves from data/sprites/ and the generated layer is not consulted,
+  // because with no pack there is no id to key it by.
+  //
+  // See docs/asset-generation-design.md for what an art pack is and why the
+  // generated layer lives outside it rather than inside the pack.
+  struct ArtSection {
+    // Art pack directory, e.g. packs/art/pixel_crawler. Empty means "no art
+    // pack", which is the current arrangement and needs nothing else changed.
+    std::string pack;
+    // The directory this pack's generated sprites are in *directly* -- not its
+    // parent. Empty derives <pack's grandparent>/generated/<pack dir name>/sprites,
+    // which is what the documented layout gives for no configuration at all.
+    std::string generated;
+
+    // Live generation of tile art, for tiles an agent invents while the game runs.
+    // See docs/tile-art-wiring-design.md sections 4 and 10.2 for why it is a queue
+    // and not a call in the frame loop.
+    //
+    // **This is the one part of the art feature that spends money unattended**, so
+    // it is off unless turned on deliberately, and capped.
+    struct GenerationSection {
+      bool enabled = false;
+      // The command that turns a worklist JSON into sprites. `{worklist}` is
+      // replaced with the path the game writes; the command must write
+      // `<worklist>.result.json` (see tools/gen_tile_art.py --from-worklist).
+      //
+      // A command rather than a linked-in backend on purpose: image tooling here is
+      // Python plus ImageMagick, neither of which is on the default PATH, and the
+      // local-LoRA path (tools/gen_tile.py) has to stay swappable behind the same
+      // seam. Empty uses `builtinDefaultCommand()` in Settings.cpp, which runs
+      // tools/gen_tile_art.py under nix-shell.
+      std::string command;
+      // How long to collect requests before spending one request on them. One
+      // request costs the same whether it carries one tile or nineteen, so this
+      // window is what makes a burst of creations cost one request.
+      float batchDelaySeconds = 2.0f;
+      // Hard ceiling on requests for the session. A request is ~$0.04 (measured),
+      // so this default caps a session at about 32 cents.
+      int maxRequestsPerSession = 8;
+      // Where the worklist and the raw sheets go. Empty uses the default,
+      // `data/generated/work`, which is where tools/gen_tile_art.py already keeps
+      // them and which .gitignore excludes -- a raw sheet is ~1-3MB and is the one
+      // thing in this feature that costs money to reproduce, so it is kept on disk
+      // but never committed.
+      std::string workDirectory;
+    } generation;
+  } art;
 
   struct DebugSection {
     // Visibility state of the debug windows, written on shutdown and read on
@@ -202,3 +300,10 @@ const GameSettings &Settings();
 // returns false after reporting on stderr, so a bad settings file is a visible
 // "started with defaults" rather than a crash.
 bool LoadGameSettings(const std::string &path);
+
+// The command `art.generation.command` falls back to when it is empty but
+// generation is enabled: `tools/gen_tile_art.py --from-worklist {worklist}`, run
+// under `nix-shell -p python3Packages.pillow imagemagick` because neither tool is
+// on the default PATH here. Lives in Settings.cpp so the one place that knows how
+// to spell a working command is the one place that resolves it.
+std::string BuiltinTileArtCommand();

@@ -1,15 +1,124 @@
 {
-  "name": "Small House",
-  "purpose": "dwelling",
+  "id": "small_house",
   "levels": 1,
-  "regions": {
-    "footprint": { "rect_fill": { "at": [0, 0], "to": [6, 5] } },
-    "walls": { "rect_outline": { "at": [0, 0], "to": [6, 5] } }
-  },
+  "name": "Small House",
   "parts": [
-    { "id": "floor", "region": "footprint", "op": { "paint": "wooden floor" } },
-    { "id": "walls", "region": "walls", "op": { "paint": "wooden wall" }, "role": "structural" },
-    { "id": "doorway", "shape": { "point": { "at": [3, 5] } }, "op": { "carve": true } },
-    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "paint": "door" }, "role": "entrance" }
-  ]
+    {
+      "id": "floor",
+      "op": {
+        "paint": "wooden floor"
+      },
+      "region": "footprint"
+    },
+    {
+      "id": "walls",
+      "op": {
+        "paint": "wooden wall"
+      },
+      "region": "walls",
+      "role": "structural"
+    },
+    {
+      "id": "doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            3,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "door",
+      "op": {
+        "paint": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            3,
+            5
+          ]
+        }
+      }
+    },
+    {
+      "id": "carpet",
+      "op": {
+        "paint": "red carpet"
+      },
+      "shape": {
+        "rect_fill": {
+          "at": [
+            2,
+            2
+          ],
+          "to": [
+            5,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "chest",
+      "op": {
+        "place": "chest"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            3
+          ]
+        }
+      }
+    },
+    {
+      "id": "plant",
+      "op": {
+        "place": "potted_plant"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "dwelling",
+  "regions": {
+    "footprint": {
+      "rect_fill": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          7,
+          5
+        ]
+      }
+    },
+    "walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          7,
+          5
+        ]
+      }
+    }
+  }
 }

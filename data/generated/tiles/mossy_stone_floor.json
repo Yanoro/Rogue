@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    110,
+    108,
+    104,
+    255
+  ],
+  "blocksTile": false,
+  "character": ":",
+  "characterColor": [
+    95,
+    150,
+    70,
+    255
+  ],
+  "name": "mossy stone floor"
+}
