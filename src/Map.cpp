@@ -793,6 +793,30 @@ Tile *Map::GetTile(int x, int y) {
 }
 int Map::GetIndex(int x, int y) const { return y * width + x; }
 
+void Map::RefreshBlockingObjects() {
+  blockingObjects.clear();
+  ecs.filter<const Obstacle, const GamePosition>().each(
+      [this](flecs::entity, const Obstacle &obstacle, const GamePosition &pos) {
+        if (obstacle.blocksMovement && IsInBounds(pos.x, pos.y)) {
+          blockingObjects.insert(GetIndex(pos.x, pos.y));
+        }
+      });
+}
+
+bool Map::IsBlocked(int x, int y) const {
+  if (!IsInBounds(static_cast<float>(x), static_cast<float>(y))) {
+    return true;
+  }
+  const int index = GetIndex(x, y);
+  const Tile *tile = index >= 0 && index < static_cast<int>(tileMap.size())
+                         ? tileMap[index]
+                         : nullptr;
+  if (tile == nullptr || tile->blocksTile) {
+    return true;
+  }
+  return blockingObjects.find(index) != blockingObjects.end();
+}
+
 int Map::GetTileId(const Tile *tile) const {
   if (tile == nullptr) return -1;
   for (size_t i = 0; i < uniqueTiles.size(); ++i) {

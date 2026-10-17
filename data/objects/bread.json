@@ -1,7 +1,7 @@
 {
   "name": "Bread",
   "description": "A warm loaf baked from milled flour. The staff of life, and the miller's trade.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

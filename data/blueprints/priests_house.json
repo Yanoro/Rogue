@@ -13,7 +13,7 @@
     {
       "id": "exterior_walls",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "exterior_walls",
       "role": "structural"
@@ -21,7 +21,7 @@
     {
       "id": "interior_wall",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "interior_wall",
       "role": "structural"
@@ -43,7 +43,7 @@
     {
       "id": "front_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {
@@ -72,7 +72,7 @@
     {
       "id": "interior_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {

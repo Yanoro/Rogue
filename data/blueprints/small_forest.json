@@ -48,7 +48,7 @@
     {
       "id": "rocks",
       "op": {
-        "paint": "rock face"
+        "place": "rock_face"
       },
       "region": "rocks"
     },

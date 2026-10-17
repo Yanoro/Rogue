@@ -123,7 +123,7 @@ std::vector<std::string> CheckPlant(flecs::entity agent, flecs::entity target) {
       if (!map->IsInBounds(static_cast<float>(x), static_cast<float>(y))) continue;
 
       Tile *tile = map->GetTile(x, y);
-      if (tile == nullptr || tile->blocksTile) continue;
+      if (tile == nullptr || map->IsBlocked(x, y)) continue;
 
       const std::string ground = tile->name.empty() ? "unknown ground" : tile->name;
       if (!policy->surface.empty() &&

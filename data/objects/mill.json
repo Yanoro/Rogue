@@ -1,9 +1,10 @@
 {
   "name": "Mill",
   "description": "A stone mill for grinding grain. Feed it wheat and turn the handle to make flour.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle",
+    "BlocksVision",
     "Workstation"
   ],
   "recipes": [

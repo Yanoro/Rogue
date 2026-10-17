@@ -10,30 +10,38 @@ Names in `code` are the filename the sprite should end up with, which is also th
 
 Marks:
 
-- **★ needed now** — the code already refers to it: a blueprint paints a tile nothing
-  defines, or the object is a hole in a system that exists.
+- **★ needed now** — the code already refers to it: a blueprint paints a ground tile nothing
+  defines, or references an object whose template/art is missing.
 - **◆ soon** — the next ring out: furniture a built house is visibly missing.
 - **· later** — plausible, cheap to defer.
-- `[tile]` — full-bleed and seamless, seen from directly above, no outline. Everything else
-  is a cut-out object on magenta.
+- `[tile]` — a seamless **ground** surface (floor, grass, path, water), seen from directly above,
+  no outline. Walls, doors, roofs, fences and fixtures are **never** `[tile]`: they are objects,
+  even when they fill the cell. Everything else is a cut-out object on magenta.
 - `[icon]` — a held or carried thing. Same 32×32 cell; chunky silhouette beats detail
   because it is drawn small.
+
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only**. See
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md). The migration removed the old
+wall/door/fence/anvil/forge/trough definitions from `data/tiles/`, added their object templates, and
+renamed the wall/fence/rock sprites. This catalogue previously listed those assets as `[tile]`; that
+form is historical and is not the target.
 
 ---
 
 ## 1. Openings: doors, gates, windows
 
-Eleven of the fourteen blueprints paint a tile literally named `door` — 44 times between
-them — and no such tile exists. That makes the door the highest-value single asset in the
-game: one full-bleed texture turns a dozen buildings from a hole in the wall into a door.
+Doors, gates, windows and hatches are **objects, not tiles**. Ten of the fourteen blueprints used to
+paint a ground tile literally named `door` — 22 times between them — and no such ground tile should
+exist. The 2026-10-17 migration converted them to `place: "door"`; the door is still the
+highest-value single asset in the game: one cell-filling object texture turns a dozen buildings from
+a hole in the wall into a door.
 
-- `tile_door` **★ [tile]** — a closed plank door, two iron hinges, a ring handle, a dark
+- `door` **★** — a cell-filling object: a closed plank door, two iron hinges, a ring handle, a dark
   timber frame around it, filling the whole cell
-- `tile_door_open` **◆ [tile]** — the same doorway with the door swung inward over a dark
-  interior
-- `tile_cellar_hatch` **◆ [tile]** — a low wooden hatch with an iron pull ring
-- `tile_door_arched` **◆ [tile]** — an arched oak door with two iron bands
-- `tile_door_studded` **· [tile]** — a heavy oak door studded with iron nails
+- `door_open` **◆** — the same doorway with the door swung inward over a dark interior
+- `cellar_hatch` **◆** — a low wooden hatch with an iron pull ring
+- `door_arched` **◆** — an arched oak door with two iron bands
+- `door_studded` **·** — a heavy oak door studded with iron nails
 - `stable_door` **◆** — a half door: a wooden lower leaf with the top half swung open
 - `barn_door` **◆** — a wide double door of vertical boards with a diagonal brace
 - `gate_wood` **★** — a pale wooden garden gate with a diagonal brace
@@ -133,10 +141,13 @@ the same object with a flame.
 
 ## 6. Smithing and metal
 
-- `tile_forge` **★ [tile]** — a stone forge hearth, full-bleed, glowing coals and a dark
-  hood
-- `tile_anvil` **★ [tile]** — a blacksmith's anvil, full-bleed
-- `tile_workbench` **★ [tile]** — a scarred workbench top with tools and nails, full-bleed
+A forge, an anvil and a workbench are **objects, not ground**. The migration added the `forge` and
+`workbench` templates and retired the old `data/tiles/forge.json` and `data/tiles/anvil.json`; `anvil`
+already existed as an object (`data/sprites/anvil.png`), and the generated forge art was renamed to
+`forge.png`.
+
+- `forge` **★** — a stone forge hearth as a cut-out object: glowing coals and a dark hood
+- `workbench` **★** — a scarred workbench top with tools and nails, as a cut-out object
 - `bellows` **◆** — a teardrop bellows of wood and leather with two handles
 - `quench_barrel` **◆** — a half barrel of dark water with a ladle
 - `grindstone` **◆** — a round grey stone wheel on a timber frame with a treadle
@@ -147,7 +158,6 @@ the same object with a flame.
 - `ingot_mould` **·** — a stone mould for casting a bar
 - `slag_heap` **·** — a dull grey pile of smelting slag
 - `horseshoe` **· [icon]** — an iron horseshoe
-- `workbench` **◆** — the workbench as a cut-out object, for a workshop that is not a tile
 
 ## 7. Other crafts and labour
 
@@ -173,8 +183,8 @@ Wheat already has its full growth chain (`wheat_seed`, `wheat_seed_planted`,
 `wheat_sprout`, `wheat_mature`), and `Evolvable` switches stage by template — so the crops
 below fit the existing machinery as soon as the art exists.
 
-- `tile_water_trough` **★ [tile]** — a hollowed log trough of water, full-bleed
-- `water_trough` **★** — the same trough as a cut-out object
+- `water_trough` **★** — a hollowed log trough of water, as a cut-out object. The old
+  `data/tiles/water_trough.json` was retired in the 2026-10-17 migration
 - `well` **★** — a round stone well with a timber frame and a bucket on a rope
 - `hay_bale` **★** — a bound rectangle of yellow straw, lying on its side
 - `haystack` **◆** — a tall conical stack of loose hay
@@ -309,22 +319,15 @@ Most of this already exists (`altar`, `pulpit`, `lectern`, `church_bench`, `chur
 - `bones` **·** — a scatter of bones
 - `spider_web` **·** — a web strung between two posts
 
-## 14. Ground and structure tiles
+## 14. Ground tiles
 
-Existing: `floor`, `grass`, `packed_earth`, `path`, `rock_face`, `stone_wall`,
-`wooden_floor`, `wooden_wall`, `tilled_soil`, `water`, `fence`, `mossy_stone_wall`,
-`red_carpet`. The rest of a village's surfaces:
+**Ground only.** Existing ground: `floor`, `grass`, `packed_earth`, `path`, `wooden_floor`,
+`tilled_soil`, `water`, `red_carpet`. The rest of a village's ground surfaces:
 
 - `tile_cobble` **◆** — round cobblestones set in dark mortar
 - `tile_gravel` **◆** — coarse grey gravel
 - `tile_mud` **◆** — wet churned mud
 - `tile_straw` **◆** — scattered straw over earth
-- `tile_thatch_roof` **◆** — overlapping golden thatch
-- `tile_shingle_roof` **◆** — split wooden shingles in rows
-- `tile_plaster_wall` **◆** — off-white lime plaster with hairline cracks
-- `tile_halftimber_wall` **◆** — plaster panels between dark timber framing
-- `tile_brick_wall` **◆** — red-brown clay brick in courses
-- `tile_hedge` **◆** — a solid leafy hedge surface
 - `tile_shallow_water` **◆** — pale clear water over pebbles
 - `tile_bridge_planks` **◆** — transverse bridge decking
 - `tile_sand` **·** — pale dry sand
@@ -333,10 +336,27 @@ Existing: `floor`, `grass`, `packed_earth`, `path`, `rock_face`, `stone_wall`,
 - `tile_parquet` **·** — herringbone parquet
 - `tile_marble` **·** — pale veined marble
 - `tile_rubble` **·** — broken stone debris
-- `tile_log_wall` **·** — horizontal stacked logs with chinking
-- `tile_picket` **·** — a low picket fence
 - `tile_scree` **·** — loose stone slope
 - `tile_boards_weathered` **·** — grey outdoor boards
+
+**Formerly misclassified, now migrated:** `rock_face`, `stone_wall`, `wooden_wall`,
+`mossy_stone_wall` and `fence` used to exist in `data/tiles/`. They are objects now, and their
+templates live in `data/objects/`. Do not add another tile definition for them. See
+`tile-and-object-vocabulary.md` §4.
+
+### Cell-filling structure objects
+
+These are **objects**, not `[tile]`, even though each fills its cell so neighbouring cells meet.
+Ask for them with the object prompt and name them without the `tile_` prefix:
+
+- `thatch_roof` **◆** — overlapping golden thatch
+- `shingle_roof` **◆** — split wooden shingles in rows
+- `plaster_wall` **◆** — off-white lime plaster with hairline cracks
+- `halftimber_wall` **◆** — plaster panels between dark timber framing
+- `brick_wall` **◆** — red-brown clay brick in courses
+- `hedge_segment` **◆** — a solid leafy hedge section
+- `log_wall` **·** — horizontal stacked logs with chinking
+- `picket_fence` **·** — a low picket fence
 
 ## 15. Characters
 
@@ -379,21 +399,27 @@ different prompt shape entirely; do not ask for it as one image.
 ## 17. Ready-to-paste sheets
 
 Paste [Block A](sprite-style-prompt.md) first, then one sheet. 18 per sheet (6 columns by
-3 rows); sheet 0 is a tile sheet and uses the tile wording in the same document.
+3 rows); sheet 0 is an object sheet and uses the object wording in the same document.
 
-### Sheet 0 — the five gaps (tiles, 5 cells)
+### Sheet 0 — the five gaps (objects, 5 cells)
+
+These are objects, not ground tiles. The door is the one cell-filling object; the other four are
+cut-out objects on magenta.
 
 ```
-Draw these 5 seamless textures as a strict grid of 3 columns by 2 rows, filling the first
-five cells in reading order and leaving the last cell empty:
-1) a closed plank door: dark vertical boards, two black iron hinges and a ring handle, a
-   heavy timber frame around it, seen straight on and filling the cell edge to edge
-2) a stone forge hearth: grey stone blocks, a glowing orange coal bed and a dark smoke
-   hood, seen from directly above
-3) a workbench: a scarred wooden bench top with a hammer, a few nails and a vice, seen from
-   directly above
-4) a blacksmith's anvil: a dark iron anvil with a horn, seen from directly above
-5) a water trough: a hollowed log trough filled with dark water, seen from directly above
+Draw these 5 objects as a strict grid of 3 columns by 2 rows, filling the first five cells in
+reading order and leaving the last cell empty:
+1) a closed plank door: dark vertical boards, two black iron hinges and a ring handle, a heavy
+   timber frame around it, seen straight on and filling the cell edge to edge (a cell-filling
+   object, not a ground tile)
+2) a stone forge hearth: grey stone blocks, a glowing orange coal bed and a dark smoke hood,
+   a single isolated object seen from slightly above
+3) a workbench: a scarred wooden bench top with a hammer, a few nails and a vice, a single
+   isolated object seen from slightly above
+4) a blacksmith's anvil: a dark iron anvil with a horn, a single isolated object seen from
+   slightly above
+5) a water trough: a hollowed log trough filled with dark water, a single isolated object seen
+   from slightly above
 ```
 
 ### Sheet 1 — a room a person could live in (18)

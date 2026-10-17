@@ -1,7 +1,0 @@
-{
-  "name": "fence",
-  "character": "#",
-  "characterColor": [166, 116, 66, 255],
-  "backgroundColor": [38, 28, 18, 255],
-  "blocksTile": true
-}

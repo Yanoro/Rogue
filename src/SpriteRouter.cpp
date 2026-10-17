@@ -191,9 +191,9 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
   // The keys are the engine's, not the model's: they are what `SpriteKinds::Parse` matches,
   // and the protocol lets the caller name them precisely so a reply does not depend on the
   // model spelling anything a particular way.
-  kind.options = {{"tile", "terrain: a floor, wall, path, water or other square of ground"},
-                  {"object", "a thing with a capability: usable, carryable, openable, "
-                             "harvestable, craftable or growing"}};
+  kind.options = {{"tile", "ground only: a floor, path, grass, water or other square of terrain"},
+                  {"object", "a thing with a capability: a wall, door, usable, carryable, "
+                             "openable, harvestable, craftable or growing"}};
   questions.push_back(std::move(kind));
 
   SystemOne::Option shape;

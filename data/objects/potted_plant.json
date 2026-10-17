@@ -1,7 +1,7 @@
 {
   "name": "Potted Plant",
   "description": "A leafy plant in a clay pot.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

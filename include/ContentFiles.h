@@ -68,8 +68,8 @@ struct ContentPlan {
 
 // Builds the plan for a tile. `definitionPath` is TileDef::sourcePath -- the file
 // the definition was read from, which is the only trustworthy mapping to it,
-// since a tile's file stem is not its name ("wooden wall" lives in
-// wooden_wall.json). Pass it empty when the definition came from nowhere (a map's
+// since a tile's file stem is not its name ("stone floor" lives in
+// stone_floor_tile.json). Pass it empty when the definition came from nowhere (a map's
 // inline "tileInfo"); the plan then has no definition file to remove and says so.
 //
 // Sprites collected: the definition's authored "sprite" path, plus every

@@ -6,6 +6,11 @@
 how it comes to exist in the world. The design half — the grammar, the registry, the designer window —
 is live; see `blueprint-design.md`.
 
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only**; walls and doors are **objects**.
+The site checks below therefore distinguish "blocking ground" (water, a pit) from "occupied by an
+object" (a wall, a door, a chest). A structure record marks the cells, not a wall tile. See
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md).
+
 ---
 
 ## 1. The gap this closes
@@ -105,9 +110,9 @@ which is what a camp is. See §10 for the schema and the correction owed to `blu
 |---|---|---|
 | 1 | Every cell in bounds | `cell (14,3) is outside the map` |
 | 2 | Must-be-free cells free of objects | `blocked by Chest at (14,4)` |
-| 3 | Must-be-free cells not on blocking ground | `blocked: wooden wall at (12,7)` |
+| 3 | Must-be-free cells not on blocking ground | `blocked: water at (12,7)` |
 | 4 | Surface cells on ground the design may overwrite | `cannot lay wooden floor on water at (11,2)` |
-| 5 | Passable-after cells currently passable | `the doorway at (9,5) opens onto a wall` |
+| 5 | Passable-after cells currently passable | `the doorway at (9,5) opens onto a wall object` |
 | 6 | No cell inside a structure owned by another agent | `inside Carl's House, owned by Carl` |
 
 Check 4 needs a rule for what may be overwritten. The precedent is `Placeable::surface`
@@ -146,15 +151,18 @@ records that a cluster of cells is **one structure**, what it is, or whose it is
 
 - "inside someone else's house" is undetectable — enclosure can be computed, ownership cannot
 - "not too close to that building" is undetectable — the building has no edges, only objects
-- "align with the neighbouring wall" is undetectable — you cannot reliably infer a wall line from tile names alone
+- "align with the neighbouring wall" is undetectable — a wall is an **object**, not a ground tile,
+  so its line must be inferred from wall object templates/placements, not from tile names
 - nothing prevents re-building on top of an existing building's interior
 
 One component closes all four.
 
 ### 5.2 The component
 
-A `Structure` marker is stamped on the tile entity of every cell a design occupies — the same cells
-`PaintTile` already touches, and the same per-cell shape `MapAuthored` already uses.
+A `Structure` marker is stamped on the **cell** entity of every cell a design occupies — the same
+cells `PaintTile` touches for ground, and the same per-cell shape `MapAuthored` already uses. The
+marker belongs to the cell, not to the wall: the wall and door in that cell are separate objects, so
+a structure is a cluster of marked cells plus whatever objects stand on them.
 
 ```cpp
 struct Structure {
@@ -183,8 +191,8 @@ pack can toggle it and a map file can name it.
 ### 5.3 Why per cell, not one anchor
 
 An anchor entity would store the footprint once, but every query would become a rect search over all
-structures. Per cell costs one small component per occupied tile — a village of twenty buildings of
-100 cells is 2,000 components on tile entities that already exist for rendering — and buys `O(1)`
+structures. Per cell costs one small component per occupied **cell** — a village of twenty buildings
+of 100 cells is 2,000 components on cell entities that already exist for rendering — and buys `O(1)`
 answers to "is this cell inside a building", "whose", and "where is that building's box". The
 redundancy is the point.
 

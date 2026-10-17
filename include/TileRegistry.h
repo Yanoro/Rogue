@@ -12,8 +12,9 @@
 
 class DebugLog;
 
-// Content database for tile *definitions* -- what a tile named "wooden wall"
-// is, independently of any map that uses it.
+// Content database for tile *definitions* -- what a **ground** tile named
+// "wooden floor" is, independently of any map that uses it. Walls, doors and
+// props are objects and live in data/objects, never here.
 //
 // Why this exists. Tile definitions used to live only inside each map's
 // "tileInfo" array, and cells are indices into that array (Map::uniqueTiles).
@@ -23,8 +24,8 @@ class DebugLog;
 //
 //   1. Every map re-declared the same tiles, and they could disagree. In this
 //      repo they already did: "path" is '.' on Map_Farm and ':' on Map_Smithy,
-//      and "wooden wall" uses characterColor 255,255,255 on the A* maps and
-//      200,200,200 on the village maps.
+//      and "wooden floor" uses characterColor 186,146,96 on one map and a
+//      different tone on another.
 //   2. A blueprint or an agent that is not inside a map has no vocabulary to
 //      name a surface with. The designer agent is global by decision, so it
 //      could not answer "what can I build with?" at all.
@@ -108,7 +109,7 @@ public:
   // there is no allowlist to enforce here (that problem is objects only). What
   // matters for tiles is *identity*: a name that collides silently redefines
   // terrain a map already references, and a definition with no appearance paints
-  // an invisible wall. So the checks are:
+  // an invisible patch of ground. So the checks are:
   //
   //   - `name` present, trimmed, non-empty;
   //   - no existing definition under that name, unless `replaceExisting` (which is

@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    64,
+    44,
+    34,
+    255
+  ],
+  "blocksTile": false,
+  "character": "m",
+  "characterColor": [
+    148,
+    105,
+    76,
+    255
+  ],
+  "name": "mud floor"
+}

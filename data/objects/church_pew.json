@@ -1,7 +1,7 @@
 {
   "name": "Church Pew",
   "description": "A tall-backed pew for the congregation.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

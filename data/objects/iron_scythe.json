@@ -1,7 +1,7 @@
 {
   "name": "Iron Scythe",
   "description": "A curved iron blade on a wooden handle, made for cutting grain.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

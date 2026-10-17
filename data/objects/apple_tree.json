@@ -1,10 +1,11 @@
 {
   "name": "Apple Tree",
   "description": "A leafy tree that bears apples.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Harvestable",
     "Obstacle",
+    "BlocksVision",
     "Trains"
   ],
   "amountRemaining": 5,

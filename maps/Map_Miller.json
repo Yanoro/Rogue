@@ -51,6 +51,306 @@
       "type": "oven",
       "x": 12,
       "y": 12
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 1
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 2
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 3
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 4
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 5
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 6
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 7
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 9
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 10
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 11
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 12
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 13
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 0,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 1,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 1,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 2,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 2,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 3,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 3,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 4,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 4,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 5,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 5,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 6,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 6,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 7,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 7,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 9,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 9,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 10,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 10,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 11,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 11,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 12,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 12,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 13,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 13,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 15
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 0
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 1
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 2
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 3
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 4
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 5
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 6
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 7
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 9
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 10
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 11
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 12
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 13
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 15,
+      "y": 15
     }
   ],
   "tileInfo": [
@@ -73,22 +373,22 @@
       "blocksTile": false
     },
     {
-      "name": "wooden wall",
-      "character": "#",
+      "name": "floor",
+      "character": ".",
       "characterColor": [
-        200,
-        200,
-        200,
+        255,
+        255,
+        255,
         255
       ],
       "backgroundColor": [
-        50,
-        50,
-        50,
-        255
+        128,
+        128,
+        128,
+        128
       ],
       "fontSize": 32,
-      "blocksTile": true
+      "blocksTile": false
     },
     {
       "name": "wooden floor",

@@ -19,7 +19,7 @@ Every reply has two parts, in this order:
    inside the fence.
 
 ````
-I made the walls one tile thick and put the door on the south side so it faces
+I made the walls one cell thick and put the door on the south side so it faces
 the street. The interior is 4x4, enough for a bed and a chest.
 
 ```json
@@ -57,11 +57,16 @@ Two ideas carry the whole language, and keeping them apart is what makes a
 design easy to get right:
 
 - **A shape is a set of cells.** Nothing more.
-- **A part is a shape filled with a material** (`paint`), or something standing
-  on those cells (`place`), or an opening cut into them (`carve`).
+- **A part is a shape filled with a ground material** (`paint`), or something
+  standing on those cells (`place`), or an opening cut into them (`carve`).
+
+**A tile is ground only.** Floor, grass, path, soil, water, carpet: those are
+tiles. **A wall, a door, a window, a roof, a fence or a piece of furniture is an
+object, never a tile.** It is `place`d, not `paint`ed. "Tile" is not a synonym
+for "cell" either: a cell has a ground tile, and may also hold an object.
 
 A house is therefore not two hundred decisions. It is a filled rectangle for the
-floor, an outline for the walls, a carved doorway, and a door.
+floor, an outline for the wall objects, a carved doorway, and a door object.
 
 ### Top-level fields
 
@@ -104,7 +109,7 @@ A 1-wide or 1-tall shape still has a border, so `rect_outline` with
 ### Parts
 
 ```json
-{ "id": "walls", "region": "walls", "op": { "paint": "wooden wall" }, "role": "structural" }
+{ "id": "walls", "region": "walls", "op": { "place": "wooden_wall" }, "role": "structural" }
 ```
 
 | field | meaning |
@@ -120,36 +125,37 @@ directly, as a string.
 
 The four operations:
 
-- `"op": { "paint": "wooden floor" }` — writes a tile into every cell
-- `"op": { "place": "chest" }` — spawns an object into every cell
+- `"op": { "paint": "wooden floor" }` — writes a **ground tile** into every cell
+- `"op": { "place": "chest" }` — spawns an **object** into every cell. Walls,
+  doors and furniture use this
 - `"op": { "carve": true }` — clears the cell, making a doorway or window
 - `"op": { "fill": { "paint": "wooden floor" } }` — fills the **enclosed
   interior** of the part's shape. Use it after a wall ring to floor the room
   without repeating the rectangle.
 
-### A complete, working example
+### The intended form of a complete example
 
 ```json
 {
   "id": "small_house",
   "name": "Small House",
   "purpose": "dwelling",
-  "designerNotes": "Kept it to one room because nothing in the request needed more. The door sits in the south wall so it reads as facing the street. A second window would help but there is no window tile.",
+  "designerNotes": "Kept it to one room because nothing in the request needed more. The door sits in the south wall so it reads as facing the street. A second window would help but there is no window object.",
   "regions": {
     "footprint": { "rect_fill": { "at": [0, 0], "to": [6, 5] } },
     "walls": { "rect_outline": { "at": [0, 0], "to": [6, 5] } }
   },
   "parts": [
     { "id": "floor", "region": "footprint", "op": { "paint": "wooden floor" } },
-    { "id": "walls", "region": "walls", "op": { "paint": "wooden wall" }, "role": "structural" },
+    { "id": "walls", "region": "walls", "op": { "place": "wooden_wall" }, "role": "structural" },
     { "id": "doorway", "shape": { "point": { "at": [3, 5] } }, "op": { "carve": true } },
-    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "paint": "door" }, "role": "entrance" }
+    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "place": "door" }, "role": "entrance" }
   ]
 }
 ```
 
-Note the order: floor first, then walls over it, then the doorway carved out of
-the wall, then the door tile written onto the carved cell. **Later parts win.**
+Note the order: floor first, then the wall objects, then the doorway carved out of
+the wall, then the door object on the carved cell. **Later parts win.**
 
 ---
 
@@ -158,14 +164,15 @@ the wall, then the door tile written onto the carved cell. **Later parts win.**
 Use only these exact strings. A material that is not in this list is a mistake
 and will be reported back to you.
 
+`paint` writes ground and is free. `place` spawns an object and consumes a real
+item; **walls, doors and furniture are objects, so they use `place`.** Use it
+deliberately, but never substitute a tile for a wall or a door.
+
 %MATERIALS%
 
 There are **no other materials**. If a request needs something that does not
 exist here — glass, a window, a roof, metal walls — do not invent a name. Build
 what you can from this list and say in `designerNotes` what you had to leave out.
-
-Placing a *tile* is free. Placing an *object* consumes a real item, so use
-`place` sparingly and `paint` for anything that is just structure.
 
 ---
 
@@ -175,12 +182,12 @@ Placing a *tile* is free. Placing an *object* consumes a real item, so use
    four separate `line` parts: lines meet only at corners and leak. A design whose
    walls leak is refused.
 2. **Every building needs an entrance.** At least one cell of the wall must be
-   carved and given a `door` tile, so the interior is reachable.
-3. **Leave the inside hollow.** Walls and floor may overlap (the floor goes down
-   first and the walls overwrite their own cells); two *solid* parts fighting over
-   the same cells is usually a mistake.
-4. **Do not put equipment in the walls.** Anything that is not floor or wall
-   should sit strictly inside the border.
+   carved and given a `door` object, so the interior is reachable.
+3. **Leave the inside hollow.** The floor goes down first; the wall objects are
+   then placed on their own cells. Two *solid* parts fighting over the same cells
+   is usually a mistake.
+4. **Do not put equipment in the walls.** Anything that is not ground or
+   structure should sit strictly inside the border.
 5. **Keep it modest.** A design over roughly 1024 cells per level will be refused.
 6. **Coordinates start at `[0,0]`.** A part with negative coordinates is legal but
    makes the design's origin confusing, so avoid it.

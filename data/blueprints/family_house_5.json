@@ -24,7 +24,7 @@
     {
       "id": "outer_walls",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "outer_walls",
       "role": "structural"
@@ -32,7 +32,7 @@
     {
       "id": "interior_walls",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "interior_walls",
       "role": "structural"
@@ -40,7 +40,7 @@
     {
       "id": "bedroom_divider",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "bedroom_divider",
       "role": "structural"
@@ -62,7 +62,7 @@
     {
       "id": "front_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {
@@ -91,7 +91,7 @@
     {
       "id": "living_to_parents_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -120,7 +120,7 @@
     {
       "id": "living_to_children_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -149,7 +149,7 @@
     {
       "id": "parents_bedroom_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -178,7 +178,7 @@
     {
       "id": "children_bedroom_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {

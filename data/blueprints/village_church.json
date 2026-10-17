@@ -20,7 +20,7 @@
     {
       "id": "walls",
       "op": {
-        "paint": "stone wall"
+        "place": "stone_wall"
       },
       "region": "walls",
       "role": "structural"
@@ -46,7 +46,7 @@
     {
       "id": "north_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {

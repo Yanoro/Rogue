@@ -8,8 +8,14 @@ Written 2026-10-15, revised 2026-10-15 for the art pack / data pack split. It an
 2. *What has to be true for an art pack and a data pack to be swapped independently?*
 
 Read `blueprint-design.md` first — the designer agent that emits the structures this document has to
-dress. Read `TileRegistry.h` for the tile catalog that is the world's material vocabulary. Read
+dress. Read `TileRegistry.h` for the **ground-tile** catalog that is the world's material vocabulary;
+walls, doors and furniture come from object templates, not from that catalog. Read
 `tools/README.md` for the design-time tile generator and the measurements it already took.
+
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only**; walls, doors, roofs, fixtures and
+props are **objects**, never tiles. The data migration landed the same day, so the `wooden_wall`
+example below is historical; the canonical rule and migration record are in
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md).
 
 ---
 
@@ -29,17 +35,22 @@ The two are **orthogonal**, joined at exactly one place: **the name.**
 
 That join key is not a design to be invented — it already exists everywhere:
 
-- `TileRegistry::Get(name)` resolves a material by string
-- a blueprint says `"paint": "stone wall"` — a name, not an id or a pointer
-- `SpritePaths.cpp` resolves the convention path `data/sprites/tile_<slugified name>.png`
+- `TileRegistry::Get(name)` resolves a **ground** material by string
+- a blueprint says `"paint": "stone floor"` — a ground tile name, not an id or a pointer. A wall or
+  door is an object and is referenced by `"place": "<object id>"` instead
+- `SpritePaths.cpp` resolves the convention path `data/sprites/tile_<slugified name>.png` for a
+  **ground tile**; an object resolves the bare `<slug>.png`
 - `ObjectFactory` keys templates by id and falls back to `data/sprites/<id>.png`
-- `GetSurroundingsRadar` prints a legend mapping glyph -> `tile->name`
+- `GetSurroundingsRadar` prints a legend mapping glyph -> `tile->name` for the ground layer
   (`include/AgentActions.h:550`)
 
 So an art pack is **a partial map from name to appearance**, and the data pack is **the set of names
 and what they mean**. The split is not new machinery. It is un-fusing two halves of a record that are
 currently stored in the same file — `data/tiles/wooden_wall.json` says both `"blocksTile": true` and
-`"characterColor": [200,200,200,255]`.
+`"characterColor": [200,200,200,255]`. That file is also the misclassification this correction
+records: a wall is an **object**, not a ground tile, so it should carry components and an object
+template, not a `TileDef`. It is debt (see `tile-and-object-vocabulary.md` §4), not the model for
+the split.
 
 ### 1.1 What the split buys
 
@@ -196,10 +207,11 @@ art pack that is already incoherent produces a confident, reproducible incoheren
 
 **An art pack must never gate the data pack's vocabulary.**
 
-The designer agent's `%MATERIALS%` block is built from the **data** pack's tile catalog. If it were
-instead built from the *intersection* of the data catalog and the art pack's coverage, then swapping
-from a dark fantasy art pack to a high fantasy one would change **what can be built** — contradicting
-"data packs contain critical gameplay information" and silently coupling the two axes.
+The designer agent's `%MATERIALS%` block is built from the **data** pack's **ground-tile catalog and
+object templates**. If it were instead built from the *intersection* of the data catalog and the art
+pack's coverage, then swapping from a dark fantasy art pack to a high fantasy one would change **what
+can be built** — contradicting "data packs contain critical gameplay information" and silently
+coupling the two axes.
 
 So: the designer designs against the data pack. Missing art is a rendering concern that the pipeline
 addresses, never a design constraint. If an art pack wants to *bias* the designer's taste, that is a
@@ -245,7 +257,7 @@ The bedroom case is real and in scope: a designer told to build a bedroom invent
 **deliberate, single-item, agent-driven** act — different in kind from a batch of 40 sprites, and it
 gets different rules.
 
-**What it may create:** a new object or tile, in the generated overlay (§1.2), never in the
+**What it may create:** a new object or **ground tile**, in the generated overlay (§1.2), never in the
 hand-authored catalog.
 
 **What it may attach to an object** — an allowlist, not a denylist. Ten components are reachable from
@@ -276,10 +288,12 @@ XP.
 > above, and `Trains` and `Requires` are easy to miss when reasoning about balance because they are not
 > resource components.
 
-**Tiles need no allowlist at all.** A `TileDef` carries `name`, `blocksTile`, `hitboxSize`, `sprite`
-and its glyph plus foreground/background colours (`Components.h:181-201`) — there is no economy
-component a tile could smuggle in. So a created tile is **balance-safe by construction**, and the real
-risk with tiles is *identity*, which is why §4.5 is a prerequisite rather than a nicety.
+**A ground tile needs no allowlist at all.** A `TileDef` carries `name`, `blocksTile`, `hitboxSize`,
+`sprite` and its glyph plus foreground/background colours (`Components.h:181-201`) — there is no
+economy component a tile could smuggle in. So a created **ground tile** is **balance-safe by
+construction**, and the real risk with tiles is *identity*, which is why §4.5 is a prerequisite
+rather than a nicety. This argument does **not** extend to walls, doors or furniture: those are
+objects, go through the object allowlist above, and must never be created as tiles to dodge it.
 
 **Refusals are cheap and must be explained.** The designer already has a bounded re-prompt loop
 (`designer.maxDesignAttempts`, `include/Settings.h`), and `DESIGNER.md` already specifies that a
@@ -312,8 +326,9 @@ own comment said so: *"This is the id the map file's `positions` array stores."*
 containers**: `positions` by searching `uniqueTiles` for each cell's pointer (correct), and `tileInfo`
 from `allTileInfo` **filtered by `tileOverridden`**. A catalog tile the map never overrode was
 omitted, so the written `tileInfo` came out *shorter* than `uniqueTiles` while the indices in
-`positions` still addressed the longer array. The **next** load renumbered the map — every wall became
-floor.
+`positions` still addressed the longer array. The **next** load renumbered the map — every wall cell
+became floor. (The walls in that old data were themselves misclassified tiles; the identity bug still
+applies to the ground beneath them.)
 
 Reading `positions` was also **unchecked**: `uniqueTiles[pos]` on a shortened array is an
 out-of-bounds `std::vector::operator[]`, so the same defect was undefined behaviour and an ASan
@@ -482,10 +497,11 @@ yet. With creation in scope (§4.3) there are three cases, with three different 
 
 A blueprint references:
 
-- **materials** by string — `"op": { "paint": "stone wall" }`, resolved against the data pack's tile
-  catalog (`TileRegistry::Get` returns `nullptr` for an unknown name by contract)
+- **ground materials** by string — `"op": { "paint": "stone floor" }`, resolved against the data
+  pack's **ground-tile** catalog (`TileRegistry::Get` returns `nullptr` for an unknown name by
+  contract). A wall or door is not a ground material: it is an object template, below.
 - **objects** by string — `"op": { "place": "altar" }`, resolved against the data pack's
-  `objects/*.json`
+  `objects/*.json`. Walls and doors belong here, once their templates exist.
 
 and separately, the **art pack** is asked for an appearance for each. The three outcomes:
 
@@ -1043,7 +1059,9 @@ Notes on the remaining ordering:
 - **Stage 5 is still deliberately after the pipeline.** Moving the art fields out of the data
   definitions is the "proper" version of the split, but it is a **format migration** across 20 tile, 38
   object and 1 race file, and it buys nothing that stage 1 does not already buy — stage 1 made the
-  *sprite root* independent, which is the part that changes what recombines.
+  *sprite root* independent, which is the part that changes what recombines. The 20 tile files
+  include several that are misclassified objects (walls, fence, anvil, forge, trough); the count will
+  shrink when the vocabulary debt is retired, so do not use it as a target for new tile definitions.
 - **Stage 7 is deliberately late.** Most expensive, least urgent: the sheet-API backend reaches the
   same bar without it, and it is only worth the GPU hours once an art pack is coherent, has
   source-resolution art, and the volume justifies removing the API.
@@ -1108,7 +1126,8 @@ Deliberately not resolved here.
   `Obstacle`, nothing else (§4.3). Refuse with the reason; never silently downgrade.
 - **Do not allocate a glyph without checking the whole world's `character` set.** §4.4.
 - **Do not allow agent-created tiles before tile identity is fixed.** §4.5 — the corruption is silent
-  and turns every wall into floor.
+  and turns every wall cell into floor. (And do not create a wall as a tile in the first place: it is
+  an object — see `tile-and-object-vocabulary.md`.)
 - **Do not generate one asset per request.** Measured at 1,290 image tokens per output regardless of
   subject count, and internal consistency is lost. Batch.
 - **Do not train on `data/sprites/`.** Derived, mixed-origin, 32x32. Train on the art pack's source.

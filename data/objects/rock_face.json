@@ -1,0 +1,28 @@
+{
+  "name": "Rock Face",
+  "description": "A sheer face of bare rock.",
+  "components": [
+    "Obstacle",
+    "BlocksVision",
+    "Structural"
+  ],
+  "character": "^",
+  "characterColor": [
+    126,
+    126,
+    138,
+    255
+  ],
+  "backgroundColor": [
+    38,
+    38,
+    44,
+    255
+  ],
+  "nameTagColor": [
+    126,
+    126,
+    138,
+    255
+  ]
+}

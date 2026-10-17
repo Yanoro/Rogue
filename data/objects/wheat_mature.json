@@ -30,7 +30,7 @@
     32,
     255
   ],
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Harvestable",
     "Trains",

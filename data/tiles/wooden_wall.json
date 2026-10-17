@@ -1,7 +1,0 @@
-{
-  "name": "wooden wall",
-  "character": "#",
-  "characterColor": [200, 200, 200, 255],
-  "backgroundColor": [50, 50, 50, 255],
-  "blocksTile": true
-}

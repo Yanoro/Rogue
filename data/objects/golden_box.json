@@ -1,0 +1,28 @@
+{
+  "name": "Golden Box",
+  "description": "A small box plated in gold.",
+  "components": [
+    "Obstacle",
+    "Interactable",
+    "ShowNameTag"
+  ],
+  "character": "B",
+  "characterColor": [
+    235,
+    190,
+    100,
+    255
+  ],
+  "backgroundColor": [
+    95,
+    70,
+    35,
+    255
+  ],
+  "nameTagColor": [
+    235,
+    190,
+    100,
+    255
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "Iron Ingot",
   "description": "A refined bar of iron, ready to be worked at an anvil.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

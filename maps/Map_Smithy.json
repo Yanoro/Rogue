@@ -82,6 +82,291 @@
       "type": "iron_vein",
       "x": 17,
       "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 6
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 3
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 4
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 5
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 8
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 9
+    },
+    {
+      "type": "rock_face",
+      "x": 13,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 3
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 4
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 5
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 8
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 9
+    },
+    {
+      "type": "rock_face",
+      "x": 14,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 15,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 15,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 16,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 16,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 17,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 17,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 18,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 18,
+      "y": 10
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 2
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 3
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 4
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 5
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 6
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 7
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 8
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 9
+    },
+    {
+      "type": "rock_face",
+      "x": 19,
+      "y": 10
     }
   ],
   "tileInfo": [
@@ -104,22 +389,22 @@
       "blocksTile": false
     },
     {
-      "name": "stone wall",
-      "character": "#",
+      "name": "grass",
+      "character": ",",
       "characterColor": [
-        150,
-        150,
-        162,
+        110,
+        200,
+        110,
         255
       ],
       "backgroundColor": [
-        44,
-        44,
+        24,
         52,
+        28,
         255
       ],
       "fontSize": 32,
-      "blocksTile": true
+      "blocksTile": false
     },
     {
       "name": "packed earth",
@@ -158,22 +443,22 @@
       "blocksTile": false
     },
     {
-      "name": "rock face",
-      "character": "^",
+      "name": "grass",
+      "character": ",",
       "characterColor": [
-        126,
-        126,
-        138,
+        110,
+        200,
+        110,
         255
       ],
       "backgroundColor": [
-        38,
-        38,
-        44,
+        24,
+        52,
+        28,
         255
       ],
       "fontSize": 32,
-      "blocksTile": true
+      "blocksTile": false
     },
     {
       "name": "wooden floor",

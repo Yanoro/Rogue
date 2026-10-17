@@ -7,10 +7,18 @@ original design that were never built rather than quietly dropping them.
 Written 2026-10-14, rewritten 2026-10-16 against the shipped code. Where the implementation
 diverged from the original proposal, the divergence is stated.
 
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only**: floor, grass, path, soil, water,
+carpet, a bridge deck. A **wall, door, gate, window, roof, fence or piece of furniture is an object,
+never a tile** — it stands on or over the ground, it is not the ground. "Tile" is also not a synonym
+for "cell". The data was migrated the same day: wall/door/prop tile definitions were removed, object
+templates were added, and the blueprints and maps were converted. The migration record is in
+`tile-and-object-vocabulary.md`; that document is the canonical statement, and this one follows it.
+
 **Companion documents**, and the split between them:
 
 | document | covers |
 |---|---|
+| `tile-and-object-vocabulary.md` | the corrected tile/object rule and the migration record |
 | `asset-generation-design.md` | the generated overlay: how art and tile definitions come to exist for material no hand-authored pack has |
 | `designer-speech-design.md` | reading the designer's reply aloud |
 | `placement-design.md` | the placement validator blueprints reuse for site legality |
@@ -45,7 +53,8 @@ Two ideas carry the language, and keeping them apart is what makes a design chec
   (`place`), an opening cut into them (`carve`), or the enclosed interior of a shape (`fill`).
 
 A house is therefore a defined rectangle for the floor, a defined border for the walls, a carved
-doorway and a door tile — not two hundred decisions.
+doorway and a door object — not two hundred decisions. The floor is the `paint` (tile) half; the
+walls and the door are `place` (object) parts.
 
 **Filled or outline is always in the primitive's name.** There is no `filled` boolean anywhere, and
 no `thickness`: one spelling per cell set is what keeps overlap unambiguous and a round trip exact.
@@ -91,8 +100,12 @@ bottom rows of a solid rectangle through the middle and made every generated bui
 ### 2.3 Parts
 
 ```json
-{ "id": "walls", "region": "outer_walls", "op": { "paint": "wooden wall" }, "role": "structural" }
+{ "id": "walls", "region": "outer_walls", "op": { "place": "wooden_wall" }, "role": "structural" }
 ```
+
+Walls and doors are objects, so they are **`place`d**, never `paint`ed. `wooden_wall` here is an
+object-template id; it and the other structural templates live in `data/objects/` (see §2.4 and
+`tile-and-object-vocabulary.md`).
 
 | field | meaning |
 |---|---|
@@ -110,14 +123,15 @@ catches it explicitly and says so.
 
 The four operations:
 
-- `"op": { "paint": "wooden floor" }` — write a tile into every cell
-- `"op": { "place": "chest" }` — spawn an object into every cell
-- `"op": { "carve": true }` — clear the cell
-- `"op": { "fill": { "paint": "wooden floor" } }` — fill the **enclosed interior** of the shape
+- `"op": { "paint": "wooden floor" }` — write a **ground tile** into every cell. Never a wall or a door.
+- `"op": { "place": "chest" }` — spawn an **object** into every cell. Walls, doors and furniture use this.
+- `"op": { "carve": true }` — clear the cell, making an opening
+- `"op": { "fill": { "paint": "wooden floor" } }` — fill the **enclosed interior** of the shape with ground
 
-### 2.4 A complete, working example
+### 2.4 The intended form of a complete example
 
-Trimmed from a real agent-authored design in `data/blueprints/`:
+The shape of the design: only ground is `paint`ed. `wooden_wall` and `door` are object-template ids
+in `data/objects/`; this is the form every shipped structural design now uses:
 
 ```json
 {
@@ -131,15 +145,20 @@ Trimmed from a real agent-authored design in `data/blueprints/`:
   },
   "parts": [
     { "id": "floor", "region": "footprint", "op": { "paint": "wooden floor" } },
-    { "id": "walls", "region": "outer_walls", "op": { "paint": "wooden wall" }, "role": "structural" },
+    { "id": "walls", "region": "outer_walls", "op": { "place": "wooden_wall" }, "role": "structural" },
     { "id": "doorway", "shape": { "point": { "at": [3, 5] } }, "op": { "carve": true } },
-    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "paint": "door" }, "role": "entrance" }
+    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "place": "door" }, "role": "entrance" }
   ]
 }
 ```
 
-Order matters: floor first, then walls over it, the doorway carved out of the wall, then the door
-written onto the carved cell.
+Order matters: floor first, then the wall objects, the doorway carved out of the wall, then the door
+object on the carved cell.
+
+**This shipped file used to be the wrong version of this example.** The migration converted it (and
+nine of the other thirteen designs) from painting `"wooden wall"`/`"door"` to placing
+`wooden_wall`/`door`. If an older copy, log or worklist still shows the `paint` form, treat it as
+historical: walls and doors are objects, and a wall/door tile must not come back.
 
 Note what real designs actually use. Across the 14 blueprints in `data/blueprints/`, the primitives
 are `point` (76 uses), `rect_fill` (11) and `line` (8) — **`rect_outline` is used only through named
@@ -185,8 +204,8 @@ world already has:
 
 | kind | produced by | what it is |
 |---|---|---|
-| tile | `paint`, `fill{paint}` | a `TileDef` name resolved through the catalog. The **ground**. |
-| object | `place`, `fill{place}` | an `ObjectFactory` template id. Something **standing on** the ground. |
+| tile | `paint`, `fill{paint}` | a `TileDef` name resolved through the catalog. The **ground**, and only the ground. |
+| object | `place`, `fill{place}` | an `ObjectFactory` template id. Something **standing on** the ground — including walls and doors. |
 
 They differ in cost and visibility: terrain is free to paint and invisible to `[SURROUNDINGS]`, an
 object consumes a real item and gets a `DisplayName`. `carve` writes neither — it marks the cell as
@@ -268,9 +287,12 @@ different skill from roleplay, so pointing it at a different model is a real thi
 
 `data/blueprints/DESIGNER.md` holds the reply contract, the grammar, the validity rules and a worked
 example. `Game::BuildDesignerSystemPrompt` appends the **material palette generated from the live
-tile catalog and object templates**. Generated rather than written into the file because a
+ground-tile catalog and object templates**. Ground tiles belong under `paint`; object templates (walls,
+doors, furniture) belong under `place`. Generated rather than written into the file because a
 hand-written list drifts the moment a tile is added, and the failure is quiet: the designer asks for
-a material that does not exist and every design is refused.
+a material that does not exist and every design is refused. **The palette offers ground tiles under
+`paint` and object templates (walls, doors, furniture) under `place`** — wall/door names are never
+paint materials.
 
 The `%MATERIALS%` placeholder is substituted when present and appended when absent, so a prompt file
 that forgets it still gets the vocabulary.
@@ -326,13 +348,14 @@ The fix is the enclosure check described in §8, using the `Interior` primitive 
 ## 7. Placement and rendering
 
 - **Ghost** — a design selected in the Blueprints window follows the mouse in the world pass
-  (`GameDraw.cpp`), drawn as the real tile art at partial alpha, tinted green or red per cell.
-- **Legality is deliberately cheap**: in bounds, not occupied by an object, not on a blocking tile.
-  The full structural validator is not written, and a debug tool must be able to place a broken
-  design in order to show it.
-- **`PaintTile`** is shared with the map editor, so there is one implementation of "put this tile
-  here and refresh the cell's visual".
-- **Persistence** — objects are always stamped `MapAuthored`; painted terrain is written to the map
+  (`GameDraw.cpp`), drawn as the real tile/object art at partial alpha, tinted green or red per cell.
+- **Legality is deliberately cheap**: in bounds, not occupied by an object (including a wall or
+  door), and not on a blocking **ground** tile. The full structural validator is not written, and a
+  debug tool must be able to place a broken design in order to show it.
+- **`PaintTile`** is shared with the map editor, so there is one implementation of "put this
+  **ground tile** here and refresh the cell's visual". It must never be the path that writes a wall
+  or a door.
+- **Persistence** — objects are always stamped `MapAuthored`; painted ground is written to the map
   file only when the window's checkbox is on.
 - **Levels.** Only level 0 builds. `level` and `levels` are parsed and round-tripped so designs do
   not have to be re-authored when `Map` becomes multi-layer, and `ComputeBounds` ignores higher
@@ -375,10 +398,12 @@ tile editor (glyph, colours, hitbox, sprite), the art job's artifacts, a pixel v
 It is reachable headlessly through `--tile-design`, with `--tile-art*` flags for the art pipeline.
 See `asset-generation-design.md`.
 
-**A schema boundary worth knowing:** blueprints reference tiles **by name**, and a name resolves
-through the catalog. Agent-created tiles therefore do not live in `data/tiles/` and a design naming
-one is only portable to a run where the overlay is loaded. Nothing resolves a design's materials
-against a map, deliberately — a blueprint is map-independent and the designer has no map.
+**A schema boundary worth knowing:** blueprints reference **ground tiles** by name, and a name
+resolves through the catalog. **Walls, doors and furniture are objects**, so they are referenced by
+object-template id through `place` instead. Agent-created ground tiles therefore do not live in
+`data/tiles/` and a design naming one is only portable to a run where the overlay is loaded. Nothing
+resolves a design's materials against a map, deliberately — a blueprint is map-independent and the
+designer has no map.
 
 ---
 
@@ -418,8 +443,9 @@ them from the schema:
   `name` only (`"stone floor"` lives in `stone_floor_tile.json`), so a mismatch is harmless and in
   some cases deliberate — the filename is free to describe the art the file carries. It is not a
   rename waiting to happen. (Keying the registry on the stem instead *was* a real bug: it made every
-  multi-word tile — `wooden wall`, `water trough` — unresolvable, which surfaced as blueprints
-  reporting that walls were missing from the catalog.)
+  multi-word tile — `stone floor`, `tilled soil` — unresolvable. The same lookup also surfaced the
+  older mistake that wall materials had been put in the tile catalog: a wall is an object and should
+  never have been resolved through `TileRegistry` at all; see `tile-and-object-vocabulary.md` §4.)
 - **`Map`'s `positions` array and `tileInfo` can desynchronise** under a duplicate tile name; see the
   note in `todo`. Unrelated to blueprints, but it is the reason a saved map must not gain duplicate
   tile names.

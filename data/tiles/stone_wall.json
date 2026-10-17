@@ -1,7 +1,0 @@
-{
-  "name": "stone wall",
-  "character": "#",
-  "characterColor": [150, 150, 162, 255],
-  "backgroundColor": [44, 44, 52, 255],
-  "blocksTile": true
-}

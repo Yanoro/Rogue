@@ -50,6 +50,11 @@ struct (`include/Components.h:127`) held in `Map::tileMap`, and `Map::LoadMap` c
 invisible to the filter twice over. "tilled soil" is a `Tile::name` read from `tileInfo`
 (`src/Map.cpp:61`), never a name the list can emit.
 
+**That is a statement about ground, not about structure.** Under the corrected vocabulary
+(`tile-and-object-vocabulary.md`), a tile is ground only; a wall or door is an object. Once a wall
+or door is an entity with a `DisplayName`, this list sees it. "Terrain is invisible" must not be
+read as "walls are invisible".
+
 The function's own doc comment claims it reports what is "close enough to walk to and interact
 with". That is exactly the problem: **placement targets ground, not a thing you walk to.**
 

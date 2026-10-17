@@ -59,6 +59,41 @@ constexpr float DEFAULT_FACING_MIN_SPEED = 5.0f;
 // stage 1 will draw at a much greater range.
 constexpr float DEFAULT_FACING_MARKER_TILE_FRACTION = 0.6f;
 
+// Vision (docs/spatial-memory-design.md section 4.2). Initial values for
+// `Vision`, which carries its own copy of each so a character can override them
+// later without a code change.
+//
+// The cone is 90 degrees at 22 tiles and the radar 2 tiles: about 390 cells in
+// total, comparable to the radius-10 square [SURROUNDINGS] already scans. The
+// cone is not cheaper than a disc, it is differently shaped -- it reaches further
+// ahead and nothing behind. These are starting guesses, chosen from looking at
+// the overlay; the Vision Debug window edits them live precisely because they
+// are guesses.
+constexpr float DEFAULT_VISION_RANGE = 22.0f;
+constexpr float DEFAULT_VISION_ANGLE_DEGREES = 90.0f;
+constexpr int DEFAULT_VISION_RADAR_RADIUS = 2;
+
+// How far the facing must turn before the cached sweep is recomputed. A smaller
+// value samples more often for a finer cone; a larger one lets the cone lag the
+// character while turning. 22.5 degrees is one 16th of a turn.
+constexpr float DEFAULT_VISION_FACING_RESAMPLE_DEGREES = 22.5f;
+
+// The cache is also rebuilt this often regardless, which is what notices an
+// obstacle appearing or disappearing (a tree felled, a barrel moved) without
+// tracking every such change. At ~60 fps this is twice a second.
+constexpr int DEFAULT_VISION_RESAMPLE_TICKS = 30;
+
+// Spatial memory caps (docs/spatial-memory-design.md section 5).
+//
+// The cell cap is a memory budget, not a simulation rule: a 40-tile walk observes
+// more than a thousand cells, so 2048 is roughly one long walk's worth of detail
+// held at once. Overflow evicts the least-visited and then the oldest, never a
+// cell belonging to a durable place.
+constexpr int DEFAULT_MEMORY_CELLS_MAX = 2048;
+
+// Objects are far sparser than cells, so a much smaller bound suffices.
+constexpr int DEFAULT_MEMORY_OBJECTS_MAX = 256;
+
 // Durability one harvest removes from each tool used for it, when the object
 // does not declare a "durabilityCost" of its own. Durability is opt-in per item
 // (an item whose definition declares no "durability" never wears out), so this

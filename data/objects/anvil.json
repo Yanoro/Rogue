@@ -1,7 +1,7 @@
 {
   "name": "Anvil",
   "description": "A heavy block of iron for hammering ingots into tools and blades.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle",
     "Workstation"

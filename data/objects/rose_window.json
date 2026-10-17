@@ -1,7 +1,7 @@
 {
   "name": "Rose Window",
   "description": "A round stained-glass window in a stone frame.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

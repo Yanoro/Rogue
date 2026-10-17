@@ -1,7 +1,7 @@
 {
   "name": "Flour",
   "description": "Finely ground wheat, ready to be baked into bread.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

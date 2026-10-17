@@ -1,7 +1,7 @@
 {
   "name": "Collection Box",
   "description": "A wooden box with a slot in the lid.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Storage",
     "Obstacle"

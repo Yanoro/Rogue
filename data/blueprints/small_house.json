@@ -13,7 +13,7 @@
     {
       "id": "walls",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "walls",
       "role": "structural"
@@ -35,7 +35,7 @@
     {
       "id": "door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {

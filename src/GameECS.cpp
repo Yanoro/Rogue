@@ -58,7 +58,12 @@
 #include <queue>
 #include <regex>
 #include <set>
+#include <unordered_set>
 #include <vector>
+
+#include "SpatialMemory.hpp"
+#include "TimeUtils.hpp"
+#include "VisionQuery.hpp"
 
 // Gives a character the full standard stat set at its neutral values.
 //
@@ -490,6 +495,15 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
 void Game::ECSInitOverlaySystems() {
   ecs.system<ScreenPosition, DisplayName>().kind<Render>().each(
       [](flecs::entity e, const ScreenPosition &pos, const DisplayName &displayName) {
+        // Name tags are opt-in for objects. Characters always show theirs; a
+        // field of Structural wall objects must not turn into a wall of text.
+        if (e.has<Structural>()) {
+          return;
+        }
+        if (!e.has<ShowNameTag>() && !e.has<CharacterTag>()) {
+          return;
+        }
+
         Color tagColor = BLACK;
         if (e.has<NameTagColor>()) {
           tagColor = e.get<NameTagColor>()->color;
@@ -674,16 +688,15 @@ void Game::ECSInitPhysicsSystems() {
 
           int currX = gamePos.x + dx[i];
           int currY = gamePos.y + dy[i];
-          Tile *currTile = map->GetTile(currX, currY);
 
-          if (currTile == NULL || !currTile->blocksTile) {
+          if (!map->IsBlocked(currX, currY)) {
             continue;
           }
           ScreenPosition currTileScreenPos =
               map->GameCoordsToScreenCoords(currX, currY);
           raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
-                                     currTile->hitbox.width,
-                                     currTile->hitbox.height);
+                                     (float)map->GetTileWidth(),
+                                     (float)map->GetTileHeight());
           if (deltaXRect.CheckCollision(currRect)) {
             nullXVector = true;
           }
@@ -755,6 +768,9 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   ecs.set<MapResource>({map.get()});
 
   Map *currentMap = map.get();
+  // The Map constructor has already spawned the map's authored objects, so the
+  // blocking cache can be correct before the relocation pass below.
+  currentMap->RefreshBlockingObjects();
   // Teleport entities that get stuck to safety
   // TODO: Maybe have a better tag instead of velocity
   // to tell when an entity should be teleported out
@@ -788,8 +804,7 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
             for (const auto &offset : offsets) {
               int tx = pos.x + offset.dx;
               int ty = pos.y + offset.dy;
-              Tile *t = currentMap->GetTile(tx, ty);
-              bool blocks = (!t) || t->blocksTile;
+              bool blocks = currentMap->IsBlocked(tx, ty);
               if (blocks) {
 
                 ScreenPosition tileSPos =
@@ -826,10 +841,9 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
 
             while (!q.empty()) {
               GamePosition curr = q.front();
-              Tile *currTile = currentMap->GetTile(curr.x, curr.y);
               q.pop();
 
-              if (currTile && !currTile->blocksTile) {
+              if (!currentMap->IsBlocked(curr.x, curr.y)) {
                 safePos = curr;
                 found = true;
                 break;
@@ -1013,8 +1027,7 @@ void Game::ECSInitActionSystems() {
           for (int i = 0; i < 8; i++) {
             int currX = currPos.x + dx[i];
             int currY = currPos.y + dy[i];
-            Tile *currNeighbour = map->GetTile(currX, currY);
-            if (currNeighbour == nullptr || !currNeighbour->blocksTile) {
+            if (!map->IsBlocked(currX, currY)) {
               continue;
             }
 
@@ -1131,6 +1144,124 @@ void Game::ECSInitActionSystems() {
         }
       });
 
+}
+
+// Fills each `Vision`'s cache (docs/spatial-memory-design.md section 4.4).
+//
+// The sweep is rebuilt only when it can have changed: the origin tile, the facing
+// beyond a threshold (otherwise the cone would be recomputed for every degree of
+// a turn), a tuning parameter, or the periodic ceiling that notices an obstacle
+// appearing or being felled without tracking either event.
+//
+// The opaque set is rebuilt per sample rather than cached. A sample is a handful
+// per second, and a stale set would be exactly the kind of quiet wrongness this
+// whole feature exists to make visible. It is rebuilt *after* the staleness check,
+// so a character standing still costs one comparison per frame, not a sweep.
+void Game::ECSInitVisionSystems() {
+  ecs.system<Vision, const Facing, const GamePosition>("VisionSampler")
+      .each([this](flecs::entity, Vision &vision, const Facing &facing,
+                   const GamePosition &origin) {
+        const int nowTick = CurrentTaskTick(ecs);
+
+        const float facingDot = facing.x * vision.cachedFacing.x +
+                                facing.y * vision.cachedFacing.y;
+        const bool stale =
+            vision.lastVisible.empty() || !(origin == vision.cachedOrigin) ||
+            vision.range != vision.cachedRange ||
+            vision.angleDegrees != vision.cachedAngleDegrees ||
+            vision.radarRadius != vision.cachedRadarRadius ||
+            facingDot <
+                std::cos(DEFAULT_VISION_FACING_RESAMPLE_DEGREES * DEG2RAD) ||
+            vision.lastSampleTick < 0 ||
+            nowTick - vision.lastSampleTick >= DEFAULT_VISION_RESAMPLE_TICKS;
+        if (!stale) {
+          return;
+        }
+
+        // Sight is blocked by objects that carry BlocksVision, not by tiles: a
+        // river blocks movement and nothing else, a glass wall blocks movement and
+        // nothing else either. See the component.
+        std::unordered_set<std::uint64_t> opaque;
+        ecs.filter<const BlocksVision, const GamePosition>().each(
+            [&opaque](const BlocksVision &, const GamePosition &pos) {
+              opaque.insert(VisionQuery::CellKey(pos));
+            });
+
+        if (!map) {
+          return;
+        }
+
+        VisionQuery::VisibleCells(*map, origin, facing, vision.range,
+                                  vision.angleDegrees, vision.radarRadius,
+                                  opaque, vision.lastVisible);
+
+        vision.cachedOrigin = origin;
+        vision.cachedFacing = facing;
+        vision.cachedRange = vision.range;
+        vision.cachedAngleDegrees = vision.angleDegrees;
+        vision.cachedRadarRadius = vision.radarRadius;
+        vision.lastSampleTick = nowTick;
+      });
+}
+
+// Records what each character has seen (docs/spatial-memory-design.md section 3.4).
+//
+// A consumer of the vision sweep, not a second sampler. It fires only when the
+// sampler has produced a new set, so the geometry is computed once and the
+// overlay, the memory and (from stage 3) the place derivation all read the same
+// answer -- the same rule the placement validator follows.
+void Game::ECSInitMemorySystems() {
+  ecs.system<SpatialMemory, const Vision, const GamePosition>(
+         "SpatialMemoryWriter")
+      .each([this](flecs::entity entity, SpatialMemory &memory,
+                   const Vision &vision, const GamePosition &origin) {
+        // Nothing to write until the sampler has run, and no writing twice for
+        // one sample -- the sweep is the event, not the frame.
+        if (!map || vision.lastVisible.empty() || vision.lastSampleTick < 0 ||
+            vision.lastSampleTick == memory.lastVisionTick) {
+          return;
+        }
+
+        const int tick = vision.lastSampleTick;
+        Memory::EnsureOrigin(memory, origin, tick);
+        Memory::ObserveCells(memory, *map, vision.lastVisible, tick);
+        Memory::ObserveObjects(memory, ecs, vision.lastVisible, entity, tick);
+        Memory::EnforceCellCap(memory);
+        Memory::EnforceObjectCap(memory);
+        memory.lastVisionTick = tick;
+      });
+}
+
+// Writes one character's record to logs/ on demand (section 7.3). The file name
+// carries the run's start time for the same reason an NPC transcript does: two
+// runs must be comparable, not overwrite each other.
+void Game::DumpSpatialMemory(flecs::entity entity) {
+  if (!entity.is_alive()) {
+    return;
+  }
+  const SpatialMemory *memory = entity.get<SpatialMemory>();
+  if (memory == nullptr) {
+    if (debugLog) debugLog->LogWarning("Spatial memory dump: entity has no SpatialMemory.");
+    return;
+  }
+
+  const std::string name =
+      entity.has<DisplayName>() ? entity.get<DisplayName>()->name : "character";
+
+  std::error_code error;
+  std::filesystem::create_directories("logs", error);
+
+  const std::string path =
+      "logs/" + TimeUtils::GetStartTimeString() + "-" + name + "-memory.txt";
+  std::ofstream out(path);
+  if (!out.is_open()) {
+    if (debugLog) debugLog->LogError("Spatial memory dump: cannot open " + path);
+    return;
+  }
+  out << Memory::Dump(*memory, name, CurrentTaskTick(ecs));
+  out.close();
+
+  if (debugLog) debugLog->LogInfo("Spatial memory dumped to " + path);
 }
 
 static std::mutex g_AIResponseMutex;
@@ -2124,8 +2255,8 @@ void Game::ECSInit() {
 
   // Building designs. Loaded after the tile catalog and the object factory
   // because it validates every design's materials against both: a "paint" naming
-  // a tile the world has never heard of would otherwise build an invisible wall,
-  // which reads exactly like a working design that places nothing.
+  // a ground tile the world has never heard of would otherwise build invisible
+  // ground, which reads exactly like a working design that places nothing.
   blueprintRegistry.SetDebugLog(debugLog.get());
   blueprintRegistry.SetTileRegistry(&tileRegistry);
   blueprintRegistry.SetObjectFactory(&objectFactory);
@@ -3188,6 +3319,11 @@ void Game::ECSInit() {
   ECSInitAgentSystems();
   ECSInitActionSystems();
   ECSInitTaskSystems();
+  // After the action systems, because its staleness test reads the facing the
+  // facing system derives in the same frame.
+  ECSInitVisionSystems();
+  // After the vision systems: the writer consumes a sample, it does not take one.
+  ECSInitMemorySystems();
   ECSInitTileArtSystems();
 
   // Starting tile and identity come from settings. The relocation pass inside
@@ -3202,7 +3338,20 @@ void Game::ECSInit() {
   playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
+  // The facing system derives from Velocity but never adds the component, so the
+  // player has to be born with one exactly like an NPC -- and this is the line the
+  // Vision Debug window's "characters without a Facing" count exists to catch if
+  // it is ever missed.
+  playerEntity.set<Facing>({});
   playerEntity.set<Acceleration>({0, 0});
+  // Stage 1 of docs/spatial-memory-design.md: the player is the only character
+  // that sees yet, and having the component is the opt-in. Its values come from
+  // the Vision defaults, and the Vision Debug window edits this component live.
+  playerEntity.set<Vision>({});
+  // Stage 2 of docs/spatial-memory-design.md: the record the vision sweep feeds.
+  // Empty on spawn -- the Origin place is created by the first sample, which is
+  // what makes "I have no idea where I am" the honest starting state.
+  playerEntity.set<SpatialMemory>({});
   playerEntity.set<Hitbox>(
       {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT});
   // Tile-sized and art-driven for the same reasons an NPC is. The purple glyph

@@ -1,7 +1,7 @@
 {
   "name": "Censer",
   "description": "An iron censer, swung on a chain.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

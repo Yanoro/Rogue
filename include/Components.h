@@ -1,12 +1,14 @@
 #pragma once
 
 #include "AI.h"
+#include "Defaults.h"
 #include "raylib-cpp.hpp"
 #include <cstdint>
 #include <filesystem>
 #include <flecs.h>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "AsciiArtTypes.hpp"
@@ -114,6 +116,127 @@ struct Facing : public raylib::Vector2 {
 
 struct Friction {
   float value;
+};
+
+// What one character can see, and the cache of the last answer to it
+// (docs/spatial-memory-design.md section 4).
+//
+// The three parameters are the per-character content the design calls for; they
+// default to the tuning constants in Defaults.h so there is one place to change a
+// number. Everything below them is derived state: only the sampler writes it, and
+// it describes what `lastVisible` was computed from, so the sampler can tell when
+// the cache is stale without a dirty flag a future writer could forget to set.
+//
+// Having this component is the opt-in. A character without it samples nothing and
+// costs nothing, which is how the player-only phase is gated without a name check
+// anywhere in the systems.
+struct Vision {
+  float range = DEFAULT_VISION_RANGE;                 // tiles
+  float angleDegrees = DEFAULT_VISION_ANGLE_DEGREES;  // full cone, not half
+  int radarRadius = DEFAULT_VISION_RADAR_RADIUS;      // tiles, all round
+
+  // The cells the last sample saw, in map coordinates. The overlay draws this set
+  // and never a fresh sweep: one sweep is ~390 cells of line of sight, which is
+  // not a cost the render path is allowed to have.
+  std::vector<GamePosition> lastVisible;
+  GamePosition cachedOrigin = {-1, -1};
+  raylib::Vector2 cachedFacing = {0.0f, 0.0f};
+  float cachedRange = -1.0f;
+  float cachedAngleDegrees = -1.0f;
+  int cachedRadarRadius = -1;
+  int lastSampleTick = -1;
+};
+
+// ---------------------------------------------------------------------------
+// Spatial memory (docs/spatial-memory-design.md section 3.4).
+//
+// Three layers with three lifetimes. Nothing here is reflected: it is runtime
+// state with no authoring story and no save/load story yet, and the debug dump
+// (SpatialMemory.hpp) is its serialization. Reflecting the maps would buy a
+// member-ordering hazard and nothing else.
+// ---------------------------------------------------------------------------
+
+// Layer 1: one cell this character has actually observed. The truthful floor of
+// the whole feature -- everything else is an index over these.
+struct MemoryCell {
+  GamePosition pos;
+  std::string surface;  // Tile::name at observation: "grass", "path", "tilled soil"
+  bool walkable = true; // !Tile::blocksTile at observation
+  int observedTick = 0;
+  int visitCount = 1;   // a road walked twice outranks a corner seen once
+};
+
+// Layer 1: something that was standing somewhere. The item type is the strongest
+// evidence in the format and it is already data: "mill", "anvil", "apple_tree"
+// say more about a place than any surface name does.
+struct SeenObject {
+  std::string templateId;  // ItemType::type; empty for a character or a loose drop
+  std::string name;
+  GamePosition pos;
+  bool character = false;  // a person is knowledge of a different kind
+  int firstSeenTick = 0;
+  int lastSeenTick = 0;
+  int vanishedTick = -1;   // a later look at that cell found nothing there
+};
+
+// Layer 2: counts, never a verdict. "7 structures" is evidence; "village" is a
+// conclusion the agent draws, and nothing in this struct may draw it.
+struct PlaceFact {
+  std::string category;  // "structure", "workshop", "planted row", "route", "water"
+  int count = 0;
+};
+
+// Where a place came from.
+//
+//   Origin   -- the cell the character first stood on. The root of the coordinate
+//               system for someone who knows nothing, and the anchor every other
+//               description falls back to.
+//   Inferred -- a cluster derived from observed cells (section 3.3).
+//   Authored -- overlaps a map Location.
+enum class PlaceOrigin { Origin, Inferred, Authored };
+enum class KnowledgeSource { Observed, Told, Inferred };
+
+struct KnownPlace {
+  PlaceOrigin origin = PlaceOrigin::Inferred;
+  KnowledgeSource source = KnowledgeSource::Observed;
+  unsigned char confidence = 255;  // observed full, told lower, inferred lower still
+  GamePosition anchor;             // top-left of the extent
+  int width = 0;
+  int height = 0;
+  std::vector<PlaceFact> facts;    // the evidence its description is built from
+  std::string attribute;           // cluster key: surface, crop, or structure kind
+  std::string label;               // EMPTY until something names it
+  std::string authoringId;         // the map's name, once learned -- not on sight
+  int firstSeenTick = 0;
+  int lastSeenTick = 0;
+};
+
+// Layer 3: the only stored prose, and only when something authored it. Written by
+// a naming verb or a told-by transfer -- never by the engine, never by the
+// consolidation pass (section 6.4's "one author per field").
+struct MemoryNote {
+  std::string placeLabel;
+  std::string text;
+  int tick = 0;
+};
+
+struct SpatialMemory {
+  // Created on the first sample, label empty. See PlaceOrigin.
+  KnownPlace origin;
+
+  // Keyed by VisionQuery::CellKey, which is what makes a re-observation an
+  // in-place update rather than an append. A map rather than a vector because
+  // every write is a lookup, and an eviction is an erase.
+  std::unordered_map<std::uint64_t, MemoryCell> cells;
+  // Keyed by entity id: the same tree seen twice is one record with a newer
+  // lastSeenTick, not two records.
+  std::unordered_map<flecs::entity_t, SeenObject> objects;
+  std::vector<KnownPlace> places;
+  std::vector<MemoryNote> notes;
+
+  // The vision sample this record has already consumed, so the writer runs once
+  // per sample rather than once per frame.
+  int lastVisionTick = -1;
 };
 
 struct BlocksTile {};
@@ -528,6 +651,36 @@ struct Obstacle {
   bool blocksMovement = true;
 };
 
+// What a character cannot see through (docs/spatial-memory-design.md section
+// 4.3). A component of its own rather than a field on Obstacle, because the two
+// are independent: a glass wall is solid but transparent, and tall grass, smoke
+// or a curtain is the other way round.
+//
+// It is an object component, not a tile property on purpose. Terrain is ground;
+// what stands on the ground is what hides things behind it. A tile that blocks
+// movement never blocks sight by itself -- otherwise every river would blind
+// whoever looked across it.
+//
+// Nothing blocks sight unless it has this component. That is the whole rule the
+// line-of-sight query applies.
+struct BlocksVision {};
+
+// Part of the world's fabric rather than a prop: a wall, a fence, a cliff face.
+// It still renders and still blocks movement, but it is not something an agent
+// walks up to and uses, so it is omitted from the [SURROUNDINGS] list. The
+// radar and vision still show it -- this hides prose, not the world.
+//
+// A tag, not a kind: a Structural object is still an object, and the thing that
+// makes it solid is Obstacle. It exists so converting wall tiles to wall objects
+// does not flood every prompt with one line per wall cell.
+struct Structural {};
+
+// Opt-in floating name label. Objects do not draw one unless they ask; characters
+// always do (the name-tag system treats CharacterTag as implicit consent). This
+// replaces the old default of labelling every named entity, which made a field of
+// wall objects unreadable.
+struct ShowNameTag {};
+
 struct Storage {
   int capacity = 10;
 };
@@ -767,8 +920,22 @@ inline void RegisterComponents(flecs::world &ecs) {
 
   ecs.component<Friction>().member<float>("value");
 
+  // Only the three tuning parameters are reflected: `lastVisible` and the cached
+  // origin/facing/params are derived state with no serialized meaning, and
+  // reflecting them would mean registering std::vector<GamePosition> before this
+  // component for no gain.
+  ecs.component<Vision>()
+      .member<float>("range")
+      .member<float>("angleDegrees")
+      .member<int>("radarRadius");
+
   ecs.component<BlocksTile>();
   ecs.component<Intangible>();
+  // A tag, like BlocksTile. Listed so the component exists in the type registry
+  // even on a map with nothing opaque on it yet.
+  ecs.component<BlocksVision>();
+  ecs.component<Structural>();
+  ecs.component<ShowNameTag>();
 
   ecs.component<raylib::Rectangle>()
       .member<float>("x")

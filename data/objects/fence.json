@@ -1,0 +1,27 @@
+{
+  "name": "Fence",
+  "description": "A rough timber fence.",
+  "components": [
+    "Obstacle",
+    "Structural"
+  ],
+  "character": "#",
+  "characterColor": [
+    166,
+    116,
+    66,
+    255
+  ],
+  "backgroundColor": [
+    38,
+    28,
+    18,
+    255
+  ],
+  "nameTagColor": [
+    166,
+    116,
+    66,
+    255
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    80,
+    62,
+    40,
+    255
+  ],
+  "blocksTile": false,
+  "character": "d",
+  "characterColor": [
+    214,
+    195,
+    130,
+    255
+  ],
+  "name": "sand"
+}

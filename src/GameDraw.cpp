@@ -9,6 +9,7 @@
 #include "rlImGui.h"
 #include <iostream>
 #include <sstream>
+#include <cmath>
 #include <filesystem>
 #include <algorithm>
 #include "InteractionRegistry.h"
@@ -166,6 +167,53 @@ void Game::Draw() {
             DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, BLUE);
           }
         });
+
+    // Stage 1 of docs/spatial-memory-design.md: what the character can see.
+    //
+    // The tint is the cached sweep (`Vision::lastVisible`) and never a fresh one:
+    // an LOS pass over ~390 cells per frame per character is not a cost the render
+    // path may have. The arc is drawn from the *cached* facing for the same reason
+    // -- arc and tint must agree, or tuning the cone becomes guesswork.
+    //
+    // This draws over the world and hides nothing. Sight is an acquisition rule in
+    // this phase, not fog of war (section 9), so an unlit barrel is still visible
+    // to the player even though the character has not seen it.
+    if (debugWindowState->GetShowVisionOverlay()) {
+      ecs.filter<const Vision, const ScreenPosition, const Hitbox>().each(
+          [this, tileW, tileH](const Vision &vision,
+                               const ScreenPosition &screenPos,
+                               const Hitbox &hitbox) {
+            for (const GamePosition &cell : vision.lastVisible) {
+              const ScreenPosition at =
+                  map->GameCoordsToScreenCoords(cell.x, cell.y);
+              DrawRectangle(static_cast<int>(at.x), static_cast<int>(at.y),
+                            tileW, tileH, ColorAlpha(SKYBLUE, 0.18f));
+            }
+
+            const float centerX = screenPos.x + hitbox.width / 2.0f;
+            const float centerY = screenPos.y + hitbox.height / 2.0f;
+            const float rangePx = vision.range * static_cast<float>(tileW);
+            const float centerAngle =
+                std::atan2(vision.cachedFacing.y, vision.cachedFacing.x) * RAD2DEG;
+
+            if (vision.angleDegrees >= 359.5f) {
+              DrawCircleLines(static_cast<int>(centerX),
+                              static_cast<int>(centerY), rangePx,
+                              ColorAlpha(SKYBLUE, 0.45f));
+            } else {
+              const float half = vision.angleDegrees * 0.5f;
+              DrawCircleSectorLines({centerX, centerY}, rangePx,
+                                    centerAngle - half, centerAngle + half, 32,
+                                    ColorAlpha(SKYBLUE, 0.45f));
+            }
+            if (vision.radarRadius > 0) {
+              DrawCircleLines(static_cast<int>(centerX),
+                              static_cast<int>(centerY),
+                              vision.radarRadius * static_cast<float>(tileW),
+                              ColorAlpha(SKYBLUE, 0.35f));
+            }
+          });
+    }
 
     // Stage 0 of docs/spatial-memory-design.md: one short line per character
     // showing the direction `Facing` holds, so the direction the cone will later

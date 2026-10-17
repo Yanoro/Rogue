@@ -1,7 +1,7 @@
 {
   "name": "Baptismal Font",
   "description": "A stone font holding blessed water.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

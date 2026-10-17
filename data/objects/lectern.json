@@ -1,7 +1,7 @@
 {
   "name": "Lectern",
   "description": "A wooden lectern holding an open book.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

@@ -1,7 +1,7 @@
 {
   "name": "Wall Banner",
   "description": "A hanging banner on a wooden pole.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

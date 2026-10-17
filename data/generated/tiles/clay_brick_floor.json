@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    62,
+    42,
+    34,
+    255
+  ],
+  "blocksTile": false,
+  "character": "b",
+  "characterColor": [
+    176,
+    104,
+    74,
+    255
+  ],
+  "name": "clay brick floor"
+}

@@ -708,6 +708,13 @@ private:
               if (distance > radius) {
                 return;
               }
+              // Walls, fences and cliff faces are part of the world's fabric,
+              // not things to walk up to. The radar and vision still show them;
+              // this list is the actionable view, so one line per wall cell
+              // would drown everything else.
+              if (other.has<Structural>()) {
+                return;
+              }
               const Nearby found{displayName.name, dx, dy, distance};
               if (other.has<CharacterTag>()) {
                 characters.push_back(found);

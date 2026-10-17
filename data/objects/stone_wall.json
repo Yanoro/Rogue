@@ -1,0 +1,28 @@
+{
+  "name": "Stone Wall",
+  "description": "A wall of fitted stone blocks.",
+  "components": [
+    "Obstacle",
+    "BlocksVision",
+    "Structural"
+  ],
+  "character": "#",
+  "characterColor": [
+    150,
+    150,
+    162,
+    255
+  ],
+  "backgroundColor": [
+    44,
+    44,
+    52,
+    255
+  ],
+  "nameTagColor": [
+    150,
+    150,
+    162,
+    255
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "Oven",
   "description": "A stone bread oven, its mouth still warm. Feed it flour and it bakes bread.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle",
     "Workstation"

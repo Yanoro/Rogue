@@ -1,0 +1,27 @@
+{
+  "name": "Door",
+  "description": "A wooden door set into a frame.",
+  "components": [
+    "Interactable",
+    "ShowNameTag"
+  ],
+  "character": "+",
+  "characterColor": [
+    110,
+    70,
+    40,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    110,
+    70,
+    40,
+    255
+  ]
+}

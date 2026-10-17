@@ -1,7 +1,7 @@
 {
   "name": "Church Bench",
   "description": "A plain wooden bench for the congregation.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

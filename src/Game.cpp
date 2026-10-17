@@ -644,6 +644,12 @@ void Game::UpdateGUI() {
 }
 
 void Game::Update() {
+  // Rebuild the blocking-object cache before anything can path, move or place
+  // this frame. One frame of staleness is invisible; reading ECS from AStar
+  // would not be.
+  if (map) {
+    map->RefreshBlockingObjects();
+  }
   UpdateGUI();
   // The speech pump lives here, not in the Designer window's Draw(): Draw only
   // runs while that window is visible, so a pane closed to watch the world would
@@ -1036,6 +1042,10 @@ std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
   if (blueprintPersistTerrain) {
     map->SaveToFile(mapFilePath);
   }
+
+  // Walls and doors placed here are objects now, so the blocking cache must see
+  // them before the next path is requested.
+  map->RefreshBlockingObjects();
 
   std::string message = "Built " + blueprint.name + " at (" +
                         std::to_string(origin.x) + "," + std::to_string(origin.y) +

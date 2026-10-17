@@ -9,6 +9,12 @@ makes an LLM write an ASCII glyph and two colours at runtime; this one makes an
 image model draw a picture at authoring time. They share a palette and nothing
 else.
 
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only** — a seamless floor, path, grass,
+soil or water surface. **Walls, doors, gates, windows, roofs and furniture are objects, never
+tiles**, even when they fill a cell edge to edge. See
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md). The wall/fence/rock art was renamed
+to the object convention in the same migration.
+
 ---
 
 ## 1. What the current style actually is
@@ -20,11 +26,11 @@ over the 57 sprites in `data/sprites/`.
 
 | | |
 |---|---|
-| file | PNG, 32×32, the size the game draws into a 32px tile |
+| file | PNG, 32×32, the size the game draws into a 32px cell |
 | objects | RGBA, **binary alpha** — zero semi-transparent pixels in all 57 |
 | object bounding box | median **27.5 × 30.5 px**, so a 1–3px margin and no more |
 | object coverage | median **50%** of the cell's pixels opaque; the rest is empty |
-| tiles | 4-bit **indexed**, 8–16 colours, full-bleed and opaque, no outline |
+| ground tiles | 4-bit **indexed**, 8–16 colours, full-bleed and opaque, no outline |
 | drawn | nearest-neighbour, integer scale (`SpriteFitRect`), so 32×32 is 1x/2x/3x |
 
 **Tone**
@@ -78,8 +84,8 @@ Everything after it can be a bare list of objects.
 
 ```
 You are drawing sprite assets for AIRogue, a top-down medieval village simulation:
-the world is a grid of 32x32 pixel tiles, people live in it and walk around, and every
-building, object and person is drawn into one tile.
+the world is a grid of 32x32 pixel cells, people live in it and walk around, and every
+building, object and person is drawn into one cell.
 
 Draw PIXEL ART at a true 32x32 pixel scale -- the size the game actually draws at -- in
 the style of a 1990s 16-bit game. Build each object from a few chunky masses and
@@ -168,10 +174,17 @@ at the foot and one pale pillow, on a heavy dark timber frame.
 
 ## 4. Variants of the ask
 
-**Full-bleed tiles** (floors, walls, water, doors painted into a wall cell) are not
-objects, and the differences matter more than the similarities. A tile repeats, so it must
-be seamless; it is a surface, so it is seen from directly above; and it must contain no
-prop, because a tree baked into a floor tile is duplicated on every one of them.
+**Full-bleed ground tiles** (floors, water, paths, grass, soil) are not objects, and the differences
+matter more than the similarities. A tile repeats, so it must be seamless; it is a surface, so it is
+seen from directly above; and it must contain no prop, because a tree baked into a floor tile is
+duplicated on every one of them.
+
+**Walls, doors, roofs and other structure are objects, not tiles.** Ask for them with the object
+prompt, even when they must fill the cell: a door is a cell-filling object, a wall section is a
+cell-filling object, and neither belongs in the seamless-ground batch. Name their sprites with the
+bare object key (`door.png`, `stone_wall.png`), not `tile_door.png` or `tile_stone_wall.png`. The
+wall/fence/rock sprites were renamed to the object convention in the 2026-10-17 migration; see
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md) §4.
 
 ```
 Draw these 6 seamless ground textures, as a strict grid of 3 columns by 2 rows. Each is a
@@ -221,9 +234,11 @@ slept-in; chest closed / open; pot empty / full.
    at 32px.
 3. Promote by hand, to the name the engine will look for:
    - objects: `data/sprites/<template key>.png`, where the key is the object template's
-     lowercase slug (`apple_tree.json` → `apple_tree.png`);
-   - tiles: `data/sprites/tile_<slug>.png` — the prefix is mandatory, `TileSpriteId()`
-     adds it, and a bare `water.png` would be ambiguous between a tile and an object.
+     lowercase slug (`apple_tree.json` → `apple_tree.png`); walls, doors and other structure
+     use this form, never the `tile_` one;
+   - ground tiles: `data/sprites/tile_<slug>.png` — the prefix is mandatory for **ground**
+     tiles, `TileSpriteId()` adds it, and a bare `water.png` would be ambiguous between a
+     ground tile and an object.
 4. Ask the engine what is still missing:
 
    ```bash

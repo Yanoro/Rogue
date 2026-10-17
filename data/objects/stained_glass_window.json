@@ -1,7 +1,7 @@
 {
   "name": "Stained Glass Window",
   "description": "An arched window of coloured glass.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

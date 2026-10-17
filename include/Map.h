@@ -5,6 +5,7 @@
 #include <flecs.h>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 class DebugLog;
@@ -135,18 +136,29 @@ public:
   std::vector<Tile*> GetNeighbours(GamePosition p); 
   static bool AreNeighbours(GamePosition p1, GamePosition p2);
 
+  // Rebuilds the cached set of cells occupied by a blocking object. Called once a
+  // frame by Game::Update, and once after LoadMap has spawned the map's objects.
+  // A cache rather than a live ECS query because AStar asks this per neighbour.
+  void RefreshBlockingObjects();
+
+  // Whether a cell cannot be walked into: out of bounds, no ground tile, a
+  // blocking ground tile, or a blocking object (Obstacle with blocksMovement).
+  // This is the one question movement, pathfinding and placement should ask;
+  // Tile::blocksTile alone only describes the ground.
+  bool IsBlocked(int x, int y) const;
+
   // The index of a tile in uniqueTiles, or -1. This is the id the map file's
   // "positions" array stores -- an index into "tilePalette", which is uniqueTiles
   // written out name-wise -- and the id a caller needs when it wants to write a
-  // *new* tile (a placed blueprint's wall, for instance) without owning one.
+  // *new* ground tile without owning one.
   int GetTileId(const Tile *tile) const;
 
-  // Creates a tile on the map from a definition, and returns it. Used when
-  // something needs a tile the map did not already have -- placing a blueprint
-  // whose walls the map never used. Returns nullptr when the name is not in the
-  // catalog, because inventing a tile with no appearance would paint an
-  // invisible wall. A map with no catalog loaded cannot create tiles this way and
-  // says so.
+  // Creates a ground tile on the map from a definition, and returns it. Used when
+  // something needs a ground tile the map did not already have -- placing a
+  // blueprint whose floor material the map never used. Returns nullptr when the
+  // name is not in the catalog, because inventing a tile with no appearance would
+  // paint an invisible patch of ground. A map with no catalog loaded cannot
+  // create tiles this way and says so.
   Tile *CreateTile(const std::string &name);
 
 private:
@@ -172,6 +184,12 @@ private:
   std::vector<NPCData> npcs;
 
   std::vector<Tile *> tileMap;
+
+  // Cells occupied by an object whose Obstacle::blocksMovement is true. Rebuilt
+  // by RefreshBlockingObjects; indices are GetIndex(x, y), the same row-major id
+  // tileMap uses. Kept here rather than queried from ECS because AStar is a
+  // Map-only interface and is called for every neighbour of every open node.
+  std::unordered_set<int> blockingObjects;
 
   // The map file exactly as loaded. BuildMapJson starts from this and overwrites
   // only the sections the editor owns (tilePalette, positions, locations,

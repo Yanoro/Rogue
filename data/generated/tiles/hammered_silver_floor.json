@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    92,
+    98,
+    110,
+    255
+  ],
+  "blocksTile": false,
+  "character": "S",
+  "characterColor": [
+    198,
+    206,
+    220,
+    255
+  ],
+  "name": "hammered silver floor"
+}

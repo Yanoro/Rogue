@@ -1,0 +1,28 @@
+{
+  "name": "Workbench",
+  "description": "A scarred bench top for laying out tools and work.",
+  "components": [
+    "Obstacle",
+    "Interactable",
+    "ShowNameTag"
+  ],
+  "character": "W",
+  "characterColor": [
+    176,
+    140,
+    96,
+    255
+  ],
+  "backgroundColor": [
+    46,
+    36,
+    26,
+    255
+  ],
+  "nameTagColor": [
+    176,
+    140,
+    96,
+    255
+  ]
+}

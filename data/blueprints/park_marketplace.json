@@ -20,7 +20,7 @@
     {
       "id": "fence",
       "op": {
-        "paint": "fence"
+        "place": "fence"
       },
       "region": "fence_ring",
       "role": "structural"
@@ -42,7 +42,7 @@
     {
       "id": "gate_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {
@@ -64,7 +64,7 @@
     {
       "id": "stall_row_west",
       "op": {
-        "paint": "workbench"
+        "place": "workbench"
       },
       "role": "fixture",
       "shape": {
@@ -83,7 +83,7 @@
     {
       "id": "stall_row_east",
       "op": {
-        "paint": "workbench"
+        "place": "workbench"
       },
       "role": "fixture",
       "shape": {

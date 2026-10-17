@@ -13,7 +13,7 @@
     {
       "id": "forge",
       "op": {
-        "paint": "forge"
+        "place": "forge"
       },
       "shape": {
         "point": {
@@ -27,7 +27,7 @@
     {
       "id": "anvil",
       "op": {
-        "paint": "anvil"
+        "place": "anvil"
       },
       "shape": {
         "point": {
@@ -41,7 +41,7 @@
     {
       "id": "workbench",
       "op": {
-        "paint": "workbench"
+        "place": "workbench"
       },
       "shape": {
         "point": {

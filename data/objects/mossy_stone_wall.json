@@ -1,6 +1,11 @@
 {
-  "name": "mossy stone wall",
+  "name": "Mossy Stone Wall",
   "description": "Stone wall with moss growing in the joints.",
+  "components": [
+    "Obstacle",
+    "BlocksVision",
+    "Structural"
+  ],
   "character": "#",
   "characterColor": [
     150,
@@ -14,6 +19,10 @@
     66,
     255
   ],
-  "blocksTile": true,
-  "sprite": "data/sprites/mossy_stone_wall.png"
+  "nameTagColor": [
+    150,
+    150,
+    155,
+    255
+  ]
 }

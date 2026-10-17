@@ -1,7 +1,7 @@
 {
   "name": "Bronze Coins",
   "description": "Small bronze coins stamped with the village mark. Accepted as currency by the villagers.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

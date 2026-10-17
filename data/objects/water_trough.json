@@ -1,0 +1,28 @@
+{
+  "name": "Water Trough",
+  "description": "A hollowed log trough filled with water.",
+  "components": [
+    "Obstacle",
+    "Interactable",
+    "ShowNameTag"
+  ],
+  "character": "~",
+  "characterColor": [
+    96,
+    156,
+    232,
+    255
+  ],
+  "backgroundColor": [
+    18,
+    38,
+    78,
+    255
+  ],
+  "nameTagColor": [
+    96,
+    156,
+    232,
+    255
+  ]
+}

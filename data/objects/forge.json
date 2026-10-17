@@ -1,0 +1,28 @@
+{
+  "name": "Forge",
+  "description": "A stone forge with a coal bed and a smoke hood.",
+  "components": [
+    "Obstacle",
+    "Interactable",
+    "ShowNameTag"
+  ],
+  "character": "F",
+  "characterColor": [
+    255,
+    138,
+    60,
+    255
+  ],
+  "backgroundColor": [
+    64,
+    32,
+    24,
+    255
+  ],
+  "nameTagColor": [
+    255,
+    138,
+    60,
+    255
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "Chalice",
   "description": "A golden chalice.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

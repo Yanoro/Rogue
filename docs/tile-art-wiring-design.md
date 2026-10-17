@@ -16,6 +16,12 @@ It assumes phase 1 is done: the tile designer agent produces tile definitions at
 and they render as their ASCII glyph. Phase 1 is described in
 `.agents/tile-designer-handover.md`.
 
+**Vocabulary, corrected 2026-10-17.** This pipeline is for **ground tiles** only. Walls, doors,
+forges, anvils, troughs and other props are **objects**, never tiles; they use the object art path,
+not this one. The shipped wall/anvil/forge/trough `data/tiles/*.json` entries and their `tile_*`
+sprites are known debt (see [tile-and-object-vocabulary.md](tile-and-object-vocabulary.md)), not a
+reason to route more props through the tile pipeline.
+
 Read `docs/asset-generation-design.md` §7 (the pipeline) and §10.2 (the live queue)
 alongside this; it is the general version, and this is the specific one.
 
@@ -129,9 +135,9 @@ one. Something must walk the entities using that tile and attach.
 *Verified and implemented* as `Game::RefreshTileVisuals(tileName)`, which returns the
 number of cells that gained a sprite. It keys on the **tile**, and finds the cells by
 asking the map (`Map::GetTile`) rather than by matching `DrawAscii` values. That
-distinction is load-bearing: several walls share the glyph `#` (the parked collision
-problem), so a glyph match would repaint cells belonging to a *different* tile. The
-`DrawAscii` is rewritten from the tile anyway, so a cell whose tile changed keeps the
+distinction is load-bearing: several **ground** tiles share the glyph `.` (floor, path, packed
+earth, stone floor, wooden floor), so a glyph match would repaint cells belonging to a *different*
+tile. The `DrawAscii` is rewritten from the tile anyway, so a cell whose tile changed keeps the
 right glyph, and `Sprite` is removed before the attach so a failed re-resolve cannot
 leave the previous texture on screen. This is the same refresh `PaintTile` already
 performs, and deliberately not a second mechanism.
@@ -281,8 +287,8 @@ exist:
 
 ```
 before:     resolves=(nothing)  cells-with-a-sprite=0
-placed:     .../generated/testpack/sprites/tile_oak_bed.png
-after:      resolves=.../generated/testpack/sprites/tile_oak_bed.png  cells-refreshed=9
+placed:     .../generated/testpack/sprites/tile_marble_floor.png
+after:      resolves=.../generated/testpack/sprites/tile_marble_floor.png  cells-refreshed=9
 hot-swap:   ok (9 cell(s) gained a sprite after the file appeared)
 ```
 
@@ -335,19 +341,18 @@ Three things worth knowing about the implementation:
 
    Two things this step learned that the design had not anticipated:
 
-   - **The prompt needs the surface/prop distinction, and it is not in the data.** "Seamless,
-     must tile" applied to an `anvil` or a `forge` produces a *grid of anvils* — the first
-     generated sheet came back exactly that way, because a `TileDef` has no field that says
-     "this is a thing, not a surface" (`Components.h:181-201`) and the catalog uses the same
-     fields for a floor and an anvil. `tools/gen_tile_art.py` carries a word list plus the
-     `description` field for it. It is a heuristic and it is written where it can be
-     corrected; getting it wrong costs a re-cut, not a re-generation. **A proper fix is a
-     tile field or an overlay convention, and it is a vocabulary decision, so it is left
-     open rather than invented here.**
-   - **A generated prop can be weaker than the surface tiles, and that is survivable.** The
-     puddle came back as a puddle inside a sandy ground texture; the palette contract still
-     passes and the tile still reads. This is the argument for the owner reviewing the cut
-     sprites before committing them, not for more pipeline.
+   - **The prompt needs the ground/prop distinction, and the old taxonomy was wrong.** "Seamless,
+     must tile" applied to an `anvil` or a `forge` produces a *grid of anvils* — the first generated
+     sheet came back exactly that way, because those props had been misclassified as tiles and a
+     `TileDef` has no field that says "this is a thing, not a surface" (`Components.h:181-201`).
+     **The fix is the vocabulary, not another tile field:** an anvil or a forge is an **object** and
+     goes through the object art path. A genuine ground tile with a prop baked into it still needs
+     the word list/description heuristic, but that is a rendering-quality fallback, not a licence to
+     add walls, doors or furniture to `data/tiles/`.
+   - **A generated ground tile can be weaker than the surface tiles around it, and that is
+     survivable.** The puddle came back as a puddle inside a sandy ground texture; the palette
+     contract still passes and the tile still reads. This is the argument for the owner reviewing
+     the cut sprites before committing them, not for more pipeline.
 
 3. ~~The queue and the window wiring (§4).~~ **Done.** `TileArtQueue` is the queue; it
    is a member of `Game`, not a file-scope global, so `.agents/known-issues.md` #13's

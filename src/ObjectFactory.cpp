@@ -137,6 +137,11 @@ void ObjectFactory::RegisterDefaultComponents() {
   // prevent.
   RecordComponentInfo("Interactable", {}, "it can be used");
   RecordComponentInfo("Obstacle", {}, "it blocks movement");
+  // Independent of Obstacle on purpose: a glass wall is solid and transparent, and
+  // tall grass is the other way round. docs/spatial-memory-design.md section 4.3.
+  RecordComponentInfo("BlocksVision", {}, "it blocks sight");
+  RecordComponentInfo("Structural", {}, "it is part of a structure, not a prop");
+  RecordComponentInfo("ShowNameTag", {}, "it draws a floating name tag");
   RecordComponentInfo("Portable", {}, "it can be picked up and carried");
   RecordComponentInfo("Storage", {"capacity"}, "it holds items");
   RecordComponentInfo("Harvestable",
@@ -156,6 +161,9 @@ void ObjectFactory::RegisterDefaultComponents() {
 
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
+  RegisterComponent<BlocksVision>("BlocksVision", [](flecs::entity obj, const nlohmann::json&) { obj.add<BlocksVision>(); });
+  RegisterComponent<Structural>("Structural", [](flecs::entity obj, const nlohmann::json&) { obj.add<Structural>(); });
+  RegisterComponent<ShowNameTag>("ShowNameTag", [](flecs::entity obj, const nlohmann::json&) { obj.add<ShowNameTag>(); });
   RegisterComponent<Portable>("Portable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Portable>(); });
   RegisterComponent<Storage>("Storage", [](flecs::entity obj, const nlohmann::json& tmpl) {
     Storage s;

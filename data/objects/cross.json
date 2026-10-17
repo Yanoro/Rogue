@@ -1,7 +1,7 @@
 {
   "name": "Cross",
   "description": "A plain wooden cross.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

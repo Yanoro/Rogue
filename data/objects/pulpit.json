@@ -1,7 +1,7 @@
 {
   "name": "Pulpit",
   "description": "A raised wooden pulpit for preaching.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

@@ -39,6 +39,13 @@ generation chain, the palette rule, the hot-swap and the queue are all as they a
 What is new here is **a second kind of thing to design, and a classifier that decides
 which kind a request is**.
 
+**Vocabulary, corrected 2026-10-17.** A **tile is ground only**. Walls, doors, roofs, beds,
+anvils, forges and everything else that stands on or over the ground are **objects**, never tiles.
+The classifier must answer `object` for a wall/door request and the object grammar must accept it.
+Some build records below predate the rule and record a wrong answer or a wrong expectation; they are
+annotated in place. The canonical statement and the migration record are in
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md).
+
 ---
 
 ## The prompt to start this off
@@ -130,7 +137,7 @@ The router answers two independent questions:
 
 ```
                 single                        set
-   tile    "cracked clay floor"          "a prison's floors and walls"
+   tile    "cracked clay floor"          "a prison's floors and flagstones"
    object  "a wooden crate"              "a prison's furniture and fittings"
 ```
 
@@ -381,8 +388,8 @@ The refusals that then come for free, plus the ones that need saying explicitly:
 
 - an unknown component name, named, with the closest known one suggested;
 - a parameter the component's own setter rejects (a `capacity` of `-1`, a missing yield);
-- no components at all — an object that does nothing is a tile, and that belongs in the
-  object prompt's "when this is really a tile" paragraph;
+- no components at all — an object that does nothing is ground, i.e. a tile, and that belongs in
+  the object prompt's "when this is really a tile" paragraph;
 - an `art`/`palette` pair where the art uses a glyph the palette does not define, which
   draws as a blank;
 - a name already taken **in this kind's namespace** (§6).
@@ -411,23 +418,24 @@ turn that warning into a crash by inserting while a palette loop is iterating.
 
 ---
 
-## 6. Names: two namespaces that legitimately overlap
+## 6. Names: two namespaces that may overlap
 
-**`anvil` already exists as both a tile and an object** — `data/tiles/anvil.json` and
-`data/objects/anvil.json`. So the two name spaces are separate by design, and a
-cross-kind uniqueness check would refuse one half of a pair that already ships.
+**`anvil` used to exist as both a tile and an object.** The 2026-10-17 migration retired
+`data/tiles/anvil.json`; `data/objects/anvil.json` is now the only one. The two registries still
+allow a cross-kind name collision in principle, so the warning below remains useful, but the shipped
+example of it is gone.
 
 Therefore:
 
 - name uniqueness is enforced **per kind**;
 - when the other kind already uses the name, the window **warns and allows it**, because
   the two live in different registries and the engine resolves them separately;
-- the sprite is not ambiguous either: a tile is `tile_anvil.png` and an object is
-  `anvil.png` (§7), so the two never collide on disk.
+- the sprite conventions stay distinct: a ground tile is `tile_<slug>.png`, an object is
+  `<slug>.png`, so a future cross-kind pair would not collide on disk.
 
 A note for whoever implements the warning: "which anvil do you mean" is a real question
 an agent reading the world will ask, so the warning is not cosmetic. It should say which
-registry the collision is in.
+registry the collision is in. There is no shipped collision today.
 
 ---
 
@@ -447,9 +455,10 @@ The fix is on the generation side, and it is small but load-bearing:
   A job must therefore carry its **convention id**, not just a name.
 - **`is_surface()` guesses from the name and description**
   (`tools/gen_tile_art.py:271`), matching a word list that includes `"wall"`, `"stone"`
-  and `"roof"`. An object called *stone wall* or *bell tower* would be heuristically
-  misread; with a sheet mixing kinds it is worse. The job must carry its **kind**, and
-  the generator must use it instead of guessing.
+  and `"roof"`. Those are exactly the words that should force an **object**: a stone wall or
+  a roof is not ground. An object called *stone wall* or *bell tower* would be heuristically
+  misread as a tile; with a sheet mixing kinds it is worse. The job must carry its **kind**,
+  and the generator must use it instead of guessing.
 
 **The invariant this must preserve** is the one the tile path already states: the sprite
 is named the same way by the writer and the reader, and the pack beats the generated
@@ -974,13 +983,16 @@ levels 1–8). The first five real requests:
 |---|---|---|---|
 | "Create a rotting wooden floor tile" | tile ✓ | single ✓ | 1 ✓ |
 | "a wooden crate that stores things" | object ✓ | single ✓ | 1 ✓ |
-| "a stone wall" | tile ✓ | single ✓ | 1 ✓ |
+| "a stone wall" | object ✓ (corrected) | single ✓ | 1 ✓ |
 | "a prison related sprite sheet" | object ✓ | **set** ✓ | **1** ✗ |
 | "some shelves and barrels for a cellar" | object ✓ | **set** ✓ | **2** ✗ |
 
-`kind` was right on all five, including the case the design was written for ("a crate that
-stores things" contains no tile-or-object word and is an object only because the classifier
-is told `Storage` exists). `shape` was right on all five. `count` was right only where the
+`kind` was right on all five *as the test was written*, including the case the design was written
+for ("a crate that stores things" contains no tile-or-object word and is an object only because the
+classifier is told `Storage` exists). **One expectation was wrong rather than the model:** the
+original run recorded "a stone wall" as `tile`, which is the taxonomy error this correction removes.
+A wall is an object, never a tile, so `object` is both the required answer and the corrected
+expectation; the row above says so. `shape` was right on all five. `count` was right only where the
 answer was 1, and never left the bottom of its scale — 0.03, 0.04, 1.1, 0.38 on a 0–7
 index.
 
@@ -1208,19 +1220,21 @@ through the queue still came out as `tile_apple_sapling.png`, which is what the 
 to see.
 
 **`is_surface` guessed from words, and objects broke the guess.** It scored names and
-descriptions against `SURFACE_WORDS` (`"wall"`, `"stone"`, `"roof"`, …). An object called
-*stone wall* would have been asked for as a full-bleed texture; a tile whose name missed
-every word would have been asked for as a centred object. The kind now decides it, the word
-list is confined to a fallback for a worklist that never recorded a kind, and the check is
-verified on a mixed sheet:
+descriptions against `SURFACE_WORDS` (`"wall"`, `"stone"`, `"roof"`, …), which is the old
+taxonomy in code form: `wall` and `roof` are *object* words and should never select a tile. An
+object called *stone wall* would have been sent the tile prompt's full-bleed surface wording; a
+ground tile whose name missed every word would have been asked for as a centred object. The kind now
+decides it, the word list is confined to a fallback for a worklist that never recorded a kind, and
+the check is verified on a mixed sheet:
 
 ```
-stone wall         (object) -> "ONE SINGLE complete object, centred in the cell"
-archway of bells   (tile)   -> "a full-bleed SURFACE TEXTURE covering the whole cell"
+stone wall          (object) -> "ONE SINGLE complete object, centred in the cell"
+herringbone parquet (tile)   -> "a full-bleed SURFACE TEXTURE covering the whole cell"
 ```
 
-Note the second: a *tile* whose name contains no surface word, which the old heuristic
-would have got wrong in the other direction.
+Note the second: a *ground tile* whose name contains no surface word, which the old heuristic
+would have got wrong in the other direction. "Archway" was used as the tile example in an earlier
+revision; an archway is an object, so that example has been replaced.
 
 A third, smaller one came out of the same work: the prompt's framing sentence — *"The cell
 is a piece of ground, not a picture of an object on a shelf"* — was actively wrong for an

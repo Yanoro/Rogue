@@ -1,7 +1,7 @@
 {
   "name": "Church Door",
   "description": "A heavy arched oak door bound with iron.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

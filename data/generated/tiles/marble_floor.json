@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    120,
+    115,
+    105,
+    255
+  ],
+  "blocksTile": false,
+  "character": "M",
+  "characterColor": [
+    220,
+    215,
+    205,
+    255
+  ],
+  "name": "marble floor"
+}

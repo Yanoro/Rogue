@@ -1,7 +1,7 @@
 {
   "name": "Bell Tower",
   "description": "The top of a stone tower, with a bell hanging in it.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

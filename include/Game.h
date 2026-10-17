@@ -748,6 +748,18 @@ private:
   void ECSInitActionSystems();
   void ECSInitTaskSystems();
 
+  // Samples `Vision` into its own cache (docs/spatial-memory-design.md section
+  // 4.4). Separate from the action systems because it is the acquisition layer,
+  // not an action: it fills the set the memory writer consumes.
+  void ECSInitVisionSystems();
+
+  // Records what each character has seen into its `SpatialMemory` (section 3.4).
+  // A consumer of the sweep above, never a second sampler.
+  void ECSInitMemorySystems();
+
+  // Writes one character's record to logs/ on demand (section 7.3).
+  void DumpSpatialMemory(flecs::entity entity);
+
   // Registers the tile-art queue's main-thread pump. Separate from the agent
   // systems because it is not part of the AI path -- it mirrors that path's shape,
   // it does not share its globals (see TileArtQueue.hpp).

@@ -1,7 +1,7 @@
 {
   "name": "Iron Ore",
   "description": "A chunk of raw iron ore.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

@@ -50,6 +50,276 @@
           "count": 1
         }
       ]
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 4
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 5
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 6
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 7
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 8
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 9
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 10
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 11
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 12
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 13
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 14
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 15
+    },
+    {
+      "type": "fence",
+      "x": 2,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 3,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 3,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 4,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 4,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 5,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 5,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 6,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 6,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 7,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 7,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 8,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 8,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 9,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 10,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 11,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 11,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 12,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 12,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 13,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 13,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 14,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 14,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 15,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 15,
+      "y": 16
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 2
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 3
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 4
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 5
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 6
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 7
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 8
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 9
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 10
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 11
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 12
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 13
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 14
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 15
+    },
+    {
+      "type": "fence",
+      "x": 16,
+      "y": 16
     }
   ],
   "tileInfo": [
@@ -72,22 +342,22 @@
       "blocksTile": false
     },
     {
-      "name": "fence",
-      "character": "#",
+      "name": "grass",
+      "character": ",",
       "characterColor": [
-        166,
-        116,
-        66,
+        110,
+        200,
+        110,
         255
       ],
       "backgroundColor": [
-        38,
+        24,
+        52,
         28,
-        18,
         255
       ],
       "fontSize": 32,
-      "blocksTile": true
+      "blocksTile": false
     },
     {
       "name": "tilled soil",

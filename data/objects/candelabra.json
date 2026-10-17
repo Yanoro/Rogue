@@ -1,7 +1,7 @@
 {
   "name": "Candelabra",
   "description": "A brass candelabra holding three candles.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle"
   ],

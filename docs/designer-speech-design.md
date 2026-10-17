@@ -130,6 +130,11 @@ thing: the prose reports "two bedrooms on the north side, kitchen and bathroom o
 the notes report the same layout plus the actual critique ("I had to use door tiles for interior
 doors too because there is no separate interior door material").
 
+**The transcript's "door tiles" is the vocabulary error, not a fact about the world.** A door is an
+**object**, never a tile; the phrase should be read as "door objects" (see
+[tile-and-object-vocabulary.md](tile-and-object-vocabulary.md)). The log is quoted as written, but
+the speech target below uses the corrected word.
+
 **Recommendation:** speak the verdict line plus `designerNotes`, not the prose. The notes are the
 reason the window exists (`include/DesignerChatWindow.h:30-32`), they are the part that is *not*
 recoverable by looking at the preview, and reading both doubles the length for half the value.
@@ -137,8 +142,8 @@ recoverable by looking at the preview, and reading both doubles the length for h
 Target utterance:
 
 > *Saved as two bedroom house.* The layout gives both bedrooms a windowless but private north side,
-> while the living room, kitchen, and bathroom share the south side. I had to use door tiles for
-> interior doors too…
+> while the living room, kitchen, and bathroom share the south side. I had to use the same door
+> object for interior doors too…
 
 ### 3.3 Speak only the final attempt
 

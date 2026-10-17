@@ -172,6 +172,11 @@ public:
   void SetShowVisionDebugWindow(bool value) { showVisionDebugWindow = value; }
   bool GetShowFacingMarkers() const { return showFacingMarkers; }
   void SetShowFacingMarkers(bool value) { showFacingMarkers = value; }
+  // The visible-cell tint. Separate from the facing markers because they answer
+  // different questions and the tint is the heavier of the two: one is "which way
+  // is it looking", the other is "what can it actually see".
+  bool GetShowVisionOverlay() const { return showVisionOverlay; }
+  void SetShowVisionOverlay(bool value) { showVisionOverlay = value; }
 
   // Which System 1 backend was serving when the run ended, so a restart resumes on the
   // model you had picked instead of silently reverting to the default profile.
@@ -240,6 +245,7 @@ private:
   bool showSystemOneWindow;
   bool showVisionDebugWindow;
   bool showFacingMarkers;
+  bool showVisionOverlay;
   std::string systemOneProfile;
   bool showVisionChatWindow;
   bool showLocations;

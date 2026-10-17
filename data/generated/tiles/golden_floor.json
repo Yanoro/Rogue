@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    80,
+    60,
+    40,
+    255
+  ],
+  "blocksTile": false,
+  "character": "g",
+  "characterColor": [
+    255,
+    215,
+    0,
+    255
+  ],
+  "name": "golden floor"
+}

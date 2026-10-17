@@ -15,7 +15,7 @@
   "character": "v",
   "characterColor": [144, 238, 144, 255],
   "nameTagColor": [144, 238, 144, 255],
-  "components": ["Evolvable"],
+  "components": ["ShowNameTag", "Evolvable"],
   "evolveTime": 15.0,
   "evolveTarget": "wheat_mature"
 }

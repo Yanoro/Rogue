@@ -1,7 +1,7 @@
 {
   "name": "Smeltery",
   "description": "A clay furnace hot enough to melt iron ore down into workable ingots.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Obstacle",
     "Workstation"

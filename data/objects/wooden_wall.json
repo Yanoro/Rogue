@@ -1,0 +1,28 @@
+{
+  "name": "Wooden Wall",
+  "description": "A wall of upright timber boards.",
+  "components": [
+    "Obstacle",
+    "BlocksVision",
+    "Structural"
+  ],
+  "character": "#",
+  "characterColor": [
+    200,
+    200,
+    200,
+    255
+  ],
+  "backgroundColor": [
+    50,
+    50,
+    50,
+    255
+  ],
+  "nameTagColor": [
+    200,
+    200,
+    200,
+    255
+  ]
+}

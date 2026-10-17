@@ -1,7 +1,7 @@
 {
   "name": "Wheat",
   "description": "A bundle of harvested wheat.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Portable"
   ],
   "art": [

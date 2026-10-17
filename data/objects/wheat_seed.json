@@ -12,7 +12,7 @@
   "character": "s",
   "characterColor": [139, 69, 19, 255],
   "nameTagColor": [255, 223, 0, 255],
-  "components": ["Portable", "Placeable"],
+  "components": ["ShowNameTag", "Portable", "Placeable"],
   "placement": {
     "becomes": "wheat_seed_planted",
     "surface": ["tilled soil"],

@@ -331,7 +331,7 @@ int RunTileDesign(const std::string &replyPath) {
   }
   // The promise Map::CreateTile depends on, checked here rather than assumed: a
   // definition that was accepted but does not resolve would leave a blueprint
-  // painting an invisible wall.
+  // painting invisible ground.
   if (tiles.Get(result.name) == nullptr) {
     std::cout << "  INTERNAL: the tile was accepted but does not resolve from "
                  "the catalog\n";

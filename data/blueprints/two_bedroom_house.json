@@ -13,7 +13,7 @@
     {
       "id": "outer_walls",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "region": "outer_walls",
       "role": "structural"
@@ -21,7 +21,7 @@
     {
       "id": "interior_wall_bedrooms",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "role": "structural",
       "shape": {
@@ -40,7 +40,7 @@
     {
       "id": "interior_wall_living",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "role": "structural",
       "shape": {
@@ -59,7 +59,7 @@
     {
       "id": "interior_wall_kitchen_bath",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "role": "structural",
       "shape": {
@@ -78,7 +78,7 @@
     {
       "id": "interior_wall_kitchen_top",
       "op": {
-        "paint": "wooden wall"
+        "place": "wooden_wall"
       },
       "role": "structural",
       "shape": {
@@ -111,7 +111,7 @@
     {
       "id": "front_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "entrance",
       "shape": {
@@ -140,7 +140,7 @@
     {
       "id": "living_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -169,7 +169,7 @@
     {
       "id": "bedroom_west_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -198,7 +198,7 @@
     {
       "id": "bedroom_east_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -227,7 +227,7 @@
     {
       "id": "kitchen_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {
@@ -256,7 +256,7 @@
     {
       "id": "bathroom_door",
       "op": {
-        "paint": "door"
+        "place": "door"
       },
       "role": "interior_door",
       "shape": {

@@ -1,7 +1,7 @@
 {
   "name": "Iron Vein",
   "description": "A rock face rich with iron.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable",
     "Harvestable",
     "Obstacle"

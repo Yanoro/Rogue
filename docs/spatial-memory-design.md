@@ -104,10 +104,14 @@ struct KnownPlace {
 
 // One cell this character has actually observed. The raw record; places and
 // consolidated entries are indexes over it, never replacements for it.
+//
+// A tile is ground only: a wall, door or chest is an object standing in the cell,
+// never a Tile::name. "Blocked" therefore has to combine Tile::blocksTile with the
+// blocking objects in the cell; the ground gate alone would miss every wall.
 struct MemoryCell {
   GamePosition pos;
-  std::string surface;   // Tile::name at observation time -- the real name, not a glyph
-  bool blocked = false;  // Tile::blocksTile at observation time
+  std::string surface;   // Tile::name at observation time -- ground only; walls/doors are objects
+  bool blocked = false;  // Tile::blocksTile OR a blocking object (wall, door, furniture) at that time
   int observedTick = 0;  // engine tick; same clock FormatTaskAge already renders
   int visitCount = 1;    // re-observed unchanged; a cheap relevance signal for §6
 };
@@ -138,6 +142,112 @@ the place table filling in as a consequence of vision, not of a spawn-time dump.
 `attribute` splits contested ground. Cells sharing a surface (or crop) under one label form one
 cluster; a different `attribute` on touching cells forms a second place. That is the whole mechanism
 behind "a different location per field, depending on what is planted" without any new concept.
+
+### 3.4 The record: three layers, three lifetimes
+
+**The governing rule: store numbers, render prose.** Nothing textual is persisted except a name
+something actually gave a place. Every description is regenerated from the record at render time,
+which is why "east of where I started" can become "east of the mill square" without touching a single
+stored field. A frozen phrase rots the moment the world or the agent's vocabulary changes.
+
+```cpp
+// ---- Layer 1: recent detail. Bounded, evictable, engine-only. ---------------
+struct MemoryCell {
+  GamePosition pos;
+  std::string surface;   // Tile::name at observation: "grass", "path", "tilled soil"
+  bool walkable = true;  // !Tile::blocksTile at observation
+  int observedTick = 0;
+  int visitCount = 1;    // a road walked twice outranks a corner seen once
+};
+
+// What was standing somewhere. The item type is the strongest evidence in the
+// whole format and it is already data: "mill", "anvil", "apple_tree" say more
+// about a place than any surface name does.
+struct SeenObject {
+  std::string templateId;      // ItemType::type; empty for a character or a drop
+  std::string name;            // "Mill", "Pietro"
+  GamePosition pos;
+  bool character = false;      // a person is knowledge of a different kind
+  int firstSeenTick = 0;
+  int lastSeenTick = 0;
+  int vanishedTick = -1;       // a later look at that cell found nothing there
+};
+
+// ---- Layer 2: durable structure. Survives eviction, capped, queryable. ------
+// Counts, never a verdict. "7 structures" is evidence; "village" is a conclusion.
+struct PlaceFact {
+  std::string category;  // "structure", "workshop", "planted row", "route", "water"
+  int count = 0;
+};
+
+// Where a place came from, and how firmly it is believed.
+//
+//   Origin   -- the cell the character first stood on. The root of the coordinate
+//               system for someone who knows nothing, and the anchor every other
+//               description falls back to.
+//   Inferred -- a cluster derived from observed cells (section 3.3).
+//   Authored -- overlaps a map Location.
+enum class PlaceOrigin { Origin, Inferred, Authored };
+enum class KnowledgeSource { Observed, Told, Inferred };
+
+struct KnownPlace {
+  PlaceOrigin origin = PlaceOrigin::Inferred;
+  KnowledgeSource source = KnowledgeSource::Observed;
+  unsigned char confidence = 255;   // observed full, told lower, inferred lower still
+  GamePosition anchor;              // top-left of the extent
+  int width = 0, height = 0;
+  std::vector<PlaceFact> facts;     // the evidence its description is built from
+  std::string attribute;            // cluster key: surface, crop, or structure kind
+  std::string label;                // EMPTY until something names it
+  std::string authoringId;          // the map's name, once learned -- not on sight
+  int firstSeenTick = 0, lastSeenTick = 0;
+};
+
+// ---- Layer 3: the only stored prose, and only when authored -----------------
+// Written by a naming verb or a told-by transfer. Never by the engine, and never
+// by a consolidation pass (section 6.4's "one author per field").
+struct MemoryNote {
+  std::string placeLabel;
+  std::string text;
+  int tick = 0;
+};
+
+struct SpatialMemory {
+  KnownPlace origin;                    // created on the first sample, label ""
+  // Keyed by VisionQuery::CellKey, which is what makes a re-observation an
+  // in-place update rather than an append.
+  std::unordered_map<std::uint64_t, MemoryCell> cells;
+  std::unordered_map<flecs::entity_t, SeenObject> objects;
+  std::vector<KnownPlace> places;
+  std::vector<MemoryNote> notes;
+  int lastVisionTick = -1;              // the sample this record has consumed
+};
+```
+
+**The lifetimes are the point.** Layer 1 is a bounded store — the cap is a memory budget, not a
+simulation rule — and evicts by (visitCount, then age). Layer 2 is durable: a place is never evicted
+while it is still visited, so detail decays into structure rather than into nothing. Layer 3 costs
+nothing and is written only by consent.
+
+**Bootstrapping a stranger.** On the first sample, with nothing else known, memory creates exactly
+one place: `Origin`, anchored on the cell it is standing on, `label` empty. That is the only thing a
+memory can be anchored to when it knows nothing, and every later description falls back to it. Which
+anchor a description uses is a *rendering* decision, so the sentence improves as the world is
+learned without the record changing.
+
+**Evidence, not verdicts.** The engine records `surface`, `templateId` and counts. It never records
+"village", "forest" or "road". Absence is representable — zero structures, zero routes, zero tilled
+rows is a fact about a place, which is what makes "I am outside the settlement" a statement the
+format can support rather than a missing value.
+
+**A place has no label until something names it.** Until then the renderer prints an evidence phrase
+("a cluster of stone buildings around a path junction"), derived from `attribute` and the largest
+facts. Naming is an agent verb (section 9), and this is where it belongs: an agent creates a location
+by *naming a cluster it has evidence for*, not by being handed one.
+
+**`RouteFrontier` and the knowledge horizon are derived views, never state.** "A path leaves my
+knowledge to the east" is recomputed from `cells` on demand. Storing it would create a second
+authority for the same fact and a staleness bug of its own.
 
 ---
 
@@ -209,7 +319,8 @@ Starting values, all in `include/Defaults.h` (the file already owns
 | `DEFAULT_VISION_RANGE` | `22` | ≈380 cells in a 90° cone |
 | `DEFAULT_VISION_ANGLE_DEGREES` | `90` | half-angle 45° |
 | `DEFAULT_VISION_RADAR_RADIUS` | `2` | 13 cells, ≈ the placement reach |
-| `DEFAULT_MEMORY_CELLS_MAX` | `512` | |
+| `DEFAULT_MEMORY_CELLS_MAX` | `2048` | a 40-tile walk observes more than a thousand cells |
+| `DEFAULT_MEMORY_OBJECTS_MAX` | `256` | |
 | `DEFAULT_MEMORY_PLACES_MAX` | `24` | |
 | `DEFAULT_MEMORY_PLACE_CLUSTER_RADIUS` | `3` | cells this close join one cluster |
 
@@ -222,22 +333,48 @@ The radar's justification is not only convenience. A cone tested against *cell c
 instrument and the cone is the approximate one. The radar also covers the placement case, where
 reach is one tile (`DEFAULT_PLACEMENT_MAX_DISTANCE`).
 
-### 4.3 Line of sight
+### 4.3 Line of sight, and what is opaque
 
-There is none in the tree today; `AStar` treats `blocksTile` as passable-or-not and nothing asks
-whether a cell can be seen. The algorithm is nonetheless already known here: `InsertLine` in
-`src/BlueprintExpansion.cpp:21` is a Bresenham whose comment documents the corner-touching caveat
-that also bites visual rays.
+There is no line-of-sight code in the tree; `AStar` treats `blocksTile` as passable-or-not and
+nothing asks whether a cell can be *seen*. The algorithm is nonetheless already known here:
+`InsertLine` in `src/BlueprintExpansion.cpp:21` is a Bresenham whose comment documents the
+corner-touching caveat that also bites visual rays.
 
-Use a **per-cell raycast** first: from the character's cell to each candidate cell, stop at a
-`blocksTile` cell. It is obviously correct, and at the sampling rate in §4.4 the cost is
+**Sight is blocked by objects that carry `BlocksVision`, never by terrain.** This is a deliberate
+correction to the obvious design (block on `blocksTile`): a river blocks movement and is perfectly
+transparent, so tying the two together would blind whoever looked across one. `BlocksVision` is a
+sibling of `Obstacle`, not a field on it, because the two are independent in both directions — a
+glass wall is solid and transparent, tall grass or smoke is the reverse. Tiles describe ground;
+objects describe what stands on it and gets in the way.
+
+Consequences worth stating plainly:
+
+- A `blocksTile: true` **ground** tile does not block sight. The village's walls are currently
+  misclassified as wall tiles (the debt in `tile-and-object-vocabulary.md`), so they are currently
+  transparent to vision. Under the corrected vocabulary a wall is an **object**; making it opaque
+  means authoring it with `BlocksVision`, not giving ground a sight field.
+- An object must be *authored* with the component. Nothing blocks sight by default.
+
+Use a **per-cell raycast** first: from the character's cell to each candidate cell, walk the
+Bresenham line and stop at a cell occupied by a `BlocksVision` object. The two endpoints are excluded
+on purpose — standing on a spot must not blind you, and a character can see the barrel that hides
+what is behind it (which is also what makes "the wall blocks" mean "not the tile past the wall"
+rather than "not the wall"). It is obviously correct, and at the sampling rate in §4.4 the cost is
 irrelevant. Recursive shadowcasting is the upgrade if it ever profiles badly — not the starting
 point, and not a correctness requirement.
 
 ### 4.4 When sampling happens
 
-**On entering a new tile, or on facing change beyond ~22.5°.** Never per frame. An LOS sweep of ~390
-cells at 60fps is not viable; at walking speed it is a handful of samples per second.
+**On entering a new tile, on facing change beyond 22.5°, on a parameter change, and on a periodic
+ceiling of 30 ticks (~0.5 s).** Never per frame. An LOS sweep of ~390 cells at 60fps is not viable;
+at walking speed it is a handful of samples per second.
+
+The periodic ceiling is what notices an object appearing or being felled without tracking either
+event: there is no change notification, and a stale opaque set is exactly the quiet wrongness this
+feature exists to make visible. It costs two sweeps a second for one character.
+
+The opaque set is rebuilt *after* the staleness test, so a character standing still pays one
+comparison per frame rather than a sweep.
 
 **Writes are idempotent.** Re-observing a cell updates `observedTick` and `visitCount`; it does not
 append. The memory is a set of cells, not a log of sightings.
@@ -283,10 +420,11 @@ know a place called that; you know: …"). That is the same mechanism as §3.2, 
 - **Clock.** `observedTick` uses the engine tick, and ages render through `FormatTaskAge`
   (`include/TaskList.hpp:711`) as `12s / 3m / 1h`. Not a calendar date: the sim has no calendar, and
   a second time vocabulary would eventually disagree with the first.
-- **Caps.** `cells` capped at `DEFAULT_MEMORY_CELLS_MAX`, `places` at `DEFAULT_MEMORY_PLACES_MAX`.
-  Overflow drops the lowest-value cells first (§6.1), never a cell inside a place. This is the first
-  agent component whose size is unbounded *in the world* rather than in a list — `DEFAULT_TASK_LIST_MAX`
-  bounds intentions, not geography — so the cap is design, not housekeeping.
+- **Caps.** `cells` capped at `DEFAULT_MEMORY_CELLS_MAX`, `objects` at `DEFAULT_MEMORY_OBJECTS_MAX`,
+  `places` at `DEFAULT_MEMORY_PLACES_MAX`. Cell overflow drops the lowest-value cells first —
+  lowest `visitCount`, then oldest `observedTick` — never a cell inside a durable place (§6.1). This
+  is the first agent component whose size is unbounded *in the world* rather than in a list —
+  `DEFAULT_TASK_LIST_MAX` bounds intentions, not geography — so the cap is design, not housekeeping.
 - **Place merge before create.** A newly observed run of cells joins an existing cluster with the
   same `attribute` whose extent is within `DEFAULT_MEMORY_PLACE_CLUSTER_RADIUS`. Create only when no
   cluster claims it. Without this rule one walk across a meadow becomes thirty places.
@@ -382,9 +520,14 @@ is seeing" than of cost.
 
 ### 7.2 The memory window
 
-`SpatialMemoryWindow`, following `TaskBoardWindow` (`src/DebugWindows.cpp:2492`): **collect rows,
-then sort, then draw** — an ImGui table cannot be reordered while rows are being emitted, and
-querying flecs mid-draw invites mutation hazards.
+The window starts life in **stage 0** as `VisionDebugWindow` — a facing-marker toggle plus a count of
+characters with and without a `Facing`. That count is the whole point of shipping it early: "every
+character got a direction" is a question that otherwise turns into a cone bug two stages later.
+Stage 1 adds the cone parameters to it; stage 2 turns it into the memory board.
+
+The board itself follows `TaskBoardWindow` (`src/DebugWindows.cpp:2492`): **collect rows, then sort,
+then draw** — an ImGui table cannot be reordered while rows are being emitted, and querying flecs
+mid-draw invites mutation hazards.
 
 - Query: `ecs.filter<SpatialMemory>()`. Whoever has the component appears, which makes the
   "player only, for now" gate self-documenting rather than a hardcoded name check.
@@ -400,6 +543,49 @@ One file per character, under `logs/`, written on demand: cells, places, consoli
 repo has no test suite; its verification idiom is reading transcripts (`docs/agent-attention-design.md`
 §12 uses exactly this discipline). A dump is diffable between runs in a way a window is not.
 
+### 7.4 The rendering rule: situation, never intention
+
+**The spatial text may contain nouns, numbers, ages and directions, and no verb of intent.**
+
+The test is mechanical: if a line contains an imperative or an evaluative clause, the engine just
+authored an intention. "A path leads east" is a fact. "A path leads east **and you have not followed
+it**" is a to-do item in prose, and a digest containing to-dos routes around
+`docs/task-system-design.md` §3 — intentions would enter the agent from the engine, quietly, where
+nobody looks for a second author.
+
+The reason is not purity, it is coverage. An enumeration of tips is **O(contexts)** and can never be
+finished: there is always a river, a fork, a burnt field, a name in a language nobody taught the
+engine. A uniform description of the situation is **O(1)** and covers every context for free.
+
+So the engine reports the **situation** and never the **inference**:
+
+| engine supplies | model supplies | engine supplies as a *verb*, if anything |
+|---|---|---|
+| a path exists at the eastern edge of what I know | paths connect places; follow it | walk a route |
+| a 40-minute-old name now sits beside a person seen 30 seconds ago | "abandoned" may be wrong | rename a place |
+
+Conflating those three is how a hint gets written: the first column is a fact, the second is common
+sense the model already has, and the third is a *capability* that belongs in the command list
+advertised uniformly, not in a nudge that fires in one situation. `[MOVE_TO]` being advertised does
+not tell the agent where to go; a route-following verb is the same kind of thing.
+
+Three consequences, all of them bugs avoided:
+
+- **No `EXPLORATION` section, no "worth investigating", no "you have not".** If the facts are right,
+  the model notices. If it does not, the fix is the prompt or the world, not a hardcoded tip that
+  only works at one fork by one river.
+- **The engine reports factual disagreements between its own observations**, and only those. "This
+  cell was tilled soil an hour ago and is wheat now" is engine-owned (`[!]`). "Your name for this
+  house no longer matches what you saw" is not: a house can be abandoned *and* have someone at the
+  door, and an ironic name an agent chose must not be silently corrected by the narrator. Print the
+  label, print the observation, print the ages, stop.
+- **Selection is by a uniform rule** — recency, place membership, the cap — never "this looks
+  relevant to what the agent is trying to do". Capping is unavoidable and is not hinting; relevance
+  filtering is hinting wearing a different hat.
+
+The one thing the engine must not do in the name of this rule is *bury* a fact. Few, prominent, and
+uniform beats many, contextual, and guided.
+
 ---
 
 ## 8. Stages, with acceptance for each
@@ -409,9 +595,9 @@ the AI path; here the first three stages have no AI path at all, which is the po
 
 | stage | what lands | acceptance |
 |---|---|---|
-| **0. Facing** | `Facing` component + derive system; players and NPCs; no consumer yet | Facing follows movement; holds when stopped; the player's follows the cursor when idle; overlay draws the marker |
-| **1. Vision** | `Vision` component (angle, range, radar), `VisibleCells` + Bresenham LOS, overlay | Cells appear/disappear as you turn; a wall blocks; the radar fills the close ring; toggle off costs nothing |
-| **2. Memory** | `SpatialMemory`, sampler, caps, idempotent writes, memory window + dump | Walking fills cells with no duplicates; a revisit bumps rather than appends; the cap holds; cells at zero on spawn |
+| **0. Facing** | `Facing` component + derive system; players and NPCs; no consumer yet; marker overlay + `VisionDebugWindow` | Facing follows movement; holds when stopped; the player's follows the cursor when idle; overlay draws the marker; the toggle survives a restart; the window reports zero characters without a `Facing` |
+| **1. Vision** | `Vision` component (angle, range, radar), `VisibleCells` + Bresenham LOS in `include/VisionQuery.hpp`, overlay | Cells appear/disappear as you turn; an object carrying `BlocksVision` casts a gap behind it (a tree, the mill); the radar fills the close ring; toggle off costs nothing; tiles never block |
+| **2. Memory** | `SpatialMemory` (§3.4), the memory writer consuming `Vision::lastVisible`, the `Origin` place, caps, idempotent writes, memory section in the Vision Debug window + dump. Place clustering is stage 3 | Walking fills cells with no duplicates; a revisit bumps `visitCount` rather than appending; the cap holds and evicts the least-visited first; cells and objects are zero on spawn; the dump reproduces the window |
 | **3. Places** | place derivation from cells, `Authored` match against `Location`, `attribute` clustering | Walking into the mill adds "The Mill"; two touching crops yield two places; no authored place appears before its cells are seen |
 | **4. Engine consolidation** | ranking, merge runs, drops at cap, event log | Counts in/out visible; a drop never removes a place cell; raw cells still inspectable |
 | **5. Model consolidation** | Jev salience (goal digest in state) + out-of-band merge, behind a setting, stage 4 the default | Off by default; identical outputs when the backend is unavailable; logged verdicts before behaviour depends on them |
@@ -465,17 +651,24 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
 
 ## 11. References
 
-- `include/Components.h` — `Velocity:74`, `Tile:156`, `Location:202`, `TaskList:411`,
-  `std_vector_support:694`, registration order example `:765`, `AgentGoal` registration `:816`
+- `include/Components.h` — `Velocity:74`, `Facing:106`, `Vision:132`, `MemoryCell:161`,
+  `SeenObject:172`, `PlaceFact:184`, `KnownPlace:199`, `MemoryNote:217`, `SpatialMemory:223`,
+  `Tile:156`, `Location:202`, `TaskList:411`, `BlocksVision:573`, `std_vector_support:694`,
+  registration order example `:765`, `AgentGoal` registration `:816`
+- `include/VisionQuery.hpp` — `CellKey`, `PathIsOpaque`, `VisibleCells` (the one sweep)
+- `include/SpatialMemory.hpp` — `EnsureOrigin:37`, `ObserveCells:55`, `ObserveObjects:88`,
+  `EnforceCellCap:133`, `Dump:176`
+- `src/GameECS.cpp` — `ECSInitMemorySystems:1213`, `DumpSpatialMemory:1238`,
+  `%LOCATIONS% :302`, tile layer `:370`, steer system `:898`, player setup `:3148`,
+  player `Velocity` `:3155`, player `CharacterTag` `:3171`
 - `include/AgentActions.h` — `[MOVE_TO]` resolution `:159-184`, `[LOCATIONS] :385`,
   `GetSurroundingsRadar :621`, glyph legend key `:642`, `?` as off-map `:650`,
   `GetSurroundingsList :678`, "You are at" `:745`, `SurroundingsAction :778`
-- `include/Defaults.h` — `DEFAULT_SURROUNDINGS_RADIUS:41`, `DEFAULT_PLACEMENT_MAX_DISTANCE:45`
+- `include/Defaults.h` — `DEFAULT_SURROUNDINGS_RADIUS:41`, `DEFAULT_PLACEMENT_MAX_DISTANCE:45`,
+  vision block `:72`
 - `include/TaskList.hpp` — `RenderTaskDigest:516`, `FormatTaskAge:711`
 - `include/PromptRewriter.hpp` — out-of-band call shape (worker thread, sentinel, main-thread collect)
 - `include/SystemOneRecorder.h:194` — `SystemOneClassifier`
-- `src/GameECS.cpp` — `%LOCATIONS% :302`, tile layer `:370`, steer system `:898`, player setup
-  `:3148`, player `Velocity` `:3155`, player `CharacterTag`:3171
 - `src/GameDraw.cpp:149` — `run_pipeline`, and the A* overlay precedent just after it
 - `src/Game.cpp:333` — `GetScreenToWorld2D` for cursor facing; `:528` player click-to-move
 - `src/PathFinding.cpp:126` — `gCost` has no terrain weight (grounds §9's deferral of street bias)
@@ -483,3 +676,164 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
 - `src/BlueprintExpansion.cpp:21` — Bresenham line helper and its corner-touching caveat
 - `src/AgentBrain.cpp:569-576` — one command per response, so consolidation cannot be a turn
 - `src/DebugWindows.cpp:2492` — `TaskBoardWindow::Draw`, the board pattern to copy
+
+---
+
+## 12. Worked examples
+
+Each example shows the record the engine holds and the text the agent receives. The same record
+renders differently as the agent learns — that is the payoff of "store numbers, render prose" (§3.4).
+
+**Status: none of the agent-facing text below exists yet.** The record in stage 2 is real and
+inspectable in the Vision Debug window and the dump; there is no digest renderer and no `[RECALL]`
+verb. These are the target the later stages aim at, and the acceptance reference for stage 3.
+
+Two of these are deliberately *revised*: an earlier draft had the engine write an `EXPLORATION` tip
+and a "your name disagrees" sentence. Both were engine-authored intentions and are removed under
+§7.4.
+
+### 12.1 First sample — a stranger in open country
+
+Engine:
+
+```json
+"places": [{ "origin": "Origin", "confidence": 255,
+             "anchor": {"x":41,"y":20}, "width": 0, "height": 0,
+             "label": "", "attribute": "start", "facts": [] }],
+"cells":  [{ "pos": {"x":41,"y":20}, "surface": "grass", "walkable": true,
+             "observedTick": 300, "visitCount": 1 }],
+"objects": []
+```
+
+Agent:
+
+```
+WHERE YOU ARE
+  an unnamed spot, open grass on every side you have looked at.
+  (engine: 1 cell seen, no structures, no paths, no water)
+  You know no other place, so everything you find will be described
+  from here: "east of where you started".
+```
+
+### 12.2 A path at the edge of knowledge — no tip
+
+Engine (cells plus a derived view, stored nowhere):
+
+```json
+"cells": [ "... 90 cells, 14 of them path" ],
+"derived": { "knowledgeHorizon": { "n":"grass", "e":"path", "s":"grass", "w":"grass" } }
+```
+
+Agent:
+
+```
+WHERE YOU ARE
+  an unnamed spot: grass on both sides, a path underfoot.
+  (engine: 90 cells seen; 14 of them path; no structures, no water)
+
+WHERE YOUR KNOWLEDGE ENDS
+  north: grass          east: path
+  south: grass          west: grass
+```
+
+That is all. The model sees a path underfoot and a path at its eastern horizon and supplies the
+common sense — *paths connect places, follow it*. The engine makes the situation legible and stops.
+
+### 12.3 Arriving — evidence, and still no name
+
+Engine:
+
+```json
+"places": [ "... Origin ...",
+  { "origin": "Inferred", "confidence": 255,
+    "anchor": {"x":40,"y":18}, "width": 8, "height": 6,
+    "label": "", "attribute": "stone",
+    "facts": [ {"category":"structure","count":7},
+               {"category":"workshop","count":2},
+               {"category":"route","count":30},
+               {"category":"planted row","count":12} ] }]
+```
+
+Agent:
+
+```
+WHERE YOU ARE
+  a cluster of stone buildings around a path junction.
+  (engine: 7 buildings, 2 workshops, 30 path cells;
+          12 planted rows to the west)
+
+  Nobody has named this place. You have not heard anyone call it anything.
+```
+
+The engine never says *village*. The phrase is rendered from `attribute` and the largest facts.
+
+### 12.4 Named, and told — two kinds of knowledge
+
+Engine:
+
+```json
+"places": [
+  { "label": "the mill square", "authoringId": "", "confidence": 255,
+    "notes": [ {"text":"named by you","tick":3900} ] },
+  { "label": "the ford", "authoringId": "", "confidence": 120,
+    "anchor": {"x":28,"y":44}, "facts": [], "lastSeenTick": 0 } ]
+```
+
+Agent, after `[LOCATIONS]`:
+
+```
+PLACES YOU KNOW
+  the mill square            (here; named by you 2m ago)
+  7 buildings, 2 workshops, 30 path cells
+  the ford                   (told to you by Margarethe 4m ago; she was not sure)
+  you have never been there
+```
+
+Confidence below 255 renders as "she was not sure"; `lastSeenTick == 0` renders as "you have never
+been there". A told place is a name and a position with no cells behind it.
+
+### 12.5 Something changed — the field, and the tree
+
+Engine:
+
+```json
+"cells": [ { "pos": {"x":12,"y":14}, "surface": "tilled soil", "observedTick": 5400,
+             "reobservation": { "of": "tilled soil", "now": "tilled soil + wheat",
+                                "since": 900 } } ],
+"objects": [ { "templateId": "apple_tree", "pos": {"x":9,"y":12},
+               "lastSeenTick": 900, "vanishedTick": 5400 } ]
+```
+
+Agent:
+
+```
+WHEN YOU LAST SAW THIS PLACE
+  [!] the field west of the path: you saw bare tilled soil 1h ago;
+      it is now wheat.
+  [!] the apple tree by the wall is gone -- nothing is standing there now.
+```
+
+`[!]` is reserved for a factual disagreement between two of the engine's own observations.
+
+### 12.6 The wrong belief — the abandoned house
+
+Engine:
+
+```json
+{ "place": { "label": "the abandoned house", "confidence": 255,
+             "facts": [ {"category":"structure","count":1} ] },
+  "objects": [ { "templateId": "", "name": "Pietro", "character": true,
+                 "pos": {"x":17,"y":6}, "firstSeenTick": 7200, "lastSeenTick": 7260 } ] }
+```
+
+Agent, after `[RECALL "the abandoned house"]`:
+
+```
+the abandoned house            (named by you 40m ago)
+  a single stone structure, 1 room, no path
+  seen here: Pietro, 30s ago
+```
+
+No verdict, no suggestion, no `[!]`. The engine cannot know that a house can be abandoned *and*
+have someone at the door, so it prints the label, the observation, and the ages. Whether the name is
+now wrong is the agent's judgement, and that judgement is the point of the feature.

@@ -1,7 +1,7 @@
 {
   "name": "Candle",
   "description": "A lit candle in a brass holder.",
-  "components": [
+  "components": ["ShowNameTag", 
     "Interactable"
   ],
   "art": [

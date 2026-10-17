@@ -295,12 +295,14 @@ void TileRegistry::LoadTiles(const std::string& directoryPath) {
       // the filename and that id is what content references ("iron_scythe").
       // A tile has no such id: what references it is a human-readable name, from
       // a map's tileInfo, a blueprint's "paint", or a material palette. So
-      // data/tiles/wooden_wall.json defines "wooden wall", and Get("wooden wall")
-      // has to find it.
+      // data/tiles/stone_floor_tile.json defines "stone floor", and
+      // Get("stone floor") has to find it.
       //
       // Keying on the stem instead made every multi-word tile unresolvable --
-      // "wooden wall" is not "wooden_wall" -- which surfaced as blueprints
-      // reporting that wooden walls and floors were missing from the catalog.
+      // "stone floor" is not "stone_floor_tile" -- which surfaced as blueprints
+      // reporting that their floor and wall materials were missing from the
+      // catalog. (That report also exposed the separate tile/object mistake:
+      // walls were never tile materials in the first place.)
       const auto existing = tiles.find(def.name);
       if (existing != tiles.end()) {
         warn("Warning: Tile '" + def.name + "' is defined by both " +

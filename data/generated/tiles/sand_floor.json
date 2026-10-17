@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    160,
+    120,
+    60,
+    255
+  ],
+  "blocksTile": false,
+  "character": "s",
+  "characterColor": [
+    210,
+    180,
+    140,
+    255
+  ],
+  "name": "sand floor"
+}

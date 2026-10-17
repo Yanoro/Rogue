@@ -113,11 +113,9 @@ std::vector<GamePosition> AStar(Map *map, const GamePosition &startPos,
     std::vector<GamePosition> neighbourPositions;
 
     for (const GamePosition& pos : possiblePositions) {
-      if (map->IsInBounds(pos.x, pos.y)) {
-        Tile* t = map->GetTile(pos.x, pos.y);
-        if (t && !t->blocksTile && nodeHasPosition(closedNodes, pos) == nullptr) {
-          neighbourPositions.push_back(pos);
-        }
+      if (map->IsInBounds(pos.x, pos.y) && !map->IsBlocked(pos.x, pos.y) &&
+          nodeHasPosition(closedNodes, pos) == nullptr) {
+        neighbourPositions.push_back(pos);
       }
     }
 
