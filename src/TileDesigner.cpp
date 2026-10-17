@@ -22,13 +22,51 @@ namespace {
 constexpr const char *kJsonFence = "```json";
 
 constexpr const char *kGlyphPlaceholder = "%GLYPHS%";
-constexpr const char *kTilePlaceholder = "%TILES%";
+// The vocabulary placeholder. It used to be `%TILES%`, which said what the list was
+// rather than what the slot is for: an object's list is components, not tiles, and a
+// placeholder named after one kind cannot be shared by the next. The old spelling is
+// still honoured below so a prompt file written against it keeps working.
+constexpr const char *kVocabularyPlaceholder = "%VOCAB%";
+constexpr const char *kLegacyTilePlaceholder = "%TILES%";
+// The shared reply contract, substituted from `data/prompts/SPRITE_CONTRACT.md`.
+constexpr const char *kContractPlaceholder = "%CONTRACT%";
 
-// The tile vocabulary, in the same shape BuildDesignerSystemPrompt builds its
-// material palette. One line per tile, marked when it blocks movement, because
-// that is the one mechanic a tile carries and the one a designer has to reason
-// about.
-std::string TileList(const TileRegistry &tiles) {
+// The contract document, as the in-code default. Every kind's document is written
+// against the same contract, because the reply format and the refusal protocol are
+// identical for a tile and an object -- that is exactly the part that must not drift
+// between two documents. The setting that overrides it is
+// `content.spriteContractFile`.
+constexpr const char *kDefaultContractFile = "data/prompts/SPRITE_CONTRACT.md";
+
+// What a kind's document degrades to when the file is missing or unreadable.
+//
+// A *document* rather than a rewrite of the builder: substitution is replace-only, so
+// the way to guarantee the vocabulary survives a missing file is to supply a document
+// that carries the placeholders. This also keeps the failure legible to the model --
+// "no kind-specific guidance is available" is a fact it can act on, whereas a prompt
+// with a vocabulary section bolted onto the end of nothing is not.
+constexpr const char *kFallbackPrompt =
+    "You are a sprite designer. Your instruction document could not be read, so no "
+    "kind-specific guidance is available for this request; follow the shared contract "
+    "below exactly, use only vocabulary from the list at the end, and be conservative.\n"
+    "\n"
+    "%CONTRACT%\n"
+    "\n"
+    "## Vocabulary available\n"
+    "\n"
+    "%VOCAB%\n";
+
+}  // namespace
+
+// One line per tile, marked when it blocks movement, because that is the one mechanic
+// a tile carries and the one a designer has to reason about. The empty case is stated
+// rather than left blank: "no catalog is loaded" is information, and a heading with
+// nothing under it reads as an omission.
+//
+// Public, so it sits outside the anonymous namespace the prompt helpers live in:
+// declared in the header and defined here, because the builder no longer derives the
+// vocabulary itself -- the caller assembles it per kind.
+std::string TileVocabulary(const TileRegistry &tiles) {
   if (tiles.Count() == 0) {
     return "  (none: no tile catalog is loaded)\n";
   }
@@ -43,17 +81,23 @@ std::string TileList(const TileRegistry &tiles) {
   return out;
 }
 
-// Appends `section` when the placeholder is absent, so a prompt file that forgets
-// it still carries the vocabulary rather than silently losing it.
-void SubstituteOrAppend(std::string &prompt, const std::string &placeholder,
-                        const std::string &heading, const std::string &body) {
+namespace {
+
+// Replaces `placeholder` with `body` when it is present. Nothing else.
+//
+// There is deliberately no append-when-absent behaviour, and it used to have one. That
+// behaviour assumed a document lists its vocabulary only where a placeholder sits, so a
+// document carrying its own heading *and* the placeholder got the vocabulary twice: once
+// substituted, once appended underneath. It is also the wrong answer in principle -- a
+// document with a hand-written list should be left alone, not given a second one -- so
+// the fallback for a missing document is to supply a document (see kFallbackPrompt)
+// rather than to grow whatever arrived.
+void SubstituteOnly(std::string &prompt, const std::string &placeholder,
+                    const std::string &body) {
   const size_t at = prompt.find(placeholder);
   if (at != std::string::npos) {
     prompt.replace(at, placeholder.size(), body);
-    return;
   }
-  if (prompt.empty()) return;
-  prompt += "\n\n" + heading + "\n\n" + body;
 }
 
 // The overlay file is read back by TileRegistry, which keys on the `name` field,
@@ -224,7 +268,31 @@ std::vector<std::string> GlyphLegend(const TileRegistry &tiles) {
 
 std::string BuildSystemPrompt(const std::string &promptFile,
                               const TileRegistry &tiles) {
-  std::string prompt;
+  PromptVocabulary vocabulary;
+  vocabulary.body = TileVocabulary(tiles);
+
+  const std::vector<std::string> legend = GlyphLegend(tiles);
+  if (legend.empty()) {
+    vocabulary.glyphs = "  (the catalog is empty, so every printable character is free)\n";
+  } else {
+    for (const std::string &line : legend) {
+      vocabulary.glyphs += line + "\n";
+    }
+  }
+
+  // The shared contract, from the in-code default. A missing contract file leaves a
+  // prompt with no reply-format section rather than a broken one: substitution is
+  // replace-only, so the only thing that happens is that a placeholder goes
+  // unreplaced, which the caller can detect.
+  return BuildPromptForKind(SpriteKinds::For(SpriteKinds::Kind::Tile), promptFile,
+                            kDefaultContractFile, vocabulary);
+}
+
+std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
+                               const std::string &promptFile,
+                               const std::string &contractFile,
+                               const PromptVocabulary &vocabulary) {
+  std::string prompt = kFallbackPrompt;
   if (!promptFile.empty()) {
     std::ifstream file(promptFile);
     if (file.is_open()) {
@@ -232,30 +300,55 @@ std::string BuildSystemPrompt(const std::string &promptFile,
       buffer << file.rdbuf();
       prompt = buffer.str();
     } else {
-      // Same treatment the blueprint designer gives a missing prompt file: the
-      // generated vocabulary still goes out, so the model is under-informed
-      // rather than unconstrained.
-      std::cerr << "TileDesigner: could not read the prompt file " << promptFile
-                << "; using the generated vocabulary only." << std::endl;
+      // A missing prompt file leaves the fallback document in place, so the model is
+      // under-informed rather than unconstrained: it still gets the contract and the
+      // vocabulary, and simply has no kind-specific guidance. Growing whatever arrived
+      // is not an option -- substitution is replace-only, deliberately (SubstituteOnly).
+      std::cerr << "SpriteDesigner: could not read the " << kind.id << " prompt file "
+                << promptFile << "; using the fallback document and the generated "
+                << "vocabulary." << std::endl;
     }
   }
 
-  std::string glyphs;
-  const std::vector<std::string> legend = GlyphLegend(tiles);
-  if (legend.empty()) {
-    glyphs = "  (the catalog is empty, so every printable character is free)\n";
-  } else {
-    for (const std::string &line : legend) {
-      glyphs += line + "\n";
+  // The contract goes in first, and *only* by replacement.
+  //
+  // Order matters here in a way that is easy to miss: the contract document explains
+  // its own placeholders in prose ("the kind document substitutes this in where it says
+  // `%CONTRACT%`"), so anything that scans the assembled prompt for placeholders will
+  // find that mention and substitute into the middle of a sentence. The contract's own
+  // text is therefore never scanned: the kind document is substituted first, and every
+  // replacement after this point is a replace-only pass over the result.
+  std::string contract;
+  if (!contractFile.empty()) {
+    std::ifstream file(contractFile);
+    if (file.is_open()) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      contract = buffer.str();
+    } else {
+      std::cerr << "SpriteDesigner: could not read the shared reply contract "
+                << contractFile << "; the " << kind.id
+                << " prompt has no reply format section." << std::endl;
     }
   }
+  SubstituteOnly(prompt, kContractPlaceholder, contract);
 
-  SubstituteOrAppend(prompt, kGlyphPlaceholder,
-                     "## Glyphs already in use (generated from this world)",
-                     glyphs);
-  SubstituteOrAppend(prompt, kTilePlaceholder,
-                     "## Tiles that already exist (generated from this world)",
-                     TileList(tiles));
+  // Replace-only from here: a document that already lists its vocabulary keeps its list,
+  // and one that carries a placeholder gets the live list substituted. Nothing is ever
+  // appended (see SubstituteOnly).
+  if (!vocabulary.glyphs.empty()) {
+    SubstituteOnly(prompt, kGlyphPlaceholder, vocabulary.glyphs);
+  }
+
+  // The vocabulary body, falling back to the kind's own note when there is none --
+  // "the catalog is empty" is information, and an empty section reads as an omission.
+  const std::string body =
+      vocabulary.body.empty() ? kind.emptyVocabularyNote + "\n" : vocabulary.body;
+  SubstituteOnly(prompt, kVocabularyPlaceholder, body);
+  // A file written before the placeholder was generalised still gets its list, and
+  // does not get it twice when it has both spellings. The legacy spelling keeps its
+  // append-when-absent behaviour, so such a file still carries the vocabulary.
+  SubstituteOnly(prompt, kLegacyTilePlaceholder, body);
   return prompt;
 }
 

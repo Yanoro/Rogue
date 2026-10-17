@@ -1,7 +1,0 @@
-{
-  "name": "door",
-  "character": "+",
-  "characterColor": [222, 184, 135, 255],
-  "backgroundColor": [72, 50, 30, 255],
-  "blocksTile": false
-}

@@ -156,6 +156,26 @@ public:
   // Every pointer previously returned for a runtime definition dangles.
   size_t RemoveRuntimeTiles();
 
+  // Drops one definition from the catalog, whatever layer it came from. Returns
+  // false when the name is unknown.
+  //
+  // This exists for the map editor's permanent content deletion: the file is
+  // removed from disk first and this makes memory agree with it, so the palette
+  // stops offering a tile that can no longer be painted and Map::CreateTile
+  // stops resolving a name nothing defines. Derived views are invalidated through
+  // catalogRevision, exactly like an add.
+  //
+  // Pointers handed out earlier stay VALID but stop resolving: the definition is
+  // retired rather than freed, because TileDesignerWindow holds a TileDef* for the
+  // tile it is editing across frames and a deletion made in another window must
+  // not turn its next frame into a use-after-free. TouchRuntime on a retired
+  // definition therefore returns false, which is the correct answer -- it is no
+  // longer in the catalog to edit.
+  //
+  // A map that already draws the tile is unaffected until it reloads: the map
+  // owns its own Tile instances, resolved when it was loaded.
+  bool RemoveDefinition(const std::string& name);
+
   // Marks a runtime definition as edited in place, so derived views are rebuilt
   // and the change is worth persisting.
   //
@@ -179,6 +199,11 @@ private:
   // survives insertion. The rehash still moves buckets; it cannot move what a
   // bucket points at.
   std::unordered_map<std::string, std::unique_ptr<TileDef>> tiles;
+  // Definitions removed through RemoveDefinition: out of the catalog, out of the
+  // lookup, but still owned so that pointers already handed out stay valid.
+  // Reclaimed with the registry, so its size is bounded by how many definitions a
+  // session removes, not by anything a game does.
+  std::vector<std::unique_ptr<TileDef>> retired;
   // Names added through AddRuntime, which is the generated overlay's layer.
   std::unordered_set<std::string> runtimeAdded;
   uint64_t catalogRevision = 0;

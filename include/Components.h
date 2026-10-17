@@ -342,6 +342,74 @@ struct CHARACTERS_QUERY {};
 
 struct INVALID_ACTION {};
 
+// ---------------------------------------------------------------------------
+// Agent task lists: declared intention, at three horizons.
+//
+// See docs/task-system-design.md. This is *intent*, not execution: AgentAction
+// (AgentActions.h) is what the agent is actually doing, TaskList is what it
+// says it is trying to do. The two are deliberately separate and both exist,
+// so the engine can render, validate and debug intention without touching the
+// action path. Nothing here schedules anything, and an entity with no TaskList
+// behaves exactly as it did before this component existed.
+// ---------------------------------------------------------------------------
+
+// How far ahead a goal reaches. Terminal and LongTerm goals carry a description
+// and a parent edge but no kind and no target -- only Short tasks name
+// something the engine can resolve and check. Terminal goals are authored in
+// the map JSON and are read-only to the agent; the agent owns everything below
+// them.
+enum class GoalHorizon { Terminal, LongTerm, Short };
+
+// Named buckets, not a numeric scale: a model chooses between labels more
+// reliably than it produces calibrated numbers, and a bounded enum is
+// checkable, loggable and diffable. Set by the agent, never rewritten by the
+// engine -- violations are reported (see ruleWarning), not applied.
+enum class TaskPriority { Critical, High, Normal, Low, Background };
+
+struct AgentGoal {
+  // Agent-authored, free text. This is what a human reads in the debug window.
+  std::string description;
+
+  GoalHorizon horizon = GoalHorizon::Short;
+
+  // Index into TaskList::goals, or -1. "This goal serves that one." Proposed
+  // by the agent -- the engine never derives this edge, because "I greet people
+  // because I want standing, because I want to matter" is reasoning about
+  // meaning, not a predicate over world state. The engine's only involvement is
+  // structural: does the index resolve, and does the chain terminate.
+  int parent = -1;
+
+  // ---- Authored by the agent ----
+  // Empty for Terminal and LongTerm goals: only Short tasks name a kind and a
+  // target. An unknown kind degrades to "no facts", never to "task rejected",
+  // so the agent can still express an intent the engine has not anticipated.
+  std::string kind;    // task kind, from TaskKindRegistry
+  std::string target;  // human-readable target, resolved by the engine
+  TaskPriority tier = TaskPriority::Normal;
+
+  // ---- Written by the engine. The agent may not set these. ----
+  // Observed world-state predicates, never priorities.
+  std::vector<std::string> facts;
+  // Rule violation report (e.g. the anti-inflation rule), never a corrected
+  // value: the engine reports, the agent judges, and `tier` above keeps
+  // whatever the agent said.
+  std::string ruleWarning;
+  int createdTick = 0;
+  int lastAdvancedTick = 0;
+  int id = 0;  // stable identity; TaskList::activeTaskId refers to this
+};
+
+struct TaskList {
+  std::vector<AgentGoal> goals;  // terminal first, then long-term, then short
+  int activeTaskId = -1;         // the goal the current activity is serving
+
+  // List-level rule violation, written by the engine, never a corrected value.
+  // Entry-level violations use AgentGoal::ruleWarning instead; the two are
+  // separate fields precisely because coherence is a property of the list, not
+  // of one entry.
+  std::string ruleWarning;
+};
+
 // Object Components
 struct Interactable {
   bool active = true;
@@ -557,6 +625,15 @@ struct BlueprintRegistryResource {
   BlueprintRegistry* registry;
 };
 
+class TaskKindRegistry;
+// The task shapes the engine knows how to check, populated once at init (see
+// TaskKindRegistry.h). Not loaded from JSON like the content registries: a check
+// is C++, so this is where a genre extends the task vocabulary in code. Same
+// resource-component pattern as BlueprintRegistryResource.
+struct TaskKindRegistryResource {
+  TaskKindRegistry* registry;
+};
+
 class ItemRegistry;
 // Equippable item definitions, loaded once at init from data/items/*.json (see
 // ItemRegistry.h). Same resource-component pattern as StatRegistryResource:
@@ -717,6 +794,33 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<Equipped>().member<std::vector<std::string>>("slots");
   ecs.component<Requires>().member<std::vector<std::string>>("equippedTags");
   ecs.component<Durability>().member<int>("current").member<int>("max");
+
+  // Task-list reflection (docs/task-system-design.md section 10), registered on
+  // the same terms as the blocks above. The two enum types are registered
+  // before AgentGoal, and AgentGoal before the vector that holds it, because
+  // flecs resolves a member's type at registration time -- reflecting
+  // vector<AgentGoal> first would leave it pointing at a type with no
+  // EcsMetaType. This block sits below the vector<string> registration above
+  // for the same reason: AgentGoal::facts is a vector<string>.
+  ecs.component<GoalHorizon>();
+  ecs.component<TaskPriority>();
+  ecs.component<AgentGoal>()
+      .member<std::string>("description")
+      .member<GoalHorizon>("horizon")
+      .member<int>("parent")
+      .member<std::string>("kind")
+      .member<std::string>("target")
+      .member<TaskPriority>("tier")
+      .member<std::vector<std::string>>("facts")
+      .member<std::string>("ruleWarning")
+      .member<int>("createdTick")
+      .member<int>("lastAdvancedTick")
+      .member<int>("id");
+  ecs.component<std::vector<AgentGoal>>().opaque(std_vector_support<AgentGoal>);
+  ecs.component<TaskList>()
+      .member<std::vector<AgentGoal>>("goals")
+      .member<int>("activeTaskId")
+      .member<std::string>("ruleWarning");
 
   ecs.component<Color>()
       .member<unsigned char>("r")

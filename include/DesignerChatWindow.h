@@ -10,6 +10,8 @@
 
 #include "AI.h"
 #include "BlueprintExpansion.hpp"
+#include "PromptRewriter.hpp"
+#include "RewriteInputBox.hpp"
 #include "SpeechQueue.h"
 #include "Window.h"
 
@@ -53,6 +55,7 @@ public:
   void Draw() override;
 
 private:
+
   // One request/response attempt. A retry is a new entry, so the transcript reads
   // as the conversation that actually happened.
   struct Exchange {
@@ -232,6 +235,12 @@ private:
   bool draggingSplitter = false;
 
   // The transcript file, empty until the first message creates it.
+  // Improving the user's own description before it is sent. The general half
+  // (PromptRewriter) and the UI half (RewriteInputBox) are shared with the Tile
+  // Designer; this window contributes only its brief and its text buffer.
+  PromptRewriter rewriter;
+  RewriteInputBox promptBox;
+
   std::string logFilePath;
   // Counts requests, so a log can be read as "attempt 1, 2, 3" without relying on
   // the wall clock, which can be identical for two fast attempts.

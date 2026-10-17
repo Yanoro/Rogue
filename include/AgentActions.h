@@ -19,6 +19,7 @@
 #include "StringUtils.hpp"
 #include "GlobalCommandRegistry.h"
 #include "GuideBuilder.h"
+#include "TaskList.hpp"
 
 // Comma-separated list of names, for the "pick one of these" index and failure
 // messages the guide commands answer with.
@@ -32,6 +33,15 @@ inline std::string FormatNameList(const std::vector<std::string> &names) {
 }
 
 enum class ActionStatus { Doing, Done, Failed, Interrupted };
+
+// Appended to every "that did not work" reply, so an agent whose verb was
+// unrecognized or unavailable for the thing in front of it is pointed at the
+// command that explains the vocabulary. Both forms are named because they answer
+// different questions: the whole list, and one verb in full. Kept without a
+// leading space so each call site decides the separator it needs.
+inline const char *const HELP_HINT =
+    "Use [HELP] to list every command with a short description, or "
+    "[HELP <COMMAND>] for a full explanation, e.g. [HELP MOVE_TO].";
 
 class AgentAction {
 public:
@@ -83,6 +93,10 @@ public:
             first = false;
           }
           msg += ".\n";
+          // The list above is names only; HELP is where an agent can read what a
+          // verb it has forgotten actually does.
+          msg += HELP_HINT;
+          msg += "\n";
           return msg;
         }
 
@@ -515,6 +529,89 @@ private:
         std::string response;
       };
 
+      // [HELP] explains the command vocabulary itself. Bare, it prints every
+      // advertised command with its short description; given an argument it
+      // resolves that one verb case-insensitively and prints the long form
+      // registered next to it.
+      //
+      // Hidden commands stay queryable but are never listed: the trade verbs and
+      // [SET_TASKS] are taught in context, so they are kept out of the discovery
+      // list while still being explainable to an agent that already knows the
+      // word.
+      //
+      // Registered before the [GENERIC_INTERACT] catch-all, which matches
+      // "[A-Z_]+" and would otherwise swallow the verb.
+      class HelpAction : public AgentAction {
+      public:
+        explicit HelpAction(std::string topic) : topic(std::move(topic)) {}
+
+        std::string getActionName() const override { return "HELP"; }
+
+        // Which verb was asked about (empty for the bare form), so the debug
+        // label reads "HELP: MOVE_TO".
+        std::string getActionContext() const override { return topic; }
+
+        ActionStatus update(float, flecs::entity) override {
+          response = topic.empty() ? BuildIndex() : BuildDetail();
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        // Optional sections are skipped entirely when empty, so a verb with no
+        // caveats does not print an empty "Notes:" heading.
+        static void AppendSection(std::string &out, const std::string &title,
+                                  const std::vector<std::string> &lines) {
+          if (lines.empty()) {
+            return;
+          }
+          out += title + ":\n";
+          for (const auto &line : lines) {
+            out += "  - " + line + "\n";
+          }
+        }
+
+        std::string BuildIndex() const {
+          const std::string list = GlobalCommandRegistry::BuildVisibleCommandList();
+          if (list.empty()) {
+            return "System: There are no commands available to explain.\n";
+          }
+          return "System: The following commands are available:\n" + list +
+                 "\nUse [HELP <COMMAND>] for a full explanation of one, "
+                 "e.g. [HELP MOVE_TO].\n";
+        }
+
+        std::string BuildDetail() const {
+          const GlobalCommand *command = GlobalCommandRegistry::FindByVerb(topic);
+          if (command == nullptr) {
+            // Not a command: say so and restate how HELP works, rather than
+            // guessing at a near match the model did not ask for.
+            return "System: '" + topic +
+                   "' is not a command I know. Use [HELP] to see every command, "
+                   "or [HELP <COMMAND>] for details on one, e.g. [HELP MOVE_TO].\n";
+          }
+
+          std::string out = "System: " + command->format + "\n";
+          if (!command->help.description.empty()) {
+            out += command->help.description + "\n";
+          }
+          AppendSection(out, "Examples", command->help.examples);
+          AppendSection(out, "Usage", command->help.usage);
+          AppendSection(out, "Notes", command->help.notes);
+          return out;
+        }
+
+        std::string topic;
+        std::string response;
+      };
+
       // Glyph grid of the tiles around the agent. Kept for the placement hint,
       // where [PLACE] consumes relative coordinates and a picture of the ground
       // is exactly what the model needs. Agents asking what is around them want
@@ -906,6 +1003,68 @@ private:
         std::string response;
       };
 
+      // Hidden verb: whole-list replacement of the agent's own task list
+      // (docs/task-system-design.md section 9). It always reports back, because
+      // a tolerant parse can still have skipped something and the agent is the
+      // only one who can repair its own list. Failure is never fatal: a payload
+      // that cannot be read at all leaves the previous list exactly as it was.
+      //
+      // Terminal goals are untouched by this verb -- it replaces everything
+      // *below* the terminal line, which the parser keeps in place.
+      class SetTasksAction : public AgentAction {
+      public:
+        explicit SetTasksAction(std::string payload)
+            : payload(std::move(payload)) {}
+
+        std::string getActionName() const override { return "SET_TASKS"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          if (applied) {
+            return ActionStatus::Done;
+          }
+          applied = true;
+
+          TaskList current;
+          if (const TaskList *existing = entity.get<TaskList>()) {
+            current = *existing;
+          }
+
+          std::vector<std::string> warnings;
+          const int tick = CurrentTaskTick(entity.world());
+          const bool replaced =
+              ParseSetTasksPayload(payload, current, tick, warnings);
+
+          if (replaced) {
+            const std::size_t goalCount = current.goals.size();
+            entity.set<TaskList>(std::move(current));
+            message = "System: Your task list has been updated (" +
+                      std::to_string(goalCount) + " entries).\n";
+          } else {
+            message =
+                "System: Your task list could not be read, so it is unchanged. "
+                "Use: id | description | horizon | kind | target | parent | "
+                "tier, one entry per line separated by ';'.\n";
+          }
+          for (const std::string &warning : warnings) {
+            message += "  - " + warning + "\n";
+          }
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return message; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string payload;
+        std::string message;
+        bool applied = false;
+      };
+
       class GenericInteractAction : public AgentAction {
       public:
         GenericInteractAction(std::string commandName, std::string commandArgs) : commandName(commandName), commandArgs(commandArgs) {}
@@ -961,7 +1120,9 @@ private:
             if (!found) {
               auto target = entity.get<InteractionTarget>();
               if (!target || !target->targetEntity.is_alive()) {
-                successMsg = "System: Invalid command, or you are not near any interactive object. You must use [MOVE_TO $TARGET] first to interact with world objects.\n";
+                successMsg = "System: Invalid command, or you are not near any interactive object. You must use [MOVE_TO $TARGET] first to interact with world objects. ";
+                successMsg += HELP_HINT;
+                successMsg += "\n";
                 return ActionStatus::Done;
               }
 
@@ -980,7 +1141,9 @@ private:
               }
 
               if (!found) {
-                successMsg = "System: Invalid command or action not available for this object.\n";
+                successMsg = "System: Invalid command or action not available for this object. ";
+                successMsg += HELP_HINT;
+                successMsg += "\n";
               }
             }
 

@@ -9,19 +9,24 @@
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
 #include "MapReloader.h"
+#include "ObjectDesigner.hpp"
 #include "PathFinding.h"
 #include "Settings.h"
 #include "SpritePaths.hpp"
+#include "TileArt.hpp"
 #include "TileDesigner.hpp"
+#include "TileDesignerWindow.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
+#include <vector>
 
 // The tile-art queue's completion callback. Declared here because Game::ECSInit
 // hands the queue a pointer to it; defined at the bottom with the rest of the
@@ -56,6 +61,16 @@ void Game::Init() {
   debugWindowState = std::make_unique<DebugWindowState>(debugLog.get());
   mapReloader = std::make_unique<MapReloader>(settings.map.mapsDirectory,
                                               debugLog.get());
+
+  // The System 1 record, created before anything can call System 1 rather than on
+  // the first call: the overview window reads it every frame and must not have to
+  // cope with it appearing later. The log file itself is still created lazily, on
+  // the first record, so a run that never calls System 1 leaves nothing behind.
+  systemOneRecorder = std::make_unique<SystemOne::SystemOneRecorder>(
+      static_cast<std::size_t>(settings.system1.maxRecords));
+  systemOneRecorder->SetWarningSink([this](const std::string &message) {
+    if (debugLog) debugLog->LogWarning(message);
+  });
 
   // Opened here rather than where speech is set up: raylib's audio device is
   // process-wide, everything that might play anything needs it to exist first, and
@@ -323,9 +338,13 @@ void Game::UpdateGUI() {
       selectedBlueprintId.clear();
     }
 
-    // Trash mode: delete the object sitting on the clicked tile. Only
-    // MapAuthored objects (map-file entries and editor placements) are eligible,
-    // which excludes NPCs, the player, held items and anything the world spawned.
+    // Trash mode: delete the object sitting on the clicked tile, or the tile
+    // itself when nothing is placed there. Only MapAuthored objects (map-file
+    // entries and editor placements) are eligible, which excludes NPCs, the
+    // player, held items and anything the world spawned. The object is taken
+    // first and the tile only when the cell holds no object, so clearing a tree
+    // never also erases the ground under it -- and an erased tile is a real
+    // edit: it is written to the map file as an empty cell.
     if (removeObjectMode) {
       flecs::entity target = flecs::entity::null();
       ecs.filter<const GamePosition>().each([&](flecs::entity e,
@@ -356,6 +375,13 @@ void Game::UpdateGUI() {
                             "' at (" + std::to_string(gPos.x) + "," +
                             std::to_string(gPos.y) + ")");
         }
+        return;
+      }
+
+      // Nothing authored on the cell, so the ground is what the trash takes.
+      // Returns true only when a tile was actually there, so a click on an
+      // already-empty or out-of-bounds cell falls through to normal handling.
+      if (RemoveTileAt(gPos)) {
         return;
       }
     }
@@ -632,6 +658,10 @@ void Game::Shutdown() {
         tileDesignerWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowNPCMenuWindow(
         npcMenuWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowTaskBoardWindow(
+        taskBoardWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowSystemOneWindow(
+        systemOneWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState(Settings().debug.windowStateFile);
     if (debugLog) {
@@ -736,12 +766,81 @@ std::string Game::BuildDesignerSystemPrompt() const {
 }
 
 std::string Game::BuildTileDesignerSystemPrompt() const {
-  // The writing of the prompt -- the file read, the %GLYPHS%/%TILES%
-  // substitution, the glyph grouping -- lives in TileDesigner so that the
-  // headless `--tile-design` mode and this window cannot disagree about what the
-  // model was told. This method is the seam that gives it the live registry.
-  return TileDesigner::BuildSystemPrompt(
-      Settings().content.tileDesignerPromptFile, tileRegistry);
+  // A wrapper over the kind-aware builder, kept because the tile window and the
+  // existing tests call it by name. New callers should use BuildSpriteSystemPrompt.
+  return BuildSpriteSystemPrompt(SpriteKinds::Kind::Tile);
+}
+
+std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind) const {
+  // The writing of the prompt -- the file read, the %CONTRACT%/%GLYPHS%/%VOCAB%
+  // substitution, the glyph grouping -- lives in TileDesigner so that the headless
+  // `--sprite-design` mode and the window cannot disagree about what the model was
+  // told. This method is the seam that gives it the live world: the tile catalog for
+  // the tile kind, and (from phase 2) the object factory's components for the object
+  // kind.
+  //
+  // The vocabulary is assembled here rather than inside the prompt builder because
+  // the two kinds read it from different places, and a builder that knew about both
+  // would have to know about every future kind as well.
+  const GameSettings &gameSettings = Settings();
+  const SpriteKinds::Descriptor &descriptor = SpriteKinds::For(kind);
+
+  TileDesigner::PromptVocabulary vocabulary;
+  std::string promptFile = descriptor.promptFile;
+
+  if (kind == SpriteKinds::Kind::Tile) {
+    promptFile = gameSettings.content.tileDesignerPromptFile;
+
+    vocabulary.body = TileDesigner::TileVocabulary(tileRegistry);
+    const std::vector<std::string> legend = TileDesigner::GlyphLegend(tileRegistry);
+    if (legend.empty()) {
+      vocabulary.glyphs =
+          "  (the catalog is empty, so every printable character is free)\n";
+    } else {
+      for (const std::string &line : legend) {
+        vocabulary.glyphs += line + "\n";
+      }
+    }
+  } else {
+    promptFile = gameSettings.content.objectDesignerPromptFile;
+    // Generated from the factory's registered components, not written into the
+    // document: a hand-written list drifts the moment a component is added, and the
+    // failure is quiet -- the designer writes a key the engine ignores. The first draft
+    // of the design doc hand-wrote this list and got the component *count* wrong.
+    vocabulary.body = ObjectDesigner::ComponentVocabulary(objectFactory);
+    // No glyph legend for objects: a glyph has to be free to be worth choosing, and
+    // object glyphs are not what agents read the map by (they see the ASCII art). The
+    // document has no %GLYPHS% placeholder and nothing is appended for it.
+  }
+
+  return TileDesigner::BuildPromptForKind(descriptor, promptFile,
+                                          gameSettings.content.spriteContractFile,
+                                          vocabulary);
+}
+
+Game::ObjectLookup Game::LookupObject(const std::string &key) const {
+  ObjectLookup lookup;
+  const auto &templates = objectFactory.GetTemplates();
+  const auto found = templates.find(key);
+  if (found == templates.end()) {
+    return lookup;
+  }
+  lookup.found = true;
+  // The distinction that matters: an object the same key as a hand-authored template is
+  // the catalog's, not the overlay's, and reporting them the same way would make a broken
+  // overlay load look like a working one whenever the name happens to exist in both.
+  lookup.fromGeneratedOverlay = objectFactory.IsRuntimeAdded(key);
+  lookup.name = found->second.value("name", key);
+  return lookup;
+}
+
+std::vector<std::string> Game::ObjectKeys() const {
+  std::vector<std::string> keys;
+  for (const auto &pair : objectFactory.GetTemplates()) {
+    keys.push_back(pair.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  return keys;
 }
 
 // ---------------------------------------------------------------------------
@@ -941,8 +1040,61 @@ bool Game::PaintTile(GamePosition position, const std::string &tileName) {
   if (visual.is_alive()) {
     visual.set<DrawAscii>(*tile->ascii);
     visual.remove<Sprite>();
+
+    // Forget what is memoised about this tile's sprite before resolving it, for the
+    // same reason RefreshTileVisuals does: ResourceManager remembers an absent path
+    // *and* a failed load, and this is the one moment we know the file may have
+    // appeared since the last look.
+    //
+    // Without it, painting a tile whose art did not exist yet poisons the cell
+    // permanently -- the absence is remembered at paint time, so generating the art
+    // afterwards changes nothing and the cell keeps drawing its glyph until the map
+    // is reloaded. That is the reported "the tile's image is still the ASCII".
+    //
+    // The explicit path is forgotten even when empty: an empty path plus a convention
+    // id resolves to the convention path, and forgetting "" is harmless, so this
+    // stays a single unconditional forget rather than a copy of the resolution order.
+    std::string resolvedPath;
+    SpriteResolves(tile->sprite, TileSpriteId(tile->name), &resolvedPath);
+    if (!resolvedPath.empty()) {
+      resourceManager.ForgetPath(resolvedPath);
+    }
+
     AttachSprite(visual, tile->sprite, TileSpriteId(tile->name), resourceManager,
                  debugLog.get());
+  }
+  return true;
+}
+
+bool Game::RemoveTileAt(GamePosition position) {
+  if (map == nullptr) return false;
+
+  // The map owns the cell. Asking it what is there first, rather than inferring
+  // it from the name RemoveTileAt hands back, keeps "nothing to erase" an
+  // explicit answer instead of a sentinel a nameless tile could collide with.
+  // GetTile bounds-checks, so an off-map click is refused here too.
+  if (map->GetTile(position.x, position.y) == nullptr) {
+    return false;
+  }
+
+  const std::string removedName = map->RemoveTileAt(position);
+
+  // The cell's render entity goes with the tile. It is a child of the map entity
+  // holding the ground's DrawAscii and Sprite, and there is no "empty" art for
+  // it to fall back to -- leaving it alive would keep drawing the tile the map
+  // no longer holds. Destroyed here, not inside the query that found it, and
+  // this is called from the input path rather than a filter, so no iteration is
+  // invalidated.
+  flecs::entity visual = FindTileEntity(position);
+  if (visual.is_alive()) {
+    visual.destruct();
+  }
+
+  lastRemovedTileName = removedName;
+  if (debugLog) {
+    debugLog->LogInfo("Map editor: removed tile '" + removedName + "' at (" +
+                      std::to_string(position.x) + "," +
+                      std::to_string(position.y) + ")");
   }
   return true;
 }
@@ -1024,6 +1176,53 @@ size_t Game::RefreshTileVisuals(const std::string &tileName) {
   return refreshed;
 }
 
+Game::CellSpriteState Game::InspectCellSprite(GamePosition position) {
+  CellSpriteState state;
+  flecs::entity visual = FindTileEntity(position);
+  if (!visual.is_alive()) {
+    return state;
+  }
+  state.hasVisual = true;
+  if (map != nullptr) {
+    if (const Tile *cell = map->GetTile(position.x, position.y)) {
+      state.tileName = cell->name;
+    }
+  }
+  const Sprite *sprite = visual.get<Sprite>();
+  if (sprite != nullptr) {
+    state.hasSprite = true;
+    state.spriteId = sprite->path;
+  }
+  return state;
+}
+
+bool Game::TileCellSpriteCount(const std::string &tileName, int *withArt,
+                               int *withGlyph) {
+  if (withArt != nullptr) *withArt = 0;
+  if (withGlyph != nullptr) *withGlyph = 0;
+  if (map == nullptr || tileName.empty()) {
+    return false;
+  }
+
+  // Over the map's own extent rather than a guessed rectangle: the caller cannot see
+  // the map to know how big it is, and a fixed bound would silently miss cells.
+  const int width = map->GetWidth();
+  const int height = map->GetHeight();
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      const CellSpriteState state = InspectCellSprite(GamePosition{x, y});
+      if (!state.hasVisual) continue;
+      if (state.tileName != tileName) continue;
+      if (state.hasSprite) {
+        if (withArt != nullptr) ++(*withArt);
+      } else if (withGlyph != nullptr) {
+        ++(*withGlyph);
+      }
+    }
+  }
+  return true;
+}
+
 // ---------------------------------------------------------------------------
 // Live tile-art generation
 // ---------------------------------------------------------------------------
@@ -1046,15 +1245,22 @@ void OnTileArtCompleted(void *context, const TileArtQueue::Job &job) {
   game->HandleTileArtGenerated(job);
 }
 
-void Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
+size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // The sprite is already in the generated layer -- the tool put it there, because
   // that is where the generated layer is and the tool writes PNGs. So the swap is
   // the refresh: forget the memoised absence, re-resolve, attach.
   const size_t cells = RefreshTileVisuals(job.tileName);
+
+  // Zero is the interesting case, not a no-op: it means the tile is not on the map,
+  // which is normal for a tile that was designed and never painted, and is the
+  // difference between "the swap failed" and "there was nothing to swap yet". Said
+  // in the log because otherwise both look identical from outside.
   if (debugLog) {
-    debugLog->LogInfo("Tile art: '" + job.tileName + "' generated (" + job.path +
-                      "); " + std::to_string(cells) + " cell(s) updated");
+    debugLog->LogInfo("Tile art: '" + job.tileName + "' generated into " + job.path +
+                      "; " + std::to_string(cells) + " cell(s) updated" +
+                      (cells == 0 ? " (the tile is not on the map yet)" : ""));
   }
+  return cells;
 }
 
 void Game::ECSConfigureTileArtQueue() {
@@ -1090,11 +1296,11 @@ void Game::ECSConfigureTileArtQueue() {
   // A member function pointer is just a function pointer with a bound context, so
   // the callback needs no trampoline and nothing crosses a thread boundary but the
   // job data.
-  tileArtQueue.SetCompletion([this](const TileArtQueue::Job &job) {
+  tileArtQueue.SetCompletion([this](const TileArtQueue::Job &job) -> size_t {
     // `this` is captured rather than passed as a context pointer: the queue lives
     // exactly as long as the Game that owns it, and Stop() joins the worker before
     // the Game is destroyed.
-    HandleTileArtGenerated(job);
+    return HandleTileArtGenerated(job);
   });
   tileArtCompletionWired = true;
 }
@@ -1117,3 +1323,323 @@ Game::TileArtPumpResult Game::PumpTileArtQueue(float deltaSeconds) {
   result.startedBatch = tileArtQueue.Update(deltaSeconds);
   return result;
 }
+
+size_t Game::RunTileDesignerLogSelfTest() {
+  if (!tileDesignerWindow) {
+    std::cerr << "log test: the tile designer window was not constructed\n";
+    return 0;
+  }
+  const size_t inspected =
+      tileDesignerWindow->RunSelfTestConversation(tileDesignerArtSelfTest);
+
+  // The automatic art request is the one thing here whose *effect* is not in the
+  // window: it lands in the queue. Reported so the two outcomes are distinguishable
+  // from outside -- generation off means "refused, and the transcript says why",
+  // generation on with a stub command means "queued", and a silent neither would
+  // look the same as a path that never ran.
+  if (tileDesignerArtSelfTest) {
+    const TileArtQueue &queue = tileArtQueue;
+    const bool queued = queue.CountInState(TileArtQueue::State::Queued) > 0;
+    std::cout << "art test:   automatic request "
+              << (queued ? "QUEUED" : "not queued");
+    if (!queued) {
+      std::cout << " (generation is "
+                << (queue.Enabled() ? "on, so the tile was probably refused"
+                                    : "off -- set art.generation.enabled and a "
+                                      "stub command to exercise this")
+                << ")";
+    }
+    std::cout << "\n";
+  }
+
+  // The window's normal behaviour is to write an accepted tile into the generated
+  // overlay, and that is deliberately not special-cased inside it -- a test hook
+  // that changed what the code under test does would be testing something else. So
+  // the file is removed here, by the thing that asked for the test. Left behind, it
+  // would add a junk tile to the world on every run of this mode.
+  if (inspected > 0) {
+    const std::string overlay = Settings().content.generatedTiles;
+    if (!overlay.empty()) {
+      std::error_code ec;
+      const std::filesystem::path written =
+          std::filesystem::path(overlay) / "self_test_puddle.json";
+      if (std::filesystem::exists(written, ec)) {
+        std::filesystem::remove(written, ec);
+        std::cout << "log test: removed the tile it wrote ("
+                  << written.string() << ")\n";
+      }
+    }
+  }
+  return inspected;
+}
+
+// Writes a tiny PNG holding one or two flat colours. The test needs two files that
+// differ in something the pixel view *reports* -- its distinct-colour count -- so the
+// first file carries two colours and the second one, which is written over the first's
+// path. A hand-rolled encoder is enough here and keeps this mode free of a dependency
+// on the generator's Python side.
+static bool WriteTestPng(const std::string &path, bool twoColours) {
+  const int kSize = 8;
+  std::vector<unsigned char> raw;
+  raw.reserve(static_cast<size_t>(kSize) * (1 + kSize * 4));
+  // The green channel is the variant marker, so the two files are byte-different in a
+  // way that changes the pixels without changing the *count* of distinct colours --
+  // which is what makes the pixel-view assertion about the reload and not about the
+  // arithmetic.
+  const unsigned char rightGreen = static_cast<unsigned char>(twoColours ? 30 : 180);
+  for (int y = 0; y < kSize; ++y) {
+    raw.push_back(0);  // filter: none
+    for (int x = 0; x < kSize; ++x) {
+      const bool right = x >= kSize / 2;
+      raw.push_back(static_cast<unsigned char>(right ? 10 : 200));
+      raw.push_back(right ? rightGreen : static_cast<unsigned char>(120));
+      raw.push_back(static_cast<unsigned char>(right ? 220 : 40));
+      raw.push_back(255);
+    }
+  }
+
+  auto crc32 = [](const unsigned char *data, size_t length) {
+    unsigned int crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < length; ++i) {
+      crc ^= data[i];
+      for (int bit = 0; bit < 8; ++bit) {
+        crc = (crc >> 1) ^ (0xEDB88320u & (~(crc & 1u) + 1u));
+      }
+    }
+    return ~crc;
+  };
+  auto chunk = [&crc32](std::ostream &out, const char type[4],
+                        const std::vector<unsigned char> &payload) {
+    auto be32 = [](std::ostream &o, unsigned int value) {
+      const unsigned char bytes[4] = {
+          static_cast<unsigned char>((value >> 24) & 0xFF),
+          static_cast<unsigned char>((value >> 16) & 0xFF),
+          static_cast<unsigned char>((value >> 8) & 0xFF),
+          static_cast<unsigned char>(value & 0xFF)};
+      o.write(reinterpret_cast<const char *>(bytes), 4);
+    };
+    be32(out, static_cast<unsigned int>(payload.size()));
+    std::vector<unsigned char> crcInput;
+    crcInput.insert(crcInput.end(), type, type + 4);
+    crcInput.insert(crcInput.end(), payload.begin(), payload.end());
+    out.write(type, 4);
+    if (!payload.empty()) {
+      out.write(reinterpret_cast<const char *>(payload.data()),
+                static_cast<std::streamsize>(payload.size()));
+    }
+    be32(out, crc32(crcInput.data(), crcInput.size()));
+  };
+
+  std::ofstream out(path, std::ios::binary);
+  if (!out.is_open()) {
+    return false;
+  }
+  const unsigned char signature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+  out.write(reinterpret_cast<const char *>(signature), 8);
+
+  std::vector<unsigned char> header;
+  auto be = [&header](unsigned int value) {
+    header.push_back(static_cast<unsigned char>((value >> 24) & 0xFF));
+    header.push_back(static_cast<unsigned char>((value >> 16) & 0xFF));
+    header.push_back(static_cast<unsigned char>((value >> 8) & 0xFF));
+    header.push_back(static_cast<unsigned char>(value & 0xFF));
+  };
+  be(kSize);
+  be(kSize);
+  header.push_back(8);  // bit depth
+  header.push_back(6);  // colour type: RGBA
+  header.push_back(0);  // compression
+  header.push_back(0);  // filter
+  header.push_back(0);  // interlace
+  chunk(out, "IHDR", header);
+
+  // zlib stream: header, stored (uncompressed) deflate blocks, adler32.
+  std::vector<unsigned char> zlib;
+  zlib.push_back(0x78);
+  zlib.push_back(0x01);
+  size_t offset = 0;
+  while (offset < raw.size()) {
+    const size_t block = std::min<size_t>(65535, raw.size() - offset);
+    const bool last = offset + block >= raw.size();
+    zlib.push_back(static_cast<unsigned char>(last ? 1 : 0));
+    zlib.push_back(static_cast<unsigned char>(block & 0xFF));
+    zlib.push_back(static_cast<unsigned char>((block >> 8) & 0xFF));
+    zlib.push_back(static_cast<unsigned char>(~block & 0xFF));
+    zlib.push_back(static_cast<unsigned char>((~block >> 8) & 0xFF));
+    zlib.insert(zlib.end(), raw.begin() + static_cast<long>(offset),
+                raw.begin() + static_cast<long>(offset + block));
+    offset += block;
+  }
+  unsigned int a = 1;
+  unsigned int bb = 0;
+  for (const unsigned char byte : raw) {
+    a = (a + byte) % 65521;
+    bb = (bb + a) % 65521;
+  }
+  zlib.push_back(static_cast<unsigned char>((bb >> 8) & 0xFF));
+  zlib.push_back(static_cast<unsigned char>(bb & 0xFF));
+  zlib.push_back(static_cast<unsigned char>((a >> 8) & 0xFF));
+  zlib.push_back(static_cast<unsigned char>(a & 0xFF));
+  chunk(out, "IDAT", zlib);
+  chunk(out, "IEND", {});
+  return out.good();
+}
+
+bool Game::PaintTileForTest(GamePosition position, const std::string &tileName,
+                            bool *hasSprite) {
+  const bool painted = PaintTile(position, tileName);
+  if (hasSprite != nullptr) {
+    *hasSprite = InspectCellSprite(position).hasSprite;
+  }
+  return painted;
+}
+
+int Game::RunPaintMemoSelfTest(const std::string &tileName) {
+  const std::string sprite = TileArt::PlanFor(tileName).generatedPath;
+  if (sprite.empty()) {
+    std::cerr << "paint memo test: no generated sprite path for '" << tileName
+              << "'\n";
+    return 1;
+  }
+  std::error_code ec;
+  if (!std::filesystem::exists(sprite, ec)) {
+    std::cerr << "paint memo test: " << sprite
+              << " does not exist, so the absence cannot be simulated\n";
+    return 1;
+  }
+
+  int withArt = 0;
+  int withGlyph = 0;
+  if (!TileCellSpriteCount(tileName, &withArt, &withGlyph) || withArt == 0) {
+    std::cerr << "paint memo test: no cell on the loaded map draws '" << tileName
+              << "', so there is nothing to refresh\n";
+    return 1;
+  }
+  std::cout << "paint memo:  '" << tileName << "' starts with " << withArt
+            << " cell(s) drawing art\n";
+
+  // The file disappears for a moment -- what a first generation looks like from the
+  // engine's side. The refresh that follows is where the absence is memoised.
+  const std::filesystem::path hidden = sprite + ".memo-test-hidden";
+  std::filesystem::remove(hidden, ec);
+  std::filesystem::rename(sprite, hidden, ec);
+  if (ec) {
+    std::cerr << "paint memo test: could not hide the sprite: " << ec.message()
+              << "\n";
+    return 1;
+  }
+
+  const size_t hiddenRefresh = RefreshTileVisuals(tileName);
+  int hiddenArt = 0;
+  int hiddenGlyph = 0;
+  TileCellSpriteCount(tileName, &hiddenArt, &hiddenGlyph);
+
+  // Put it back, exactly as generation would have produced it.
+  std::filesystem::rename(hidden, sprite, ec);
+  if (ec) {
+    std::cerr << "paint memo test: could not restore the sprite: " << ec.message()
+              << "\n";
+    return 1;
+  }
+
+  const size_t restoredRefresh = RefreshTileVisuals(tileName);
+  int restoredArt = 0;
+  int restoredGlyph = 0;
+  TileCellSpriteCount(tileName, &restoredArt, &restoredGlyph);
+
+  std::cout << "paint memo:  refresh-without-art -> " << hiddenRefresh
+            << " changed (" << hiddenGlyph << " still glyph), after restore -> "
+            << restoredRefresh << " changed (" << restoredArt << " drawing art)\n";
+  if (restoredArt == 0) {
+    std::cerr << "paint memo test: the art came back but the cells did not pick it "
+                 "up -- the ResourceManager's memoised absence is still poisoning "
+                 "them\n";
+    return 1;
+  }
+  std::cout << "paint memo: ok (art that arrives after a paint is noticed)\n";
+  return 0;
+}
+
+int Game::RunArtCacheSelfTest() {
+  if (!tileDesignerWindow) {
+    std::cerr << "art cache test: the tile designer window was not constructed\n";
+    return 1;
+  }
+
+  const std::filesystem::path directory =
+      std::filesystem::temp_directory_path() / "airogue_art_cache_test";
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  const std::string first = (directory / "stage.png").string();
+  const std::string second = (directory / "stage_changed.png").string();
+
+  // Two distinct single-colour files, plus one written over the *same* path as the
+  // first. The overwrite is the whole point: a regenerated stage reuses its filename.
+  if (!WriteTestPng(first, /*twoColours=*/true) ||
+      !WriteTestPng(second, /*twoColours=*/false)) {
+    std::cerr << "art cache test: could not write the test images\n";
+    return 1;
+  }
+
+  const TileDesignerWindow::ThumbnailLookup firstLook =
+      tileDesignerWindow->InspectThumbnailForTest(first);
+  if (firstLook.textureId == 0) {
+    std::cerr << "art cache test: the first image did not load as a thumbnail\n";
+    return 1;
+  }
+  const size_t firstColours = tileDesignerWindow->InspectPixelViewForTest(first)
+                                  .distinctColours;
+  const size_t firstHash =
+      tileDesignerWindow->InspectPixelViewForTest(first).hash;
+  if (firstColours == 0 || firstHash == 0) {
+    std::cerr << "art cache test: the first image did not load into the pixel view\n";
+    return 1;
+  }
+
+  // Overwrite the same path with what the second file holds. The stamp is pushed
+  // forward explicitly so the test does not depend on the filesystem's timestamp
+  // resolution catching two writes made in the same tick.
+  std::filesystem::copy_file(second, first,
+                             std::filesystem::copy_options::overwrite_existing,
+                             ec);
+  if (ec) {
+    std::cerr << "art cache test: could not rewrite the thumbnail file: "
+              << ec.message() << "\n";
+    return 1;
+  }
+  const auto future =
+      std::filesystem::last_write_time(first, ec) + std::chrono::seconds(2);
+  std::filesystem::last_write_time(first, future, ec);
+
+  const TileDesignerWindow::ThumbnailLookup secondLook =
+      tileDesignerWindow->InspectThumbnailForTest(first);
+  const TileDesignerWindow::PixelViewLookup secondPixels =
+      tileDesignerWindow->InspectPixelViewForTest(first);
+  std::cout << "art cache test: thumbnail id " << firstLook.textureId << " -> "
+            << secondLook.textureId << ", pixel hash " << firstHash << " -> "
+            << secondPixels.hash << "\n";
+
+  // The assertion is on the stamp, not the texture id: raylib reuses ids, so a
+  // *successful* reload can land on the same number and an id comparison would
+  // report a false failure. What proves the cache noticed is that the identity it
+  // resolved changed.
+  if (secondLook.textureId == 0) {
+    std::cerr << "art cache test: the rewritten image did not load\n";
+    return 1;
+  }
+  if (secondLook.hasStamp && firstLook.hasStamp &&
+      secondLook.stamp == firstLook.stamp) {
+    std::cerr << "art cache test: the cache kept the old file identity after the "
+                 "file changed (stages would show the previous generation)\n";
+    return 1;
+  }
+  if (secondPixels.hash == firstHash) {
+    std::cerr << "art cache test: the pixel view kept the previous generation's "
+                 "pixels after the sprite changed\n";
+    return 1;
+  }
+  std::cout << "art cache:  ok (a rewritten stage reloads instead of showing the "
+               "previous batch)\n";
+  return 0;
+}
+

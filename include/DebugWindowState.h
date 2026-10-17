@@ -68,6 +68,20 @@ public:
   void SetDesignerZoom(float value) { designerZoom = value; }
   bool GetDesignerShowJson() const { return designerShowJson; }
   void SetDesignerShowJson(bool value) { designerShowJson = value; }
+
+  // Whether the tile designer asks for art as soon as it accepts a tile.
+  //
+  // Persisted because it is a workflow preference about how a session reads, not
+  // about one tile. It is the one preference in that window which spends money
+  // without a further click, so it is stored rather than inferred -- but see
+  // HasTileDesignerAutoArt: a checkout that has never stored it follows
+  // `art.generation.enabled`, so enabling generation is a single decision.
+  bool GetTileDesignerAutoArt() const { return tileDesignerAutoArt; }
+  void SetTileDesignerAutoArt(bool value) { tileDesignerAutoArt = value; }
+  // False until a state file that carries the key has been read. Distinguishing
+  // "the user turned it off" from "nobody has ever said" is the whole point: the
+  // two want opposite defaults, and a bare bool cannot tell them apart.
+  bool HasTileDesignerAutoArt() const { return tileDesignerAutoArtStored; }
   bool GetDesignerShowThoughts() const { return designerShowThoughts; }
   void SetDesignerShowThoughts(bool value) { designerShowThoughts = value; }
 
@@ -84,6 +98,18 @@ public:
 
   bool GetShowNPCMenuWindow() const { return showNPCMenuWindow; }
   void SetShowNPCMenuWindow(bool value) { showNPCMenuWindow = value; }
+
+  // The village-wide task board. Persisted like every other debug window, because
+  // "why is this agent doing something dumb" is a question you come back to
+  // across runs.
+  bool GetShowTaskBoardWindow() const { return showTaskBoardWindow; }
+  void SetShowTaskBoardWindow(bool value) { showTaskBoardWindow = value; }
+
+  // The System 1 overview. Persisted like the rest: whether you were watching the
+  // System 1 traffic is a fact about how you were working, and coming back to a
+  // closed window after a restart hides the very calls you were collecting.
+  bool GetShowSystemOneWindow() const { return showSystemOneWindow; }
+  void SetShowSystemOneWindow(bool value) { showSystemOneWindow = value; }
 
   bool GetShowVisionChatWindow() const { return showVisionChatWindow; }
   void SetShowVisionChatWindow(bool value) { showVisionChatWindow = value; }
@@ -121,10 +147,17 @@ private:
   // Off by default: the reasoning is noise while watching a design being produced,
   // and it is always in the log when it is wanted.
   bool designerShowThoughts = false;
+  bool tileDesignerAutoArt = false;
+  // Whether that value came from a file. Only ever set by a successful read of the
+  // key, so it also survives a state file written before the key existed -- which
+  // is exactly the case that should follow the setting rather than default to off.
+  bool tileDesignerAutoArtStored = false;
   float blueprintPaneWidth = 420.0f;
   float blueprintZoom = 64.0f;
   bool showAIMenuWindow;
   bool showNPCMenuWindow;
+  bool showTaskBoardWindow;
+  bool showSystemOneWindow;
   bool showVisionChatWindow;
   bool showLocations;
   bool stopAllAI;

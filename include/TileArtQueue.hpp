@@ -51,6 +51,18 @@ public:
     // Map cells that gained a sprite on the swap, so the window can say what
     // actually changed rather than only that something did.
     size_t refreshedCells = 0;
+    // Cells whose visual the swap updated. Set by the completion callback, so the
+    // count the window and the logs report is the one the swap actually achieved
+    // rather than a re-measurement that would also count work a later frame did.
+    size_t swappedCells = 0;
+    // The worklist this tile was generated through, once a batch has been sent.
+    // Recorded because everything the pipeline produced hangs off it by
+    // convention: the raw sheet is `<worklist's directory>/tile_art_sheet.png`, its
+    // prompt is the same path with `.prompt.txt`, and the per-stage cell images are
+    // `cell_<index>_{crop,trim,locked}.png` beside them. Without this the window has
+    // no way back to what the model actually drew, which is the only thing that
+    // explains a bad tile.
+    std::string worklistPath;
   };
 
   struct Config {
@@ -81,7 +93,11 @@ public:
   // context -- `g_AIResponseQueue` stores lambdas for the same reason. The job
   // arrives by const reference and is only valid for the call: a callback that
   // wants to keep it must copy it.
-  using CompletionFn = std::function<void(const Job &job)>;
+  //
+  // Returns how many cells the swap touched, which the queue records on the job so a
+  // caller can tell "nothing to swap yet" from "the swap failed". Zero is the normal
+  // answer for a tile that has been designed and not yet painted.
+  using CompletionFn = std::function<size_t(const Job &job)>;
 
   TileArtQueue() = default;
   ~TileArtQueue();
@@ -93,6 +109,15 @@ public:
   void Configure(const Config &config, const std::string &workDirectory,
                  const std::string &spritesDirectory,
                  const std::string &paletteJson);
+
+  // Why art cannot be generated at all, or empty when it can. The same conditions
+  // `Request` refuses on, asked ahead of time, so a surface can say what is missing
+  // instead of only reporting that nothing happened.
+  //
+  // This exists because the failure mode of a disabled feature is silence: a tile
+  // is accepted, no sprite appears, and nothing anywhere says why. Every reason
+  // here is actionable, which is the bar for putting it in front of someone.
+  std::string UnavailableReason() const;
 
   const Config &GetConfig() const { return config; }
   bool Enabled() const { return config.enabled; }

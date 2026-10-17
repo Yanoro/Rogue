@@ -435,3 +435,29 @@ size_t TileRegistry::RemoveRuntimeTiles() {
   }
   return removed;
 }
+
+bool TileRegistry::RemoveDefinition(const std::string& name) {
+  const auto it = tiles.find(name);
+  if (it == tiles.end()) {
+    return false;
+  }
+
+  // Ownership is moved into `retired`, not dropped. Get/GetAll/Count stop seeing
+  // the definition from here on -- which is the point -- but the storage outlives
+  // the removal, because some of this program holds a TileDef* across frames:
+  // TileDesignerWindow keeps one for the tile it is editing (`edited`), and
+  // TileDesigner::ApplyResult hands one to a preview pane. Freeing here would let
+  // a deletion in the Map Editor turn another window's next frame into a
+  // use-after-free, which is not a trade worth making for the memory.
+  //
+  // A retired definition is unreachable through the public API, so nothing can
+  // paint it, spawn it or resolve it by name; it is reclaimed with the registry.
+  retired.push_back(std::move(it->second));
+  tiles.erase(it);
+  // Also cleared from the runtime layer: an overlay tile that has been deleted
+  // must not be resurrected by the next overlay reload, and leaving the name here
+  // would do exactly that.
+  runtimeAdded.erase(name);
+  ++catalogRevision;
+  return true;
+}

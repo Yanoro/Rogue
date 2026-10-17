@@ -47,6 +47,14 @@ struct NPCData {
   // load, the race supplies the look and then the ASCII art does (see
   // SpritePaths.hpp and GiveBody).
   std::string sprite;
+  // The character's life goals, from the map's
+  // "goals": {"terminal": ["be an important member of the community", ...]}.
+  // Authored, not model-written, and seeded read-only into the agent's TaskList
+  // at spawn: a model that re-derives its life goals each session makes a
+  // character inconsistent across runs, and a terminal goal is a statement about
+  // who the character is. Everything below the terminal line belongs to the
+  // agent (docs/task-system-design.md section 5).
+  std::vector<std::string> terminalGoals;
 };
 
 class Map {
@@ -78,6 +86,18 @@ public:
   // empty string when no location covers the position. In-memory only: the map
   // file is not touched by this.
   std::string RemoveLocationAt(GamePosition pos);
+
+  // Erases the tile on one cell and returns its name, or an empty string when
+  // the position is out of bounds or the cell is already empty. In-memory only:
+  // SaveToFile is what writes it back, spelling an erased cell as -1 in
+  // "positions" -- an index no palette entry can occupy, so it survives a
+  // reload instead of being replaced by tile 0.
+  //
+  // The cell is left holding null, which is the state the loader already
+  // produces for a cell the "positions" array never reached: nothing is drawn
+  // on it and it is not walkable. The Tile itself stays owned by uniqueTiles,
+  // so the palette entry survives and the tile can be painted again.
+  std::string RemoveTileAt(GamePosition pos);
 
   // Builds the complete map as JSON, exactly as the map file format expects it.
   // Tile layout, the tile palette, locations and authored objects come from live

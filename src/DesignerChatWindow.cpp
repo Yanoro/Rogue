@@ -17,6 +17,7 @@
 #include "Components.h"
 #include "DebugLog.h"
 #include "Game.h"
+#include "RewriteBriefs.hpp"
 #include "Settings.h"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
@@ -125,6 +126,21 @@ DesignerChatWindow::DesignerChatWindow(Game *game, AI *designerAI,
   if (game != nullptr) {
     systemPrompt = game->BuildDesignerSystemPrompt();
   }
+
+  // The Improve button, sharing the component with the Tile Designer. Same backend as
+  // this conversation, its own provider context, and its instructions from the shared
+  // rewrite prompt -- which is about rewriting rather than about buildings, so the only
+  // window-specific part is the brief installed here.
+  rewriter.Configure(game != nullptr ? game->rewriterAI.get() : nullptr,
+                     Settings().content.rewritePromptFile,
+                     contextId + "-rewriter",
+                     game != nullptr ? game->debugLog.get() : nullptr);
+  rewriter.SetBrief(RewriteBriefs::Blueprint());
+  promptBox.Setup(game, &rewriter, inputBuffer, sizeof(inputBuffer));
+  // The rewrite transcript goes into the same file as the conversation, so a rewrite
+  // that produced the wrong half is diagnosable from the log rather than by replaying
+  // it: the game's DebugLog is in memory only.
+  promptBox.SetLogSink([this](const std::string &line) { Log(line); });
 }
 
 void DesignerChatWindow::Log(const std::string &text) {
@@ -1123,6 +1139,25 @@ void DesignerChatWindow::Draw() {
   // so a reading is stopped where it is, and a second panic button for the same
   // thing would only make people wonder which one to press.
   ImGui::TextDisabled("Enter to send, Shift+Enter for a newline");
+  ImGui::SameLine();
+
+  // Collect a rewrite that arrived since the last frame, then draw the controls beside
+  // the box they affect. Same component and same rules as the Tile Designer: the
+  // result lands in the box, Undo restores the user's own wording, and a rewrite that
+  // finished while the text was being edited is offered rather than forced in.
+  promptBox.Drain();
+  promptBox.DrawButtons();
+
+  const std::string rewriterStatus = promptBox.StatusLine();
+  if (!rewriterStatus.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+    ImGui::TextWrapped("Improve: %s", rewriterStatus.c_str());
+    ImGui::PopStyleColor();
+  }
+  if (promptBox.ShowingRewrite()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(rewritten -- Undo restores your wording)");
+  }
 
   ImGui::SetNextItemWidth(-1.0f);
   const bool submitted = ImGui::InputTextMultiline(
@@ -1138,6 +1173,8 @@ void DesignerChatWindow::Draw() {
     }
     if (!prompt.empty()) {
       inputBuffer[0] = '\0';
+      // Forget the pre-rewrite text so the next message cannot undo into this one.
+      promptBox.Reset();
       SendUserMessage(prompt);
     }
   }

@@ -15,6 +15,7 @@
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
 #include "VisionChatWindow.h"
+#include "SystemOneWindow.h"
 #include "AgentContextWindow.h"
 #include "BlueprintExpansion.hpp"
 #include "BlueprintPreview.hpp"
@@ -228,12 +229,35 @@ void DebugConsoleWindow::Draw() {
     }
   }
 
+  // The task board opens a new row rather than joining the one above, per the
+  // rule stated below: the rows above already fill a narrow Debug Console and
+  // ImGui clips past the right edge, which silently makes a checkbox
+  // unclickable. The Designer and Tile Designer pair continues on this row.
+  bool showTaskBoard = game->taskBoardWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Task Board", &showTaskBoard)) {
+    if (showTaskBoard) {
+      game->taskBoardWindowEntity.set<ActiveWindow>(
+          {std::make_shared<TaskBoardWindow>(game)});
+    } else {
+      game->taskBoardWindowEntity.remove<ActiveWindow>();
+    }
+  }
   ImGui::SameLine();
 
-  // Its own row for the same reason Vision Chat is on one: the row before it
-  // already fills a narrow Debug Console and ImGui clips anything past the right
-  // edge, which silently makes a checkbox unclickable. Later additions should
-  // open another row rather than append to this one.
+  // Its own row for the same reason the rows above have one: the row already
+  // fills a narrow Debug Console and ImGui clips anything past the right edge,
+  // which silently makes a checkbox unclickable.
+  bool showSystemOne = game->systemOneWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("System 1", &showSystemOne)) {
+    if (showSystemOne) {
+      game->systemOneWindowEntity.set<ActiveWindow>(
+          {std::make_shared<SystemOneWindow>(game, game->systemOneRecorder.get())});
+    } else {
+      game->systemOneWindowEntity.remove<ActiveWindow>();
+    }
+  }
+
+  ImGui::SameLine();
   bool showDesigner = game->designerWindowEntity.has<ActiveWindow>();
   if (ImGui::Checkbox("Designer", &showDesigner)) {
     if (showDesigner && game->designerWindow) {
@@ -916,7 +940,227 @@ void FontSelectionWindow::Draw() {
 
 MapEditorWindow::MapEditorWindow(Game* game) : game(game) {}
 
+// The permanent-deletion control shared by both palettes. A helper rather than a
+// lambda at each call site so the two rows cannot drift apart in colour, size or
+// id scheme -- the id has to be unique per content, and it is built from the kind
+// and the name for that reason.
+//
+// Returns true on the frame it is pressed. It never deletes anything itself: the
+// caller turns the press into a plan, and the confirmation is what commits.
+//
+// Deliberately the darkest, most alarming control in the window and styled apart
+// from the tile plates, because the thing next to it (selecting a tile to paint)
+// is harmless and this one is not reversible.
+static bool DrawDeleteContentButton(const char *kind, const std::string &name) {
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.06f, 0.06f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.52f, 0.10f, 0.10f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.64f, 0.14f, 0.14f, 1.0f));
+  const bool pressed =
+      ImGui::Button((std::string("X##deletefiles_") + kind + "_" + name).c_str(),
+                    ImVec2(22.0f, 32.0f));
+  ImGui::PopStyleColor(3);
+  return pressed;
+}
+
+void MapEditorWindow::ApplyConfirmedDelete() {
+  if (!confirmedDeletePlan.has_value()) {
+    return;
+  }
+  // Copied out and cleared first: everything below reads only this copy, so a
+  // failure part-way through cannot leave the window pointing at a half-applied
+  // plan.
+  const ContentPlan plan = std::move(*confirmedDeletePlan);
+  confirmedDeletePlan.reset();
+
+  const ContentDeleteResult result = DeleteContentFiles(plan.files);
+
+  // The registries are made to agree with the disk *after* the files are gone.
+  // Without this the palette would keep offering content that no longer exists
+  // and Map::CreateTile would keep resolving a name nothing defines.
+  const bool wasTile = plan.kind == ContentKind::Tile;
+  if (wasTile) {
+    game->tileRegistry.RemoveDefinition(plan.name);
+    if (game->editorSelection.type == EditorSelectionType::Tile &&
+        game->editorSelection.name == plan.name) {
+      game->editorSelection.type = EditorSelectionType::None;
+      game->editorSelection.name.clear();
+    }
+  } else {
+    game->objectFactory.RemoveTemplate(plan.name);
+    if (game->editorSelection.type == EditorSelectionType::ObjectTemplate &&
+        game->editorSelection.name == plan.name) {
+      game->editorSelection.type = EditorSelectionType::None;
+      game->editorSelection.name.clear();
+    }
+  }
+
+  lastContentDeleteMessage = "Deleted " + std::to_string(result.deleted.size()) +
+                             " file(s) for " + ContentKindLabel(plan.kind) +
+                             " '" + plan.name + "'";
+  if (!result.failed.empty()) {
+    lastContentDeleteMessage +=
+        " -- " + std::to_string(result.failed.size()) + " could not be removed";
+  }
+  // The distinction the whole feature turns on, stated in the result as well as
+  // in the dialog: the map itself was not touched.
+  lastContentDeleteMessage +=
+      plan.maps.empty()
+          ? ". The open map is unchanged."
+          : ". The open map is unchanged; " +
+                std::to_string(plan.maps.size()) +
+                " map file(s) on disk still name it and will lose it on reload.";
+
+  if (game->debugLog) {
+    for (const std::string &path : result.deleted) {
+      game->debugLog->LogInfo("Map editor: deleted content FILE " + path + " (" +
+                              ContentKindLabel(plan.kind) + " '" + plan.name +
+                              "'; the map itself was not changed)");
+    }
+    for (const std::string &failure : result.failed) {
+      game->debugLog->LogError("Map editor: could not delete content file " +
+                               failure);
+    }
+  }
+}
+
+void MapEditorWindow::DrawDeleteConfirmation() {
+  if (!pendingDeletePlan.has_value()) {
+    return;
+  }
+  ContentPlan &plan = *pendingDeletePlan;
+
+  ImGui::SetNextWindowSize(ImVec2(620, 0), ImGuiCond_Appearing);
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                          ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+  bool stayOpen = true;
+  if (!ImGui::Begin("Delete content files?", &stayOpen,
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                        ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    // Closing the window with its X is a cancel, and nothing was deleted.
+    pendingDeletePlan.reset();
+    return;
+  }
+
+  // A red frame, matching the blueprint window's delete dialog, so a destructive
+  // question never reads as an ordinary one.
+  const ImVec2 min = ImGui::GetWindowPos();
+  const ImVec2 size = ImGui::GetWindowSize();
+  ImGui::GetWindowDrawList()->AddRect(min, ImVec2(min.x + size.x, min.y + size.y),
+                                      IM_COL32(255, 120, 90, 255), 0.0f, 0, 2.0f);
+
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.6f, 1.0f));
+  ImGui::Text("Delete %s '%s' from disk?", ContentKindLabel(plan.kind),
+              plan.name.c_str());
+  ImGui::PopStyleColor();
+  ImGui::TextDisabled(
+      "This removes the content itself, not the tile or object on the map.");
+  ImGui::Separator();
+
+  // --- What will be deleted -------------------------------------------------
+  ImGui::Text("Files to remove (%zu):", plan.RemovableCount());
+  if (plan.files.empty()) {
+    ImGui::TextDisabled("  (no file could be named for this content)");
+  }
+  for (const ContentFile &file : plan.files) {
+    if (file.exists) {
+      ImGui::BulletText("%s  (%.1f KB)", file.path.c_str(),
+                        static_cast<double>(file.bytes) / 1024.0);
+    } else {
+      ImGui::BulletText("%s", file.path.c_str());
+      ImGui::SameLine();
+      ImGui::TextDisabled("-- not on disk");
+    }
+  }
+  if (!plan.HasAnythingToRemove()) {
+    ImGui::TextColored(
+        ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
+        "There is no file on disk behind this content, so there is nothing to "
+        "delete. A map may have declared it inline.");
+  }
+
+  ImGui::Separator();
+
+  // --- Where it is referenced ----------------------------------------------
+  if (plan.maps.empty()) {
+    ImGui::TextDisabled("No map file on disk references it.");
+  } else {
+    ImGui::Text("%zu map file(s) reference it:", plan.maps.size());
+    if (ImGui::BeginChild("##AffectedMaps", ImVec2(0, 140), ImGuiChildFlags_Borders)) {
+      for (const ContentReference &reference : plan.maps) {
+        std::string joined;
+        for (size_t i = 0; i < reference.details.size(); ++i) {
+          joined += (i == 0 ? "" : ", ") + reference.details[i];
+        }
+        ImGui::BulletText("%s", reference.mapName.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s)", joined.c_str());
+      }
+    }
+    ImGui::EndChild();
+  }
+  if (plan.kind == ContentKind::Tile) {
+    ImGui::Text("On the open map, live (unsaved edits included): %zu cell(s)",
+                plan.liveCells);
+  } else {
+    ImGui::Text("On the open map, live (unsaved edits included): %zu object(s)",
+                plan.liveObjects);
+  }
+
+  ImGui::Separator();
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.45f, 1.0f));
+  ImGui::TextWrapped(
+      "This erases files. There is no undo and no trash. The open map is NOT "
+      "changed now -- its cells and objects keep drawing until the map is "
+      "reloaded, and then the deleted content is gone from it too.");
+  ImGui::PopStyleColor();
+  ImGui::TextWrapped(
+      "To take an object or tile off this map but keep the files, use the "
+      "[x] Remove Object/Tile (trash) button instead.");
+  ImGui::Separator();
+
+  // The two outcomes are recorded and applied after `plan` is no longer used,
+  // rather than acted on inside the button branches. `plan` is a reference into
+  // `pendingDeletePlan`, and both branches reset that optional -- acting where the
+  // press happens would leave the remainder of this function reading a destroyed
+  // plan.
+  bool confirm = false;
+  bool cancel = false;
+
+  const std::string confirmLabel =
+      "Delete " + std::to_string(plan.RemovableCount()) + " file(s)";
+  if (plan.HasAnythingToRemove()) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.12f, 0.12f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                          ImVec4(0.70f, 0.16f, 0.16f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.80f, 0.20f, 0.20f, 1.0f));
+    confirm = ImGui::Button(confirmLabel.c_str(), ImVec2(180, 0));
+    ImGui::PopStyleColor(3);
+    ImGui::SameLine();
+  }
+  cancel = ImGui::Button("Cancel", ImVec2(120, 0));
+
+  ImGui::End();
+
+  if (confirm) {
+    // Copied first, then the source cleared: ApplyConfirmedDelete runs at the top
+    // of the next frame, when nothing is still iterating the palette the deletion
+    // rebuilds.
+    confirmedDeletePlan = plan;
+  }
+  if (confirm || cancel || !stayOpen) {
+    pendingDeletePlan.reset();
+  }
+}
+
 void MapEditorWindow::Draw() {
+  // A deletion confirmed last frame is applied before anything else this frame.
+  // It has to be here rather than where the button was pressed: this window has
+  // just iterated the tile catalog, and the deletion frees definitions that
+  // iteration was holding pointers into.
+  ApplyConfirmedDelete();
+
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
   ImGui::Begin("Map Editor", &isOpen, ImGuiWindowFlags_None);
@@ -957,10 +1201,12 @@ void MapEditorWindow::Draw() {
                       "it. Removals are not written to the map file.");
   }
 
-  // Trash button: toggles the object-removal mode. The armed-looking style is
-  // pushed and popped around the button using the same value, because the button
-  // itself flips the mode: reading the (now flipped) state when deciding whether
-  // to pop would unbalance the style stack on the very click that arms it.
+  // Trash button: toggles the removal mode, which takes the object on a clicked
+  // tile and, when nothing is placed there, the tile itself. The armed-looking
+  // style is pushed and popped around the button using the same value, because
+  // the button itself flips the mode: reading the (now flipped) state when
+  // deciding whether to pop would unbalance the style stack on the very click
+  // that arms it.
   ImGui::SameLine();
   const bool removeObjectLit = game->removeObjectMode;
   if (removeObjectLit) {
@@ -968,7 +1214,9 @@ void MapEditorWindow::Draw() {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.25f, 0.25f, 1.0f));
   }
-  if (ImGui::Button("[x] Remove Object##MapEditor")) {
+  // The visible label is followed by ##MapEditor, so the ImGui id -- and with it
+  // the button's remembered state -- is unchanged by the rename.
+  if (ImGui::Button("[x] Remove Object/Tile##MapEditor")) {
     game->removeObjectMode = !game->removeObjectMode;
   }
   if (removeObjectLit) {
@@ -976,7 +1224,9 @@ void MapEditorWindow::Draw() {
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("Trash: while lit, clicking a tile deletes the object "
-                      "placed on it (and what the map file would record).");
+                      "placed on it; on a tile with no object it deletes the "
+                      "tile itself, leaving an empty cell. Both are what the "
+                      "map file records on save.");
   }
 
   if (game->removeLocationMode) {
@@ -985,7 +1235,8 @@ void MapEditorWindow::Draw() {
   }
   if (game->removeObjectMode) {
     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
-                       "Trash armed: click a tile to delete the object on it.");
+                       "Trash armed: click a tile to delete the object on it, "
+                       "or the tile when it holds no object.");
   }
 
   if (!game->lastRemovedLocationName.empty()) {
@@ -1002,6 +1253,14 @@ void MapEditorWindow::Draw() {
     ImGui::SameLine();
     if (ImGui::SmallButton("Clear##LastRemovedObject")) {
       game->lastRemovedObjectName.clear();
+    }
+  }
+  if (!game->lastRemovedTileName.empty()) {
+    ImGui::Text("Last removed tile: %s",
+                game->lastRemovedTileName.c_str());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear##LastRemovedTile")) {
+      game->lastRemovedTileName.clear();
     }
   }
   ImGui::Separator();
@@ -1031,61 +1290,232 @@ void MapEditorWindow::Draw() {
   // a scroll region that fills the window. Without this a resized window just
   // clips them, and the content would force the window taller every frame.
   if (ImGui::BeginChild("##MapEditorContent", ImVec2(0, 0))) {
-    ImGui::Text("Map Tiles");
+    // Every tile the world's catalog knows, not just the ones this map already
+    // contains.
+    //
+    // The palette used to be `map->GetUniqueTiles()`, which is the map file's own
+    // palette -- the very array "positions" indexes into, so it is the map's index
+    // table and not its vocabulary. Listing only that was honest but made creation
+    // invisible: a tile the Tile Designer invents goes into the catalog
+    // (TileRegistry), never into a map, so it could not be selected, and it could
+    // only join the map by being painted -- with the tile you cannot select. The
+    // loop was closed, and the only way out was editing a map file by hand.
+    //
+    // The catalog is now the list and the map is an annotation: a count on the
+    // tiles that are already here. Selecting one that is not is fine -- Game::
+    // PaintTile creates it on demand from the catalog (Map::CreateTile), and the
+    // map only starts "using" it once a cell is actually painted.
+    const std::vector<const TileDef *> catalog = game->tileRegistry.GetAll();
+
+    // How many cells of the current map draw each tile, by name. Duplicate names
+    // are possible on purpose -- two palette entries with the same name and
+    // different overrides are two distinct tiles (see the palette work in
+    // Map.cpp) -- so this is keyed by name and the count is the sum, which is what
+    // a reader of the palette wants to know anyway.
+    std::unordered_map<std::string, size_t> cellsInUse;
+    if (game->map != nullptr) {
+      for (int y = 0; y < game->map->GetHeight(); ++y) {
+        for (int x = 0; x < game->map->GetWidth(); ++x) {
+          if (const Tile *cell = game->map->GetTile(x, y)) {
+            ++cellsInUse[cell->name];
+          }
+        }
+      }
+    }
+
+    // The same count for object templates, by key, so the permanent-deletion
+    // confirmation can say how much of the *open* map it is about to affect. Only
+    // MapAuthored entities count: those are the map's own content, which is
+    // exactly what a map file would reference.
+    std::unordered_map<std::string, size_t> objectsInUse;
+    game->ecs.each([&objectsInUse](flecs::entity, const MapAuthored &authored) {
+      ++objectsInUse[authored.templateKey];
+    });
+
+    // The map files a deletion would affect. Built only when a Delete button is
+    // actually pressed -- it re-reads the maps directory, which is not something
+    // to do on every frame the window is open.
+    const auto mapPathsForScan = [this]() {
+      std::vector<std::string> paths;
+      if (!game->mapReloader) {
+        return paths;
+      }
+      game->mapReloader->RefreshMapList();
+      const std::vector<std::string> &list = game->mapReloader->GetMapList();
+      paths.reserve(list.size());
+      for (size_t i = 0; i < list.size(); ++i) {
+        paths.push_back(game->mapReloader->GetMapPath(i));
+      }
+      return paths;
+    };
+
+    // The one line that states the difference the two delete-ish controls have,
+    // where both are actually on screen. The trash is a mode up top that edits the
+    // map; the X below erases files. Without this, "I deleted it and it is still
+    // there / it came back" is the predictable confusion.
+    ImGui::TextDisabled(
+        "Click a swatch to paint with it.  The X beside a swatch deletes that "
+        "content's FILES (data + sprite) from disk.");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(The trash button above only edits this map.)");
+
+    ImGui::Text("Tiles");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%zu on this map, %zu in the catalog)", cellsInUse.size(),
+                        catalog.size());
+
+    // A filter, because the catalog is the whole world's vocabulary: an art pack
+    // plus every agent-created tile. At today's size the table scrolled; at a few
+    // hundred tiles it would be unusable without one.
+    //
+    // A `static` buffer living in this window's lifetime, which is the same
+    // lifetime as the window instance: unlike the Designer and Vision windows this
+    // one is rebuilt on every toggle (see Game.h), so the filter resets when the
+    // Map Editor is closed. That is acceptable for a search box and is why this is
+    // not a member.
+    static char tileFilter[64] = {};
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::InputTextWithHint("##tileFilter", "filter tiles by name...",
+                             tileFilter, sizeof(tileFilter));
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Clear##tileFilter")) {
+      tileFilter[0] = '\0';
+    }
+
+    // Lowercased once, not per tile: this runs every frame over the whole catalog.
+    std::string filter(tileFilter);
+    std::transform(filter.begin(), filter.end(), filter.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
     ImGui::Separator();
-    if (ImGui::BeginTable("TilesTable", 8)) {
-      for (const auto& tile : game->map->GetUniqueTiles()) {
+    // Sixteen columns is eight palettes of two: the tile button, then its Delete
+    // control. The pair is deliberate -- the delete button has to sit next to what
+    // it deletes, and it has to be in its own column so it cannot inherit the
+    // tile's own plate colours from the style stack.
+    if (ImGui::BeginTable("TilesTable", 16)) {
+      for (const TileDef *definition : catalog) {
+        if (!filter.empty()) {
+          std::string name = definition->name;
+          std::transform(name.begin(), name.end(), name.begin(),
+                         [](unsigned char c) {
+                           return static_cast<char>(std::tolower(c));
+                         });
+          if (name.find(filter) == std::string::npos) continue;
+        }
+
         ImGui::TableNextColumn();
-        ImVec4 bgColor(tile->ascii->backgroundColor.r / 255.0f, tile->ascii->backgroundColor.g / 255.0f, tile->ascii->backgroundColor.b / 255.0f, tile->ascii->backgroundColor.a / 255.0f);
-        ImVec4 fgColor(tile->ascii->characterColor.r / 255.0f, tile->ascii->characterColor.g / 255.0f, tile->ascii->characterColor.b / 255.0f, tile->ascii->characterColor.a / 255.0f);
-        
-        ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
-        ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
-        
-        bool isSelected = (game->editorSelection.type == EditorSelectionType::Tile && game->editorSelection.name == tile->name);
+
+        // The plate and glyph come from the *definition*, which is what the world
+        // would draw for a tile this map has not got yet -- a map's own entry can
+        // override either, but only for tiles it already has.
+        const Color bg = definition->hasBackgroundColor ? definition->backgroundColor
+                                                        : Color{0, 0, 0, 0};
+        const Color fg =
+            definition->hasCharacterColor ? definition->characterColor
+                                          : Color{255, 255, 255, 255};
+        const char glyph =
+            definition->hasCharacter ? definition->character : '?';
+
+        const auto used = cellsInUse.find(definition->name);
+        const size_t cellCount = used == cellsInUse.end() ? 0 : used->second;
+
+        ImGui::PushStyleColor(ImGuiCol_Button,
+                              ImVec4(bg.r / 255.0f, bg.g / 255.0f,
+                                     bg.b / 255.0f, bg.a / 255.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text,
+                              ImVec4(fg.r / 255.0f, fg.g / 255.0f,
+                                     fg.b / 255.0f, fg.a / 255.0f));
+
+        const bool isSelected =
+            (game->editorSelection.type == EditorSelectionType::Tile &&
+             game->editorSelection.name == definition->name);
         if (isSelected) {
           ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
           ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
         }
 
-        // The tile's texture, resolved through the very same helper the world
-        // uses -- an explicit "sprite" key, then data/sprites/tile_<name>.png --
-        // so the palette cannot offer a look the map would not draw. Null is the
-        // ordinary case for a tile that has no art, and it keeps the glyph.
+        // The tile's texture, resolved through the very same helper the world uses
+        // -- an explicit "sprite" key, then the art pack, then the generated layer,
+        // by TileSpriteId -- so the palette cannot offer a look the map would not
+        // draw. This is also what makes a generated sprite appear here: the path is
+        // where the generator writes, and ResourceManager memoises only failures,
+        // so the newest sprite is found on the next frame.
         const Texture2D *sprite = ResolveSpriteTexture(
-            tile->sprite, TileSpriteId(tile->name), game->resourceManager,
-            game->debugLog.get());
+            definition->sprite, TileSpriteId(definition->name),
+            game->resourceManager, game->debugLog.get());
 
-        std::string label =
+        const std::string label =
             sprite != nullptr
-                ? ("##" + tile->name)
-                : (std::string(1, tile->ascii->ch) + "##" + tile->name);
+                ? ("##" + definition->name)
+                : (std::string(1, glyph) + "##" + definition->name);
         if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
           game->editorSelection.type = EditorSelectionType::Tile;
-          game->editorSelection.name = tile->name;
+          game->editorSelection.name = definition->name;
         }
-        // Drawn over the button's own plate, so the tile's background colour
-        // still shows through any transparency in the texture.
+        // Drawn over the button's own plate, so the tile's background colour still
+        // shows through any transparency in the texture.
         if (sprite != nullptr) {
           DrawSpriteImGui(*sprite, ImGui::GetItemRectMin(),
                           ImGui::GetItemRectSize());
         }
-        
+
+        // The map-membership badge: a count in the corner for tiles this map
+        // already draws, nothing for tiles it does not. Deliberately quiet -- the
+        // palette is for choosing a tile, and the count is a secondary fact, but a
+        // count of zero is exactly the case that used to be impossible to select.
+        if (cellCount > 0) {
+          ImGui::GetWindowDrawList()->AddText(
+              ImVec2(ImGui::GetItemRectMax().x - 16.0f,
+                     ImGui::GetItemRectMin().y + 1.0f),
+              IM_COL32(255, 255, 255, 200), std::to_string(cellCount).c_str());
+        }
+
         ImGui::PopStyleColor(2);
         if (isSelected) {
           ImGui::PopStyleColor();
           ImGui::PopStyleVar();
         }
         if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("%s", tile->name.c_str());
+          if (cellCount > 0) {
+            ImGui::SetTooltip("%s\non this map: %zu cell(s)%s",
+                              definition->name.c_str(), cellCount,
+                              definition->blocksTile ? "\nblocks movement" : "");
+          } else {
+            ImGui::SetTooltip(
+                "%s\nnot on this map yet -- painting a cell adds it%s",
+                definition->name.c_str(),
+                definition->blocksTile ? "\nblocks movement" : "");
+          }
+        }
+
+        // Permanent deletion. Nothing like the trash button above: that one edits
+        // the map, this one erases files. It is drawn in its own column and in its
+        // own red so the two cannot be mistaken for each other at a glance, and it
+        // never deletes on the click -- it opens the confirmation, which is where
+        // the files and the affected maps are named.
+        ImGui::TableNextColumn();
+        if (DrawDeleteContentButton("tile", definition->name)) {
+          pendingDeletePlan = PlanTileRemoval(
+              definition->name, definition->sourcePath, definition->sprite,
+              cellCount, mapPathsForScan());
+        }
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip(
+              "Delete the FILES behind tile '%s':\n%s\nand its sprite art.\n"
+              "Every map that uses it is affected. Cannot be undone.\n"
+              "(The trash button above only removes it from this map.)",
+              definition->name.c_str(),
+              definition->sourcePath.empty()
+                  ? "(declared inline by a map -- no catalog file)"
+                  : definition->sourcePath.c_str());
         }
       }
       ImGui::EndTable();
     }
-  
+
     ImGui::Text("Object Templates");
     ImGui::Separator();
-    if (ImGui::BeginTable("ObjectsTable", 8)) {
+    if (ImGui::BeginTable("ObjectsTable", 16)) {
       for (const auto& pair : game->objectFactory.GetTemplates()) {
         ImGui::TableNextColumn();
         
@@ -1165,13 +1595,48 @@ void MapEditorWindow::Draw() {
         if (ImGui::IsItemHovered()) {
           ImGui::SetTooltip("%s", pair.first.c_str());
         }
+
+        // The same permanent-deletion control as the tile palette, on the same
+        // terms: its own column, its own red, and a confirmation that names the
+        // files and every map that references the template before anything goes.
+        ImGui::TableNextColumn();
+        if (DrawDeleteContentButton("object", pair.first)) {
+          const auto liveObjects = objectsInUse.find(pair.first);
+          pendingDeletePlan = PlanObjectRemoval(
+              pair.first, game->objectFactory.GetDirectory(), spriteKey,
+              liveObjects == objectsInUse.end() ? 0 : liveObjects->second,
+              mapPathsForScan());
+        }
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip(
+              "Delete the FILES behind object '%s':\n%s/%s.json\nand its "
+              "sprite art.\nEvery map that uses it is affected. Cannot be "
+              "undone.\n(The trash button above only removes it from this map.)",
+              pair.first.c_str(),
+              game->objectFactory.GetDirectory().empty()
+                  ? "(no object directory)"
+                  : game->objectFactory.GetDirectory().c_str(),
+              pair.first.c_str());
+        }
       }
       ImGui::EndTable();
+    }
+
+    if (!lastContentDeleteMessage.empty()) {
+      ImGui::Separator();
+      ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.6f, 1.0f), "%s",
+                         lastContentDeleteMessage.c_str());
     }
   }
   ImGui::EndChild();
 
   ImGui::End();
+
+  // The file-deletion confirmation. Drawn as its own window, like the location
+  // prompt below, rather than as an ImGui popup: it is opened from inside the
+  // palette's child window and confirmed here, and a popup's id is part of the
+  // id stack it was opened in, which is not the same stack at this point.
+  DrawDeleteConfirmation();
 
   // The naming prompt only exists while a rectangle is waiting to be named.
   if (game->pendingLocationWantsFocus || game->pendingLocationHasFocus) {
@@ -1376,6 +1841,158 @@ static NPCActionLabel GetNPCActionLabel(const flecs::entity &npc,
 
 NPCMenuWindow::NPCMenuWindow(Game* game) : game(game) {}
 
+namespace {
+
+// The colour a tier is drawn in, so the board and the NPC section agree. The tier
+// is never changed by the engine, so this is presentation only -- an inflated
+// CRITICAL still reads as CRITICAL, it just reads as wrong.
+ImVec4 TaskTierColor(TaskPriority tier) {
+  switch (tier) {
+    case TaskPriority::Critical: return ImVec4(1.0f, 0.35f, 0.35f, 1.0f);
+    case TaskPriority::High: return ImVec4(1.0f, 0.7f, 0.2f, 1.0f);
+    case TaskPriority::Normal: return ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+    case TaskPriority::Low: return ImVec4(0.55f, 0.65f, 0.75f, 1.0f);
+    case TaskPriority::Background: return ImVec4(0.45f, 0.45f, 0.45f, 1.0f);
+  }
+  return ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
+}
+
+// One goal, as the NPC window's task section shows it: what it is, what it
+// serves, how old it is, and what the engine observed about it. `nowTick` drives
+// the age and the stale flag.
+void DrawAgentGoalRow(const TaskList& list, const AgentGoal& goal, int nowTick,
+                      bool isActive) {
+  ImGui::TableNextRow();
+
+  ImGui::TableNextColumn();
+  if (isActive) {
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.6f, 1.0f), "> %d", goal.id);
+  } else {
+    ImGui::Text("%d", goal.id);
+  }
+
+  ImGui::TableNextColumn();
+  ImGui::TextUnformatted(TaskHorizonLabel(goal.horizon));
+
+  ImGui::TableNextColumn();
+  // The agent's own label, verbatim. Violations are annotated in the next column
+  // rather than corrected here (section 6.1).
+  ImGui::TextColored(TaskTierColor(goal.tier), "%s", TaskPriorityLabel(goal.tier));
+
+  ImGui::TableNextColumn();
+  ImGui::TextUnformatted(goal.description.c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", goal.description.c_str());
+  }
+  if (!goal.kind.empty() || !goal.target.empty()) {
+    ImGui::TextDisabled("    kind=%s target=%s", goal.kind.c_str(),
+                        goal.target.c_str());
+  }
+
+  ImGui::TableNextColumn();
+  const std::string parent = DescribeTaskParent(list, goal);
+  if (parent.empty()) {
+    ImGui::TextDisabled("-");
+  } else {
+    ImGui::TextDisabled("%s", parent.c_str());
+  }
+
+  ImGui::TableNextColumn();
+  const int ageTicks = TaskAgeTicks(goal, nowTick);
+  if (IsTaskStarving(goal, nowTick)) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s (stale)",
+                       FormatTaskAge(ageTicks).c_str());
+  } else {
+    ImGui::TextUnformatted(FormatTaskAge(ageTicks).c_str());
+  }
+
+  ImGui::TableNextColumn();
+  bool wroteSomething = false;
+  for (const std::string& fact : goal.facts) {
+    if (wroteSomething) ImGui::SameLine(0.0f, 6.0f);
+    ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "%s", fact.c_str());
+    wroteSomething = true;
+  }
+  if (!goal.ruleWarning.empty()) {
+    if (wroteSomething) ImGui::SameLine(0.0f, 6.0f);
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "! %s",
+                       goal.ruleWarning.c_str());
+    wroteSomething = true;
+  }
+  // An orphaned short task is legal but usually means the agent lost the thread
+  // (section 8).
+  if (goal.horizon == GoalHorizon::Short && goal.parent < 0) {
+    if (wroteSomething) ImGui::SameLine(0.0f, 6.0f);
+    ImGui::TextDisabled("orphan");
+  }
+}
+
+// The selected NPC's whole list, laid out the way the digest lays it out so the
+// human and the model are looking at the same thing (section 11). Everything the
+// board cannot fit lives here: the life goals, the frame each task sits in, the
+// age of every entry, and the divergence from the live action.
+void DrawNPCTaskSection(flecs::entity npc, const TaskList& list,
+                        const std::string& runningAction) {
+  const int nowTick = CurrentTaskTick(npc.world());
+
+  if (IsTaskListInflated(list)) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                       "! %d tasks marked CRITICAL; at most %d is allowed",
+                       CountCriticalTasks(list), DEFAULT_TASK_MAX_CRITICAL);
+  }
+
+  const std::string divergence = DescribeTaskDivergence(list, runningAction);
+  if (!divergence.empty()) {
+    // The single most useful signal in the system (section 8): the agent says one
+    // thing and is doing another. The engine cannot prevent it -- actions still
+    // schedule themselves -- so it makes it visible.
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "DIVERGENCE: %s",
+                       divergence.c_str());
+  } else if (const AgentGoal* active = TaskListActiveGoal(list)) {
+    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.6f, 1.0f), "active: task %d -- %s",
+                       active->id, active->description.c_str());
+  } else {
+    ImGui::TextDisabled("active: none");
+  }
+
+  if (!list.ruleWarning.empty()) {
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "! %s",
+                       list.ruleWarning.c_str());
+  }
+
+  if (ImGui::BeginTable("NPCTaskTable", 7,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                            ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_SizingStretchProp)) {
+    ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 34.0f);
+    ImGui::TableSetupColumn("Horizon", ImGuiTableColumnFlags_WidthFixed, 76.0f);
+    ImGui::TableSetupColumn("Tier", ImGuiTableColumnFlags_WidthFixed, 84.0f);
+    ImGui::TableSetupColumn("Description");
+    ImGui::TableSetupColumn("Serves", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+    ImGui::TableSetupColumn("Age", ImGuiTableColumnFlags_WidthFixed, 76.0f);
+    ImGui::TableSetupColumn("Engine", ImGuiTableColumnFlags_WidthFixed, 190.0f);
+    ImGui::TableHeadersRow();
+
+    // Terminal first, then long-term, then short, which is the stored order and
+    // the order the digest presents.
+    for (int horizonIndex = 0; horizonIndex < 3; ++horizonIndex) {
+      const GoalHorizon horizon =
+          horizonIndex == 0 ? GoalHorizon::Terminal
+                            : (horizonIndex == 1 ? GoalHorizon::LongTerm
+                                                 : GoalHorizon::Short);
+      for (const AgentGoal& goal : list.goals) {
+        if (goal.horizon != horizon) continue;
+        DrawAgentGoalRow(list, goal, nowTick,
+                         list.activeTaskId >= 0 && goal.id == list.activeTaskId);
+      }
+    }
+
+    ImGui::EndTable();
+  }
+}
+
+}  // namespace
+
 void NPCMenuWindow::Draw() {
   bool show = game->npcMenuWindowEntity.has<ActiveWindow>();
   if (!show)
@@ -1392,17 +2009,37 @@ void NPCMenuWindow::Draw() {
     flecs::entity contextToToggle = flecs::entity::null();
     flecs::entity inventoryToOpen = flecs::entity::null();
 
-    if (ImGui::BeginTable("NPCMenuTable", 7,
+    // Which row's task list is expanded below the table. Held statically because
+    // the window itself is rebuilt on every toggle while the selection is about
+    // the agent, not the window; it is validated against is_alive() before use so
+    // a deselected or destroyed NPC cannot leave a dangling handle.
+    static flecs::entity selectedForTasks = flecs::entity::null();
+    flecs::entity taskRowToSelect = flecs::entity::null();
+
+    // The detail pane is only reserved while it has something to show, so an
+    // unselected window keeps the whole area for the table.
+    const bool hasTaskDetail =
+        selectedForTasks.is_alive() && selectedForTasks.has<TaskList>();
+    const float detailHeight = hasTaskDetail ? 190.0f : 0.0f;
+    const float tableHeight =
+        std::max(80.0f, ImGui::GetContentRegionAvail().y - detailHeight -
+                            (hasTaskDetail ? ImGui::GetStyle().ItemSpacing.y
+                                           : 0.0f));
+
+    if (ImGui::BeginTable("NPCMenuTable", 8,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Resizable |
                               ImGuiTableFlags_ScrollY |
-                              ImGuiTableFlags_SizingStretchProp)) {
+                              ImGuiTableFlags_SizingStretchProp,
+                          ImVec2(0.0f, tableHeight))) {
       ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
       ImGui::TableSetupColumn("Name");
       ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthFixed,
                               90.0f);
       ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed,
                               240.0f);
+      ImGui::TableSetupColumn("Tasks", ImGuiTableColumnFlags_WidthFixed,
+                              130.0f);
       ImGui::TableSetupColumn("Stop Brain",
                               ImGuiTableColumnFlags_WidthFixed, 80.0f);
       ImGui::TableSetupColumn("Context", ImGuiTableColumnFlags_WidthFixed,
@@ -1412,7 +2049,7 @@ void NPCMenuWindow::Draw() {
       ImGui::TableHeadersRow();
 
       game->ecs.filter<AgentBrainWrapper>().each(
-          [&contextToToggle, &inventoryToOpen,
+          [&contextToToggle, &inventoryToOpen, &taskRowToSelect, &selectedForTasks,
            this](flecs::entity npc, AgentBrainWrapper &wrapper) {
             if (!npc.is_alive()) {
               return;
@@ -1471,6 +2108,34 @@ void NPCMenuWindow::Draw() {
                                 action.context.c_str());
             }
 
+            // The compact task summary: whether a list exists at all, how many
+            // entries, and what it is serving. Clicking selects the row, and the
+            // detail appears below the table -- the table cell is far too narrow
+            // for life goals, ages and divergence.
+            ImGui::TableNextColumn();
+            if (const TaskList *tasks = npc.get<TaskList>()) {
+              const AgentGoal *serving = TaskListActiveGoal(*tasks);
+              if (serving == nullptr) serving = TaskListTopCandidate(*tasks);
+              std::string summary =
+                  std::to_string(tasks->goals.size()) + " entries";
+              if (serving != nullptr) {
+                summary += "  ";
+                summary += TaskPriorityLabel(serving->tier);
+              }
+              const bool isSelected = selectedForTasks == npc;
+              if (ImGui::Selectable((summary + "##tasks" + idStr).c_str(),
+                                    isSelected,
+                                    ImGuiSelectableFlags_AllowOverlap)) {
+                taskRowToSelect = npc;
+              }
+              if (serving != nullptr && ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s\n(click for the whole list)",
+                                  serving->description.c_str());
+              }
+            } else {
+              ImGui::TextDisabled("(none)");
+            }
+
             ImGui::TableNextColumn();
             if (wrapper.agBrain) {
               ImGui::Checkbox(("##stopBrain" + idStr).c_str(),
@@ -1498,6 +2163,34 @@ void NPCMenuWindow::Draw() {
       ImGui::EndTable();
     }
 
+    // Clicking the selected row again collapses it, so there is a way back to the
+    // full-height table.
+    if (taskRowToSelect.is_alive()) {
+      selectedForTasks = (selectedForTasks == taskRowToSelect)
+                             ? flecs::entity::null()
+                             : taskRowToSelect;
+    }
+
+    if (hasTaskDetail && selectedForTasks.is_alive()) {
+      ImGui::Separator();
+      std::string title = "Tasks";
+      if (const DisplayName *displayName = selectedForTasks.get<DisplayName>()) {
+        title += " -- " + displayName->name;
+      }
+      ImGui::TextUnformatted(title.c_str());
+      if (ImGui::BeginChild("NPCMenuTaskDetail",
+                            ImVec2(0.0f, detailHeight - 24.0f),
+                            ImGuiChildFlags_Borders)) {
+        if (const TaskList *tasks = selectedForTasks.get<TaskList>()) {
+          DrawNPCTaskSection(selectedForTasks, *tasks,
+                             GetNPCActionLabel(selectedForTasks,
+                                               &game->recipeRegistry)
+                                 .name);
+        }
+      }
+      ImGui::EndChild();
+    }
+
     if (contextToToggle.is_alive()) {
       if (contextToToggle.has<ActiveWindow>()) {
         contextToToggle.remove<ActiveWindow>();
@@ -1520,6 +2213,210 @@ void NPCMenuWindow::Draw() {
     game->debugWindowState->SetShowNPCMenuWindow(false);
   } else {
     game->debugWindowState->SetShowNPCMenuWindow(true);
+  }
+}
+
+// The village-wide task board (docs/task-system-design.md section 11): one row
+// per agent, sorted by tier then age.
+//
+// The question this exists to answer is "why is this agent doing something
+// dumb", which is impossible to see from inside one agent's context -- an
+// inflated priority list, a task nobody has touched for a minute, or an agent
+// whose stated intent and running action disagree are all invisible locally and
+// obvious in a column of rows.
+TaskBoardWindow::TaskBoardWindow(Game* game) : game(game) {}
+
+void TaskBoardWindow::Draw() {
+  bool show = game->taskBoardWindowEntity.has<ActiveWindow>();
+  if (!show) return;
+
+  ImGui::SetNextWindowSize(ImVec2(940, 360), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Task Board", &show, ImGuiWindowFlags_None)) {
+    const int nowTick = CurrentTaskTick(game->ecs);
+
+    ImGui::TextDisabled(
+        "One row per agent. Sorted by tier, then by age. A developer tool: no "
+        "agent can read another's list (section 10).");
+    ImGui::Separator();
+
+    // Collected first, then sorted, then drawn: an ImGui table cannot be
+    // reordered once rows are being emitted, and querying flecs while drawing
+    // inside the same iteration invites the usual mutation hazards.
+    struct BoardRow {
+      flecs::entity npc;
+      std::string name;
+      std::string lifeGoal;
+      std::string serving;
+      int servingId = -1;
+      TaskPriority tier = TaskPriority::Normal;
+      bool hasTier = false;
+      int ageTicks = 0;
+      std::string flags;
+      std::string divergence;
+      bool hasList = false;
+      int tierRank = 99;
+    };
+    std::vector<BoardRow> rows;
+
+    game->ecs.filter<AgentBrainWrapper>().each(
+        [&rows, nowTick](flecs::entity npc, AgentBrainWrapper &) {
+          if (!npc.is_alive()) return;
+
+          BoardRow row;
+          row.npc = npc;
+          if (const DisplayName *displayName = npc.get<DisplayName>()) {
+            row.name = displayName->name;
+          } else if (npc.name().c_str() != nullptr) {
+            row.name = npc.name().c_str();
+          } else {
+            row.name = "Unnamed";
+          }
+
+          const TaskList *list = npc.get<TaskList>();
+          if (list == nullptr) {
+            rows.push_back(std::move(row));
+            return;
+          }
+          row.hasList = true;
+
+          // LIFE GOAL: the first authored life goal. A character may have more
+          // than one; the board shows the lead one, because the point of the
+          // column is to recognise whose row this is, not to enumerate a life.
+          for (const AgentGoal &goal : list->goals) {
+            if (goal.horizon != GoalHorizon::Terminal) continue;
+            row.lifeGoal = TruncateTaskText(goal.description, 28);
+            break;
+          }
+
+          // NOW SERVING: what the agent says it is serving, falling back to its
+          // top intent. The fallback is labelled in FLAGS rather than passed off
+          // as an active task.
+          const AgentGoal *serving = TaskListActiveGoal(*list);
+          if (serving == nullptr) {
+            serving = TaskListTopCandidate(*list);
+            row.flags += (row.flags.empty() ? "" : " ");
+            row.flags += "idle";
+          }
+          if (serving != nullptr) {
+            row.serving = TruncateTaskText(serving->description, 34);
+            row.servingId = serving->id;
+            row.tier = serving->tier;
+            row.hasTier = true;
+            row.tierRank = TaskPriorityRank(serving->tier);
+            row.ageTicks = TaskAgeTicks(*serving, nowTick);
+            if (IsTaskStarving(*serving, nowTick)) {
+              row.flags += (row.flags.empty() ? "" : " ");
+              row.flags += "stale";
+            }
+            if (serving->horizon == GoalHorizon::Short && serving->parent < 0) {
+              row.flags += (row.flags.empty() ? "" : " ");
+              row.flags += "orphan";
+            }
+            for (const std::string &fact : serving->facts) {
+              row.flags += (row.flags.empty() ? "" : " ");
+              row.flags += fact;
+            }
+            if (!serving->ruleWarning.empty()) {
+              row.flags += (row.flags.empty() ? "" : " ");
+              row.flags += "!";
+            }
+          }
+
+          // The two derived warnings that are impossible to see in a single
+          // context (section 11).
+          if (IsTaskListInflated(*list)) {
+            row.flags += (row.flags.empty() ? "" : " ");
+            row.flags += "inflated(" +
+                         std::to_string(CountCriticalTasks(*list)) + "x crit)";
+          }
+
+          row.divergence = DescribeTaskDivergence(
+              *list, GetNPCActionLabel(npc, nullptr).name);
+
+          rows.push_back(std::move(row));
+        });
+
+    // Sorted by tier then age, with unlisted agents last: a row with no list is
+    // not "lowest priority", it is a different kind of thing.
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const BoardRow &a, const BoardRow &b) {
+                       if (a.hasTier != b.hasTier) return a.hasTier;
+                       if (a.tierRank != b.tierRank) return a.tierRank < b.tierRank;
+                       return a.ageTicks > b.ageTicks;
+                     });
+
+    if (ImGui::BeginTable("TaskBoardTable", 6,
+                          ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_Resizable |
+                              ImGuiTableFlags_ScrollY |
+                              ImGuiTableFlags_SizingStretchProp)) {
+      ImGui::TableSetupColumn("NPC");
+      ImGui::TableSetupColumn("Life Goal");
+      ImGui::TableSetupColumn("Now Serving");
+      ImGui::TableSetupColumn("Tier", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+      ImGui::TableSetupColumn("Age", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+      ImGui::TableSetupColumn("Flags & Divergence",
+                              ImGuiTableColumnFlags_WidthFixed, 300.0f);
+      ImGui::TableHeadersRow();
+
+      for (const BoardRow &row : rows) {
+        ImGui::TableNextRow();
+
+        ImGui::TableNextColumn();
+        ImGui::TextUnformatted(row.name.c_str());
+
+        ImGui::TableNextColumn();
+        if (row.lifeGoal.empty()) {
+          ImGui::TextDisabled("-");
+        } else {
+          ImGui::TextDisabled("%s", row.lifeGoal.c_str());
+        }
+
+        ImGui::TableNextColumn();
+        if (!row.hasList) {
+          ImGui::TextDisabled("(no task list)");
+        } else if (row.serving.empty()) {
+          ImGui::TextDisabled("-");
+        } else {
+          ImGui::Text("%s", row.serving.c_str());
+        }
+
+        ImGui::TableNextColumn();
+        if (row.hasTier) {
+          ImGui::TextColored(TaskTierColor(row.tier), "%s",
+                             TaskPriorityLabel(row.tier));
+        } else {
+          ImGui::TextDisabled("-");
+        }
+
+        ImGui::TableNextColumn();
+        if (row.hasTier) {
+          ImGui::TextUnformatted(FormatTaskAge(row.ageTicks).c_str());
+        } else {
+          ImGui::TextDisabled("-");
+        }
+
+        ImGui::TableNextColumn();
+        if (!row.divergence.empty()) {
+          ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "DIVERGENCE: %s",
+                             row.divergence.c_str());
+        } else if (row.flags.empty()) {
+          ImGui::TextDisabled("--");
+        } else {
+          ImGui::TextUnformatted(row.flags.c_str());
+        }
+      }
+
+      ImGui::EndTable();
+    }
+  }
+  ImGui::End();
+
+  if (!show) {
+    game->taskBoardWindowEntity.remove<ActiveWindow>();
+    game->debugWindowState->SetShowTaskBoardWindow(false);
+  } else {
+    game->debugWindowState->SetShowTaskBoardWindow(true);
   }
 }
 

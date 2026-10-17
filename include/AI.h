@@ -85,6 +85,18 @@ public:
     return false;
   }
 
+  // Turns the backend's chain-of-thought on or off, where the backend has one.
+  //
+  // Exists because reasoning is the wrong tool for some requests and actively harmful
+  // for short ones: a backend that spends its completion budget thinking returns *no
+  // answer at all*, which a caller sees as an empty reply rather than as an error.
+  // Measured on OpenRouter's deepseek-v4-flash, which enables reasoning by default --
+  // a rewrite request came back with `content: None` and tokens still billed.
+  //
+  // The default does nothing, so a backend with no reasoning mode is unchanged and a
+  // caller can ask unconditionally.
+  virtual void setReasoningEnabled(bool /*enabled*/) {}
+
   virtual std::string getAIName() const = 0;
   virtual std::string getModelName() const = 0;
   virtual std::string getProviderName() const { return "Unknown"; }

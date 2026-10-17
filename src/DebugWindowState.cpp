@@ -23,6 +23,8 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showTileDesignerWindow(false),
     showAIMenuWindow(false),
     showNPCMenuWindow(false),
+    showTaskBoardWindow(false),
+    showSystemOneWindow(false),
     showVisionChatWindow(false),
     showLocations(false),
     stopAllAI(false),
@@ -47,10 +49,13 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["designerZoom"] = designerZoom;
   state["designerShowJson"] = designerShowJson;
   state["designerShowThoughts"] = designerShowThoughts;
+  state["tileDesignerAutoArt"] = tileDesignerAutoArt;
   state["blueprintPaneWidth"] = blueprintPaneWidth;
   state["blueprintZoom"] = blueprintZoom;
   state["aiMenu"] = showAIMenuWindow;
   state["npcMenu"] = showNPCMenuWindow;
+  state["taskBoard"] = showTaskBoardWindow;
+  state["systemOne"] = showSystemOneWindow;
   state["visionChat"] = showVisionChatWindow;
   state["showLocations"] = showLocations;
   state["stopAllAI"] = stopAllAI;
@@ -98,10 +103,18 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       designerShowJson = state.value("designerShowJson", designerShowJson);
       designerShowThoughts =
           state.value("designerShowThoughts", designerShowThoughts);
+      tileDesignerAutoArt =
+          state.value("tileDesignerAutoArt", tileDesignerAutoArt);
+      // Recorded separately from the value: a file written before this key existed
+      // must leave the preference *unstated*, so the window can follow
+      // art.generation.enabled instead of defaulting to off.
+      tileDesignerAutoArtStored = state.contains("tileDesignerAutoArt");
       blueprintPaneWidth = state.value("blueprintPaneWidth", blueprintPaneWidth);
       blueprintZoom = state.value("blueprintZoom", blueprintZoom);
       showAIMenuWindow = state.value("aiMenu", false);
       showNPCMenuWindow = state.value("npcMenu", false);
+      showTaskBoardWindow = state.value("taskBoard", false);
+      showSystemOneWindow = state.value("systemOne", false);
       showVisionChatWindow = state.value("visionChat", false);
       showLocations = state.value("showLocations", false);
       stopAllAI = state.value("stopAllAI", false);

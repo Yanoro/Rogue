@@ -1,424 +1,446 @@
 # Blueprints: hand-authored and agent-authored buildings
 
-**Status: design note. Nothing implemented here, and parts of it are deliberately unfinished.**
-Proposal written 2026-10-14. It answers one question: *can a small grammar express a hut, a house
-extension and a church, without letting a model freehand geometry into the world?*
+**Status: implemented, in part.** Design half is live and exercised end to end by an agent; the
+build half is not. This document describes what the code does today, and marks the parts of the
+original design that were never built rather than quietly dropping them.
 
-Read `placement-design.md` first for the placement validator this builds on, and
-`guide-command-design.md` for the derivation/hint split this borrows its shape from.
+Written 2026-10-14, rewritten 2026-10-16 against the shipped code. Where the implementation
+diverged from the original proposal, the divergence is stated.
 
----
+**Companion documents**, and the split between them:
 
-## 1. The idea
-
-A **blueprint** is a structure written down as data:
-
-- **Design** — produce a blueprint. Expensive, happens once, output is data, validated before
-  anything is built, reusable forever after.
-- **Construct** — stamp a blueprint into the world at a site, over turns, consuming materials.
-
-Design's output is **data with a name, not a diff to the world.** Structure placement is the same
-problem for every blueprint — pick an anchor and a rotation, check it fits, check the door reaches
-a road — so a 4x4 field and a 12x20 church run through one code path with different footprints.
-
-The property worth optimizing for: **a hand-authored blueprint and an agent-authored blueprint are
-the same artifact.** The validator, the site finder and the construction process never need to know
-who designed one. This is what makes `["all agents own every blueprint"]` a header change later
-rather than a rewrite.
+| document | covers |
+|---|---|
+| `asset-generation-design.md` | the generated overlay: how art and tile definitions come to exist for material no hand-authored pack has |
+| `designer-speech-design.md` | reading the designer's reply aloud |
+| `placement-design.md` | the placement validator blueprints reuse for site legality |
+| this document | the grammar, expansion, the registry, the designer agent, and the gaps |
 
 ---
 
-## 2. Two cell kinds, and why the schema must respect both
+## 1. What a blueprint is
 
-The world already has two parallel occupancy systems, and a blueprint needs both:
+A **blueprint** is a structure written down as data. It has no absolute position: every coordinate is
+relative to the design's own origin, usually `[0,0]`, and where it ends up is decided later.
 
-| | who owns it today | examples | what it means |
-|---|---|---|---|
-| **`Tile`** | `Map::tileMap`, a flat `vector<Tile*>`; mutated via `Map::addTileToMap` (`src/Map.cpp:469`) | `grass`, `tilled soil`, `wooden floor`, `path`, `water`, `wooden wall` | **the ground.** `blocksTile` decides walkability. Cheap, and the same tile is shared by many cells. |
-| **object entity** | `ObjectFactory::SpawnObject` from `data/objects/*.json` | `chest`, `anvil`, `apple_tree`, `wheat_mature`, placed seeds | **something standing on the ground.** Gets a `DisplayName`, so `[SURROUNDINGS]` and `[MOVE_TO]` can see it. |
+- **Design** — produce a blueprint. Expensive, happens once per structure, output is data, checked
+  before anything is saved.
+- **Construct** — stamp a blueprint into the world at a site. **Not implemented.** See §9.
 
-`Map`'s own `wooden wall` tile is the interesting case: a wall can be *terrain* (`blocksTile =
-true`) or an *object* (`Obstacle`). A blueprint must be able to say which, because they differ in
-cost, visibility and destruction:
+Design's output is **data with a name, not a diff to the world.** That is the property that makes
+the vocabulary check, the preview and a future construction pass able to treat all designs alike.
 
-- **terrain** — free to paint, invisible to `[SURROUNDINGS]`, no name, no loot. Right for mass
-  that is never interacted with.
-- **object** — costs an item, visible, nameable, harvestable, interactable. Right for doors,
-  chests, beds, altars, workstations.
-
-So the grammar's occupancy operation is **`paint`** (a tile) or **`place`** (a template). Nothing
-in the schema conflates them.
+It also means **a hand-authored blueprint and an agent-authored one are the same artifact.** There is
+no marker distinguishing them; `data/blueprints/` currently holds both, and nothing reads them
+differently. The registry records a `sourcePath` for reporting and nothing more.
 
 ---
 
-## 3. The grammar
+## 2. The grammar
 
-Shape and material are **separate** throughout. A part is *a shape filled with a thing*; the shape
-does not know what it is made of, and the material does not know its layout. This is the whole
-reason a small grammar can cover a village: a church is a solid rectangle, two outlines, a carve, a
-fill and four placed objects — not two thousand decisions.
+Two ideas carry the language, and keeping them apart is what makes a design checkable:
 
-### 3.1 Skeleton
+- **A shape is a set of cells.** Nothing more.
+- **A part is a shape filled with a material** (`paint`), something standing on those cells
+  (`place`), an opening cut into them (`carve`), or the enclosed interior of a shape (`fill`).
+
+A house is therefore a defined rectangle for the floor, a defined border for the walls, a carved
+doorway and a door tile — not two hundred decisions.
+
+**Filled or outline is always in the primitive's name.** There is no `filled` boolean anywhere, and
+no `thickness`: one spelling per cell set is what keeps overlap unambiguous and a round trip exact.
+
+### 2.1 Top-level fields
+
+| field | required | meaning |
+|---|---|---|
+| `id` | **yes** | Short identifier, `[a-z0-9_]`. It is the filename and the reference. Saving under an existing `id` **overwrites**. |
+| `name` | **yes** | Display name. Defaults to `id` when absent. |
+| `parts` | **yes** | Non-empty array. Later parts overwrite earlier ones on the same cell. |
+| `purpose` | no | One or two words. Persisted and round-tripped; nothing reads it yet. |
+| `owner` | no | Persisted and round-tripped. **Nothing enforces it** — see §8. |
+| `levels` | no | Defaults to 1. Parsed and written back. **Only level 0 is placeable** — see §7. |
+| `regions` | no | Named shapes, so a shape used twice is written once. |
+
+`designerNotes` is deliberately **not** in this table. The designer agent is required to produce it
+(§6.3) and the engine erases it before saving, so it never appears in a file on disk.
+
+### 2.2 Shapes
+
+| primitive | body | notes |
+|---|---|---|
+| `point` | `at` | one cell |
+| `line` | `at`, `to` | inclusive; axis-aligned or stepped (Bresenham) |
+| `rect_fill` | `at`,`to` or `at`,`width`,`height` | solid rectangle |
+| `rect_outline` | `at`,`to` or `at`,`width`,`height` | one-cell border — the wall primitive |
+| `disk_fill` | `at`, `radius` | solid circle |
+| `disk_outline` | `at`, `radius` | one-cell border |
+| `polygon_fill` | `points` (3+) | solid polygon, may be concave; even-odd rasterisation |
+| `polygon_outline` | `points` (3+) | its one-cell border |
+| `region` | `ref` | a named shape from `regions` |
+| `union` / `intersect` / `difference` | `of` (array of shapes) | set algebra |
+
+`at` and `to` are `[x, y]` with **y growing downward**, and `to` is inclusive — `rect_fill` from
+`[0,0]` to `[3,3]` is 16 cells. `at`/`to` are normalised, so either corner may be given first.
+
+A one-cell-wide shape still has a border: `rect_outline` with `width: 1` is a line of cells, not
+nothing. Outlines are a genuine border (every cell with an orthogonal neighbour outside the set),
+not a scanline approximation — an earlier version used per-column min/max, which punched the top and
+bottom rows of a solid rectangle through the middle and made every generated building's walls wrong.
+
+### 2.3 Parts
 
 ```json
-{
-  "id": "stone_church",
-  "name": "Stone Church",
-  "owner": "agent:Milo",
-  "purpose": "worship",
-  "regions": { "have": { "rect_outline": { "at": [0,0], "to": [11,19] } } },
-  "levels": 2,
-  "parts": [
-    { "id": "floor", "region": "nave", "op": { "paint": "stone floor" } }
-  ]
-}
+{ "id": "walls", "region": "outer_walls", "op": { "paint": "wooden wall" }, "role": "structural" }
 ```
 
-- `id` is a content id, the same id space as `ItemType::id` and recipe ids.
-- `owner` is recorded but **not enforced** (see §7).
-- `regions` is a named-shape dictionary so a shape computed once can be reused by several parts.
-  This is what makes a wall's `fill` interior addressable elsewhere.
-- `levels` and per-part `level` give multi-storey designs (`level: 1` or `[1,3]` for a tower).
-  Each level is a separate flat grid whose coordinates are relative to the footprint; the engine
-  reconciles vertical adjacency. **Note:** the current `Map` is single-layer, so levels are a
-  later step — the schema carries them so designs do not have to be re-authored.
-
-### 3.2 Shape primitives
-
-Each yields a set of cells on one level. Absolute world coordinates do not appear anywhere.
-
-**Filled or outline is always in the name.** Every area primitive comes in exactly two forms, and
-there is no `filled` boolean anywhere. This is the one rule the vocabulary is built on: a shape
-name never leaves you guessing which one it produces, and there is only one way to say it.
-
-| primitive | fields | notes |
-|---|---|---|
-| `point` | `at` | one cell. Neither filled nor outline — the distinction does not apply. |
-| `line` | `at`, `to` | inclusive, axis-aligned or stepped. Always a path; there is no filled form. |
-| `rect_fill` | `at`, `to` *or* `at`, `width`, `height` | solid rectangle |
-| `rect_outline` | `at`, `to` *or* `at`, `width`, `height` | rectangle border, one cell thick — **the wall primitive** |
-| `disk_fill` | `at`, `radius` | solid circle |
-| `disk_outline` | `at`, `radius` | circle border, one cell thick |
-| `polygon_fill` | `points` | **any** shape, including concave |
-| `polygon_outline` | `points` | border, one cell thick |
-| `region` | `ref` | a named shape, which may itself be a `_fill` or an `_outline` |
-| `union` / `intersect` / `difference` | `of: [...]` | set algebra, so shapes compose without re-listing cells |
-
-Why `rect_*` and not `box`/`frame`/`ring`: `ring` reads as circular, `frame` reads as an object you
-place rather than a cell set, and `box` is ambiguous in the other direction (it suggests a solid).
-`_fill` / `_outline` is borrowed from `fill`/`outline` in the world-editing tools a model is most
-likely to have seen, so it costs no learning.
-
-**No `thickness` parameter exists.** Wall thickness is shape algebra: a two-cell wall around
-`[0,0]..[11,19]` is `union(rect_outline[0,0,11,19], rect_outline[1,1,10,18])`, and the same
-difference-of-two-fills written either way. Each spelling of a shape yields exactly one cell set
-and there is exactly one way to say each, which is the property that makes the validator's
-self-overlap and sealing checks unambiguous.
-
-**Wall sealing rule.** A wall written as four `line` segments is connected only *diagonally* at its
-corners, so a naive 4-connected flood fill leaks out through the corner. `rect_outline` guarantees a
-properly sealed border (it is 4-connected by construction), and the validator enforces 4-connectivity
-on any material the design marks `structural` (see §5.3). Note that `line` with a stepped
-(Bresenham) run is *not* guaranteed 4-connected, so a diagonal wall cannot be sealed — that case is
-caught by the validator rather than silently producing a leaky building. This is a real trap: an
-unsealed "house" is the most likely output of a first-generation designer, and it should be caught,
-not discovered later.
-
-### 3.3 Occupancy operations
-
-Each cell's final content comes from the last operation that writes it.
-
-| op | argument | effect |
-|---|---|---|
-| `paint` | tile name | write a `Tile` |
-| `place` | template id | spawn an object entity (`Door`, `Chest`, `Anvil`, ...) |
-| `carve` | — | clear the cell to `void`/outside — door and window openings |
-| `fill` | `{ paint }` or `{ place }` | fill the **enclosed interior** of the part's region / its current footprint |
-
-`carve` is what turns a wall into a doorway without arithmetic: carve the one cell, then `place` a
-door there. Keeping these as separate operations rather than a `door: true` flag is what lets a
-window, a gate, and a hole in a roof all be expressed without adding vocabulary.
-
-### 3.4 Composite sugar
-
-These expand into the primitives above at load time, so they cost the validator nothing.
-
-| composite | expands to |
+| field | meaning |
 |---|---|
-| `enclosed` | `rect_outline`/`polygon_outline` (as walls) + `fill` of the interior |
-| `room` | `enclosed`, plus the interior registered as a named region for later `ref` |
-| `connect` | a `line` corridor from entry to exit |
-| `call` | an embedded blueprint's parts at an offset — **composition** (a village wall design containing a tower design) |
-| `repeat` | `count` copies at a `step`, for colonnades, fence posts, pews |
+| `id` | **required**, unique within the design. Names the part in every error message. |
+| `shape` | a shape, inline: `"shape": { "rect_fill": { "at": [0,0], "to": [5,5] } }` |
+| `region` | **or** a region's name as a **plain string**: `"region": "footprint"`. Exactly one of `shape`/`region`. |
+| `op` | **required**, exactly one of the four below |
+| `role` | optional: `structural`, `entrance`, `interior_door`, `fixture` |
+| `level` | optional: `2`, or `[1,3]` for a span. |
 
-`call` is the one that makes the grammar genuinely capable rather than merely flexible: complex
-structures become assemblies of designed parts, and a village can share a wall design between
-every building. It needs the same cycle guard as the guide's chain walk (`kDepthCap`).
+`"region": { "ref": "footprint" }` is **wrong** and refused by name. An early draft of this document
+showed that form; it is a natural mistake, it was written into two shipped designs, and it used to
+surface only as an opaque `type must be a string` thrown out of the JSON parser. `ParsePart` now
+catches it explicitly and says so.
 
-### 3.5 Deliberately excluded
+The four operations:
 
-| excluded | why |
-|---|---|
-| absolute world coordinates | site selection is a separate concern; the design is anchor-relative |
-| new materials not in the world | a designer may **compose** the material vocabulary, never invent it |
-| per-tile scripting, conditionals, loops at tile level | the grammar composes, it does not compute |
-| references to locations or other maps | a blueprint is valid anywhere it fits |
+- `"op": { "paint": "wooden floor" }` — write a tile into every cell
+- `"op": { "place": "chest" }` — spawn an object into every cell
+- `"op": { "carve": true }` — clear the cell
+- `"op": { "fill": { "paint": "wooden floor" } }` — fill the **enclosed interior** of the shape
 
----
+### 2.4 A complete, working example
 
-## 4. Worked examples
-
-### 4.1 A hut — the minimum that must work
+Trimmed from a real agent-authored design in `data/blueprints/`:
 
 ```json
 {
-  "id": "small_hut",
-  "name": "Small Hut",
+  "id": "small_house",
+  "name": "Small House",
+  "purpose": "dwelling",
   "levels": 1,
   "regions": {
-    "hut":   { "rect_fill": { "at": [0,0], "to": [5,5] } },
-    "floor": { "rect_fill": { "at": [0,0], "to": [5,5] } }
+    "footprint": { "rect_fill": { "at": [0, 0], "to": [6, 5] } },
+    "outer_walls": { "rect_outline": { "at": [0, 0], "to": [6, 5] } }
   },
   "parts": [
-    { "id": "floor", "region": "floor", "op": { "paint": "wooden floor" } },
-    { "id": "walls", "shape": { "rect_outline": { "at": [0,0], "to": [5,5] } },
-      "op": { "paint": "wooden wall" }, "role": "structural" },
-    { "id": "doorway", "shape": { "point": { "at": [2,5] } }, "op": { "carve": true } },
-    { "id": "door", "shape": { "point": { "at": [2,5] } },
-      "op": { "place": "wooden_door" }, "role": "entrance" }
+    { "id": "floor", "region": "footprint", "op": { "paint": "wooden floor" } },
+    { "id": "walls", "region": "outer_walls", "op": { "paint": "wooden wall" }, "role": "structural" },
+    { "id": "doorway", "shape": { "point": { "at": [3, 5] } }, "op": { "carve": true } },
+    { "id": "door", "shape": { "point": { "at": [3, 5] } }, "op": { "paint": "door" }, "role": "entrance" }
   ]
 }
 ```
 
-Five parts, no coordinates in the model's world, and the door is an object that a later
-`[SURROUNDINGS]` can name — which matters, because the agent has to find its way in.
+Order matters: floor first, then walls over it, the doorway carved out of the wall, then the door
+written onto the carved cell.
 
-### 4.2 A house extension — the growing-village case
-
-The interesting one is not a bigger building, it is **editing an existing design**. A dwelling that
-grew a second room is three more parts on the same blueprint:
-
-```json
-[
-  { "id": "bedroom_wall", "shape": { "rect_outline": { "at": [7,0], "to": [11,5] } },
-    "op": { "paint": "wooden wall" }, "role": "structural" },
-  { "id": "bedroom_floor", "shape": { "rect_fill": { "at": [7,0], "to": [11,5] } },
-    "op": { "paint": "wooden floor" } },
-  { "id": "hall_to_bedroom", "shape": { "point": { "at": [6,2] } },
-    "op": { "place": "wooden_door" }, "role": "interior_door" }
-]
-```
-
-The engine can then *show* the agent its own previous blueprint and let it add parts, which is how
-a village stops looking procedurally generated: buildings that were extended over time look like
-buildings that were extended over time. This is also why blueprints are stored (§7) rather than
-being one-shot outputs.
-
-### 4.3 A church — the expressiveness test
-
-This is the case that decides whether the grammar is capable enough. It uses levels, a reused
-region, an interior door, a carrier region, and an entrance facing the street.
-
-```json
-{
-  "id": "stone_church",
-  "name": "Stone Church",
-  "purpose": "worship",
-  "levels": 2,
-  "regions": {
-    "nave": { "rect_fill": { "at": [0,0], "to": [11,19] } },
-    "have": { "rect_outline": { "at": [0,0], "to": [11,19] } },
-    "apse": { "disk_fill": { "at": [5,4], "radius": 3 } },
-    "tower": { "rect_fill": { "at": [0,20], "to": [3,23] } }
-  },
-  "parts": [
-    { "id": "nave_floor", "region": "nave", "op": { "paint": "stone floor" } },
-    { "id": "nave_walls", "region": "have",
-      "op": { "paint": "stone wall" }, "role": "structural" },
-    { "id": "apse_floor", "region": "apse", "op": { "paint": "stone floor" } },
-    { "id": "apse_wall", "shape": { "polygon_outline": { "points": [[2,2],[8,2],[8,8],[2,8]] } },
-      "op": { "paint": "stone wall" }, "role": "structural" },
-    { "id": "apse_opening", "shape": { "line": { "at": [5,8], "to": [6,8] } },
-      "op": { "carve": true } },
-    { "id": "tower_floor_l1", "region": "tower", "level": 1,
-      "op": { "paint": "stone floor" } },
-    { "id": "tower_walls", "shape": { "rect_outline": { "at": [0,20], "to": [3,23] } },
-      "op": { "paint": "stone wall" }, "role": "structural" },
-    { "id": "tower_door", "shape": { "point": { "at": [3,21] } },
-      "op": { "place": "wooden_door" }, "role": "interior_door" },
-    { "id": "altar", "shape": { "point": { "at": [5,18] } },
-      "op": { "place": "stone_altar" }, "role": "fixture" },
-    { "id": "pews_l", "shape": { "line": { "at": [3,10], "to": [3,16] } },
-      "op": { "place": "wooden_bench" }, "role": "fixture" },
-    { "id": "pews_r", "shape": { "line": { "at": [8,10], "to": [8,16] } },
-      "op": { "place": "wooden_bench" }, "role": "fixture" },
-    { "id": "main_door", "shape": { "point": { "at": [5,0] } },
-      "op": { "carve": true } },
-    { "id": "main_door_leaf", "shape": { "point": { "at": [5,0] } },
-      "op": { "place": "wooden_door" }, "role": "entrance" }
-  ]
-}
-```
-
-A gothic arch, a buttress line, a spire in plan — all reachable with `polygon` and set algebra.
-What this grammar cannot do is **freehand sculptural terrain**: it is a composition language, not a
-painting one. For a village sim that is the right trade, because composition is what makes
-validation possible.
+Note what real designs actually use. Across the 14 blueprints in `data/blueprints/`, the primitives
+are `point` (76 uses), `rect_fill` (11) and `line` (8) — **`rect_outline` is used only through named
+regions, and `fill` is never used at all.** The designer builds walls out of many `point` and `line`
+parts rather than composing `rect_outline`. That is legal and it works, but §6.4 explains why it is
+worth steering the model away from.
 
 ---
 
-## 5. Validation
+## 3. Expansion: shapes to cells
 
-The point of the grammar is that everything below is decidable. There is exactly one validator,
-and **design-time** and **site-time** both call it — the same rule as `PlaceAtAction` owning the
-placement predicate.
+`include/BlueprintExpansion.hpp` / `src/BlueprintExpansion.cpp`. Nothing here touches the world; it
+turns a parsed design into cells and is separately testable (it was, during development, by linking
+this translation unit alone).
 
-### 5.1 Design-time, structural
+```cpp
+using Cell = std::pair<int,int>;          // ordered by (y, x)
+using CellSet = std::set<Cell>;
 
-| check | reject when |
-|---|---|
-| structure | duplicate part `id`; a `region` ref that does not resolve; `call` cycles; depth over cap |
-| material vocabulary | a `paint`/`place` naming something not in the world's available set (§5.5) |
-| level range | `level` outside `levels` |
-| cell count | over the cap (§8) — the guard against an agent emitting a 5000-cell blueprint |
-
-### 5.2 Design-time, geometric
-
-| check | reject when |
-|---|---|
-| self-overlap | two parts write the same cell unless one is an explicit later overwrite; a `place` and a `paint` on one cell is a conflict |
-| in-memory fit | the *shape itself* is degenerate (zero area, `at` beyond `to` in a way that yields nothing) |
-
-### 5.3 Design-time, topological — the checks that catch generated nonsense
-
-| check | how |
-|---|---|
-| **sealed** | materials with `role: structural` form a 4-connected closed loop around a non-empty interior. Catches the diagonal-corner leak. |
-| **enclosed** | flood fill from outside the design bounding box; unreached free cells are interior; report them per level |
-| **has a room** | interior is non-empty; report the interior cell count and dimensions |
-| **has an entrance** | at least one `role: entrance` door, 4-adjacent to both an interior cell and an exterior cell |
-| **reachable interior** | every interior cell is reachable from an entrance when only walkable cells (interior + doors) are traversable — kills a sealed-off wing |
-| **fixtures are inside** | a `place` with `role: fixture` lands on an interior walkable cell, not inside a wall |
-| **level connectivity** | if `levels > 1`, some part must connect level *n* to *n+1* |
-
-Rejections are **reported with reasons**, in the shape the placement work already uses
-(`docs/placement-design.md` §S2):
-
-```
-stone_church rejected: nave_walls leaked at (5,0)-(6,0) — the wall is not sealed
-stone_church rejected: tower_door (3,21) does not touch the interior
-stone_church accepted: 1 room, 1 entrance, 212 cells, 2 levels
+CellSet RasterizeShape(shape, regions, depth, error);
+CellSet RasterizePart(part, regions, error);
+bool    Interior(const CellSet &region, CellSet &out);
+void    ComputeBounds(blueprint, minX, minY, maxX, maxY);
+Expansion Expand(const Blueprint &blueprint);
 ```
 
-### 5.4 Site-time
+- **Per part, then merged in order.** Later parts win, which is what lets a carve open a wall.
+- **`level != 0` parts are skipped** by both `Expand` and `ComputeBounds`. The world is
+  single-layer, and a preview of a floor the map cannot show would mislead rather than inform.
+- **`fill` uses `Interior`**, a 4-connected flood fill from outside the shape's bounding box:
+  unreached free cells are the interior. A shape with no interior — solid, or a border that leaks —
+  is reported as an error rather than silently producing zero cells. `Interior` is the same
+  primitive a topological check would need; see §8.
+- **Region references are depth-guarded** (`kRegionDepthCap = 8`) so a region that refers to itself
+  terminates with an error instead of hanging an agent's turn.
+- **Errors are collected, not fatal.** The designer's preview draws a partially valid design on
+  purpose, so a refusal shows you what went wrong.
 
-Once a design is valid, finding a site is the same query as a field, with an irregular footprint:
+### 3.1 Cell kinds
 
-```
-Could not build Stone Church at anchor (4,12): overlaps Carl's House at (6,10)
-Could not build Stone Church at anchor (30,4): needs 12x24 clear, only 9x24 is free
-Can build Stone Church at anchor (40,8), rotation 0: entrance faces the east track
-```
+Shape and material meet in exactly two kinds of output, mirroring the two occupancy systems the
+world already has:
 
-Site-time checks: fits in bounds at every rotation; overlaps no object, no structural terrain, and
-no location owned by someone else; every cell of the footprint is the same *kind* of ground
-(clearing a tree is fine, filling water is not, unless the design says so); the entrance remains
-4-connected to the existing path network after construction.
-
-### 5.5 The material palette
-
-The designer must not invent materials, so the engine hands it the available set — this is the same
-**engine owns facts** split as `[GUIDE]`. Derived from world data, not authored twice:
-
-```
-Available materials, from what exists in this world:
-  tiles:   grass, path, tilled soil, wooden floor, stone floor, water
-  walls:   wooden wall (structural, blocks movement)
-  objects: wooden_door, wooden_bench, chest, anvil, stone_altar
-```
-
----
-
-## 6. Construction
-
-A blueprint materializes as a **sequence of steps over turns**, not an instant stamp. That is where
-it joins the existing Craft/Harvest machinery: a claim holds the materials while work proceeds, and
-interruption is already handled.
-
-1. **Clear** — remove conflicting objects (trees, loose items) within the footprint.
-2. **Prepare** — paint any substrate/bedding the design expects under walls and floors.
-3. **Build** — per part: paint tiles (cheap, instant) and place objects (costs materials, may take
-   time).
-4. **Verify** — the same validator runs against the *real* world, not the design. A building is
-   finished when the target state is reached, which is what makes partial construction resumable.
-
-Materials come from real inventory. Painting a wall tile is cheap; spawning a door consumes an
-actual door. Exactly what a part costs, and whether the design declares a bill of materials or the
-engine derives one from the op counts, is **not decided here** (§9).
-
----
-
-## 7. Ownership, storage and token cost
-
-- **Storage:** `data/blueprints/*.json`, persisted the way maps are (`Map::WriteMap`), so a design
-  outlives the agent that made it. Runtime-designed blueprints need a separate store from authored
-  content — the same content-root question the genre-pack work already has open.
-- **Ownership (decided for now):** every blueprint records an `owner`, and **all agents can see and
-  use all blueprints.** This is deliberate while the game is being built: a per-owner visibility
-  rule costs tokens on every request for no gameplay benefit yet.
-- **The debug window (decided for later):** a blueprint explorer showing the part list of a
-  selected design with its validation result, a settable owner, and visibility toggles
-  (`shared` / `private` / `hidden`). It is a debug and curation tool first — the fastest way to
-  find out whether an agent's design is bad or the grammar is.
-- **Token discipline.** The full part list must **never** sit in a spawn prompt. What the prompt
-  may carry is a one-line index — `id — display name (cells, levels, owner)` — and the body is
-  loaded on demand. A design in progress is a couple of hundred tokens; fourty of them in every
-  request is a permanent tax, and `NPCContext::history` is never trimmed
-  (`guide-command-design.md` §9). The verb split follows `[GUIDE]`/`[INFO]`: an index verb and a
-  detail verb.
-
----
-
-## 8. Limits
-
-| limit | value | why |
+| kind | produced by | what it is |
 |---|---|---|
-| `call` depth | 3 | same guard as `kDepthCap` in the guide; composition must not recurse forever |
-| cells per design | a content constant, tentatively 1024 per level | a 5000-cell blueprint is almost always a mistake, and construction cost should be predictable |
-| parts per design | 256 | keeps the validator and the report readable |
-| levels | 8 | sanity bound, not a design statement |
+| tile | `paint`, `fill{paint}` | a `TileDef` name resolved through the catalog. The **ground**. |
+| object | `place`, `fill{place}` | an `ObjectFactory` template id. Something **standing on** the ground. |
+
+They differ in cost and visibility: terrain is free to paint and invisible to `[SURROUNDINGS]`, an
+object consumes a real item and gets a `DisplayName`. `carve` writes neither — it marks the cell as
+an opening, which both renderers draw as a hole.
 
 ---
 
-## 9. Open questions
+## 4. Serialisation
 
-- **Nothing has been built, and the build order matters.** The rectangle/zone case (fields) is the
-  only one the farming test needs; blueprints are a separate milestone. The grammar above is
-  designed to *not* need revisiting when that milestone arrives.
-- **Does the design carry a bill of materials, or does the engine derive one from the ops?**
-  Deriving cannot drift; declaring allows substitutions ("any wood"). Undecided.
-- **How are levels represented?** `Map` is single-layer today. Per-level grids with an explicit
-  vertical-connection part is the sketch, but this is the least certain part of the schema.
-- **May a design reference another by id, or must it inline it?** Referencing keeps updates
-  propagating; inlining keeps designs self-contained. `call` currently does the latter.
-- **What happens when materials run out mid-construction?** A half-built church is a legitimate
-  world state, but someone has to own the decision to continue, abandon, or salvage it.
-- **Who can design?** Any agent, or an architect role? This is the class-system question arriving
-  early, and the direction doc's "progression is in scope now" suggests a design skill.
-- **Rebuilding after destruction.** Is a damaged building repaired against its blueprint, or does
-  the owner redesign? Repair is cheaper and makes blueprints useful long after construction.
+`BlueprintRegistry::WriteBlueprint` is the inverse of the parser, so a design written out and read
+back is the same design. It is used instead of re-emitting the model's own text, because that text
+carries fields the schema does not define — `designerNotes` above all — and the file on disk should
+be exactly the schema.
+
+Regions are written sorted, and a part that referenced one is written as `"region": "name"`;
+everything else is flattened inline. The fill state survives a round trip because it is in the
+primitive's own name rather than a flag.
 
 ---
 
-## 10. References
+## 5. The registry
 
-- `docs/placement-design.md` — the placement validator, S2's shared-predicate pattern, and the
-  rejection-report style reused in §5
-- `docs/guide-command-design.md` — derived skeleton + authored hints, the stateless-query decision,
-  and §9 on untrimmed history
-- `include/GuideBuilder.h`, `src/GuideBuilder.cpp` — `kDepthCap`, the depth guard `call` copies
-- `include/Components.h` — `Tile` (`:156`), `Location`, `Placeable`, `Storage`, `Workstation`
-- `src/Map.cpp` — tile creation (`:56`), `addTileToMap` (`:469`), `WriteMap` persistence
-- `src/ObjectFactory.cpp` — `LoadTemplates`, `ApplyTemplate`, `RegisterDefaultComponents`
-- `data/objects/*.json`, `data/tilesets/` — the object/tile vocabulary a palette is derived from
-- `maps/Map_Farm.json`, `maps/Map_Village.json` — the `tileInfo` and `locations` shapes
+`include/BlueprintRegistry.h` / `src/BlueprintRegistry.cpp`. Same shape as `StatRegistry` and
+`SkillRegistry`: a content database loaded from a directory, injected where needed, reachable through
+`BlueprintRegistryResource`.
+
+| call | does |
+|---|---|
+| `LoadBlueprints(dir)` | reads `*.json`; **clears first**, so a reload replaces rather than accumulates |
+| `ParseBlueprint(json, id, source, out, error, warnings)` | static; the same path for a file and for a model's reply |
+| `SaveBlueprint(bp)` | writes `<dir>/<id>.json`, then reloads and verifies it came back |
+| `DeleteBlueprint(id)` | removes the file, then reloads |
+| `Reload()` / `Clear()` | re-read / drop everything |
+| `Get`, `GetIds`, `GetAll` | lookup; see the lifetime note below |
+| `WriteBlueprint(bp)` | serialise |
+
+### 5.1 Lifetime, which has already caused one crash
+
+`Get`/`GetAll` return pointers into the registry's map. They are valid **only until the registry
+reloads** — that is, until `LoadBlueprints`, `Reload`, `SaveBlueprint` or `DeleteBlueprint`. The
+header states this with the failing example, because the previous comment claimed pointers were
+"stable for the registry's lifetime" and that stopped being true the moment `Reload` existed.
+
+`SaveBlueprint` and `DeleteBlueprint` **copy their arguments on entry**. That is not style: callers
+naturally pass a reference into the registry — `BlueprintWindow` passes a key, `DesignerChatWindow`
+passes a design it just looked up — and `Reload()` at the end frees it. This was a real
+heap-use-after-free (`DeleteBlueprint → LoadBlueprints::clear → Get(id)`), found by ASan and fixed by
+copying at the boundary.
+
+### 5.2 Rejections are errors, not warnings
+
+A design missing from the window looks exactly like a design that was never authored. So a file that
+fails to parse, fails `ParseBlueprint`, or expands to no cells is reported through `LogError`, with
+the file named and — for a JSON type error — a plain-language hint about the usual cause.
+
+Warnings are deduplicated per load by message, and the vocabulary check is grouped by material
+rather than by part, so one wrong material used by six parts is **one** line naming all six. That
+grouping was necessary: reporting per part produced six near-identical lines and buried the log.
+
+---
+
+## 6. The designer agent
+
+`include/DesignerChatWindow.h` / `src/DesignerChatWindow.cpp`. A development window that turns a
+request in plain language into a blueprint, so a model can be judged on *designing* before any of it
+is wired to the in-game agents.
+
+It is deliberately isolated, like `VisionChatWindow`: its own `contextId`, never touching
+`NPCContext`, `AIRequest` or the agent thread pipeline, so it cannot disturb the NPC loop.
+
+### 6.1 Backend
+
+Its own settings section, `settings.designer`, defaulting to `useMainModel: true` so an unconfigured
+run shares the NPC backend. Separate from `model` for two reasons: `OllamaAI` keys conversation
+context by `contextId` alone so one instance cannot serve two models, and producing valid JSON is a
+different skill from roleplay, so pointing it at a different model is a real thing to want.
+
+### 6.2 Instructions are data
+
+`data/blueprints/DESIGNER.md` holds the reply contract, the grammar, the validity rules and a worked
+example. `Game::BuildDesignerSystemPrompt` appends the **material palette generated from the live
+tile catalog and object templates**. Generated rather than written into the file because a
+hand-written list drifts the moment a tile is added, and the failure is quiet: the designer asks for
+a material that does not exist and every design is refused.
+
+The `%MATERIALS%` placeholder is substituted when present and appended when absent, so a prompt file
+that forgets it still gets the vocabulary.
+
+### 6.3 The reply contract
+
+1. Prose, then exactly one fenced ` ```json ` block.
+2. The block must carry a non-empty **`designerNotes`** — the model's own critique of the design it
+   just made. Required, not decorative: it is the thing the window exists to collect, and a reply
+   without it is refused.
+3. The engine extracts the block, strips `designerNotes`, parses, checks the vocabulary, and expands.
+4. Valid → `SaveBlueprint` → reload → the design appears in the Blueprints window immediately.
+5. Invalid → the reason is appended to the same conversation and it retries, up to
+   `settings.designer.maxDesignAttempts` (default 3). **Every attempt is shown**, including
+   refusals; hiding them would make a retry look like one slow success.
+
+Inspection runs on the **main thread** after the transcript is drawn. Validating and saving content
+from the worker would mean touching the ECS mid-frame.
+
+### 6.4 What the model gets wrong, and the one structural fix still owed
+
+The vocabulary is enforced and the expansion is checked. What is **not** checked is anything
+topological: whether the walls seal, whether there is an entrance, whether the interior is
+reachable. `role` is parsed and carried but **nothing enforces it**.
+
+This matters because of how the model actually designs. Left to itself it builds walls from many
+`point` and `line` parts (see §2.4), and a wall made of separate `line` parts is connected only
+*diagonally* at corners, so a 4-connected flood fill leaks out through the corner. The
+`DESIGNER.md` rules tell it to use `rect_outline` for walls; nothing checks that it did.
+
+The fix is the enclosure check described in §8, using the `Interior` primitive that already exists.
+
+### 6.5 Other behaviour
+
+- **Preview pane** — the latest attempt is rendered beside the transcript through
+  `include/BlueprintPreview.hpp`, at the game's native tile size by default, and is drawn even when
+  the design was refused, because a debugging aid should show something rather than nothing.
+- **Toggleable transcript** — reasoning and JSON can be hidden independently (`showThoughts`,
+  `showJson`), with a persisted splitter for the pane width.
+- **Speech** — the saved design's name and `designerNotes` are read aloud on the attempt that lands,
+  never on intermediate refusals. **Off by default** (`settings.designer.tts.enabled`): it is a
+  development window, and a feature that starts making noise on first launch gets turned off before
+  it is judged. `settings.designer.tts.content` selects the payload; the JSON is never spoken except
+  under the `everything` setting, which exists to debug that pipeline. See
+  `designer-speech-design.md`.
+- **Prompt rewriter** — an "Improve" affordance on the input box, briefed for building requests.
+- **Session log** — every prompt, reply, save and refusal is appended to a log file, with the prompt
+  file and session header recorded, so a bad design can be traced to what the model was actually
+  told.
+
+---
+
+## 7. Placement and rendering
+
+- **Ghost** — a design selected in the Blueprints window follows the mouse in the world pass
+  (`GameDraw.cpp`), drawn as the real tile art at partial alpha, tinted green or red per cell.
+- **Legality is deliberately cheap**: in bounds, not occupied by an object, not on a blocking tile.
+  The full structural validator is not written, and a debug tool must be able to place a broken
+  design in order to show it.
+- **`PaintTile`** is shared with the map editor, so there is one implementation of "put this tile
+  here and refresh the cell's visual".
+- **Persistence** — objects are always stamped `MapAuthored`; painted terrain is written to the map
+  file only when the window's checkbox is on.
+- **Levels.** Only level 0 builds. `level` and `levels` are parsed and round-tripped so designs do
+  not have to be re-authored when `Map` becomes multi-layer, and `ComputeBounds` ignores higher
+  levels so the footprint stays honest.
+
+---
+
+## 8. Vocabulary gaps and generated content
+
+Two things can be missing from a design, and they have separate machinery:
+
+**Undefined vocabulary.** `FindMissingVocabulary` is a free function (static-parseable, and shared
+with the report below) returning one `MissingMaterial` record per `(kind, material)`. A missing
+material is a **warning, not a refusal**: it makes the design place fewer cells, and refusing would
+leave the designer with no way to see what it got wrong.
+
+**Missing art.** `GapLog` builds a report of coverage gaps (a tile or object with no resolvable
+sprite) and vocabulary gaps, from the catalog, the object templates and every loaded blueprint.
+`--gaps` prints it and exits without opening a window, which makes it scriptable: the art generator
+drains a worklist rather than a human reading a list.
+
+That worklist feeds `TileArtQueue`, a generated layer for tiles and art that hand-authored packs do
+not cover. `TileRegistry::AddRuntime` is the only path by which a definition invented while the game
+is running enters the catalog, and it validates identity hard: name present and free (or explicitly
+replaced, and only for its own runtime layer), a glyph or a sprite so the tile is visible,
+single-character glyphs, in-range colours, a positive hitbox, no `..` in a sprite path, and
+**unknown keys refused** so a model that invents `blocksMovement` gets told rather than silently
+ignored. A duplicate glyph is a warning only.
+
+**A correction to the earlier draft of this section.** The catalog and the generated layer are *not*
+separate directories today. `AddRuntime` is an in-memory layer over the same catalog, and the
+distinction is "was this added at runtime" (`IsRuntimeAdded`), not "which directory did it come
+from" — the file is still written under `data/tiles/`. `asset-generation-design.md` §4.4 argues the
+overlay *should* be its own directory so a data pack a designer designs against never contains
+agent-created content, and notes that the art tooling currently writes into the catalog; that move
+is designed and not made. Reloading the layer is `RemoveRuntimeTiles` plus a re-add.
+
+`TileDesignerWindow` is the art counterpart to the building designer: the same chat shape, plus a
+tile editor (glyph, colours, hitbox, sprite), the art job's artifacts, a pixel view and a filmstrip.
+It is reachable headlessly through `--tile-design`, with `--tile-art*` flags for the art pipeline.
+See `asset-generation-design.md`.
+
+**A schema boundary worth knowing:** blueprints reference tiles **by name**, and a name resolves
+through the catalog. Agent-created tiles therefore do not live in `data/tiles/` and a design naming
+one is only portable to a run where the overlay is loaded. Nothing resolves a design's materials
+against a map, deliberately — a blueprint is map-independent and the designer has no map.
+
+---
+
+## 9. Not built
+
+Stated plainly, because the grammar was designed to accommodate these and a reader should not infer
+them from the schema:
+
+- **Composite sugar.** `enclosed`, `room`, `connect`, `repeat` and `call` were proposed in the first
+  draft and **none exist**. The parser rejects them as unknown primitives. They were the least
+  certain part of the design; the equivalence rules (`room` = walls plus interior) were more
+  machinery than the model needed.
+- **Every topological check.** No sealing check, no entrance check, no interior-reachability check,
+  no fixture-inside check. `role` is inert.
+- **Construction.** Nothing materialises a design into the world over turns or consumes materials
+  for it. The blueprint is painted directly by the debug window, for free. This is the largest gap
+  between the design and the game.
+- **Site search.** Nothing finds a valid site for a design. Placement is manual and
+  anchor-at-the-mouse.
+- **Ownership.** `owner` is written and read but nothing enforces or scopes it. The standing
+  decision is that all agents can see and use every design, with a debug window as the later control
+  point.
+- **Rotation.** A design places at one orientation.
+- **Multi-level building.** Parsed, preserved, not built.
+
+---
+
+## 10. Limits and known issues
+
+- **`maxDesignAttempts`** bounds retries per request (default 3); the budget resets when you send a
+  new message.
+- **A design that parses but expands to nothing is refused before saving**, so it cannot appear in
+  the list as an empty building.
+- **A `place`d object in a preview is not drawn as art.** The pane has no instance of the template,
+  so the cell is tinted and labelled with the object's name instead.
+- **A tile's file stem does not have to match its `name`, and often will not.** Resolution is by
+  `name` only (`"stone floor"` lives in `stone_floor_tile.json`), so a mismatch is harmless and in
+  some cases deliberate — the filename is free to describe the art the file carries. It is not a
+  rename waiting to happen. (Keying the registry on the stem instead *was* a real bug: it made every
+  multi-word tile — `wooden wall`, `water trough` — unresolvable, which surfaced as blueprints
+  reporting that walls were missing from the catalog.)
+- **`Map`'s `positions` array and `tileInfo` can desynchronise** under a duplicate tile name; see the
+  note in `todo`. Unrelated to blueprints, but it is the reason a saved map must not gain duplicate
+  tile names.
+
+---
+
+## 11. References
+
+- `include/Blueprint.hpp` — the data model, and the comments that state why the grammar is shaped
+  this way
+- `include/BlueprintExpansion.hpp`, `src/BlueprintExpansion.cpp` — rasterisation, `Interior`,
+  bounds
+- `include/BlueprintRegistry.h`, `src/BlueprintRegistry.cpp` — parse, save, delete, reload,
+  serialise, `FindMissingVocabulary`
+- `include/BlueprintPreview.hpp` — the shared preview renderer
+- `include/DesignerChatWindow.h`, `src/DesignerChatWindow.cpp` — the designer agent
+- `data/blueprints/DESIGNER.md` — the designer's instructions, including the reply contract
+- `src/Game.cpp` — `BuildDesignerSystemPrompt` (prompt file plus generated palette),
+  `BuildBlueprintPlacement`, `PaintTile`
+- `src/GameDraw.cpp` — the world-space ghost
+- `include/GapLog.h`, `src/GapLog.cpp` — coverage and vocabulary gap reports
+- `include/TileRegistry.h`, `src/TileRegistry.cpp` — the catalog and its generated overlay
+- `include/TileDesignerWindow.h` — the art counterpart
+- `data/blueprints/*.json` — hand-authored and agent-authored designs, side by side

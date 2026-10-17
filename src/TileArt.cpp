@@ -10,7 +10,10 @@
 #include <fstream>
 #include <sstream>
 
+#include "Settings.h"
 #include "SpritePaths.hpp"
+
+#include <nlohmann/json.hpp>
 
 namespace TileArt {
 
@@ -402,6 +405,66 @@ SwapResult SwapIn(const std::string &tileName, const std::string &sourcePng,
     result.error = result.palette.error;
   }
   return result;
+}
+
+std::string PackStyle::Summary() const {
+  if (!packFileExists) {
+    return "no pack.json to describe the style";
+  }
+  if (description.empty()) {
+    const std::string where = name.empty() ? std::string("the pack") : name;
+    return "no \"description\" in " + sourcePath + " (writing one lets the "
+           "rewriter align with " + where + "'s style)";
+  }
+  return "style: " + std::to_string(description.size()) + " chars from " +
+         sourcePath;
+}
+
+PackStyle ReadPackStyle(const std::string &packDirectory) {
+  PackStyle style;
+  if (packDirectory.empty()) return style;
+
+  const std::filesystem::path pack(packDirectory);
+  // The pack's directory name is the fallback display name: it is what the user
+  // configured, and a style block that omits "name" should not leave the pack
+  // nameless in a prompt.
+  style.name = pack.filename().string();
+
+  const std::filesystem::path file = pack / "pack.json";
+  std::error_code ec;
+  if (!std::filesystem::exists(file, ec)) {
+    return style;
+  }
+  style.packFileExists = true;
+  style.sourcePath = file.string();
+
+  std::ifstream in(file);
+  if (!in.is_open()) return style;
+
+  try {
+    nlohmann::json block;
+    in >> block;
+    if (!block.is_object()) return style;
+    style.description = block.value("description", std::string());
+    if (block.contains("name") && block["name"].is_string()) {
+      const std::string authored = block["name"].get<std::string>();
+      if (!authored.empty()) style.name = authored;
+    }
+  } catch (const std::exception &) {
+    // A pack.json that will not parse leaves the description empty, which is the
+    // same state as having none. Reported through Summary() rather than thrown:
+    // nothing here is worth failing a run over, and the rewriter works without it.
+    style.description.clear();
+  }
+  return style;
+}
+
+PackStyle CurrentPackStyle() {
+  const GameSettings &settings = Settings();
+  if (settings.art.pack.empty()) {
+    return PackStyle{};
+  }
+  return ReadPackStyle(settings.art.pack);
 }
 
 }  // namespace TileArt

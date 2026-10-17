@@ -6,6 +6,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "Components.h"
+#include "SpriteKinds.hpp"
 #include "TileRegistry.h"
 
 // The overlay loader reports through the game's log when there is one. Declared
@@ -57,15 +58,51 @@ std::string ExtractTileJson(const std::string &text, bool *fromBlock = nullptr);
 // be logged and shown with reasoning intact.
 std::string StripReasoning(const std::string &text);
 
-// The conversation the model sees: the prompt file with its glyph legend and
-// material list substituted. Empty `promptFile` (or an unreadable one) yields the
-// generated fallback rather than an empty prompt, so a missing file degrades the
-// designer instead of silencing it.
+// The conversation the model sees: the prompt file with its vocabulary substituted.
+// Empty `promptFile` (or an unreadable one) yields the generated fallback rather than
+// an empty prompt, so a missing file degrades the designer instead of silencing it.
 //
-// `%GLYPHS%` and `%TILES%` are replaced when present and appended as their own
-// sections when not, so a prompt file that forgets a placeholder still gets the
-// vocabulary instead of silently losing it.
+// Kept as a wrapper over BuildPromptForKind for the tile kind, because that is what
+// the tile window and the existing tests call. New callers should prefer
+// BuildPromptForKind, which does not assume a kind.
 std::string BuildSystemPrompt(const std::string &promptFile, const TileRegistry &tiles);
+
+// The vocabulary a prompt is built against, as already-formatted text. Passed in
+// rather than derived here because the two kinds derive it from different places -- a
+// tile from the tile catalog's glyphs and names, an object from the factory's
+// registered components -- and a prompt builder that knew about both would have to
+// know about every future kind too.
+struct PromptVocabulary {
+  // The vocabulary body, one entry per line. Goes into `%VOCAB%` when the file has
+  // one, and is appended under the kind's heading when it does not, so a file that
+  // forgets the placeholder still carries the vocabulary rather than silently losing
+  // it. Empty falls back to the kind's `emptyVocabularyNote`.
+  std::string body;
+
+  // The glyph legend with collisions named, for the tile kind only. Empty for a kind
+  // that has no glyphs; such a file simply has no `%GLYPHS%` placeholder and nothing
+  // is appended for it.
+  std::string glyphs;
+};
+
+// The tile catalog as the prompt's vocabulary list: one line per tile, marked when it
+// blocks movement, because that is the one mechanic a tile carries and the one a
+// designer has to reason about. Exposed because the builder no longer derives the
+// vocabulary itself -- the caller assembles it per kind.
+std::string TileVocabulary(const TileRegistry &tiles);
+
+// The system prompt for an arbitrary kind.
+//
+// `contract` is the shared reply contract -- the format, the refusal protocol, the
+// rule that the fenced block is JSON and nothing else. It is read from one file and
+// shared by every kind rather than copied into each kind's document, because that is
+// the part that must not drift: a tile and an object are both refused the same way.
+//
+// `%CONTRACT%`, `%GLYPHS%` and `%VOCAB%` are replaced when present.
+std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
+                               const std::string &promptFile,
+                               const std::string &contractFile,
+                               const PromptVocabulary &vocabulary);
 
 // The glyph table, one line per glyph, as it goes into the prompt. Exposed for
 // the tile designer window's legend pane so the two cannot disagree about what

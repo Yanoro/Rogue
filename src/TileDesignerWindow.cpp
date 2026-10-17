@@ -3,20 +3,31 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <set>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 #include "Components.h"
 #include "DebugLog.h"
+
+#include <nlohmann/json.hpp>
 #include "Game.h"
 #include "Settings.h"
+#include "RewriteBriefs.hpp"
+#include "TileArt.hpp"
+#include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "TileArtQueue.hpp"
 #include "TimeUtils.hpp"
+#include "RaylibException.hpp"
 #include "imgui.h"
+#include "raylib.h"
 
 namespace {
 
@@ -113,8 +124,10 @@ bool ColorEditorRow(const char *id, const char *label, int *channels, int count)
 }  // namespace
 
 TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
-                                       std::string modelLabel, flecs::entity owner)
-    : game(game), ai(designerAI), modelLabel(std::move(modelLabel)) {
+                                       std::string modelLabel, bool selfTest,
+                                       flecs::entity owner)
+    : game(game), ai(designerAI), modelLabel(std::move(modelLabel)),
+      selfTest(selfTest) {
   (void)owner;  // Windows are not ECS components yet; see Window.h.
   // One context per window instance, named so it cannot collide with an NPC's
   // ("npc-<id>"), the blueprint designer's or the vision window's.
@@ -122,6 +135,91 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
   if (game != nullptr) {
     systemPrompt = game->BuildTileDesignerSystemPrompt();
   }
+
+  // The Improve button. Same backend as the conversation, its own provider context,
+  // and its instructions from data/prompts/REWRITE.md.
+  rewriter.Configure(game != nullptr ? game->rewriterAI.get() : nullptr,
+                     Settings().content.rewritePromptFile,
+                     contextId + "-rewriter",
+                     game != nullptr ? game->debugLog.get() : nullptr);
+  rewriter.SetBrief(RewriteBriefs::Tile());
+  promptBox.Setup(game, &rewriter, inputBuffer, sizeof(inputBuffer));
+  // The rewrite transcript goes into the same file as the conversation, so a rewrite
+  // that produced the wrong half is diagnosable from the log rather than by replaying
+  // it: the game's DebugLog is in memory only.
+  promptBox.SetLogSink([this](const std::string &line) { Log(line); });
+}
+
+size_t TileDesignerWindow::RunSelfTestConversation(bool requestArt) {
+  if (!selfTest) return 0;
+
+  // Switched on here rather than through the settings, because the point is to test
+  // the window's automatic request and not the configuration that normally turns it
+  // on. Whether the request is then *accepted* is up to the queue, which is exactly
+  // what the caller goes on to check.
+  autoRequestArt = requestArt;
+
+  // The same sequence a real request runs, with the reply supplied instead of
+  // streamed: header, user request, reply, inspection. The reply is a real one --
+  // it is the puddle the tile designer actually produced -- because a hand-written
+  // "valid tile" would not exercise the notes stripping, the ASCII renderer or the
+  // catalog's response to a name it has seen before.
+  const std::string kCannedReply = R"(<think>Keep it short.</think>
+A walkable puddle, non-blocking, using a free glyph.
+
+```json
+{
+  "name": "self test puddle",
+  "character": "=",
+  "characterColor": [80, 170, 230, 255],
+  "backgroundColor": [110, 90, 70, 255],
+  "blocksTile": false,
+  "designerNotes": "Written by the self test to exercise the logging path end to end. The glyph and colours are copied from a real generated tile."
+}
+```
+)";
+
+  LogSessionHeader();
+
+  Exchange ex;
+  ex.prompt = "self test: log one exchange";
+  ex.fromUser = true;
+  ex.done = true;
+  ex.answer = kCannedReply;
+  size_t index = 0;
+  {
+    std::lock_guard<std::mutex> lock(transcriptMutex);
+    exchanges.push_back(std::move(ex));
+    index = exchanges.size() - 1;
+  }
+
+  LogEvent("USER REQUEST (attempt 1 of this request)");
+  Log("self test: log one exchange\n");
+
+  // One synthetic request so the "what went on the wire" line is written too, with
+  // a real elapsed time measured across the inspection below.
+  {
+    std::vector<ChatMessage> request;
+    if (!systemPrompt.empty()) request.push_back({"system", systemPrompt});
+    request.push_back({"user", "self test: log one exchange"});
+    size_t total = 0;
+    for (const ChatMessage &m : request) total += m.content.size();
+    LogEvent("SENT (request 1): " + std::to_string(request.size()) +
+             " message(s), " + std::to_string(total) + " chars -- 1 system, 1 user, "
+             "0 assistant; history trimmed to " +
+             std::to_string(kMaxHistoryMessages) + " message(s) max");
+  }
+  requestStarted = std::chrono::steady_clock::now();
+  InspectFinishedExchange(index);
+
+  size_t inspected = 0;
+  {
+    std::lock_guard<std::mutex> lock(transcriptMutex);
+    for (const Exchange &exchange : exchanges) {
+      if (exchange.inspected) ++inspected;
+    }
+  }
+  return inspected;
 }
 
 std::string TileDesignerWindow::Exchange::ParsedAnswer() const {
@@ -169,6 +267,73 @@ void TileDesignerWindow::Log(const std::string &text) {
 
 void TileDesignerWindow::LogEvent(const std::string &text) {
   Log("\n=== [" + TimeUtils::GetCurrentTimeString() + "] " + text + "\n");
+}
+
+void TileDesignerWindow::LogPromptFile(const std::string &path) {
+  if (path.empty()) {
+    Log("prompt file: (none configured -- the vocabulary below is all the model "
+        "was given)\n");
+    return;
+  }
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    // Worth recording precisely: a silent fallback to "no instructions" is the
+    // difference between a model that ignored its brief and one that never had it.
+    Log("prompt file: " + path + "  -- COULD NOT BE READ\n");
+    return;
+  }
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  const std::string text = buffer.str();
+  int lines = 0;
+  for (const char c : text) {
+    if (c == '\n') ++lines;
+  }
+  Log("prompt file: " + path + "  (" + std::to_string(text.size()) +
+      " bytes, " + std::to_string(lines) + " lines)\n");
+  Log("--- file contents (the instructions; the vocabulary is appended below) "
+      "---\n");
+  Log(text);
+  if (!text.empty() && text.back() != '\n') Log("\n");
+  Log("--- end of file ---\n");
+}
+
+void TileDesignerWindow::LogSessionHeader() {
+  if (headerLogged) return;
+  headerLogged = true;
+
+  Log("\n================ TILE DESIGNER SESSION ================\n");
+  Log("started:   " + TimeUtils::GetCurrentTimeString() + "\n");
+  Log("backend:   " + (modelLabel.empty() ? std::string("(none)") : modelLabel) +
+      "\n");
+  Log("context:   " + contextId + "\n");
+
+  const GameSettings &settings = Settings();
+  Log("overlay:   " + (settings.content.generatedTiles.empty()
+                           ? std::string("(none)")
+                           : settings.content.generatedTiles) + "\n");
+  Log("art:       pack=" +
+      (settings.art.pack.empty() ? std::string("(none)") : settings.art.pack) +
+      "  generation=" + (settings.art.generation.enabled ? "on" : "off") + "\n");
+  Log("attempts:  " + std::to_string(game != nullptr ? game->maxDesignAttempts() : 0) +
+      " per request\n");
+
+  LogPromptFile(settings.content.tileDesignerPromptFile);
+
+  // The system prompt as it will be sent: the file above with %GLYPHS% and %TILES%
+  // substituted from the live catalog at the moment the window was constructed. This
+  // is the single most valuable line in the log, because it is the only record of
+  // what the model was actually told.
+  Log("--- system prompt as sent (" + std::to_string(systemPrompt.size()) +
+      " bytes) ---\n");
+  if (systemPrompt.empty()) {
+    Log("(EMPTY -- the model is running with no instructions at all)\n");
+  } else {
+    Log(systemPrompt);
+    if (systemPrompt.back() != '\n') Log("\n");
+  }
+  Log("--- end of system prompt ---\n");
+  Log("=======================================================\n");
 }
 
 std::string TileDesignerWindow::OverlayDirectory() const {
@@ -268,8 +433,17 @@ void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
     index = exchanges.size() - 1;
   }
 
+  // The session header goes out with the first message, before anything else: the
+  // log is created here rather than in the constructor, so a window that is never
+  // used leaves no file -- and the header cannot go anywhere else without either
+  // creating that file unconditionally or being written after the first reply, when
+  // it is no longer the state the reply was produced under.
+  LogSessionHeader();
+
   // Logged before the request goes out, so a send that never gets a reply still
-  // leaves a record of what was asked.
+  // leaves a record of what was asked. That is not hypothetical: a request whose
+  // reply never arrives leaves a file that ends here, and the absence is the
+  // evidence.
   LogEvent("USER REQUEST (attempt " + std::to_string(attempts + 1) +
            " of this request)");
   Log(prompt);
@@ -297,6 +471,40 @@ void TileDesignerWindow::GenerateResponse(size_t index, std::string prompt) {
     request.push_back(history[i]);
   }
   request.push_back({"user", prompt});
+
+  // What actually goes on the wire, recorded before the thread is started so the
+  // log and the request cannot disagree: the exact message list, including how much
+  // of the history survived the cap. The system prompt is written out once by
+  // LogSessionHeader, so here it is recorded by size -- repeating a 3KB prompt on
+  // every request would bury the conversation it is meant to illuminate.
+  {
+    size_t totalChars = 0;
+    for (const ChatMessage &message : request) {
+      totalChars += message.content.size();
+    }
+    // The count of each role, because "the model saw four turns" and "the model
+    // saw one" explain very different replies.
+    size_t systemCount = 0;
+    size_t userCount = 0;
+    size_t assistantCount = 0;
+    for (const ChatMessage &message : request) {
+      if (message.role == "system") ++systemCount;
+      else if (message.role == "user") ++userCount;
+      else if (message.role == "assistant") ++assistantCount;
+    }
+    LogEvent("SENT (request " + std::to_string(requestNumber + 1) + "): " +
+             std::to_string(request.size()) + " message(s), " +
+             std::to_string(totalChars) + " chars -- " +
+             std::to_string(systemCount) + " system, " +
+             std::to_string(userCount) + " user, " +
+             std::to_string(assistantCount) + " assistant; history trimmed to " +
+             std::to_string(kMaxHistoryMessages) + " message(s) max");
+  }
+
+  // The clock the reply is measured against starts here, where the request is
+  // handed over, not where it was typed: the logged duration should mean "what the
+  // backend took".
+  requestStarted = std::chrono::steady_clock::now();
 
   // Neither a "stream finished" branch nor a synchronous completion check
   // belongs here: OllamaAI's generateStream dispatches its own thread and returns
@@ -366,8 +574,16 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
 
   ++requestNumber;
 
+  // How long the reply took, from the moment the request was handed to the
+  // backend. A monotonic clock because this is a duration and a clock step would
+  // make it nonsense. Without it a slow model and a stalled backend read
+  // identically in a transcript.
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - requestStarted);
+
   LogEvent("MODEL REPLY (request " + std::to_string(requestNumber) + ", " +
-           std::to_string(finished.answer.size()) + " bytes" +
+           std::to_string(finished.answer.size()) + " bytes, " +
+           std::to_string(elapsed.count()) + " ms" +
            (finished.fromUser ? ", answers a user request" : ", engine retry") +
            ")");
   Log(finished.answer);
@@ -384,6 +600,11 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   TileRegistry *registry =
       game != nullptr ? &game->tileRegistry : nullptr;
   std::string reason;
+  // Filled in the accepted branch below and written to the exchange afterwards.
+  // Declared out here because the exchange's fields are published under the mutex
+  // before that branch runs -- writing `ex.artNote` in the branch would be writing
+  // to a local copy, which is exactly the bug this shape avoids.
+  std::string artNote;
   TileDesigner::ApplyResult applied;
   if (registry == nullptr) {
     reason = "there is no tile catalog to add to.";
@@ -432,6 +653,61 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     }
     if (applied.definition != nullptr) {
       LoadEditorFrom(*applied.definition);
+    }
+
+    // The prompt-driven half: with this on, naming a tile is the whole instruction
+    // and the art follows the definition without a second click. It is asked for
+    // here, on the main thread, immediately after the tile exists -- which is the
+    // only moment a definition is guaranteed to be in the catalog for the art to
+    // attach to.
+    //
+    // The queue batches it, so "design four tiles in a row" is still one request.
+    //
+    // Every branch below says something, including the one where nothing is asked
+    // for. A disabled feature whose only symptom is the absence of a sprite is
+    // indistinguishable from a broken one, and the earlier version of this block was
+    // silent whenever the toggle was off -- so a user who never found the checkbox
+    // saw exactly that.
+    if (game != nullptr && applied.definition != nullptr) {
+      const std::string &tile = applied.definition->name;
+      const TileArtQueue &queue = game->TileArtQueueState();
+      const std::string unavailable = queue.UnavailableReason();
+
+      if (!autoRequestArt) {
+        artNote = unavailable.empty()
+                      ? "no art was requested (turn on \"Art automatically\" to ask "
+                        "for it as tiles are accepted)"
+                      : "no art was requested -- " + unavailable;
+      } else if (!unavailable.empty()) {
+        // Refused before spending anything, and the reason is actionable.
+        artNote = "no art was requested -- " + unavailable;
+        LogEvent("ART NOT REQUESTED: " + unavailable);
+      } else {
+        std::string requestReason;
+        if (game->RequestTileArt(tile, &requestReason)) {
+          // The delay is named because the default batch window is two seconds:
+          // "a later frame" would read as "any moment now" and look like a hang.
+          char window[48];
+          std::snprintf(window, sizeof(window), "%.0f",
+                        static_cast<double>(
+                            queue.GetConfig().batchDelaySeconds));
+          artNote = std::string("art requested -- it is batched for up to ") +
+                    window + "s, then generated on a worker thread. This tile "
+                    "draws as its glyph until the sprite arrives.";
+          LogEvent("ART REQUESTED (automatic): " + tile);
+        } else {
+          artNote = "no art was requested -- " + requestReason;
+          LogEvent("ART NOT REQUESTED: " + requestReason);
+        }
+      }
+    }
+    // Published on the exchange now that it has been worked out, in the same place
+    // the other post-inspection fields are written.
+    {
+      std::lock_guard<std::mutex> lock(transcriptMutex);
+      if (index < exchanges.size()) {
+        exchanges[index].artNote = artNote;
+      }
     }
     attempts = 0;
     return;
@@ -743,6 +1019,557 @@ void TileDesignerWindow::DrawArtSection() {
                           "batched, because one request costs the same whether it "
                           "carries one tile or several.");
   }
+
+  // The three views of the pipeline, in the order the pipeline runs. Each is
+  // hidden when it has nothing to show rather than drawn empty, so a tile that has
+  // never been generated looks the same as before this existed.
+  const std::optional<TileArtQueue::Job> job = JobForEditedTile();
+  if (!job.has_value()) return;
+
+  if (ImGui::CollapsingHeader("Pipeline artifacts", ImGuiTreeNodeFlags_DefaultOpen)) {
+    DrawArtifactsPanel(*job);
+  }
+  if (ImGui::CollapsingHeader("Pixels and palette", ImGuiTreeNodeFlags_DefaultOpen)) {
+    DrawPixelViewPanel(*job);
+  }
+  if (ImGui::CollapsingHeader("Pipeline stages", ImGuiTreeNodeFlags_DefaultOpen)) {
+    DrawFilmstripPanel(*job);
+  }
+}
+
+std::optional<TileArtQueue::Job> TileDesignerWindow::JobForEditedTile() const {
+  if (game == nullptr || edited == nullptr) return std::nullopt;
+  for (const TileArtQueue::Job &candidate : game->TileArtQueueState().Snapshot()) {
+    if (candidate.tileName == edited->name) {
+      return candidate;
+    }
+  }
+  return std::nullopt;
+}
+
+int TileDesignerWindow::CellIndexInWorklist(const TileArtQueue::Job &job) const {
+  if (job.worklistPath.empty() || edited == nullptr) return -1;
+
+  // Keyed on the file's modification time as well as its path: a second generation
+  // reuses the same filename, so the path alone would keep serving the first batch's
+  // answer.
+  std::error_code ec;
+  const auto stamp = std::filesystem::last_write_time(job.worklistPath, ec);
+  const std::string key = job.worklistPath + ":" + std::to_string(ec ? 0 : stamp.time_since_epoch().count());
+  if (key == worklistCellCacheKey) return worklistCellIndex;
+
+  worklistCellCacheKey = key;
+  worklistCellIndex = -1;
+
+  std::ifstream in(job.worklistPath);
+  if (!in.is_open()) return worklistCellIndex;
+  try {
+    nlohmann::json worklist;
+    in >> worklist;
+    const auto &tiles = worklist.value("tiles", nlohmann::json::array());
+    for (size_t index = 0; index < tiles.size(); ++index) {
+      if (tiles[index].is_string() && tiles[index].get<std::string>() == edited->name) {
+        worklistCellIndex = static_cast<int>(index);
+        break;
+      }
+    }
+  } catch (const std::exception &) {
+    // A malformed worklist leaves the index at -1, so the panel shows the sheet and
+    // the sprite and simply omits the per-cell stages rather than guessing.
+  }
+  return worklistCellIndex;
+}
+
+std::vector<TileDesignerWindow::Artifact> TileDesignerWindow::ArtifactsFor(
+    const TileArtQueue::Job &job) const {
+  std::vector<Artifact> artifacts;
+  if (job.worklistPath.empty()) return artifacts;
+
+  const std::filesystem::path worklist(job.worklistPath);
+  const std::filesystem::path workDir = worklist.parent_path();
+
+  auto add = [&artifacts](const std::string &label, const std::filesystem::path &path,
+                          bool isImage) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) return;
+    Artifact artifact;
+    artifact.label = label;
+    artifact.path = path.string();
+    artifact.isImage = isImage;
+    artifacts.push_back(std::move(artifact));
+  };
+
+  // The prompt and the sheet: what was asked, and what came back. Both live beside
+  // the worklist by the tool's convention (tools/gen_tile_art.py), which is why the
+  // job records the worklist path rather than these directly.
+  add("prompt sent", workDir / "tile_art_sheet.prompt.txt", false);
+  add("raw sheet", workDir / "tile_art_sheet.png", true);
+
+  // The per-stage cell images for *this* tile's cell.
+  //
+  // Only its own cell, which needs the tile's position in the batch: the tool numbers
+  // the cell images `cell_<index>_<stage>.png` by position within one sheet, and a
+  // later batch overwrites those files. Showing every cell that happens to be in the
+  // directory is how this panel came to present another tile's stages as this one's --
+  // and reading them straight off disk meant a regenerated tile appeared to have
+  // unchanged stages, because the panel was showing whatever was there.
+  const int cell = CellIndexInWorklist(job);
+  if (cell >= 0) {
+    for (const char *suffix : {"crop", "trim", "locked"}) {
+      add(std::string("cell ") + std::to_string(cell) + " " + suffix,
+          workDir / ("cell_" + std::to_string(cell) + "_" + suffix + ".png"), true);
+    }
+  }
+
+  add("placed sprite", job.path, true);
+  return artifacts;
+}
+
+void TileDesignerWindow::DrawArtifactsPanel(const TileArtQueue::Job &job) {
+  const std::vector<Artifact> artifacts = ArtifactsFor(job);
+  if (artifacts.empty()) {
+    ImGui::TextDisabled(
+        "Nothing on disk yet. The sheet, the prompt actually sent and one image "
+        "per pipeline stage appear here once a request has been made.");
+    if (job.state == TileArtQueue::State::Done) {
+      ImGui::TextDisabled(
+          "(this tile was generated before, but its work files are gone -- they "
+          "live in art.generation.workDirectory and can be deleted)");
+    }
+    return;
+  }
+
+  for (const Artifact &artifact : artifacts) {
+    if (ImGui::Button(("copy##" + artifact.path).c_str())) {
+      ImGui::SetClipboardText(artifact.path.c_str());
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip("Copy this path to the clipboard.");
+    }
+    ImGui::SameLine();
+    ImGui::Text("%s", artifact.label.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", artifact.path.c_str());
+  }
+
+  // The prompt, which is the thing a disappointing sheet has to be judged against.
+  // Read-only text, not editable: editing it here would change nothing, because the
+  // next request rebuilds it from the tile definition and the prompt file.
+  for (const Artifact &artifact : artifacts) {
+    if (artifact.label != "prompt sent") continue;
+    if (!ImGui::TreeNode("What was actually asked")) continue;
+    std::ifstream in(artifact.path);
+    if (in.is_open()) {
+      std::stringstream buffer;
+      buffer << in.rdbuf();
+      // Wrapped and selectable so it can be copied out into a bug report.
+      ImGui::TextWrapped("%s", buffer.str().c_str());
+    } else {
+      ImGui::TextDisabled("could not re-read %s", artifact.path.c_str());
+    }
+    ImGui::TreePop();
+  }
+}
+
+void TileDesignerWindow::EnsurePaletteLoaded() {
+  if (paletteLoaded) return;
+  paletteLoaded = true;  // once, even on failure: a missing file is not retried per frame
+
+  std::ifstream in("data/palette.json");
+  if (!in.is_open()) return;
+  try {
+    nlohmann::json payload;
+    in >> payload;
+    for (const nlohmann::json &entry : payload.value("colors", nlohmann::json::array())) {
+      if (!entry.is_array() || entry.size() < 3) continue;
+      paletteColours.push_back({static_cast<unsigned char>(entry[0].get<int>()),
+                                static_cast<unsigned char>(entry[1].get<int>()),
+                                static_cast<unsigned char>(entry[2].get<int>())});
+    }
+  } catch (const std::exception &) {
+    paletteColours.clear();
+  }
+}
+
+int TileDesignerWindow::NearestPaletteIndex(unsigned char r, unsigned char g,
+                                            unsigned char b) const {
+  int best = -1;
+  long bestDistance = 0;
+  for (size_t i = 0; i < paletteColours.size(); ++i) {
+    const long dr = static_cast<long>(r) - paletteColours[i][0];
+    const long dg = static_cast<long>(g) - paletteColours[i][1];
+    const long db = static_cast<long>(b) - paletteColours[i][2];
+    const long distance = dr * dr + dg * dg + db * db;
+    if (best < 0 || distance < bestDistance) {
+      best = static_cast<int>(i);
+      bestDistance = distance;
+      if (distance == 0) break;
+    }
+  }
+  return best;
+}
+
+void TileDesignerWindow::EnsurePixelView(const std::string &spritePath) {
+  if (spritePath.empty()) return;
+
+  // Identity is the path *and* the file's modification time, for the same reason
+  // the thumbnails use both: a regeneration overwrites the sprite at the same path,
+  // so a path-only check would keep showing the previous generation's pixels and its
+  // palette verdict forever.
+  std::error_code stampError;
+  const auto stamp = std::filesystem::last_write_time(spritePath, stampError);
+  const bool hasStamp = !stampError;
+  if (pixelViewPath == spritePath && pixelView.texture) {
+    // A vanished file (no stamp) invalidates too: `hasStamp` false against a stored
+    // stamp is a change in every case that matters.
+    const bool current = hasStamp && !(pixelViewStamp < stamp) &&
+                         !(stamp < pixelViewStamp);
+    if (current) return;
+  }
+
+  PixelView fresh;
+  std::error_code ec;
+  if (!std::filesystem::exists(spritePath, ec)) {
+    return;
+  }
+
+  // raylib::Image's constructor *throws* on a path it cannot load rather than
+  // returning a null image, so a missing or unreadable sprite would otherwise take
+  // the window down instead of being reported. Empty paths reach here while a job
+  // is queued (it has no sprite yet), which is the common case, not an edge one.
+  raylib::Image image;
+  try {
+    image = raylib::Image(spritePath);
+  } catch (const raylib::RaylibException &e) {
+    if (game != nullptr && game->debugLog) {
+      game->debugLog->LogWarning("Tile art: could not read " + spritePath +
+                                 " for the pixel view: " + e.what());
+    }
+    return;
+  }
+  if (image.data == nullptr) {
+    return;
+  }
+  // One format for the read-back below, so the pixel loop does not need a branch
+  // per source type.
+  ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+
+  EnsurePaletteLoaded();
+  fresh.width = image.width;
+  fresh.height = image.height;
+  const size_t count = static_cast<size_t>(image.width) * image.height;
+  fresh.pixels.resize(count * 4);
+  std::memcpy(fresh.pixels.data(), image.data, count * 4);
+
+  // The measurement the placement check makes in Python, done here so it can be
+  // *shown*: which colours this sprite is made of and whether any of them is
+  // outside the palette.
+  std::set<std::tuple<unsigned char, unsigned char, unsigned char>> distinct;
+  for (size_t i = 0; i < count; ++i) {
+    const unsigned char *pixel = &fresh.pixels[i * 4];
+    if (pixel[3] < 128) continue;  // the same alpha threshold palette.py uses
+    const auto colour = std::make_tuple(pixel[0], pixel[1], pixel[2]);
+    if (!distinct.insert(colour).second) continue;
+    if (!paletteColours.empty() &&
+        NearestPaletteIndex(pixel[0], pixel[1], pixel[2]) >= 0) {
+      // Exactly equal counts as inside; nearest-but-different does not. Compared
+      // directly rather than via the nearest index, which would call any colour
+      // "inside" whenever a palette exists.
+      const auto &match = paletteColours[NearestPaletteIndex(pixel[0], pixel[1], pixel[2])];
+      if (match[0] != pixel[0] || match[1] != pixel[1] || match[2] != pixel[2]) {
+        ++fresh.outsidePalette;
+      }
+    }
+  }
+  fresh.distinctColours = distinct.size();
+
+  // A fingerprint of the pixels themselves, so a cache hit and a reload can be told
+  // apart by a caller that cannot read the buffer. FNV-1a: cheap, no allocation, and
+  // a collision here would only cost a test one false negative.
+  size_t hash = 1469598103934665603ull;
+  for (const unsigned char byte : fresh.pixels) {
+    hash ^= byte;
+    hash *= 1099511628211ull;
+  }
+  fresh.imageHash = hash;
+
+  fresh.texture = std::make_unique<raylib::Texture>(LoadTextureFromImage(image));
+  if (fresh.texture->id != 0) {
+    SetTextureFilter(*fresh.texture, TEXTURE_FILTER_POINT);
+  }
+
+  // Committed together, and only on a load that produced something. Replacing the
+  // cache means the previous texture is unloaded here, which is safe because this
+  // runs on the main thread before any of this frame's drawing.
+  pixelView = std::move(fresh);
+  pixelViewPath = spritePath;
+  pixelViewStamp = hasStamp ? stamp : std::filesystem::file_time_type{};
+}
+
+void TileDesignerWindow::DrawPixelViewPanel(const TileArtQueue::Job &job) {
+  if (job.path.empty()) {
+    ImGui::TextDisabled("No sprite to inspect yet.");
+    return;
+  }
+  EnsurePixelView(job.path);
+  if (pixelView.pixels.empty()) {
+    ImGui::TextDisabled("Could not read %s", job.path.c_str());
+    return;
+  }
+
+  static bool showNearest = false;
+  ImGui::Checkbox("Show nearest palette colour", &showNearest);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Redraw every pixel as the palette entry it would snap to.\n"
+        "If the lock worked, this is identical to the sprite; differences are "
+        "colours the palette does not contain.");
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("%dx%d, %zu opaque colour(s)", pixelView.width,
+                      pixelView.height, pixelView.distinctColours);
+  if (!paletteColours.empty()) {
+    if (pixelView.outsidePalette == 0) {
+      ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f),
+                         "all colours are in the palette (%zu of %zu entries used)",
+                         pixelView.distinctColours, paletteColours.size());
+    } else {
+      ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f),
+                         "%zu colour(s) are OUTSIDE the palette", pixelView.outsidePalette);
+    }
+  } else {
+    ImGui::TextDisabled("no derived palette (data/palette.json) to compare against");
+  }
+
+  static float zoom = 8.0f;
+  ImGui::SliderFloat("zoom", &zoom, 2.0f, 16.0f, "%.0fx");
+
+  // One rectangle per pixel. 1024 of them at 32x32, which is nothing, and it means
+  // the sprite is exact at any zoom -- where a font-glyph rendering of the same tile
+  // would blur its 28 colours into mush.
+  ImDrawList *drawList = ImGui::GetWindowDrawList();
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  const float cell = zoom;
+  for (int y = 0; y < pixelView.height; ++y) {
+    for (int x = 0; x < pixelView.width; ++x) {
+      const unsigned char *pixel =
+          &pixelView.pixels[(static_cast<size_t>(y) * pixelView.width + x) * 4];
+      unsigned char r = pixel[0], g = pixel[1], b = pixel[2];
+      const unsigned char a = pixel[3];
+      if (a == 0) {
+        // Transparent: a checkerboard, so "nothing here" is visibly different from
+        // a dark pixel.
+        const bool dark = ((x + y) % 2) == 0;
+        drawList->AddRectFilled(
+            ImVec2(origin.x + x * cell, origin.y + y * cell),
+            ImVec2(origin.x + (x + 1) * cell, origin.y + (y + 1) * cell),
+            dark ? IM_COL32(70, 70, 70, 255) : IM_COL32(90, 90, 90, 255));
+        continue;
+      }
+      if (showNearest && !paletteColours.empty()) {
+        const int nearest = NearestPaletteIndex(r, g, b);
+        if (nearest >= 0) {
+          r = paletteColours[nearest][0];
+          g = paletteColours[nearest][1];
+          b = paletteColours[nearest][2];
+        }
+      }
+      drawList->AddRectFilled(
+          ImVec2(origin.x + x * cell, origin.y + y * cell),
+          ImVec2(origin.x + (x + 1) * cell, origin.y + (y + 1) * cell),
+          IM_COL32(r, g, b, 255));
+    }
+  }
+  ImGui::Dummy(ImVec2(pixelView.width * cell, pixelView.height * cell));
+
+  // The palette itself, with the entries this sprite uses marked. That is the whole
+  // point of the panel: "28 of 128" as a number is not the same as seeing which 28.
+  if (paletteColours.empty()) return;
+  ImGui::Separator();
+  ImGui::TextDisabled("palette (%zu entries; boxed ones are used by this sprite)",
+                      paletteColours.size());
+
+  std::vector<bool> used(paletteColours.size(), false);
+  for (size_t i = 0; i < pixelView.pixels.size(); i += 4) {
+    if (pixelView.pixels[i + 3] < 128) continue;
+    const int nearest = NearestPaletteIndex(pixelView.pixels[i], pixelView.pixels[i + 1],
+                                            pixelView.pixels[i + 2]);
+    if (nearest < 0) continue;
+    const auto &match = paletteColours[nearest];
+    if (match[0] == pixelView.pixels[i] && match[1] == pixelView.pixels[i + 1] &&
+        match[2] == pixelView.pixels[i + 2]) {
+      used[nearest] = true;
+    }
+  }
+
+  const float swatch = 12.0f;
+  const int perRow = 32;
+  ImDrawList *paletteList = ImGui::GetWindowDrawList();
+  const ImVec2 paletteOrigin = ImGui::GetCursorScreenPos();
+  for (size_t i = 0; i < paletteColours.size(); ++i) {
+    const int column = static_cast<int>(i) % perRow;
+    const int row = static_cast<int>(i) / perRow;
+    const ImVec2 topLeft(paletteOrigin.x + column * (swatch + 2.0f),
+                         paletteOrigin.y + row * (swatch + 2.0f));
+    paletteList->AddRectFilled(
+        topLeft, ImVec2(topLeft.x + swatch, topLeft.y + swatch),
+        IM_COL32(paletteColours[i][0], paletteColours[i][1], paletteColours[i][2], 255));
+    paletteList->AddRect(topLeft, ImVec2(topLeft.x + swatch, topLeft.y + swatch),
+                         used[i] ? IM_COL32(255, 255, 255, 255)
+                                 : IM_COL32(40, 40, 40, 255));
+  }
+  const int rows = (static_cast<int>(paletteColours.size()) + perRow - 1) / perRow;
+  ImGui::Dummy(ImVec2(perRow * (swatch + 2.0f), rows * (swatch + 2.0f)));
+}
+
+raylib::Texture *TileDesignerWindow::LoadThumbnail(const std::string &path,
+                                                   int maxSide) {
+  // The file's identity is its path *and* its modification time. A regeneration
+  // overwrites the stage files in place, so the path alone is not enough to tell a
+  // new image from the one already in the cache -- and the panels would keep showing
+  // the previous batch. The stamp is also what lets a replaced image be released:
+  // the entry is dropped from both maps so the erase unloads the old texture.
+  std::error_code stampError;
+  const auto stamp = std::filesystem::last_write_time(path, stampError);
+  const bool hasStamp = !stampError;
+
+  const auto cached = thumbnails.find(path);
+  if (cached != thumbnails.end()) {
+    const auto known = thumbnailStamps.find(path);
+    const bool current = (known == thumbnailStamps.end())
+                             ? !hasStamp
+                             : (hasStamp && known->second == stamp);
+    if (current) {
+      return cached->second.get();
+    }
+    // The file changed under the cache. Unload and fall through to reload it.
+    thumbnails.erase(cached);
+    thumbnailStamps.erase(path);
+  }
+
+  std::unique_ptr<raylib::Texture> texture;
+  std::error_code ec;
+  if (!path.empty() && std::filesystem::exists(path, ec)) {
+    raylib::Image image;
+    try {
+      image = raylib::Image(path);
+    } catch (const raylib::RaylibException &) {
+      // A stage that will not load draws as "unreadable" in its slot. Cached as a
+      // null below, so the failure is reported once rather than re-attempted every
+      // frame -- a per-frame stat and a thrown exception is the worst version of
+      // this.
+      thumbnails[path] = nullptr;
+      if (hasStamp) thumbnailStamps[path] = stamp;
+      return nullptr;
+    }
+    if (image.data != nullptr) {
+      const int longest = std::max(image.width, image.height);
+      if (longest > maxSide && maxSide > 0) {
+        const bool bigReduction = longest >= maxSide * 4;
+        if (bigReduction) {
+          ImageResizeNN(&image, image.width * maxSide / longest,
+                        image.height * maxSide / longest);
+        } else {
+          ImageResize(&image, image.width * maxSide / longest,
+                      image.height * maxSide / longest);
+        }
+      }
+      texture = std::make_unique<raylib::Texture>(LoadTextureFromImage(image));
+      if (texture->id != 0) {
+        SetTextureFilter(*texture, TEXTURE_FILTER_POINT);
+      }
+    }
+  }
+  // Stored even when null: a missing stage is the normal state for a tile whose
+  // files have been cleaned, and re-attempting the load every frame would stat the
+  // filesystem 60 times a second to learn the same thing. The stamp goes with it so
+  // a file that later appears -- or is regenerated -- is noticed.
+  raylib::Texture *raw = texture.get();
+  thumbnails[path] = std::move(texture);
+  if (hasStamp) {
+    thumbnailStamps[path] = stamp;
+  } else {
+    thumbnailStamps.erase(path);
+  }
+  return raw;
+}
+
+void TileDesignerWindow::DrawFilmstripPanel(const TileArtQueue::Job &job) {
+  const std::vector<Artifact> artifacts = ArtifactsFor(job);
+  std::vector<Artifact> images;
+  for (const Artifact &artifact : artifacts) {
+    if (artifact.isImage) images.push_back(artifact);
+  }
+  if (images.empty()) {
+    ImGui::TextDisabled(
+        "No pipeline images to show. They are written beside the worklist "
+        "(art.generation.workDirectory) and this section reads them back once a "
+        "request has produced them.");
+    return;
+  }
+
+  // One row of stages, left to right, which is the order the pipeline runs them.
+  // Each slot states the stage's source size so the shrinking is visible -- the
+  // numbers are the only place the sheet's resolution appears at all.
+  const float slot = 132.0f;
+  const int perRow = std::max(1, static_cast<int>(
+                                    ImGui::GetContentRegionAvail().x / (slot + 12.0f)));
+  int drawn = 0;
+  for (const Artifact &artifact : images) {
+    raylib::Texture *texture = LoadThumbnail(artifact.path, 320);
+    ImGui::BeginGroup();
+    ImGui::TextDisabled("%s", artifact.label.c_str());
+
+    const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+    if (texture != nullptr && texture->id != 0) {
+      DrawSpriteImGui(*texture, topLeft, ImVec2(slot, slot));
+    } else {
+      ImDrawList *drawList = ImGui::GetWindowDrawList();
+      drawList->AddRectFilled(topLeft, ImVec2(topLeft.x + slot, topLeft.y + slot),
+                              IM_COL32(40, 40, 44, 255));
+      drawList->AddText(ImVec2(topLeft.x + 6.0f, topLeft.y + slot * 0.5f),
+                        IM_COL32(200, 140, 140, 255), "unreadable");
+    }
+    ImGui::Dummy(ImVec2(slot, slot));
+    if (texture != nullptr) {
+      ImGui::TextDisabled("%dx%d", texture->width, texture->height);
+    }
+    ImGui::EndGroup();
+
+    ++drawn;
+    if (drawn % perRow != 0) {
+      ImGui::SameLine();
+    }
+  }
+  ImGui::NewLine();
+
+  if (!job.worklistPath.empty()) {
+    ImGui::TextDisabled("all of these are also on disk; \"copy\" in Pipeline "
+                        "artifacts gives the paths");
+  }
+}
+
+TileDesignerWindow::ThumbnailLookup TileDesignerWindow::InspectThumbnailForTest(
+    const std::string &path) {
+  ThumbnailLookup lookup;
+  raylib::Texture *texture = LoadThumbnail(path, 320);
+  lookup.textureId = texture != nullptr ? texture->id : 0u;
+  std::error_code ec;
+  lookup.stamp = std::filesystem::last_write_time(path, ec);
+  lookup.hasStamp = !ec;
+  return lookup;
+}
+
+TileDesignerWindow::PixelViewLookup TileDesignerWindow::InspectPixelViewForTest(
+    const std::string &spritePath) {
+  PixelViewLookup lookup;
+  EnsurePixelView(spritePath);
+  // Only answered when the view actually holds the path that was asked for, so a
+  // stale view is reported as stale rather than as the new file's pixels.
+  if (pixelViewPath != spritePath || !pixelView.texture) return lookup;
+  lookup.hash = pixelView.imageHash;
+  lookup.distinctColours = pixelView.distinctColours;
+  return lookup;
 }
 
 void TileDesignerWindow::Draw() {
@@ -775,9 +1602,52 @@ void TileDesignerWindow::Draw() {
         "It is parsed and applied either way -- this only changes what you read.");
   }
   ImGui::SameLine();
+  // Disabled while generation is off, because an auto-request that can only ever be
+  // refused is worse than a checkbox that says why it cannot be used.
+  ImGui::BeginDisabled(game == nullptr || !game->TileArtQueueState().Enabled());
+  ImGui::Checkbox("Art automatically", &autoRequestArt);
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        game != nullptr && game->TileArtQueueState().Enabled()
+            ? "Ask for generated art as soon as a tile is accepted, so naming the "
+              "tile is the whole instruction.\nRequests are batched, so a run of "
+              "creations still costs one request.\nPersisted in debug_windows_state."
+            : "Art generation is off (art.generation.enabled in settings.json), so "
+              "there is nothing to request automatically.\nThe setting spends "
+              "money, so it is off by default.");
+  }
+  ImGui::SameLine();
   ImGui::TextDisabled("| overlay: %s", OverlayDirectory().empty()
                                            ? "(none: tiles are session-only)"
                                            : OverlayDirectory().c_str());
+  // The art state, in the header rather than only in the art pane. A feature that is
+  // off and says nothing is indistinguishable from one that is broken, and the pane
+  // it was reported in is below the fold -- which is exactly how a tile comes back
+  // with no sprite and no explanation.
+  ImGui::SameLine();
+  if (game == nullptr) {
+    ImGui::TextDisabled("| art: unknown");
+  } else {
+    const TileArtQueue &queue = game->TileArtQueueState();
+    const std::string unavailable = queue.UnavailableReason();
+    if (unavailable.empty()) {
+      ImGui::TextDisabled("| art: on (%d/%d requests)", queue.RequestsUsed(),
+                          queue.GetConfig().maxRequestsPerSession);
+    } else {
+      ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f), "| art: off");
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "%s",
+          unavailable.empty()
+              ? "Tile art generation is available. Accepted tiles get a sprite when "
+                "\"Art automatically\" is on, or press Generate art."
+              : ("Not generating art: " + unavailable +
+                 "\nSee SETTINGS.md, section art.generation.")
+                    .c_str());
+    }
+  }
   ImGui::Separator();
 
   if (ai == nullptr) {
@@ -791,6 +1661,16 @@ void TileDesignerWindow::Draw() {
 
   if (!layoutLoaded && game != nullptr && game->debugWindowState) {
     showJson = game->debugWindowState->GetDesignerShowJson();
+    autoRequestArt = game->debugWindowState->GetTileDesignerAutoArt();
+    // A first launch has no stored preference, so it follows the setting that
+    // already exists: turning art generation on is one deliberate act, and asking
+    // for it to then need a second click per tile is friction with no safety value
+    // -- `art.generation.enabled` is itself off by default, which is where the
+    // money decision belongs. `maxRequestsPerSession` caps the consequence, and
+    // the checkbox below turns it back off.
+    if (autoRequestArt == false && !game->debugWindowState->HasTileDesignerAutoArt()) {
+      autoRequestArt = game->TileArtQueueState().Enabled();
+    }
     layoutLoaded = true;
   }
 
@@ -859,6 +1739,15 @@ void TileDesignerWindow::Draw() {
                                ? " (session only -- not written to disk)"
                                : (" to " + ex.savedPath).c_str());
         ImGui::PopStyleColor();
+        // What happened about the art, immediately under the verdict -- the place
+        // someone looks after accepting a tile and not seeing a sprite. Coloured
+        // differently from the verdict because "no art was requested" is not a
+        // failure, it is the state of a setting.
+        if (!ex.artNote.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+          ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
+          ImGui::PopStyleColor();
+        }
         if (!ex.notes.empty()) {
           ImGui::TextDisabled("Designer's notes:");
           ImGui::TextWrapped("%s", ex.notes.c_str());
@@ -904,11 +1793,39 @@ void TileDesignerWindow::Draw() {
   }
 
   const bool busy = IsBusy();
+
+  // Collect a rewrite that landed since the last frame. Before the buttons, so the
+  // result is in the box on the same frame the user sees the state change.
+  promptBox.Drain();
+
   ImGui::BeginDisabled(busy);
   const bool send = ImGui::Button("Send");
   ImGui::EndDisabled();
   ImGui::SameLine();
   ImGui::TextDisabled("Enter to send, Shift+Enter for a newline");
+  ImGui::SameLine();
+
+  // The Improve affordance sits on the Send row, immediately beside the box it
+  // affects -- which is the whole point: the description the user is about to send is
+  // the thing being improved, and a control anywhere else would not read as belonging
+  // to it.
+  promptBox.DrawButtons();
+
+  // What the rewriter is doing or last said, on its own line so it can wrap. Kept out
+  // of the Send row because that row is already at its width limit.
+  const std::string rewriterStatus = promptBox.StatusLine();
+  if (!rewriterStatus.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+    ImGui::TextWrapped("Improve: %s", rewriterStatus.c_str());
+    ImGui::PopStyleColor();
+  }
+  // A rewrite is machine-written text sitting in the user's box. Saying so, with the
+  // way back, is the difference between a helpful tool and one that silently puts
+  // words in someone's mouth.
+  if (promptBox.ShowingRewrite()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(rewritten -- Undo restores your wording)");
+  }
 
   ImGui::SetNextItemWidth(-1.0f);
   const bool submitted = ImGui::InputTextMultiline(
@@ -924,12 +1841,16 @@ void TileDesignerWindow::Draw() {
     }
     if (!prompt.empty()) {
       inputBuffer[0] = '\0';
+      // Forget the pre-rewrite text: the next message must not offer to undo back
+      // into the one just sent.
+      promptBox.Reset();
       SendUserMessage(prompt);
     }
   }
 
   if (layoutLoaded && game != nullptr && game->debugWindowState) {
     game->debugWindowState->SetDesignerShowJson(showJson);
+    game->debugWindowState->SetTileDesignerAutoArt(autoRequestArt);
   }
 
   ImGui::End();

@@ -1,7 +1,11 @@
 #include "ObjectFactory.h"
+#include <algorithm>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <set>
+#include <sstream>
 
 #include "AsciiArt.hpp"
 #include "Map.h"
@@ -17,7 +21,129 @@ ObjectFactory::ObjectFactory() {
   RegisterDefaultComponents();
 }
 
+void ObjectFactory::RecordComponentInfo(const std::string& name,
+                                        std::vector<std::string> parameters,
+                                        std::string summary) {
+  std::sort(parameters.begin(), parameters.end());
+  parameters.erase(std::unique(parameters.begin(), parameters.end()),
+                   parameters.end());
+  if (componentParameters.find(name) == componentParameters.end()) {
+    componentOrder.push_back(name);
+  }
+  componentParameters[name] = std::move(parameters);
+  componentSummaries[name] = std::move(summary);
+}
+
+namespace {
+
+// What kind of JSON value a parameter must hold.
+//
+// This table exists because the setters are *lenient*: `capacity` read with
+// `tmpl.value("capacity", 10)` returns the default for a string, so a designer writing
+// `"capacity": "lots"` would get a silent 10. Worse, the places that do not use
+// `value()` -- Placeable indexes the placement object directly -- throw a nlohmann
+// type_error, which reaches a user as "[json.exception.type_error.302] type must be
+// number, but is string".
+//
+// So this is duplicated work *on purpose*, and the duplication is bounded: it asserts
+// only the JSON type, never the semantics. What a value *means* stays the setter's
+// business, which is what keeps the two from being able to disagree about behaviour.
+enum class ParamType { Number, String, Bool, Array, Object };
+
+struct ParamSpec {
+  const char* field;  // dotted for a nested key
+  ParamType type;
+  bool required;
+};
+
+const std::vector<ParamSpec>& ParameterSpecs() {
+  static const std::vector<ParamSpec> specs = {
+      {"capacity", ParamType::Number, false},
+      {"amountRemaining", ParamType::Number, false},
+      {"timer", ParamType::Number, false},
+      {"durabilityCost", ParamType::Number, false},
+      {"drops", ParamType::Array, false},
+      {"recipes", ParamType::Array, true},
+      {"evolveTime", ParamType::Number, false},
+      {"evolveTarget", ParamType::String, false},
+      {"isActive", ParamType::Bool, false},
+      {"placement", ParamType::Object, true},
+      {"placement.becomes", ParamType::String, true},
+      {"placement.surface", ParamType::Array, false},
+      {"placement.maxDistance", ParamType::Number, false},
+      {"requires", ParamType::Array, true},
+      {"trains", ParamType::Array, true},
+  };
+  return specs;
+}
+
+const char* TypeName(ParamType type) {
+  switch (type) {
+    case ParamType::Number: return "a number";
+    case ParamType::String: return "a string";
+    case ParamType::Bool: return "true or false";
+    case ParamType::Array: return "an array";
+    case ParamType::Object: return "an object";
+  }
+  return "a value";
+}
+
+bool HasType(const nlohmann::json& value, ParamType type) {
+  switch (type) {
+    case ParamType::Number: return value.is_number();
+    case ParamType::String: return value.is_string();
+    case ParamType::Bool: return value.is_boolean();
+    case ParamType::Array: return value.is_array();
+    case ParamType::Object: return value.is_object();
+  }
+  return false;
+}
+
+// The value at a dotted path, or null when a step is missing or is not an object.
+const nlohmann::json* AtPath(const nlohmann::json& root, const std::string& path) {
+  const nlohmann::json* current = &root;
+  size_t start = 0;
+  while (current != nullptr && current->is_object()) {
+    const size_t dot = path.find('.', start);
+    const std::string step =
+        path.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
+    const auto found = current->find(step);
+    if (found == current->end()) return nullptr;
+    current = &(*found);
+    if (dot == std::string::npos) break;
+    start = dot + 1;
+  }
+  return current;
+}
+
+}  // namespace
+
 void ObjectFactory::RegisterDefaultComponents() {
+  // The parameter lists below are the template keys each setter actually reads, and the
+  // summaries are what a designer is shown. Two rules keep them honest: list a key only
+  // when its setter reads it, and update the table in the same edit that adds a key. A
+  // parameter missing here is invisible to the designer, and a required one missing from
+  // ParameterSpecs is not type-checked -- both are quiet failures this metadata exists to
+  // prevent.
+  RecordComponentInfo("Interactable", {}, "it can be used");
+  RecordComponentInfo("Obstacle", {}, "it blocks movement");
+  RecordComponentInfo("Portable", {}, "it can be picked up and carried");
+  RecordComponentInfo("Storage", {"capacity"}, "it holds items");
+  RecordComponentInfo("Harvestable",
+                      {"amountRemaining", "durabilityCost", "drops", "timer"},
+                      "it can be gathered from");
+  RecordComponentInfo("Workstation", {"recipes"}, "it is used to craft");
+  RecordComponentInfo("Evolvable", {"evolveTarget", "evolveTime", "isActive"},
+                      "it changes into another template over time");
+  // Nested keys are dotted, because that is how a definition has to spell them.
+  RecordComponentInfo("Placeable",
+                      {"placement.becomes", "placement.maxDistance",
+                       "placement.surface"},
+                      "it can be put down in the world");
+  RecordComponentInfo("Requires", {"requires"},
+                      "using it needs certain equipment");
+  RecordComponentInfo("Trains", {"trains"}, "using it teaches a skill");
+
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
   RegisterComponent<Portable>("Portable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Portable>(); });
@@ -151,6 +277,11 @@ void ObjectFactory::RegisterDefaultComponents() {
 }
 
 void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
+  // Recorded before the exists() check: a caller that deletes a template needs to
+  // name its file even when the directory has since gone missing, and "the
+  // directory we were told to read" is the only honest answer to that.
+  directory = directoryPath;
+
   if (!std::filesystem::exists(directoryPath)) {
     std::string errStr = "Warning: Object template directory not found: " + directoryPath + "\n";
     if (debugLog) debugLog->LogError(errStr);
@@ -178,6 +309,290 @@ void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
       }
     }
   }
+}
+
+bool ObjectFactory::RemoveTemplate(const std::string& key) {
+  // erase's return is the honest answer: a key that was never loaded reports false
+  // rather than pretending the removal happened.
+  //
+  // The runtime record goes with it: a key that is no longer in `templates` is not
+  // runtime-added either, whatever it used to be.
+  runtimeKeys.erase(key);
+  return templates.erase(key) > 0;
+}
+
+namespace {
+
+// The template key for a definition: lowercase, spaces and punctuation to underscores.
+//
+// The key is not only a filename: it doubles as the sprite convention id, so the key
+// decides which sprite the object will look for (`wooden_crate` -> wooden_crate.png).
+// That is why it is derived here rather than left to the model, and why a definition
+// that names its own `key` is honoured -- an object that wants an explicitly chosen
+// sprite convention has to be able to say so.
+std::string SlugifyKey(const std::string& name) {
+  std::string out;
+  out.reserve(name.size());
+  bool lastUnderscore = false;
+  for (const char c : name) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isalnum(uc)) {
+      out += static_cast<char>(std::tolower(uc));
+      lastUnderscore = false;
+    } else if (!lastUnderscore && !out.empty()) {
+      out += '_';
+      lastUnderscore = true;
+    }
+  }
+  while (!out.empty() && out.back() == '_') out.pop_back();
+  return out;
+}
+
+}  // namespace
+
+std::string ObjectFactory::KeyFor(const nlohmann::json& definition) {
+  if (!definition.is_object()) return {};
+  const std::string explicitKey = definition.value("key", std::string());
+  if (!explicitKey.empty()) return explicitKey;
+  return SlugifyKey(definition.value("name", std::string()));
+}
+
+ObjectFactory::RuntimeAddResult ObjectFactory::AddRuntime(
+    const nlohmann::json& definition, const std::string& source,
+    bool replaceExisting, bool requireAtLeastOneComponent) {
+  RuntimeAddResult result;
+
+  if (!definition.is_object()) {
+    result.error = "the definition is not a JSON object";
+    return result;
+  }
+
+  result.key = KeyFor(definition);
+  if (result.key.empty()) {
+    result.error =
+        "the definition has no \"name\", so it has no key and no sprite name either";
+    return result;
+  }
+
+  const bool isLoaded = templates.find(result.key) != templates.end() &&
+                        runtimeKeys.find(result.key) == runtimeKeys.end();
+  if (isLoaded) {
+    // The hand-authored catalog is read-only to a designer. The refusal names the key
+    // because that is what the caller has to change.
+    result.error = "the key '" + result.key +
+                   "' is a hand-authored template, and a designer may not replace "
+                   "hand-authored content";
+    return result;
+  }
+  if (!replaceExisting && templates.find(result.key) != templates.end()) {
+    result.error = "the key '" + result.key + "' already exists";
+    return result;
+  }
+
+  // At least one capability. An object with none is a tile -- it has a glyph and a
+  // colour and does nothing -- and the object designer's job is the difference. The
+  // check is here rather than in the designer so the overlay loader can turn it off.
+  if (requireAtLeastOneComponent) {
+    const auto components = definition.find("components");
+    if (components == definition.end() || !components->is_array() ||
+        components->empty()) {
+      result.error =
+          "the definition lists no \"components\", so the object would do nothing. "
+          "An object is at least one capability from the list; if the request is "
+          "really for ground, it is a tile, not an object";
+      return result;
+    }
+  }
+
+  // ---- parameter types ---------------------------------------------------------
+  //
+  // Before the setters run, because their leniency and their exceptions are both wrong
+  // messages for a designer: `capacity: "lots"` would either be silently defaulted to 10
+  // or reach the user as a raw nlohmann type_error. Checked only for the parameters of
+  // the components this definition actually lists, so a stray key belonging to a
+  // component it did not choose is the validator's business (it is reported as an
+  // unread key) rather than this table's.
+  if (definition.contains("components") && definition["components"].is_array()) {
+    for (const auto& componentName : definition["components"]) {
+      if (!componentName.is_string()) continue;
+      const std::string name = componentName.get<std::string>();
+      const auto listed = componentParameters.find(name);
+      if (listed == componentParameters.end()) continue;  // reported below, by the setter
+
+      for (const ParamSpec& spec : ParameterSpecs()) {
+        // Only the parameters this component declares. A shared field name read by
+        // several components is checked for each of them, which is correct.
+        const std::string field = spec.field;
+        const std::string top = field.substr(0, field.find('.'));
+        const bool owned =
+            std::find(listed->second.begin(), listed->second.end(), field) !=
+                listed->second.end() ||
+            std::find(listed->second.begin(), listed->second.end(), top) !=
+                listed->second.end();
+        if (!owned) continue;
+
+        const nlohmann::json* value = AtPath(definition, field);
+        if (value == nullptr) {
+          if (spec.required) {
+            result.error = "\"" + name + "\" needs \"" + field + "\" (" +
+                           TypeName(spec.type) + "), and the definition does not have "
+                           "it";
+            return result;
+          }
+          continue;
+        }
+        if (!HasType(*value, spec.type)) {
+          result.error = "\"" + field + "\" must be " + TypeName(spec.type) +
+                         " for the \"" + name + "\" component, and this definition "
+                         "has " +
+                         std::string(value->type_name()) + " instead";
+          return result;
+        }
+      }
+    }
+  }
+
+  // ---- the definition's shape, checked without a world --------------------------
+  //
+  // The engine has no way to try a template without a world, and the obvious workaround
+  // -- build a throwaway entity in a scratch `flecs::world` and run the real setters on
+  // it -- was tried and is *wrong in this codebase*. flecs resolves a C++ component type
+  // globally by name and compares the size and alignment it was first registered with, so
+  // a second world that registers `Sprite` or `Trains` on different terms corrupts the
+  // first: the symptom was a heap-buffer-overflow in `AttachSprite` and an abort in the
+  // game's own `RegisterComponents`, from an overlay entry that had validated perfectly
+  // in the designer.
+  //
+  // So validation here is a pure function of the JSON, which is also what TileRegistry
+  // does with `ParseTileDef`. What this checks is the shape: component names, parameter
+  // types, required parameters, and -- in the designer, which is the only caller that
+  // lacks human review -- the art block. What it deliberately does not check is
+  // semantics: whether a recipe id exists, whether an evolve target is a real template.
+  // Those are settled at spawn time by the setters that already report them.
+  //
+  // `KnownFieldNames` and the parameter lists come from the same registration call as the
+  // setters, so a component can be added without describing it, but not without the
+  // description being visibly absent from the table above it.
+
+  // Every listed component must exist. This is the refusal that used to be the setter's
+  // own warning ("Unknown component type: X"); it is produced here now because there is
+  // no world to run the setter in, and it is worded the same way so `ObjectDesigner` can
+  // still append "did you mean ..." by finding the same marker.
+  if (requireAtLeastOneComponent && definition.contains("components") &&
+      definition["components"].is_array()) {
+    std::vector<std::string> unknown;
+    for (const auto& componentName : definition["components"]) {
+      if (!componentName.is_string()) {
+        result.error = "\"components\" must contain only strings, and this definition "
+                       "has a " +
+                       std::string(componentName.type_name()) + " in it";
+        return result;
+      }
+      const std::string name = componentName.get<std::string>();
+      if (componentParameters.find(name) == componentParameters.end()) {
+        unknown.push_back(name);
+      }
+    }
+    if (!unknown.empty()) {
+      std::string message = "Unknown component type: " + unknown.front();
+      for (size_t i = 1; i < unknown.size(); ++i) {
+        message += ", " + unknown[i];
+      }
+      result.error = message;
+      return result;
+    }
+  }
+
+  templates[result.key] = definition;
+  runtimeKeys[result.key] = source;
+
+  result.ok = true;
+  return result;
+}
+
+bool ObjectFactory::IsRuntimeAdded(const std::string& key) const {
+  return runtimeKeys.find(key) != runtimeKeys.end();
+}
+
+std::vector<std::string> ObjectFactory::RuntimeNames() const {
+  std::vector<std::string> names;
+  names.reserve(runtimeKeys.size());
+  for (const auto& pair : runtimeKeys) {
+    names.push_back(pair.first);
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+size_t ObjectFactory::RemoveRuntimeTemplates() {
+  size_t removed = 0;
+  for (const auto& pair : runtimeKeys) {
+    removed += templates.erase(pair.first) > 0 ? 1 : 0;
+  }
+  runtimeKeys.clear();
+  return removed;
+}
+
+std::vector<ObjectFactory::ComponentInfo> ObjectFactory::ComponentVocabulary()
+    const {
+  std::vector<ComponentInfo> out;
+  out.reserve(componentParameters.size());
+  for (const auto& pair : componentParameters) {
+    ComponentInfo info;
+    info.name = pair.first;
+    info.parameters = pair.second;
+    const auto summary = componentSummaries.find(pair.first);
+    if (summary != componentSummaries.end()) {
+      info.summary = summary->second;
+    }
+    out.push_back(std::move(info));
+  }
+  std::sort(out.begin(), out.end(),
+            [](const ComponentInfo& a, const ComponentInfo& b) {
+              return a.name < b.name;
+            });
+  return out;
+}
+
+std::vector<std::string> ObjectFactory::ComponentNames() const {
+  std::vector<std::string> names;
+  names.reserve(componentParameters.size());
+  for (const auto& pair : componentParameters) {
+    names.push_back(pair.first);
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+bool ObjectFactory::HasComponent(const std::string& name) const {
+  return componentParameters.find(name) != componentParameters.end();
+}
+
+std::vector<std::string> ObjectFactory::KnownFieldNames() const {
+  // The structural and display keys ApplyTemplate reads, then every component
+  // parameter. Kept here rather than in the validator so it cannot drift from the
+  // code that does the reading -- this function and ApplyTemplate are in the same
+  // file, and a key added to one is a visible omission in the other.
+  std::set<std::string> fields = {
+      "name",           "key",           "description",    "components",
+      "sprite",         "art",           "palette",        "character",
+      "characterColor", "backgroundColor", "nameTagColor", "hint",
+      "fontSize",
+  };
+
+  for (const auto& pair : componentParameters) {
+    for (const std::string& parameter : pair.second) {
+      fields.insert(parameter);
+      // A dotted parameter ("placement.becomes") also names the object that has to
+      // exist at the top level, and the object itself is a valid key.
+      const size_t dot = parameter.find('.');
+      if (dot != std::string::npos) {
+        fields.insert(parameter.substr(0, dot));
+      }
+    }
+  }
+
+  return std::vector<std::string>(fields.begin(), fields.end());
 }
 
 bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Map* map) {

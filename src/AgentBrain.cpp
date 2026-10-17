@@ -643,6 +643,75 @@ void AgentBrain::recordContext(const std::string &role, const std::string &text,
   writeTranscript(isNewMessage && role == "assistant" ? "You: " + text : text);
 }
 
+std::string AgentBrain::buildWakePrompt(bool firstWake) {
+  const std::string question =
+      firstWake
+          ? "System: Based on your background and current location, what is "
+            "your first command?\n"
+          : "System: What is your next command?\n";
+
+  const TaskList *list = entity.get<TaskList>();
+  if (list == nullptr) {
+    // No declared intention: byte-for-byte the prompt this agent received before
+    // the task system existed (section 2, invariant 1).
+    return question;
+  }
+
+  // What the agent is *actually* doing, which is what section 8 wants printed
+  // next to what it says it intends. In practice this is empty: the brain only
+  // asks when it has nothing running, so at this moment the agent is idle and the
+  // line is omitted rather than claiming an activity it does not have. The
+  // divergence that line exists to expose is observable live in the debug window
+  // (section 11), where it is not sampled at this one instant.
+  std::string activity;
+  if (currentAction) {
+    activity = currentAction->getActionName();
+    const std::string context = currentAction->getActionContext();
+    if (!context.empty()) {
+      activity += " " + context;
+    }
+  }
+
+  // Offer the verb at most once per plan change, never on every wake: rewriting
+  // the list is agent output tokens, and the cost that matters is the frequency,
+  // not the authorship (section 8).
+  const bool suggestRevision = taskRevisionSuggested;
+  taskRevisionSuggested = false;
+
+  return RenderTaskDigest(*list, activity, suggestRevision) + question;
+}
+
+void AgentBrain::logTaskTransitions() {
+  const TaskList *list = entity.get<TaskList>();
+  if (list == nullptr) {
+    // The list can only disappear by the entity losing the component entirely,
+    // which is not a transition the agent needs told about.
+    taskSnapshotValid = false;
+    return;
+  }
+
+  if (!taskSnapshotValid) {
+    taskSnapshotValid = true;
+    taskSnapshot = *list;
+    if (!list->goals.empty()) {
+      writeTranscript("[" + TimeUtils::GetClockTimeString() + "] " +
+                      std::to_string(list->goals.size()) +
+                      " task(s) on the list at first observation\n");
+    }
+    return;
+  }
+
+  const std::vector<std::string> transitions =
+      DescribeTaskTransitions(taskSnapshot, *list);
+  taskSnapshot = *list;
+  if (transitions.empty()) return;
+
+  const std::string stamp = "[" + TimeUtils::GetClockTimeString() + "] ";
+  for (const std::string &transition : transitions) {
+    writeTranscript(stamp + transition + "\n");
+  }
+}
+
 void AgentBrain::logNote(const std::string &text) {
   // Deliberately does not touch NPCContext::history: this is for bookkeeping we
   // want in the transcript but must not wake the model with. Timed harvests use
@@ -704,6 +773,10 @@ void AgentBrain::executeActionQueue(float deltaTime) {
   switch (currentAction->update(deltaTime, entity)) {
   case (ActionStatus::Done): {
     appendContext("user", currentAction->getSuccessMessage());
+    // An action finishing is one of the events that may have changed the plan
+    // (section 8). A revision is not invited when the action *was* a revision:
+    // asking the agent to rewrite the list it just wrote is pure noise.
+    taskRevisionSuggested = currentAction->getActionName() != "SET_TASKS";
     currentAction.reset();
     break;
   }
@@ -712,6 +785,7 @@ void AgentBrain::executeActionQueue(float deltaTime) {
   }
   case (ActionStatus::Failed): {
     appendContext("user", currentAction->getFailureMessage());
+    taskRevisionSuggested = true;
     currentAction.reset();
     break;
   }
@@ -755,12 +829,14 @@ void AgentBrain::update(float deltaTime) {
   const std::string context = getContext();
   if (request == nullptr) {
     awaitingRetry = false;
+    // Report anything that changed since the agent was last consulted, then ask
+    // it again. Both happen here because this is the one moment the list is
+    // about to be shown to the model.
+    logTaskTransitions();
     auto ctx = entity.get<NPCContext>();
-    if (ctx && ctx->history.size() > 1) {
-      entity.set<AIRequest>({"System: What is your next command?\n", false, "", false});
-    } else {
-      entity.set<AIRequest>({"System: Based on your background and current location, what is your first command?\n", false, "", false});
-    }
+    const bool firstWake = !(ctx && ctx->history.size() > 1);
+    entity.set<AIRequest>(
+        {buildWakePrompt(firstWake), false, "", false});
     entity.set<AgentSleepTimer>({10});
     return;
   }

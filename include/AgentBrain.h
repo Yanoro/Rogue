@@ -77,6 +77,21 @@ public:
   void logNote(const std::string &text);
 
 private:
+  // The prompt the agent is woken with. When the agent has a TaskList this is
+  // the task digest followed by the question; when it has none it is exactly the
+  // string this agent received before the task system existed, which is the
+  // "no list behaves as before" invariant (docs/task-system-design.md section 2).
+  std::string buildWakePrompt(bool firstWake);
+
+  // Report what changed in the agent's task list since it was last observed.
+  // Transitions, not states (section 11), so an unchanged list writes nothing.
+  //
+  // This is deliberately a comparison rather than a notification from whoever
+  // made the change: today the only writer is the agent's own [SET_TASKS], later
+  // an engine-side verification will be a second one, and one place that diffs
+  // the list catches both without either having to know about the transcript.
+  void logTaskTransitions();
+
   flecs::entity entity;
   std::unique_ptr<AgentAction> currentAction;
   std::vector<std::unique_ptr<AgentAction>> actionStack;
@@ -89,6 +104,16 @@ private:
   void writeTranscript(const std::string &text);
   std::string logFilePath;
   DebugLog *debugLog = nullptr;
+  // The task list as it was when transitions were last reported, so a change is
+  // reported once and only when it happened. Invalid until the first observation,
+  // which is reported as an initialisation rather than as a flood of additions.
+  TaskList taskSnapshot;
+  bool taskSnapshotValid = false;
+  // Whether the next digest should invite a revision. Set when the plan may have
+  // changed -- an action completed or failed -- and cleared once offered, so the
+  // agent is not nudged to rewrite its list on every single turn (section 8).
+  // Starts true: a freshly spawned agent has life goals and no plan yet.
+  bool taskRevisionSuggested = true;
   // Set while waiting out the backoff before retrying an empty response, so the
   // same failure is not re-logged and re-scheduled on every frame.
   bool awaitingRetry = false;

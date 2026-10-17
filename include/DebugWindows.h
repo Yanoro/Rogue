@@ -2,6 +2,7 @@
 
 #include "Window.h"
 #include "BlueprintExpansion.hpp"
+#include "ContentFiles.h"
 #include <flecs.h>
 #include <optional>
 #include <string>
@@ -124,6 +125,40 @@ public:
   void Draw() override;
 private:
   Game* game;
+
+  // Applies a confirmed deletion: removes the files, then makes the two content
+  // registries agree with the disk. Called first thing in Draw, so the frame that
+  // confirmed never goes on to read the definitions this frees.
+  void ApplyConfirmedDelete();
+
+  // The confirmation dialog: names every file that would go and every map that
+  // references the content, and is the only place a deletion can be committed.
+  void DrawDeleteConfirmation();
+
+  // --- Permanent content deletion (the palette rows' Delete buttons) ---------
+  //
+  // Separate from Game::removeObjectMode in every way: that one edits the map,
+  // this one erases files from disk. Kept here rather than on Game because it is
+  // entirely the window's business -- the grid has no part in it and nothing
+  // outside this class needs to know a deletion is pending.
+  //
+  // The plan is built once, when a row's Delete button is pressed, and cached for
+  // the life of the confirmation popup: building it scans every map file on disk
+  // for references, which is not something to redo on every frame the dialog is
+  // open. It is also what the dialog reads, so what is shown is exactly what will
+  // be deleted.
+  std::optional<ContentPlan> pendingDeletePlan;
+
+  // A plan the user confirmed, applied at the top of the next Draw.
+  //
+  // Deferred for the same reason BlueprintWindow defers: the palette loop above is
+  // mid-iteration over TileDef pointers this deletion frees, so the frame that
+  // confirms must not go on to read them. Next frame, nothing holds them.
+  std::optional<ContentPlan> confirmedDeletePlan;
+
+  // Result of the last deletion, shown under the palette. A member rather than a
+  // local because the popup closes before the outcome is known.
+  std::string lastContentDeleteMessage;
 };
 
 // Modal-ish prompt shown after a location rectangle is dragged out. Reads and
@@ -147,6 +182,21 @@ private:
 class NPCMenuWindow : public Window {
 public:
   explicit NPCMenuWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};
+
+// The village-wide task board (docs/task-system-design.md section 11): one row
+// per agent, sorted by tier then age, so "why is this agent doing something dumb"
+// is answerable at a glance instead of by reading a conversation.
+//
+// A developer tool, not a diegetic capability: it renders NPCs' task lists
+// because a human with a debug build should see everything, and no agent can read
+// another's list through any in-world path (section 10).
+class TaskBoardWindow : public Window {
+public:
+  explicit TaskBoardWindow(Game* game);
   void Draw() override;
 private:
   Game* game;

@@ -1,12 +1,20 @@
 # Wiring generated art into the tile designer
 
-**Status: the chain runs end to end, by hand.** `tools/gen_tile_art.py` generates a sheet
-and cuts it; `AIRogue --tile-art` places the result and asserts both §7 contracts;
-`Game::RefreshTileVisuals` hot-swaps it into a running world. The three hot-swap checks are
-answered in §3. **The queue in §4 is not built** — generation is an external tool the owner
-runs, so nothing in the frame loop calls it yet. It assumes phase 1 is done: the tile
-designer agent produces tile definitions at runtime and they render as their ASCII glyph.
-Phase 1 is described in `.agents/tile-designer-handover.md`.
+**Status: the chain is built end to end, live and headless.** `tools/gen_tile_art.py`
+generates and cuts; `AIRogue --tile-art` places and asserts both §7 contracts;
+`Game::RefreshTileVisuals` hot-swaps into a running world; and `TileArtQueue` drives all
+of it from inside the game on a worker thread, off by default and capped. The three
+hot-swap checks are answered in §3 and §8's order is complete except for the backends
+step 4 leaves for the LoRA.
+
+The one thing still missing is the *backend choice* §5 flags: the live path runs the
+Gemini sheet API because the local LoRA is blocked on the host CUDA fault, and §10.2's
+rule ("runtime mode should only ever run a local model") therefore does not hold yet.
+That is a deliberate, recorded trade for the demo — see §5 — not an oversight.
+
+It assumes phase 1 is done: the tile designer agent produces tile definitions at runtime
+and they render as their ASCII glyph. Phase 1 is described in
+`.agents/tile-designer-handover.md`.
 
 Read `docs/asset-generation-design.md` §7 (the pipeline) and §10.2 (the live queue)
 alongside this; it is the general version, and this is the specific one.
@@ -282,6 +290,38 @@ Nine from nine is the evidence: had `ForgetPath` been missing the count would be
 and had the attach loop been missing it would also be zero. Both failure modes are
 indistinguishable from a pass without the world, which is why this mode exists at all.
 
+### Seeing the pipeline
+
+The three panels under the Tile Designer's art section read the artifacts the
+generator already leaves on disk. None of them change the pipeline; they exist
+because every stage's output was previously invisible, and "why is this tile
+wrong" is a question the files answer and a log line does not.
+
+| panel | what it shows | why |
+|---|---|---|
+| **Pipeline artifacts** | every file produced, with its path and a copy button, plus **the prompt that was actually sent** | the prompt is what a disappointing sheet has to be judged against, and nothing else surfaces it. It was written to disk and read by nothing |
+| **Pixels and palette** | the placed sprite drawn one rectangle per pixel at any zoom, a toggle to redraw it as its nearest palette colour, and the palette with the entries this sprite uses boxed | the palette contract was a number in stdout ("0.0% outside"). Drawn, "28 of 128 colours, here they are" is checkable by eye, and a pixel outside the palette is visible instead of counted |
+| **Pipeline stages** | sheet → per-cell crop → trim → palette lock → final 32×32, as thumbnails, each labelled with its source size | this is the processing, and it is the only view of the model's raw output at any size. The stage sizes are the only place the sheet's resolution appears at all |
+
+Five stages are labelled rather than two because the pipeline has seven, and the two
+that are not images are named in the artifacts panel: the prompt (stage 0) and the
+inset, which is arithmetic on the crop rather than a file of its own.
+
+Three things worth knowing about the implementation:
+
+- `Job::worklistPath` is what makes this possible. Everything the pipeline produced
+  hangs off the worklist by convention -- `tile_art_sheet.png`, its `.prompt.txt`,
+  `cell_<n>_{crop,trim,locked}.png` -- so the queue records the worklist path on every
+  job it dispatches, and the window resolves the rest from it. Nothing new is written
+  for the UI.
+- Thumbnails are resized on load (nearest for a ≥4× reduction, bilinear below that):
+  nearest-neighbour *downscaling* of a busy texture aliases into noise rather than
+  sampling it, while nearest is exactly right for pixel art going up.
+- `raylib::Image`'s constructor **throws** on a path it cannot load rather than
+  returning a null image. A job that has not placed a sprite yet has an empty path,
+  which is the common case, so both image loads are guarded -- an unguarded one takes
+  the window down rather than reporting a missing sprite.
+
 ## 8. Order
 
 1. ~~The three hot-swap checks in §3, especially the third.~~ **Done** — see §3. Check 3's
@@ -309,11 +349,60 @@ indistinguishable from a pass without the world, which is why this mode exists a
      passes and the tile still reads. This is the argument for the owner reviewing the cut
      sprites before committing them, not for more pipeline.
 
-3. The queue and the window wiring (§4). **Not started.** `TileArt::SwapIn` takes the
-   swap as a callback precisely so this step has somewhere to put the main-thread handoff:
-   the background thread produces the file, and the queue's main-thread drain calls
-   `SwapIn` with `Game::RefreshTileVisuals` as the callback. The callback shape is the
-   seam; what is missing is the queue around it, plus a way for the tile designer's window
-   to ask for generation without blocking its own frame.
+3. ~~The queue and the window wiring (§4).~~ **Done.** `TileArtQueue` is the queue; it
+   is a member of `Game`, not a file-scope global, so `.agents/known-issues.md` #13's
+   process-global problem is not inherited (the AI path was left alone — it works, and
+   changing it is not this step's job). The pump is an ECS system registered by
+   `ECSInitTileArtSystems`, the completion callback is `Game::HandleTileArtGenerated`,
+   and the Tile Designer window has a "Generate art" button with the queue's state
+   under it.
+
+   **Automatic request, so a prompt is the whole instruction.** The button is off the
+   critical path: `autoRequestArt` makes accepting a tile also queue its art, in the
+   same step, so `a mossy stone floor that blocks movement` produces the definition
+   *and* the sprite with no second click. Three things make that safe rather than
+   surprising:
+
+   - it fires in the accept branch, on the main thread, at the only moment the name is
+     guaranteed to be in the catalog for the swap to attach to;
+   - it goes through `Game::RequestTileArt`, so **batching still applies** — designing
+     four tiles in a row is still one request, which is what makes leaving it on
+     reasonable;
+   - both outcomes are logged (`ART REQUESTED (automatic)` / `ART NOT REQUESTED: <why>`),
+     so a refusal appears in the transcript instead of looking like an ignored prompt.
+
+   It defaults to following `art.generation.enabled` on a checkout that has never
+   stored the preference (`DebugWindowState::HasTileDesignerAutoArt` distinguishes
+   "turned off" from "never said"), so enabling generation is one decision rather than
+   two; the checkbox in the window overrides it and persists.
+
+   The decisions in it:
+
+   - **Batching is enforced, not offered.** One request costs the same whether it
+     carries one tile or nineteen, so `batchDelaySeconds` collects everything asked for
+     in a window into one request — measured at 3 tiles → 1 request. One request per
+     tile is ~19x the cost per asset, which is the kind of thing nobody notices until
+     the bill arrives.
+   - **The cap is in requests, not tiles**, because requests are what cost:
+     `maxRequestsPerSession` (default 8, ~32 cents). A job past the cap is marked
+     `Skipped` with the reason, never silently dropped.
+   - **The command is external** (`art.generation.command`, `{worklist}` substituted).
+     ImageMagick and Pillow are not on the default PATH, and the local-LoRA path has to
+     stay swappable behind the same seam, so the game writes a worklist and runs a
+     command that answers with `<worklist>.result.json`. A command that dies produces a
+     *result file* saying so, rather than a silent nothing.
+   - **The worker posts data, not a lambda.** `TileArtQueue::Completion` is a struct of
+     names and an error string; the AI path's lambdas capture `flecs::entity` and need
+     `entity.is_alive()` guards because of it. Nothing here captures world state.
+   - **`Stop()` is bounded** (30s) and joins before the ECS goes down, because a batch in
+     flight posts a completion whose callback touches the world.
+
+   Verified without spending anything, using `tests/stub_tile_art.py` (pure stdlib,
+   writes a flat palette-locked PNG) as the command: request → worker → drain → swap end
+   to end in-game, `before: 0 cells` → `after: 9 cells`, frames running throughout. In
+   isolation the queue passes 21 checks: 3 tiles batched into 1 request, a duplicate
+   refused while queued, a request refused past the cap with the limit named, everything
+   refused while disabled, and a job whose command exited non-zero failed with the
+   missing file named.
 4. Swap the backend to the trained LoRA behind the same seam — once the host CUDA fault
    is cleared. See `~/nixos/comfyui-docker.sh`'s comments for what was already tried.

@@ -262,11 +262,88 @@ bool LoadGameSettings(const std::string &path) {
       }
     }
 
+    // The System 1 backend. Absent keeps useMainModel on, so an unconfigured run
+    // has System 1 share the NPC backend rather than failing to start. See
+    // Settings.h: SystemOneSection for why it is a separate section.
+    const nlohmann::json &system1 = Section(root, "system1");
+    settings.system1.useMainModel =
+        system1.value("useMainModel", settings.system1.useMainModel);
+
+    // Empty is the "inherit the main model" sentinel, and ModelSection's default
+    // is "llama3", so the field is cleared here unless the file actually names
+    // one. Otherwise a system1 block that sets only a key or an endpoint would
+    // inherit llama3 and be rejected by the endpoint -- which is exactly what
+    // happened the first time this was wired.
+    settings.system1.model.model.clear();
+    settings.system1.disableReasoning =
+        system1.value("disableReasoning", settings.system1.disableReasoning);
+    settings.system1.maxRecords =
+        system1.value("maxRecords", settings.system1.maxRecords);
+    if (settings.system1.maxRecords < 1) {
+      std::cerr << "Settings: system1.maxRecords must be at least 1; using 1."
+                << std::endl;
+      settings.system1.maxRecords = 1;
+    }
+    if (system1.contains("model")) {
+      const nlohmann::json &system1Model = system1["model"];
+      GameSettings::ModelSection &target = settings.system1.model;
+      target.type = system1Model.value("type", target.type);
+      target.model = system1Model.value("model", target.model);
+      target.apiKey = system1Model.value("apiKey", target.apiKey);
+      target.endpoint = system1Model.value("endpoint", target.endpoint);
+      target.keepAlive = system1Model.value("keepAlive", target.keepAlive);
+      if (system1Model.contains("temperature")) {
+        target.hasTemperature = true;
+        target.temperature = system1Model["temperature"].get<double>();
+      }
+      if (system1Model.contains("maxTokens")) {
+        target.hasMaxTokens = true;
+        target.maxTokens = system1Model["maxTokens"].get<int>();
+      }
+      if (system1Model.contains("provider")) {
+        target.hasProvider = true;
+        target.provider = system1Model["provider"];
+      }
+    }
+
+    // The Improve button's model. Separate from the designer's because rewriting is a
+    // short text edit: a reasoning model makes it slow and can spend its whole
+    // completion budget thinking and return nothing -- measured on this repo's default
+    // backend, see Settings.h.
+    {
+      const nlohmann::json &rewriter = Section(designer, "rewriter");
+      settings.designer.rewriter.enabled =
+          rewriter.value("enabled", settings.designer.rewriter.enabled);
+      settings.designer.rewriter.disableReasoning =
+          rewriter.value("disableReasoning",
+                         settings.designer.rewriter.disableReasoning);
+      if (rewriter.contains("model")) {
+        const nlohmann::json &rewriterModel = rewriter["model"];
+        GameSettings::ModelSection &target = settings.designer.rewriter.model;
+        target.type = rewriterModel.value("type", target.type);
+        target.model = rewriterModel.value("model", target.model);
+        target.apiKey = rewriterModel.value("apiKey", target.apiKey);
+        target.endpoint = rewriterModel.value("endpoint", target.endpoint);
+        target.keepAlive = rewriterModel.value("keepAlive", target.keepAlive);
+        if (rewriterModel.contains("temperature")) {
+          target.hasTemperature = true;
+          target.temperature = rewriterModel["temperature"].get<double>();
+        }
+        if (rewriterModel.contains("maxTokens")) {
+          target.hasMaxTokens = true;
+          target.maxTokens = rewriterModel["maxTokens"].get<int>();
+        }
+        if (rewriterModel.contains("provider")) {
+          target.hasProvider = true;
+          target.provider = rewriterModel["provider"];
+        }
+      }
+    }
+
     // Reading the reply aloud. Nested one level deeper than everything else in
     // this section, so that the whole `tts` object can be absent and the defaults
     // still describe a working run -- just a silent one.
-    const nlohmann::json &tts = Section(designer, "tts");
-    settings.designer.tts.enabled =
+    const nlohmann::json &tts = Section(designer, "tts");    settings.designer.tts.enabled =
         tts.value("enabled", settings.designer.tts.enabled);
     settings.designer.tts.binary = tts.value("binary", settings.designer.tts.binary);
     settings.designer.tts.voice = tts.value("voice", settings.designer.tts.voice);
@@ -362,6 +439,14 @@ bool LoadGameSettings(const std::string &path) {
         content.value("generatedTiles", settings.content.generatedTiles);
     settings.content.tileDesignerPromptFile = content.value(
         "tileDesignerPromptFile", settings.content.tileDesignerPromptFile);
+    settings.content.objectDesignerPromptFile = content.value(
+        "objectDesignerPromptFile", settings.content.objectDesignerPromptFile);
+    settings.content.generatedObjects = content.value(
+        "generatedObjects", settings.content.generatedObjects);
+    settings.content.spriteContractFile = content.value(
+        "spriteContractFile", settings.content.spriteContractFile);
+    settings.content.rewritePromptFile =
+        content.value("rewritePromptFile", settings.content.rewritePromptFile);
     settings.content.blueprints =
         content.value("blueprints", settings.content.blueprints);
 

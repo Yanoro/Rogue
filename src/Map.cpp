@@ -305,6 +305,35 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
           }
         }
 
+        // Life goals, authored per character. Free text kept exactly as written:
+        // there is no id to resolve, so unlike skills/race an unknown value
+        // cannot fail at spawn. Seeded read-only into the agent's TaskList by
+        // createNPC (docs/task-system-design.md section 5).
+        if (npcJson.contains("goals")) {
+          const auto &goalsJson = npcJson["goals"];
+          if (!goalsJson.is_object() || !goalsJson.contains("terminal")) {
+            warn("Warning: NPC '" + data.name +
+                 "' has a 'goals' block with no 'terminal' array; ignoring it.\n");
+          } else if (!goalsJson["terminal"].is_array()) {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-array 'goals.terminal'; ignoring it.\n");
+          } else {
+            for (const auto &goalJson : goalsJson["terminal"]) {
+              // Kept exactly as written: free text with no id to resolve, so a
+              // whitespace-only entry is the only thing worth rejecting here.
+              // SeedTerminalGoals trims and drops those that slip through.
+              if (!goalJson.is_string() ||
+                  goalJson.get<std::string>().empty()) {
+                warn("Warning: NPC '" + data.name +
+                     "' has a terminal goal that is not a non-empty string; "
+                     "skipping it.\n");
+                continue;
+              }
+              data.terminalGoals.push_back(goalJson.get<std::string>());
+            }
+          }
+        }
+
         npcs.push_back(data);
       }
     }
@@ -319,6 +348,19 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
     // per cell.
     bool reportedBadPosition = false;
     for (const int pos : json["positions"]) {
+      // A negative index means "no tile here", which is how the editor writes a
+      // cell it erased. That is a deliberate state rather than a disagreement
+      // between the file and its palette, so it is honoured silently: the cell
+      // keeps the null resize() gave it and gets no tile entity. The cursor
+      // still advances, so one erased cell cannot shift the rest of the layout.
+      if (pos < 0) {
+        if (++currPos.y == height) {
+          currPos.y = 0;
+          currPos.x++;
+        }
+        continue;
+      }
+
       Tile *currentTile = nullptr;
       if (pos >= 0 && static_cast<size_t>(pos) < uniqueTiles.size()) {
         currentTile = uniqueTiles[pos].get();
@@ -462,6 +504,15 @@ nlohmann::json Map::BuildMapJson() const {
   for (int x = 0; x < width; ++x) {
     for (int y = 0; y < height; ++y) {
       const Tile *tile = tileMap[GetIndex(x, y)];
+      // An erased cell. -1 is the spelling for "no tile here": it cannot collide
+      // with a palette index, and the loader reads it back as a cell with no
+      // tile entity. Without this the null fell through to the untracked-cell
+      // branch below and a save resurrected tile 0 on every cell the editor
+      // had cleared.
+      if (tile == nullptr) {
+        positions.push_back(-1);
+        continue;
+      }
       int tileId = 0;
       bool found = false;
       for (size_t i = 0; i < uniqueTiles.size(); ++i) {
@@ -594,6 +645,14 @@ nlohmann::json Map::BuildMapJson() const {
       if (!npc.equipped.empty()) {
         npcJson["equipped"] = npc.equipped;
       }
+      // Life goals are authored data and must round-trip (section 5), so like
+      // "skills"/"race"/"equipped" they are rebuilt here when the list is
+      // rebuilt rather than left to the raw document.
+      if (!npc.terminalGoals.empty()) {
+        nlohmann::json goals = nlohmann::json::object();
+        goals["terminal"] = npc.terminalGoals;
+        npcJson["goals"] = std::move(goals);
+      }
       mapJson["npcs"].push_back(std::move(npcJson));
     }
   }
@@ -664,6 +723,25 @@ std::string Map::RemoveLocationAt(GamePosition pos) {
     }
   }
   return "";
+}
+
+std::string Map::RemoveTileAt(GamePosition pos) {
+  if (!IsInBounds(static_cast<float>(pos.x), static_cast<float>(pos.y))) {
+    return "";
+  }
+
+  Tile *&cell = tileMap[GetIndex(pos.x, pos.y)];
+  if (cell == nullptr) {
+    return "";
+  }
+
+  const std::string removedName = cell->name;
+  // Only the cell's pointer is cleared. The Tile stays in uniqueTiles because
+  // that vector is the map's palette as well as its ownership: dropping the
+  // entry would renumber every palette index "positions" still stores for the
+  // other cells.
+  cell = nullptr;
+  return removedName;
 }
 
 std::vector<GamePosition> Map::GetTilePositionsInRect(GamePosition topLeft,

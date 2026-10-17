@@ -1,5 +1,7 @@
 #include "TileArtQueue.hpp"
 
+#include "TileArt.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -55,6 +57,28 @@ void TileArtQueue::Configure(const Config &newConfig,
 }
 
 void TileArtQueue::SetCompletion(CompletionFn fn) { completionFn = std::move(fn); }
+
+std::string TileArtQueue::UnavailableReason() const {
+  if (!config.enabled) {
+    return "art generation is off (art.generation.enabled in settings.json)";
+  }
+  if (config.command.empty()) {
+    return "no generation command is configured (art.generation.command)";
+  }
+  // A generated layer is where the sprite has to go, and with none configured the
+  // only place left is the hand-authored art -- which the placement refuses rather
+  // than writing into. Caught here so it is reported *before* a request is spent.
+  if (spritesDirectory.empty()) {
+    return "no generated layer is configured (set art.pack, or art.generated)";
+  }
+  if (requestsUsed >= config.maxRequestsPerSession) {
+    return "the session limit of " +
+           std::to_string(config.maxRequestsPerSession) +
+           " generation request(s) is reached";
+  }
+  return {};
+}
+
 
 bool TileArtQueue::Request(const std::string &tileName, std::string *reason) {
   auto refuse = [reason](const std::string &why) {
@@ -197,6 +221,11 @@ void TileArtQueue::StartWorker() {
         continue;
       }
       job.state = State::Running;
+      // Recorded before the worker starts, so a job that fails still points at the
+      // artifacts its attempt produced (a worklist and a log are written even when
+      // the tool then dies, and those are what explain the failure).
+      job.worklistPath =
+          (std::filesystem::path(workDirectory) / kWorklistName).string();
       batch.push_back(job.tileName);
     }
     if (batch.empty()) return;
@@ -339,6 +368,16 @@ size_t TileArtQueue::DrainCompleted() {
       if (completion.ok) {
         job.state = State::Done;
         job.error.clear();
+        // Where the sprite must be. The tool writes it there by convention -- the
+        // queue cannot ask it, because the tool's contract is a file in a directory
+        // rather than a reply -- so the path is derived from the tile name the same
+        // way placement derives it.
+        //
+        // Resolved here rather than left to the caller because three places need it
+        // and share this one job record: the swap's log line, the pixel/palette panel
+        // (which cannot draw anything without a path) and the artifact list. Leaving
+        // it empty made the panel silently refuse to draw and the log name no file.
+        job.path = TileArt::PlanFor(job.tileName).generatedPath;
       } else {
         job.state = State::Failed;
         job.error = completion.error.empty() ? "generation failed"
@@ -349,7 +388,7 @@ size_t TileArtQueue::DrainCompleted() {
       // The swap happens here, on the main thread, one job at a time. The queue
       // does not know what a sprite is; the callback is Game's.
       if (completionFn) {
-        completionFn(job);
+        job.swappedCells = completionFn(job);
       }
     }
   }

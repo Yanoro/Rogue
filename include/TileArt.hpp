@@ -151,4 +151,48 @@ SwapResult SwapIn(const std::string &tileName, const std::string &sourcePng,
                   const std::string &paletteFile,
                   const std::function<size_t(const std::string &)> &swap);
 
+// ---------------------------------------------------------------------------
+// The art pack's description
+// ---------------------------------------------------------------------------
+
+// What an art pack says about its own style, and where that came from.
+//
+// `pack.json` has been specced since docs/asset-generation-design.md §9.3 as "the
+// style block" -- id, name, lora, trigger, loraScale, negative, references -- and
+// §13.3 already floated a prose description in it for the designer agent. This is
+// that prose, read for the first time, because the prompt rewriter is the first
+// thing that needs to know what a pack is *going for* rather than which files it
+// holds.
+//
+// Why it is read here rather than in Settings: it is a property of the pack, found
+// from the pack's own directory, and Settings holds configuration the user writes.
+// A description that has to be repeated into settings.json would drift from the
+// pack it describes.
+struct PackStyle {
+  // The pack's own prose. Empty when it has none, which is a supported state and
+  // the state every pack is in today.
+  std::string description;
+  // The pack's display name, falling back to the directory name. Useful in a
+  // prompt ("in the Pixel Crawler style") even when there is no description.
+  std::string name;
+  // Where the description came from, for reporting. Empty when none was found.
+  std::string sourcePath;
+  // Every key present in the style block, so a caller can tell "the pack says
+  // nothing" from "there is no pack.json". Both mean empty prose, but only one is
+  // worth telling the user to go and fix.
+  bool packFileExists = false;
+  // A one-line summary for a UI, e.g. "described: 480 chars from pack.json" or
+  // "no description in packs/art/village/pack.json". Never empty.
+  std::string Summary() const;
+};
+
+// Reads the current art pack's style block. Empty `description` when the pack has
+// none, when no pack is configured, or when pack.json cannot be read -- all three
+// are the same thing to a caller: align with nothing, and say so.
+PackStyle CurrentPackStyle();
+
+// The same read for an explicit pack directory, for callers that already know
+// which pack they mean (the headless mode, and a test).
+PackStyle ReadPackStyle(const std::string &packDirectory);
+
 }  // namespace TileArt

@@ -2,6 +2,7 @@
 #include <curl/curl.h>
 #include <algorithm>
 #include <cctype>
+#include <fstream>
 #include <iostream>
 #include <thread>
 
@@ -282,6 +283,17 @@ void OpenRouterAI::setOption(const std::string &key, const nlohmann::json &value
   options[key] = value;
 }
 
+void OpenRouterAI::setReasoningEnabled(bool enabled) {
+  // The payload always carries a `reasoning` object with `enabled: true`, because
+  // reasoning is on by default for the models this backend is configured with. A
+  // caller that wants a plain answer -- a short rewrite, where a paragraph of thinking
+  // is both wasteful and capable of consuming the whole completion budget -- sets this
+  // to false, which replaces the object with one that switches it off.
+  options["reasoning"] = {{"enabled", enabled},
+                          {"exclude", !enabled},
+                          {"max_tokens", enabled ? DEFAULT_REASONING_MAX_TOKENS : 0}};
+}
+
 std::string OpenRouterAI::generate(const std::string &contextId,
                                    const std::vector<ChatMessage> &history,
                                    std::stop_token stoken,
@@ -520,7 +532,6 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
   }
 
   std::string jsonStr = payload.dump();
-
   std::thread([this, contextId, callback, stoken, jsonStr]() mutable {
     StreamContext ctx;
     ctx.callback = callback;

@@ -47,6 +47,10 @@ public:
 
   void setOption(const std::string &key, const nlohmann::json &value);
 
+  // Overrides the payload's `reasoning` block. See AI::setReasoningEnabled for why a
+  // caller would want this off.
+  void setReasoningEnabled(bool enabled) override;
+
   std::string generate(const std::string &contextId,
                        const std::vector<ChatMessage> &history,
                        std::stop_token stoken = {},

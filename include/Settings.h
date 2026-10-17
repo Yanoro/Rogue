@@ -129,7 +129,69 @@ struct GameSettings {
       // exists only for debugging the pipeline and will read the JSON aloud.
       std::string content = "notes";
     } tts;
+
+    // The model behind the Improve button.
+    //
+    // Its own section because rewriting is a different job from designing and the
+    // right model for it is usually a different one: a short text edit wants a fast,
+    // cheap, non-reasoning model, and pointing it at the strong reasoning model the
+    // designer uses makes the button slow and can produce *no answer at all*.
+    // Measured on this repo's default backend: deepseek-v4-flash spends its whole
+    // completion budget on reasoning, so a rewrite request came back with content
+    // `None` and 5 billed completion tokens. `enabled` defaults off, which means
+    // "share the designer's backend but with reasoning turned off" -- correct for a
+    // one-paragraph rewrite, and still one decision rather than two.
+    struct RewriterSection {
+      // False shares the designer's backend. True reads `model` below instead.
+      bool enabled = false;
+      // Only read when enabled. Same shape and meaning as `model`.
+      ModelSection model;
+      // Turn reasoning off on the rewriter's backend when it shares the designer's.
+      // Worth a setting only because a model that needs reasoning to edit a sentence
+      // exists; the default is right for this task.
+      bool disableReasoning = true;
+    } rewriter;
   } designer;
+
+  // The System 1 backend: the typed-classifier layer described in
+  // docs/agent-attention-design.md, whose calls the System 1 Overview window
+  // displays.
+  //
+  // Its own section for the same reason the designer has one. System 1 is a
+  // *different model class* from the System 2 chat model -- state and questions
+  // in, calibrated answers out -- and the models good at it are not the models
+  // good at roleplay. It is also the layer most likely to be swapped or dropped
+  // wholesale, which is what the overview window exists to decide, so pointing it
+  // somewhere else must not mean touching the NPC backend.
+  //
+  // Every field here can be absent, and the whole section can be absent, in which
+  // case the game runs exactly as it did before this existed: no System 1 backend
+  // is constructed and `SystemOneClassifier::Available()` has nothing to report
+  // (see SystemOneRecorder.h).
+  struct SystemOneSection {
+    // False shares the NPC backend, which is the least surprising default for an
+    // unconfigured run. True reads `model` below instead.
+    bool useMainModel = true;
+    // Only read when useMainModel is false. Same shape and meaning as `model`,
+    // with one deliberate exception: an empty `model` means "inherit the main
+    // model's id" rather than "use ModelSection's built-in llama3 default".
+    //
+    // That exception is load-bearing, not tidiness. ModelSection defaults `model`
+    // to "llama3", so a config that sets only an endpoint or a key would look
+    // configured and send llama3 to a decision endpoint -- which answers
+    // `Model llama3 does not exist`. Empty is the only honest spelling of "not
+    // set" once a field has a non-empty default.
+    ModelSection model;
+    // Ask the shared backend for a single non-reasoning answer rather than a
+    // chain of thought. On by default, and the opposite of the designer's choice:
+    // System 1's whole premise is a cheap, fast, one-shot classification, and a
+    // reasoning model handed a classifier's question spends its budget thinking
+    // and returns a worse-calibrated answer -- or none at all.
+    bool disableReasoning = true;
+    // Bounds the in-memory view the overview window keeps. The log file is
+    // unaffected and keeps everything, so a long session stays fully recorded.
+    int maxRecords = 500;
+  } system1;
 
   struct AISection {
     // Path to a text file holding the NPC system prompt template. Empty means the
@@ -216,6 +278,27 @@ struct GameSettings {
     // the glyph table. Empty falls back to the generated vocabulary alone, the
     // same way designer.promptFile does.
     std::string tileDesignerPromptFile = "data/tiles/TILEDESIGNER.md";
+    // The object designer's instructions: the capability vocabulary, the art block
+    // grammar and what an object may not do. The reply format is not repeated here --
+    // it is substituted from `spriteContractFile` below, so the two kinds cannot
+    // drift about how a reply is shaped.
+    std::string objectDesignerPromptFile = "data/objects/OBJECTDESIGNER.md";
+    // The generated overlay for agent-created objects, the object counterpart of
+    // `generatedTiles` above and a sibling of data/objects for the same reason:
+    // ObjectFactory::LoadTemplates reads one directory and is not recursive. Empty
+    // means an accepted object lives for this run only, which the window says out
+    // loud rather than failing silently at the next launch.
+    std::string generatedObjects = "data/generated/objects";
+    // The reply contract every kind's prompt is built from -- the format, the refusal
+    // protocol and the prohibitions. One file rather than a copy per kind, because
+    // this is the part that must not drift: a tile and an object are refused the same
+    // way or the model has learned two contracts.
+    std::string spriteContractFile = "data/prompts/SPRITE_CONTRACT.md";
+    // The prompt-improver's instructions, shared by every window that offers the
+    // Improve button -- the rules for rewriting a user's request are about rewriting,
+    // not about tiles or buildings, so there is one file rather than one per window.
+    // A window supplies its own domain brief into `%BRIEF%`.
+    std::string rewritePromptFile = "data/prompts/REWRITE.md";
     // Building designs. Optional: with none, the placement window lists nothing.
     std::string blueprints = "data/blueprints";
   } content;

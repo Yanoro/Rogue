@@ -15,6 +15,7 @@
 #include "EntityInfoWindow.h"
 #include "StorageWindow.h"
 #include "Game.h"
+#include "ObjectDesigner.hpp"
 #include "DesignerChatWindow.h"
 #include "TileDesigner.hpp"
 #include "TileDesignerWindow.h"
@@ -22,9 +23,11 @@
 #include "PiperSpeech.h"
 #include "SpeechQueue.h"
 #include "VisionChatWindow.h"
+#include "SystemOneWindow.h"
 
 #include "AgentBrain.h"
 #include "AgentActions.h"
+#include "TaskVerification.h"
 #include "CharacterStatusWindow.h"
 #include "GlobalCommandRegistry.h"
 #include "InteractionRegistry.h"
@@ -276,6 +279,22 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
+  // Life goals are authored data, seeded once here and read-only afterwards
+  // (docs/task-system-design.md section 5): a model that re-derives its life
+  // goals each session makes a character inconsistent across runs, which is the
+  // specific thing the task system exists to remove. Stamped before the brain is
+  // built, like the other spawn-time state, so the agent's first digest already
+  // has its frame. An NPC with no authored goals gets no TaskList at all, which
+  // is the "no list behaves exactly as today" case.
+  if (!data.terminalGoals.empty()) {
+    TaskList taskList;
+    SeedTerminalGoals(data.terminalGoals, CurrentTaskTick(entity.world()),
+                      taskList);
+    if (!taskList.goals.empty()) {
+      entity.set<TaskList>(std::move(taskList));
+    }
+  }
+
   std::string locations = "";
   std::string characterNames = "";
   Map *currMap = entity.world().get<MapResource>()->map;
@@ -292,21 +311,11 @@ flecs::entity Game::createNPC(const NPCData &data) {
     characterNames.erase(characterNames.length() - 2);
   }
 
-  // Each active command is listed with its own description directly beneath it,
-  // in the same description-then-examples style the interaction registry uses,
-  // so the model sees what a command does next to the command itself.
-  std::string commandsList = "";
-  for (const auto &cmd : GlobalCommandRegistry::GetCommands()) {
-    if (cmd.hidden || cmd.format.empty()) continue;
-    commandsList += cmd.format + "\n";
-    if (!cmd.rule.empty()) {
-      commandsList += "  - " + cmd.rule + "\n";
-    }
-  }
-  // The template already supplies the blank line that follows the list.
-  if (!commandsList.empty() && commandsList.back() == '\n') {
-    commandsList.pop_back();
-  }
+  // Format-then-short-description, one entry per visible command. The same
+  // builder produces the bare [HELP] reply, so the list the model is spawned
+  // with and the list [HELP] prints cannot drift apart. The template already
+  // supplies the blank line that follows the list.
+  std::string commandsList = GlobalCommandRegistry::BuildVisibleCommandList();
 
   std::regex re1("%LOCATIONS%");
   std::regex re2("%BACKGROUND%");
@@ -1396,6 +1405,26 @@ void Game::ECSInitTileArtSystems() {
   });
 }
 
+void Game::ECSInitTaskSystems() {
+  // The checking pass (docs/task-system-design.md section 8). A logic system, so
+  // it runs in progress() with the other update systems and never in the render
+  // pipeline.
+  //
+  // Interval rather than every frame: each pass resolves a target by name, which
+  // is a world-wide query per task, and nothing here is time-critical -- the
+  // result is shown to the agent only when it wakes. The modulo is on the world
+  // clock, so it needs no per-agent timer component and cannot drift.
+  ecs.system<TaskList>("TaskVerificationSystem")
+      .each([](flecs::entity agent, TaskList &tasks) {
+        if (DEFAULT_TASK_VERIFY_INTERVAL_TICKS > 0 &&
+            CurrentTaskTick(agent.world()) % DEFAULT_TASK_VERIFY_INTERVAL_TICKS !=
+                0) {
+          return;
+        }
+        VerifyAgentTaskList(agent, tasks, CurrentTaskTick(agent.world()));
+      });
+}
+
 void Game::ECSInitAgentSystems() {  // System to flush background AI thread callbacks on the main thread safely
   ecs.system("AIResponseQueueFlusher").iter([](flecs::iter &) {
     std::vector<std::function<void()>> queue_copy;
@@ -1942,6 +1971,29 @@ void Game::ECSInit() {
 
   objectFactory.SetDebugLog(debugLog.get());
   objectFactory.LoadTemplates(settings.content.objects);
+  // Then the generated overlay, additively and after the catalog, exactly as the tile
+  // overlay is loaded after the tile catalog -- so hand-authored content wins and a
+  // created object survives a restart.
+  //
+  // The component registration has to come first, and calling it here rather than
+  // reordering the whole of ECSInit is deliberate. Validating an overlay entry runs the
+  // real component setters on a scratch entity, and flecs validates a component type by
+  // name and size -- so a scratch world that registers `Trains` before this world does
+  // makes this world's own `RegisterComponents` below abort with "already registered with
+  // a different size or alignment". Loading the overlay is what needs the metadata, so
+  // the metadata is what moves up. Registering twice is harmless; skipping it is a crash.
+  //
+  // Before the resource is published, because anything reading ObjectFactoryResource
+  // would otherwise see a factory that is about to change under it.
+  {
+    RegisterComponents(ecs);
+    const size_t generated = ObjectDesigner::LoadOverlayDirectory(
+        settings.content.generatedObjects, objectFactory, debugLog.get());
+    if (generated > 0) {
+      debugLog->LogInfo("Object overlay: loaded " + std::to_string(generated) +
+                        " created object(s)");
+    }
+  }
   ecs.set<ObjectFactoryResource>({&objectFactory});
 
   recipeRegistry.SetDebugLog(debugLog.get());
@@ -1973,6 +2025,13 @@ void Game::ECSInit() {
   raceRegistry.SetDebugLog(debugLog.get());
   raceRegistry.LoadRaces(settings.content.races);
   ecs.set<RaceRegistryResource>({&raceRegistry});
+
+  // The task shapes the engine knows how to check. Engine-defined rather than
+  // loaded from JSON, because a check is C++ (docs/task-system-design.md section
+  // 7): this is the place a genre adds one, in code. Seeded before LoadMap so
+  // every agent spawned by it can already resolve a kind.
+  taskKindRegistry.RegisterDefaults();
+  ecs.set<TaskKindRegistryResource>({&taskKindRegistry});
 
   // The world's tile vocabulary. Loaded before LoadMap, because Map resolves its
   // tileInfo entries against it while building uniqueTiles -- a map's tileInfo is
@@ -2078,68 +2137,113 @@ void Game::ECSInit() {
   GlobalCommandRegistry::Clear();
 
   GlobalCommandRegistry::Register({
-    "[WAIT $SECONDS]",
-    "Wait before doing anything else. Examples: [WAIT 5], [WAIT 20].",
-    std::regex(R"(\[WAIT\s+(\d+(?:\.\d+)?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[WAIT $SECONDS]",
+    .rule = "Wait before doing anything else. Examples: [WAIT 5], [WAIT 20].",
+    .pattern = std::regex(R"(\[WAIT\s+(\d+(?:\.\d+)?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       float time = std::stof(match[1].str());
       return [time](flecs::entity) { return std::make_unique<WaitAction>(time); };
+    },
+    .help = {
+      .description = "Pause and let time pass before you act again. Use it when the thing you are waiting for is not ready yet -- a crop that still has to grow, someone who is on their way -- instead of repeating a command that cannot succeed yet.",
+      .examples = {"[WAIT 5]", "[WAIT 20]"},
+      .usage = {"$SECONDS: how long to wait, in seconds. Fractions are allowed, e.g. [WAIT 0.5]."},
+      .notes = {"You can do nothing else while you wait, so a long wait also delays every other plan you are holding."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[MOVE_TO $TARGET]",
-    "Pathfind automatically to a character, location or an object. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
-    std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[MOVE_TO $TARGET]",
+    .rule = "Pathfind automatically to a character, location or an object. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
+    .pattern = std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
       return [targetName](flecs::entity) { return std::make_unique<MoveToEntityAction>(targetName); };
+    },
+    .help = {
+      .description = "Walk to a named character, object or mapped location, pathfinding around whatever is in the way. This is how you get within reach of something: arriving next to an object is what makes its interactions available, and arriving next to a character is the step before talking to them.",
+      .examples = {"[MOVE_TO Pietro]", "[MOVE_TO Mill]"},
+      .usage = {"$TARGET: the exact name as printed by [SURROUNDINGS] or [LOCATIONS]. Matching ignores case."},
+      .notes = {"Arriving at an object lists the interactions it offers and remembers it as your interaction target.",
+                "Directions such as \"east\" and bare coordinates are not valid targets.",
+                "If the name matches nothing you are told so and nothing moves."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[TALK_TO $TARGET]",
-    "Start or continue a conversation with a character. Example: [TALK_TO Pietro].",
-    std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[TALK_TO $TARGET]",
+    .rule = "Start or continue a conversation with a character. Example: [TALK_TO Pietro].",
+    .pattern = std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
       return [targetName](flecs::entity entity) { return std::make_unique<TalkAction>(entity, targetName); };
+    },
+    .help = {
+      .description = "Begin or continue a conversation with another character. Conversation is where person-to-person exchanges happen, so most social plans start here.",
+      .examples = {"[TALK_TO Pietro]"},
+      .usage = {"$TARGET: the exact name of a character, as printed by [CHARACTERS] or [SURROUNDINGS]."},
+      .notes = {"Trade verbs such as [OFFER] and [ACCEPT] only work while a conversation is active."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[CHARACTERS]",
-    "List the characters nearby. Example: [CHARACTERS].",
-    std::regex(R"(\[CHARACTERS\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[CHARACTERS]",
+    .rule = "List the characters nearby. Example: [CHARACTERS].",
+    .pattern = std::regex(R"(\[CHARACTERS\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<CharactersAction>(); };
+    },
+    .help = {
+      .description = "List the other characters by name. Read-only, so it is safe to check whenever you need to remember who is in the world.",
+      .examples = {"[CHARACTERS]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"The names printed are the exact ones [TALK_TO] and [MOVE_TO] match on."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[LOCATIONS]",
-    "List all known mapped locations. Example: [LOCATIONS].",
-    std::regex(R"(\[LOCATIONS\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[LOCATIONS]",
+    .rule = "List all known mapped locations. Example: [LOCATIONS].",
+    .pattern = std::regex(R"(\[LOCATIONS\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<LocationsAction>(); };
+    },
+    .help = {
+      .description = "List every mapped, named place you can travel to. Useful for planning a longer trip before committing to the walk.",
+      .examples = {"[LOCATIONS]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"These are the place names [MOVE_TO] accepts, matched case-insensitively."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[SURROUNDINGS]",
-    "List what is close enough to interact with: nearby objects, items on the ground and characters, each with the exact name to use with [MOVE_TO] and its offset from you. Example: [SURROUNDINGS].",
-    std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[SURROUNDINGS]",
+    .rule = "List what is close enough to interact with: nearby objects, items on the ground and characters, each with the exact name to use with [MOVE_TO] and its offset from you. Example: [SURROUNDINGS].",
+    .pattern = std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<SurroundingsAction>(); };
+    },
+    .help = {
+      .description = "Report what is close enough to reach: nearby objects, items lying on the ground and characters, each with the exact name to use and its offset from you. Run this when you know what you want to do but not what is within reach.",
+      .examples = {"[SURROUNDINGS]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"Offsets are relative to you, with +X East and +Y South -- the same convention [PLACE] uses.",
+                "Copy names exactly as shown: they are the strings [MOVE_TO] matches on."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[INVENTORY]",
-    "List the items you are currently carrying. Example: [INVENTORY].",
-    std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[INVENTORY]",
+    .rule = "List the items you are currently carrying. Example: [INVENTORY].",
+    .pattern = std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<InventoryAction>(); };
+    },
+    .help = {
+      .description = "List what you are carrying, one line per distinct item, with a count when you hold more than one. Worn items are marked rather than hidden, so an equipped tool stays distinguishable from a spare in your pack.",
+      .examples = {"[INVENTORY]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"Use [EXAMINE_ITEM $ITEM_NAME] on a listed name to see what that item can do."}
     }
   });
 
@@ -2151,74 +2255,144 @@ void Game::ECSInit() {
   // [GENERIC_INTERACT] -- that catch-all matches [A-Z_]+ and would otherwise
   // swallow both.
   GlobalCommandRegistry::Register({
-    "[GUIDE $ACTIVITY]",
-    "Ask how an activity is done in this world: every recipe that trains it and the full chain of ingredients down to raw materials, naming the station each step happens at. Omit the activity to list what guides exist. Examples: [GUIDE blacksmithing], [GUIDE].",
-    std::regex(R"(\[GUIDE(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[GUIDE $ACTIVITY]",
+    .rule = "Ask how an activity is done in this world: every recipe that trains it and the full chain of ingredients down to raw materials, naming the station each step happens at. Omit the activity to list what guides exist. Examples: [GUIDE blacksmithing], [GUIDE].",
+    .pattern = std::regex(R"(\[GUIDE(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string topic = match.size() > 1 ? match[1].str() : "";
       return [topic](flecs::entity) { return std::make_unique<GuideAction>(topic); };
+    },
+    .help = {
+      .description = "Ask how an activity is practised in this world. The answer gives every recipe that trains it, the station each one happens at, and the ingredients expanded down to raw materials. Omit the activity to hear which guides exist.",
+      .examples = {"[GUIDE blacksmithing]", "[GUIDE]"},
+      .usage = {"$ACTIVITY: the activity to ask about, e.g. blacksmithing. Omit it to list the available guides."},
+      .notes = {"Read-only: a guide tells you how something is done but trains no skill and changes nothing.",
+                "To ask about a specific item rather than an activity, use [INFO $ITEM]."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[INFO $ITEM]",
-    "General reference on an item TYPE: which recipe and station makes it, or, for something that is gathered rather than made, which object yields it. This describes the kind of item; to inspect one specific item you are carrying, use [EXAMINE_ITEM]. Omit the item to list what can be asked about. Examples: [INFO iron_ingot], [INFO iron_ore], [INFO].",
-    std::regex(R"(\[INFO(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[INFO $ITEM]",
+    .rule = "General reference on an item TYPE: which recipe and station makes it, or, for something that is gathered rather than made, which object yields it. This describes the kind of item; to inspect one specific item you are carrying, use [EXAMINE_ITEM]. Omit the item to list what can be asked about. Examples: [INFO iron_ingot], [INFO iron_ore], [INFO].",
+    .pattern = std::regex(R"(\[INFO(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string item = match.size() > 1 ? match[1].str() : "";
       return [item](flecs::entity) { return std::make_unique<ItemInfoAction>(item); };
+    },
+    .help = {
+      .description = "Look up an item type: which recipe and station produce it, or -- for something gathered rather than crafted -- which object yields it. This describes the kind of item, not one particular copy you own.",
+      .examples = {"[INFO iron_ingot]", "[INFO iron_ore]", "[INFO]"},
+      .usage = {"$ITEM: the item type to ask about. Omit it to list the types that can be asked about."},
+      .notes = {"To inspect one specific item you are carrying and what can be done with it, use [EXAMINE_ITEM $ITEM_NAME].",
+                "The answer does not recurse; it names the ingredients so you can ask about them one step at a time."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[EXAMINE_ITEM $ITEM_NAME]",
-    "See what actions you can perform with an item you are carrying. Example: [EXAMINE_ITEM Wheat].",
-    std::regex(R"(\[EXAMINE_ITEM\s+(.+?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[EXAMINE_ITEM $ITEM_NAME]",
+    .rule = "See what actions you can perform with an item you are carrying. Example: [EXAMINE_ITEM Wheat].",
+    .pattern = std::regex(R"(\[EXAMINE_ITEM\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string itemName = match[1].str();
       return [itemName](flecs::entity) { return std::make_unique<ExamineItemAction>(itemName); };
+    },
+    .help = {
+      .description = "Ask what you can do with one item you are carrying. You get that item's available actions, plus how much durability it has left when it has any -- the way to find out what a tool or ingredient is good for before using it.",
+      .examples = {"[EXAMINE_ITEM Wheat]", "[EXAMINE_ITEM Iron Scythe]"},
+      .usage = {"$ITEM_NAME: the exact name of an item in your inventory, as printed by [INVENTORY]."},
+      .notes = {"The item must be one you are holding; a name you do not carry is reported as invalid."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[EQUIP $ITEM_NAME]",
-    "Wear or wield an item you are carrying, so its effects apply to you. Replaces whatever is already in the slot it needs. Example: [EQUIP Iron Scythe].",
-    std::regex(R"(\[EQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[EQUIP $ITEM_NAME]",
+    .rule = "Wear or wield an item you are carrying, so its effects apply to you. Replaces whatever is already in the slot it needs. Example: [EQUIP Iron Scythe].",
+    .pattern = std::regex(R"(\[EQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string itemName = match[1].str();
       return [itemName](flecs::entity) { return std::make_unique<EquipAction>(itemName); };
+    },
+    .help = {
+      .description = "Put on or take up an item you are carrying so its effects apply to you. Whatever already occupies the slot it needs is swapped out and stays in your inventory.",
+      .examples = {"[EQUIP Iron Scythe]"},
+      .usage = {"$ITEM_NAME: the exact name of a carried item, as printed by [INVENTORY]."},
+      .notes = {"If the item is not in your inventory the command reports that and nothing changes.",
+                "Use [EQUIPMENT] to see what is worn and which slot it occupies."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[UNEQUIP $ITEM_NAME]",
-    "Take off an item you are wearing. Example: [UNEQUIP Iron Scythe].",
-    std::regex(R"(\[UNEQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[UNEQUIP $ITEM_NAME]",
+    .rule = "Take off an item you are wearing. Example: [UNEQUIP Iron Scythe].",
+    .pattern = std::regex(R"(\[UNEQUIP\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string itemName = match[1].str();
       return [itemName](flecs::entity) { return std::make_unique<UnequipAction>(itemName); };
+    },
+    .help = {
+      .description = "Take off one worn item, leaving it in your inventory. Use it to free a slot before equipping something else.",
+      .examples = {"[UNEQUIP Iron Scythe]"},
+      .usage = {"$ITEM_NAME: the exact name of a worn item, as printed by [EQUIPMENT]."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[EQUIPMENT]",
-    "List what you are wearing and which slot each item occupies. Example: [EQUIPMENT].",
-    std::regex(R"(\[EQUIPMENT\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[EQUIPMENT]",
+    .rule = "List what you are wearing and which slot each item occupies. Example: [EQUIPMENT].",
+    .pattern = std::regex(R"(\[EQUIPMENT\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<EquipmentAction>(); };
+    },
+    .help = {
+      .description = "List what you are currently wearing and which slot each item occupies. Read-only, so it is safe to check before and after changing gear.",
+      .examples = {"[EQUIPMENT]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"A worn item is still carried; [INVENTORY] marks it rather than hiding it."}
+    }
+  });
+
+  // The vocabulary's own reference. Registered last among the visible verbs,
+  // before the hidden ones and the [GENERIC_INTERACT] catch-all that would
+  // otherwise swallow "[HELP ...]".
+  //
+  // Both forms live here: bare [HELP] reuses GlobalCommandRegistry's visible
+  // list, and [HELP <COMMAND>] prints the long form registered with that verb.
+  // Hidden verbs are answerable by name but never listed -- see HelpAction.
+  GlobalCommandRegistry::Register({
+    .format = "[HELP $COMMAND]",
+    .rule = "Explain the command vocabulary: on its own it lists every command with a short description; with a command name it gives the full explanation. Examples: [HELP], [HELP MOVE_TO].",
+    .pattern = std::regex(R"(\[HELP(?:\s+([^\]]*?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string topic = match.size() > 1 ? match[1].str() : "";
+      return [topic](flecs::entity) { return std::make_unique<HelpAction>(topic); };
+    },
+    .help = {
+      .description = "Ask about the commands themselves. On its own it lists every command you can use, each with a short description of what it does. Given a command name it prints the full explanation: what the command is for, worked examples, what its arguments accept, and any caveats.",
+      .examples = {"[HELP]", "[HELP MOVE_TO]"},
+      .usage = {"$COMMAND: the verb to explain, e.g. MOVE_TO. Omit it to list every command.",
+                "Only the verb matters and matching ignores case, so [HELP move_to] and [HELP MOVE_TO $TARGET] both work."},
+      .notes = {"Commands taught inside a conversation, such as the trade verbs, are not listed here but can still be asked about by name."}
     }
   });
 
   GlobalCommandRegistry::Register({
-    "[PLACE $ITEM AT X,Y ...]",
-    "- Sets an item you are carrying down in the world at one or more relative coordinates. What can be placed and where is up to the item.",
-    std::regex(R"(\[PLACE\s+(.+?)\s+AT\s+((?:-?\d+,-?\d+\s*)+)\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[PLACE $ITEM AT X,Y ...]",
+    .rule = "Sets an item you are carrying down in the world at one or more relative coordinates. What can be placed and where is up to the item.",
+    .pattern = std::regex(R"(\[PLACE\s+(.+?)\s+AT\s+((?:-?\d+,-?\d+\s*)+)\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string itemName = match[1].str();
       std::string coordsStr = match[2].str();
       return [itemName, coordsStr](flecs::entity) { return std::make_unique<PlaceAtAction>(itemName, coordsStr); };
     },
-    true
+    .hidden = true,
+    .help = {
+      .description = "Set one or more items you are carrying down in the world at relative coordinates. Every coordinate is checked before anything is consumed, so a rejected spot never costs you the item. What may be placed, how far away and what the placed form becomes are all decided by the item itself: planting is just placement where the placed form happens to grow.",
+      .examples = {"[PLACE Wheat Seeds AT 1,0]", "[PLACE Wheat Seeds AT 1,0 -1,0 0,1]"},
+      .usage = {"$ITEM: the exact name of a carried item.",
+                "AT X,Y ...: one or more offsets from your own tile, +X East and +Y South, separated by spaces."},
+      .notes = {"You cannot place on your own tile, outside the map, on ground the item does not accept, or on a tile something already occupies.",
+                "Naming more coordinates than you hold items is not fatal: the extras are reported as \"no ... left\"."}
+    }
   });
 
   // Trade verbs. Registered hidden so they are not dumped into every NPC's
@@ -2228,55 +2402,118 @@ void Game::ECSInit() {
   // and they exist mainly to give a useful reply when a model uses one outside
   // a conversation.
   GlobalCommandRegistry::Register({
-    "[OFFER $GIVE FOR $RECEIVE]",
-    "- Propose a trade while talking to someone; separate multiple items with commas. Examples: [OFFER 3 Iron Ingot FOR 8 Flour], [OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
-    std::regex(R"(\[OFFER\b[^\]]*\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[OFFER $GIVE FOR $RECEIVE]",
+    .rule = "Propose a trade while talking to someone; separate multiple items with commas. Examples: [OFFER 3 Iron Ingot FOR 8 Flour], [OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
+    .pattern = std::regex(R"(\[OFFER\b[^\]]*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("OFFER"); };
     },
-    true
+    .hidden = true,
+    .help = {
+      .description = "Propose a trade while you are in a conversation: what you will give, and what you want in return. Your partner is shown the offer and can accept it, decline it, or come back with a counter-offer.",
+      .examples = {"[OFFER 3 Iron Ingot FOR 8 Flour]", "[OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot]"},
+      .usage = {"$GIVE: what you hand over -- one item name, or several separated by commas.",
+                "FOR $RECEIVE: what you ask for in return, in the same format."},
+      .notes = {"Only works inside a conversation started with [TALK_TO]; outside one you are told to start talking first.",
+                "Nothing changes hands until both sides agree."}
+    }
   });
 
   GlobalCommandRegistry::Register({
-    "[COUNTER_OFFER $GIVE FOR $RECEIVE]",
-    "- Propose different terms while your partner's offer is pending; separate multiple items with commas. Examples: [COUNTER_OFFER 2 Iron Ingot FOR 10 Flour], [COUNTER_OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
-    std::regex(R"(\[COUNTER_OFFER\b[^\]]*\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[COUNTER_OFFER $GIVE FOR $RECEIVE]",
+    .rule = "Propose different terms while your partner's offer is pending; separate multiple items with commas. Examples: [COUNTER_OFFER 2 Iron Ingot FOR 10 Flour], [COUNTER_OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot].",
+    .pattern = std::regex(R"(\[COUNTER_OFFER\b[^\]]*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("COUNTER_OFFER"); };
     },
-    true
+    .hidden = true,
+    .help = {
+      .description = "Propose different terms while your partner's offer is still on the table, instead of accepting or declining it. Your counter replaces the pending offer and is put to the other side.",
+      .examples = {"[COUNTER_OFFER 2 Iron Ingot FOR 10 Flour]", "[COUNTER_OFFER 2 Flour, 5 Bronze Coins FOR 3 Iron Ingot]"},
+      .usage = {"$GIVE: what you now hand over, comma-separated if several.",
+                "FOR $RECEIVE: what you now ask for in return."},
+      .notes = {"Only works while a trade is pending inside a conversation."}
+    }
   });
 
   GlobalCommandRegistry::Register({
-    "[ACCEPT]",
-    "- Agree to the trade offer currently on the table.",
-    std::regex(R"(\[ACCEPT\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[ACCEPT]",
+    .rule = "Agree to the trade offer currently on the table.",
+    .pattern = std::regex(R"(\[ACCEPT\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("ACCEPT"); };
     },
-    true
+    .hidden = true,
+    .help = {
+      .description = "Agree to the trade offer currently on the table, completing the exchange on its stated terms.",
+      .examples = {"[ACCEPT]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"Only works while an offer is pending; used outside a conversation it replies that you are not talking to anyone."}
+    }
   });
 
   GlobalCommandRegistry::Register({
-    "[DECLINE]",
-    "- Refuse the trade offer currently on the table.",
-    std::regex(R"(\[DECLINE\])", std::regex_constants::icase),
-    [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[DECLINE]",
+    .rule = "Refuse the trade offer currently on the table.",
+    .pattern = std::regex(R"(\[DECLINE\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       return [](flecs::entity) { return std::make_unique<TradeOutOfContextAction>("DECLINE"); };
     },
-    true
+    .hidden = true,
+    .help = {
+      .description = "Refuse the trade offer currently on the table, leaving both sides' goods where they are.",
+      .examples = {"[DECLINE]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"Only works while an offer is pending; used outside a conversation it replies that you are not talking to anyone."}
+    }
   });
 
+  // Hidden: the agent's own task list, replaced wholesale (docs/task-system-
+  // design.md section 9). Hidden so it does not clutter the advertised command
+  // list, exactly like the trade verbs, and registered here -- before
+  // [GENERIC_INTERACT] -- because that catch-all matches "[A-Z_]+..." and would
+  // otherwise swallow it. The digest injected at wake time is what tells the
+  // agent the verb exists.
   GlobalCommandRegistry::Register({
-    "[GENERIC_INTERACT]",
-    "",
-    std::regex(R"(\[([A-Z_]+)(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
-    [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+    .format = "[SET_TASKS $ENTRIES]",
+    .rule = "Replace your task list (your life goals are fixed and are not part of it). "
+    "One entry per line, entries separated by ';': "
+    "id | description | horizon | kind | target | parent | tier, where horizon is "
+    "longterm or short and tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND.",
+    .pattern = std::regex(R"(\[SET_TASKS\b([\s\S]*?)\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string payload = match.size() > 1 ? match[1].str() : "";
+      return [payload](flecs::entity) { return std::make_unique<SetTasksAction>(payload); };
+    },
+    .hidden = true,
+    .help = {
+      .description = "Replace your own task list wholesale. Use it to record what you are working towards and how it breaks down, so your intentions survive across turns. The list you send replaces everything below your fixed terminal goals, which are left untouched.",
+      .examples = {"[SET_TASKS 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]",
+                   "[SET_TASKS 2 | build standing through relationships | longterm | | | 1 | ; 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]"},
+      .usage = {"$ENTRIES: one entry per line separated by ';', each written as id | description | horizon | kind | target | parent | tier.",
+                "horizon is longterm or short; tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND.",
+                "Omitted parent, kind and target fields are left blank between pipes."},
+      .notes = {"Parsing is tolerant: a malformed line is skipped with a warning and the rest of the list still applies.",
+                "A list that cannot be read at all leaves your previous list exactly as it was.",
+                "Terminal goals cannot be set this way; a terminal row is ignored with a warning."}
+    }
+  });
+
+  // The catch-all that turns any unclaimed [VERB ...] into an interaction with
+  // whatever item or object it resolves against. It has no verb of its own and
+  // an empty format, so no [HELP <COMMAND>] lookup can ever reach it and it
+  // carries no help text: the verbs it actually serves, such as [HARVEST] and
+  // [STORE], belong to the content they act on.
+  GlobalCommandRegistry::Register({
+    .format = "",
+    .rule = "",
+    .pattern = std::regex(R"(\[([A-Z_]+)(?:\s+(.+?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string actionName = match[1].str();
       std::string args = match.size() > 2 ? match[2].str() : "";
       return [actionName, args](flecs::entity) { return std::make_unique<GenericInteractAction>(actionName, args); };
     },
-    true
+    .hidden = true
   });
 
   // Component reflection has to exist before anything is spawned. LoadMap
@@ -2780,6 +3017,30 @@ void Game::ECSInit() {
           (settings.designer.useMainModel ? " (shares the NPC backend settings)"
                                           : " at " + designerModel.endpoint));
     }
+
+    // The Improve button's backend. Built beside the designer's because it is the same
+    // kind of thing -- per-window state Game owns for the run -- and because it
+    // defaults to the designer's own model settings.
+    //
+    // Reasoning is switched off unless the owner configured their own rewriter and
+    // said otherwise. That is not a micro-optimisation: a reasoning model spends its
+    // completion budget thinking and can return an *empty* answer, which a user would
+    // read as "the Improve button does nothing". Measured on this repo's default
+    // backend before this line existed.
+    rewriterAI = BuildAIBackend(settings.designer.rewriter.enabled
+                                    ? settings.designer.rewriter.model
+                                    : designerModel,
+                                debugLog.get());
+    if (rewriterAI && settings.designer.rewriter.disableReasoning) {
+      rewriterAI->setReasoningEnabled(false);
+    }
+    if (debugLog && rewriterAI) {
+      debugLog->LogInfo("Rewriter backend: " + rewriterAI->getAIName() + " / " +
+                        rewriterAI->getModelName() +
+                        (settings.designer.rewriter.disableReasoning
+                             ? " (reasoning off)"
+                             : ""));
+    }
   }
 
   // Text to speech for the designer's replies. Built here, beside the backend it
@@ -2850,6 +3111,7 @@ void Game::ECSInit() {
   ECSInitRenderSystems();
   ECSInitAgentSystems();
   ECSInitActionSystems();
+  ECSInitTaskSystems();
   ECSInitTileArtSystems();
 
   // Starting tile and identity come from settings. The relocation pass inside
@@ -2909,6 +3171,8 @@ void Game::ECSInit() {
   blueprintWindowEntity = ecs.entity("Blueprint Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
+  taskBoardWindowEntity = ecs.entity("Task Board Window");
+  systemOneWindowEntity = ecs.entity("System 1 Overview Window");
   visionChatWindowEntity = ecs.entity("Vision Chat Window");
   designerWindowEntity = ecs.entity("Designer Window");
   tileDesignerWindowEntity = ecs.entity("Tile Designer Window");
@@ -2945,8 +3209,8 @@ void Game::ECSInit() {
   // cannot see each other's tokens. It gets no backend of its own on purpose:
   // producing a valid definition is the same skill as producing a valid design,
   // and asking for a second API key to do it would be a worse trade than sharing.
-  tileDesignerWindow = std::make_shared<TileDesignerWindow>(this, designerAI.get(),
-                                                            designerLabel);
+  tileDesignerWindow = std::make_shared<TileDesignerWindow>(
+      this, designerAI.get(), designerLabel, tileDesignerLogSelfTest);
   if (debugWindowState->GetShowTileDesignerWindow()) {
     tileDesignerWindowEntity.set<ActiveWindow>({tileDesignerWindow});
   }
@@ -3003,6 +3267,16 @@ void Game::ECSInit() {
   if (debugWindowState->GetShowNPCMenuWindow()) {
     npcMenuWindowEntity.set<ActiveWindow>(
         {std::make_shared<NPCMenuWindow>(this)});
+  }
+  if (debugWindowState->GetShowTaskBoardWindow()) {
+    taskBoardWindowEntity.set<ActiveWindow>(
+        {std::make_shared<TaskBoardWindow>(this)});
+  }
+  if (debugWindowState->GetShowSystemOneWindow()) {
+    // Rebuilt on every toggle like the other debug windows; the records it shows
+    // live on Game::systemOneRecorder, so nothing is lost by doing that.
+    systemOneWindowEntity.set<ActiveWindow>(
+        {std::make_shared<SystemOneWindow>(this, systemOneRecorder.get())});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
     playerEntity.set<ActiveWindow>(

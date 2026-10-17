@@ -1,5 +1,10 @@
 #pragma once
 
+#include <array>
+#include <chrono>
+#include <filesystem>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -7,9 +12,14 @@
 
 #include <flecs.h>
 
+#include "raylib-cpp.hpp"
+
 #include "AI.h"
+#include "TileArtQueue.hpp"
 #include "TileDesigner.hpp"
 #include "TileRegistry.h"
+#include "PromptRewriter.hpp"
+#include "RewriteInputBox.hpp"
 #include "Window.h"
 
 class Game;
@@ -54,8 +64,55 @@ public:
   // second API key to do it would be a worse trade than sharing one. A null
   // pointer is a supported state -- the backend failed to construct -- and is
   // reported in the window rather than crashing.
+  //
+  // `selfTest` swaps the conversation for one canned response, so the whole
+  // logging and inspection path can be exercised with no backend at all. It exists
+  // because that path is otherwise unreachable without a live model: the log is the
+  // only record of a conversation and cannot be verified by reading it. A
+  // constructor parameter rather than a settings key, because it is a test hook and
+  // nothing that should be configurable.
   TileDesignerWindow(Game *game, AI *designerAI, std::string modelLabel,
+                     bool selfTest = false,
                      flecs::entity owner = flecs::entity::null());
+
+  // Runs the canned conversation once and returns how many exchanges it inspected.
+  // Only meaningful when constructed with `selfTest`.
+  //
+  // `requestArt` turns on the automatic art request for the run, so the accept-then-
+  // request path can be exercised without a backend. Left false by the log test,
+  // which is about the transcript and should not depend on generation being set up.
+  size_t RunSelfTestConversation(bool requestArt = false);
+
+  // What one cache lookup resolved to: the GL texture it would draw and the file
+  // identity the cache is keyed on. Returned together because the texture id alone
+  // cannot say whether the image was reloaded -- raylib reuses ids, so a reload can
+  // land on the same number -- while a changed `stamp` is exactly "the cache accepted
+  // that the file is new".
+  struct ThumbnailLookup {
+    unsigned int textureId = 0;
+    std::filesystem::file_time_type stamp{};
+    bool hasStamp = false;
+  };
+
+  // Loads `path` as a pipeline thumbnail and reports what the cache resolved. Exists
+  // so the panel cache can be tested headlessly: the cache is invisible from outside,
+  // and the bug it had -- keyed on the path alone, so a regenerated stage kept drawing
+  // the previous batch's image, and with it the previous palette verdict and stage
+  // list -- is the kind of thing that looks correct on screen until you regenerate.
+  //
+  // Deliberately the same entry point the panels use, so a test exercises the cache
+  // rather than a copy of its logic.
+  ThumbnailLookup InspectThumbnailForTest(const std::string &path);
+
+  // The same probe for the pixel view, which had the identical stale-cache bug for
+  // the placed sprite. `hash` is the fingerprint of the pixels the view currently
+  // holds, so a caller can tell a reload from a cache hit without being able to read
+  // the view's private pixel buffer.
+  struct PixelViewLookup {
+    size_t hash = 0;
+    size_t distinctColours = 0;
+  };
+  PixelViewLookup InspectPixelViewForTest(const std::string &spritePath);
 
   void Draw() override;
 
@@ -87,6 +144,13 @@ private:
     std::string notes;
     std::vector<std::string> warnings;
     bool saveFailed = false;
+    // What happened about the tile's *art*, in one line, shown under the verdict.
+    //
+    // Exists because the feature's failure mode is silence: a tile is accepted, no
+    // sprite appears, and without this the transcript looks identical whether art
+    // generation is off, misconfigured, refused, or quietly working. Every value
+    // here says which, and the reasons are actionable.
+    std::string artNote;
     // The definition this attempt produced, for the preview pane. Null when the
     // reply never got as far as a definition.
     const TileDef *definition = nullptr;
@@ -140,6 +204,98 @@ private:
   // the owner what has been spent, and two versions of it would disagree.
   std::string DescribeArtState() const;
 
+  // ---------------------------------------------------------------------------
+  // Seeing the pipeline (the art section's three sub-panels)
+  // ---------------------------------------------------------------------------
+
+  // The queue's record for the tile currently in the editor, or nullopt.
+  //
+  // Returned by value, not as a pointer into the queue. `TileArtQueue::Snapshot()`
+  // hands back a fresh vector every call, so a pointer into it dangles the moment
+  // the full expression ends -- which is a heap-use-after-free the three panels
+  // below then read through on the next line. A copy of one small struct is the
+  // right price for not having that bug.
+  std::optional<TileArtQueue::Job> JobForEditedTile() const;
+
+  // One artifact the art pipeline produced, in pipeline order.
+  struct Artifact {
+    std::string label;
+    std::string path;
+    // Source dimensions for an image, so the filmstrip can say what it was before
+    // it was scaled down to a thumbnail.
+    int width = 0;
+    int height = 0;
+    bool isImage = false;
+  };
+
+  // The tile's position within its batch, which is what names its per-cell stage
+  // images. -1 when it cannot be determined, in which case the panels show what is
+  // unambiguous (the sheet, the prompt, the sprite) and omit the rest.
+  int CellIndexInWorklist(const TileArtQueue::Job &job) const;
+
+  // Every artifact produced for `job`, as label and path, in pipeline order. Empty
+  // when the job never reached the worker -- nothing was written -- or when the
+  // files have since been removed.
+  std::vector<Artifact> ArtifactsFor(const TileArtQueue::Job &job) const;
+
+  // What the model was actually asked, and where everything it produced lives.
+  // Shown as text, not drawn: the prompt is what a bad sheet has to be judged
+  // against, and nothing else surfaces it.
+  void DrawArtifactsPanel(const TileArtQueue::Job &job);
+
+  // The placed sprite drawn as one filled rectangle per pixel, so it is crisp at
+  // any zoom and the palette question is answerable by eye. Includes the palette
+  // with the entries this sprite uses marked, and any pixel outside it called out
+  // -- the check that otherwise exists only as "0.0%" in a log line.
+  void DrawPixelViewPanel(const TileArtQueue::Job &job);
+
+  // The pipeline's stages as thumbnails: sheet, per-cell crop, trim, palette lock,
+  // final 32x32. This is the panel that shows the *processing*, and it is the only
+  // view of the model's raw output at any size.
+  void DrawFilmstripPanel(const TileArtQueue::Job &job);
+
+  // Loads the placed sprite into the pixel/colour cache when it is not already
+  // there. Main thread only: it loads an image, which needs the renderer.
+  void EnsurePixelView(const std::string &spritePath);
+
+  // The palette the lock targets, loaded from `data/palette.json` on first use.
+  // Empty when none has been derived, which is a real state and reported as one.
+  void EnsurePaletteLoaded();
+
+  // Nearest entry in `paletteColours` to `colour`, by squared RGB distance. -1 when
+  // there is no palette.
+  int NearestPaletteIndex(unsigned char r, unsigned char g, unsigned char b) const;
+
+  // Loads `path` as a thumbnail texture, downscaling to about `maxSide` first so a
+  // 1024px sheet does not cost a full-size texture for a 160px slot. Nearest when
+  // the image is being reduced by 4x or more -- which is the pixel-art case -- and
+  // bilinear otherwise, because nearest-neighbour *downscaling* of a busy texture
+  // aliases into noise rather than sampling it.
+  //
+  // Returns nullptr when the file is missing or unreadable; the caller draws the
+  // failure rather than a blank slot.
+  raylib::Texture *LoadThumbnail(const std::string &path, int maxSide);
+
+  // The cached pixel view of one sprite. Held as a texture plus a CPU-side copy of
+  // the pixels, because the panels need both: the texture for nothing (the pixel
+  // map is drawn from the colours) and the colours for the palette comparison.
+  struct PixelView {
+    std::string path;
+    std::unique_ptr<raylib::Texture> texture;
+    int width = 0;
+    int height = 0;
+    // RGBA, row major, 4 bytes per pixel.
+    std::vector<unsigned char> pixels;
+    // The distinct opaque colours, and how many of them are not in the palette.
+    size_t distinctColours = 0;
+    size_t outsidePalette = 0;
+    // A cheap fingerprint of the pixel block. Its job is to be *different* for
+    // different images so the cache's reload can be asserted: the path is reused by a
+    // regeneration, and two readings of the same path that produce the same fingerprint
+    // mean the second reading served the first image.
+    size_t imageHash = 0;
+  };
+
   // The overlay directory this window writes to, or an empty string when there is
   // none (a run with no generated layer configured). Empty means "live for this
   // session only", which is reported in the status line rather than hidden.
@@ -150,6 +306,19 @@ private:
   // and the name carries the time of the conversation rather than of the launch.
   void Log(const std::string &text);
   void LogEvent(const std::string &text);
+
+  // Writes the once-per-session header: backend, context, the prompt file and the
+  // system prompt that was *actually sent*.
+  //
+  // The system prompt is the half of a request no other line records, and it is not
+  // recoverable from the transcript: it is generated from the live catalog (the
+  // glyph table, the tile list) plus a file that can be edited between runs. A log
+  // with the replies but not the instructions cannot answer "why did it invent
+  // that", which is the question a designer log exists to answer.
+  void LogSessionHeader();
+
+  // The prompt file's own text, quoted into the log, with its size and line count.
+  void LogPromptFile(const std::string &path);
 
   Game *game = nullptr;
   AI *ai = nullptr;
@@ -168,6 +337,12 @@ private:
   int attempts = 0;
   bool showThoughts = false;
   bool showJson = true;
+  // Ask for art as soon as a tile is accepted, instead of waiting for the button.
+  //
+  // Off by default and persisted with the layout: it is the one preference in this
+  // window that spends money without a further click, so switching it on has to be
+  // deliberate, and it should not quietly reset every launch once it is.
+  bool autoRequestArt = false;
   // Whether the JSON is shown in the transcript is persisted with the layout; the
   // reasoning checkbox is not, because it is a debugging aid rather than a
   // preference and should not survive a restart.
@@ -181,4 +356,65 @@ private:
 
   std::string logFilePath;
   int requestNumber = 0;
+
+  // Improving the user's own description before it is sent. Shared with the Designer
+  // Chat window: PromptRewriter is the general half and RewriteInputBox is the UI,
+  // so this window contributes only its brief -- what the rewriter may and may not
+  // promise about tiles.
+  //
+  // Its own provider context, so a rewrite cannot disturb the conversation's.
+  PromptRewriter rewriter;
+  RewriteInputBox promptBox;
+  // Whether the Improve row is expanded. A checkbox rather than a permanent row, so
+  // the input area stays where it was for anyone who does not use it.
+  bool showRewriter = true;
+
+  // ---- the pipeline view's caches. All main-thread only, all invalidated by
+  // comparing what is being asked for against what was last loaded, because a
+  // regenerated sprite changes on disk underneath a window that is still open.
+  std::string pixelViewPath;
+  PixelView pixelView;
+  // The modification time `pixelView` was read from. A regenerated tile overwrites
+  // its sprite in place, so the path alone cannot tell a new image from the cached
+  // one and the pixel view would keep showing the first generation's pixels and
+  // palette verdict. Zero when the file did not exist, which is a state that must
+  // be retried rather than cached.
+  std::filesystem::file_time_type pixelViewStamp{};
+  std::vector<std::array<unsigned char, 3>> paletteColours;
+  bool paletteLoaded = false;
+  // Path -> thumbnail. Small and bounded (five stages per tile viewed), so it is
+  // never evicted; a session that regenerates hundreds of tiles would want an LRU,
+  // and that is the point at which to add one.
+  std::map<std::string, std::unique_ptr<raylib::Texture>> thumbnails;
+  // Path -> the modification time the cached thumbnail was loaded from. Kept beside
+  // the texture rather than folded into its key so the map keeps one entry per file:
+  // regenerating a tile overwrites the *same* stage filenames, so a path-only cache
+  // (and equally a key that included the stamp, never erased) would keep drawing the
+  // previous batch's images forever and make a fresh generation look like nothing
+  // happened -- which is exactly the reported "the pipeline stages only show the old
+  // tile" symptom.
+  //
+  // The unique_ptr above stays keyed by the bare path, because the raw pointers
+  // LoadThumbnail hands out are compared against the cache elsewhere and must remain
+  // valid for as long as the entry exists.
+  std::map<std::string, std::filesystem::file_time_type> thumbnailStamps;
+  // Which cell of the sheet the edited tile is, once its worklist has been read.
+  // Cached because the panels ask per frame and the worklist is a file read.
+  // Which cell of its batch a tile occupies, cached against the worklist file's
+  // identity (path + mtime) because the panels ask per frame and reading the file
+  // every frame would be a disk hit for a value that changes once per generation.
+  //
+  // `mutable` because the lookup happens inside a const method: the cache is an
+  // implementation detail of answering a question, not observable state.
+  mutable std::string worklistCellCacheKey;
+  mutable int worklistCellIndex = -1;
+  // Whether the session header has been written. The file is created on the first
+  // message, so the header goes out with that message rather than in a constructor
+  // that runs whether or not the window is ever used.
+  bool headerLogged = false;
+  // When the current request was handed to the backend. A monotonic clock, because
+  // this measures a duration and wall-clock time can step.
+  std::chrono::steady_clock::time_point requestStarted;
+  // Test hook; see the constructor.
+  bool selfTest = false;
 };

@@ -50,6 +50,34 @@ constexpr int DEFAULT_PLACEMENT_MAX_DISTANCE = 1;
 // only matters for tools that already opted in.
 constexpr int DEFAULT_HARVEST_DURABILITY_COST = 1;
 
+// Task lists (docs/task-system-design.md section 12). The cap bounds what one
+// agent may store, so a model that re-lists its whole life every revision cannot
+// grow the component without bound; overflow drops the lowest tier first,
+// oldest first. Life goals are authored and are never counted or dropped.
+constexpr int DEFAULT_TASK_LIST_MAX = 12;
+
+// How many short tasks the digest renders. Terminal and long-term goals render
+// as one line each regardless; this bounds only the tasks, highest tier first.
+// The digest competes with the command list for context, so it is deliberately
+// small.
+constexpr int DEFAULT_TASK_DIGEST_MAX = 5;
+
+// Frames a task may go untouched before it is flagged. The world runs at ~60 fps,
+// so this is about thirty seconds: long enough not to flag a task the agent is
+// legitimately working through, short enough that a stuck agent is visible while
+// you are still watching it.
+constexpr int DEFAULT_TASK_STALE_TICKS = 1800;
+
+// The anti-inflation threshold (section 6.1): at most this many Critical entries.
+// Used to *report* a violation, never to rewrite a tier.
+constexpr int DEFAULT_TASK_MAX_CRITICAL = 1;
+
+// How often the checking pass runs, in frames (~1 s at 60 fps). Each pass is a
+// world-wide name query per task, and nothing about it is time-critical: the
+// result is only shown to the agent when it wakes, and the debug windows sample
+// the same fields live in between.
+constexpr int DEFAULT_TASK_VERIFY_INTERVAL_TICKS = 60;
+
 constexpr int DEFAULT_INPUT_MOVEMENT = 10;
 constexpr float DEFAULT_INPUT_ZOOM = 1.0f;
 constexpr float DEFAULT_MINIMUM_INPUT_ZOOM = 1.0f;
