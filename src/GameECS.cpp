@@ -1126,6 +1126,15 @@ void Game::ECSInitActionSystems() {
           return;
         }
 
+        // The Vision Debug window can switch the mouse rule off entirely, which
+        // is what lets you walk a cone past something without the cursor dragging
+        // it around. A debug switch, not a gameplay setting: the design says the
+        // stationary player aims (section 4.1), and this only makes that rule
+        // observable from the outside.
+        if (debugWindowState && !debugWindowState->GetCursorFacingEnabled()) {
+          return;
+        }
+
         // Not while a window owns the mouse: dragging a debug window would
         // otherwise swing the player's facing around the screen.
         if (ImGui::GetIO().WantCaptureMouse) {
@@ -1230,12 +1239,26 @@ void Game::ECSInitMemorySystems() {
         Memory::EnforceObjectCap(memory);
         memory.lastVisionTick = tick;
       });
+
+  // Places are derived from the cells the writer just produced (section 3.3).
+  //
+  // A separate system rather than a call inside the writer, because the two are
+  // different jobs: the writer records what was seen, the deriver decides what it
+  // belongs to. Keeping them apart is what lets the derivation be re-run, and
+  // re-read, without re-observing anything.
+  ecs.system<SpatialMemory, const Vision>("SpatialMemoryPlaces")
+      .each([this](flecs::entity, SpatialMemory &memory, const Vision &vision) {
+        if (!map || vision.lastSampleTick < 0) {
+          return;
+        }
+        Memory::DerivePlaces(memory, *map, vision.lastSampleTick);
+      });
 }
 
 // Writes one character's record to logs/ on demand (section 7.3). The file name
 // carries the run's start time for the same reason an NPC transcript does: two
 // runs must be comparable, not overwrite each other.
-void Game::DumpSpatialMemory(flecs::entity entity) {
+void Game::DumpSpatialMemory(flecs::entity entity, bool includeCells) {
   if (!entity.is_alive()) {
     return;
   }
@@ -1245,20 +1268,34 @@ void Game::DumpSpatialMemory(flecs::entity entity) {
     return;
   }
 
-  const std::string name =
-      entity.has<DisplayName>() ? entity.get<DisplayName>()->name : "character";
+  // The player names its entity but carries no DisplayName (only NPCs are given
+  // one at spawn), so the fallback chain ends at the entity name before the file
+  // is named "...-character-memory.json".
+  std::string name = "character";
+  if (entity.has<DisplayName>()) {
+    name = entity.get<DisplayName>()->name;
+  } else {
+    // flecs::string_view is not a std::string and has no empty(); c_str() is the
+    // only thing it offers that composes.
+    const std::string entityName = entity.name().c_str();
+    if (!entityName.empty()) {
+      name = entityName;
+    }
+  }
 
   std::error_code error;
   std::filesystem::create_directories("logs", error);
 
+  // JSON, not prose: the window renders the same string, so the file you diff and
+  // the record you inspected are the same artifact (section 7.3).
   const std::string path =
-      "logs/" + TimeUtils::GetStartTimeString() + "-" + name + "-memory.txt";
+      "logs/" + TimeUtils::GetStartTimeString() + "-" + name + "-memory.json";
   std::ofstream out(path);
   if (!out.is_open()) {
     if (debugLog) debugLog->LogError("Spatial memory dump: cannot open " + path);
     return;
   }
-  out << Memory::Dump(*memory, name, CurrentTaskTick(ecs));
+  out << Memory::DumpJson(*memory, name, CurrentTaskTick(ecs), includeCells);
   out.close();
 
   if (debugLog) debugLog->LogInfo("Spatial memory dumped to " + path);

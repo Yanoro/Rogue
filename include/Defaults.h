@@ -94,6 +94,16 @@ constexpr int DEFAULT_MEMORY_CELLS_MAX = 2048;
 // Objects are far sparser than cells, so a much smaller bound suffices.
 constexpr int DEFAULT_MEMORY_OBJECTS_MAX = 256;
 
+// How many places one character may hold (docs/spatial-memory-design.md section
+// 3.3). Overflow drops the place with the fewest member cells, then the one seen
+// longest ago; the cells stay in memory and simply stop being placed.
+constexpr int DEFAULT_MEMORY_PLACES_MAX = 24;
+
+// How close (Chebyshev, in cells) a newly observed cell must be to an existing
+// cluster of the same surface to join it instead of starting a new place. This is
+// what lets one field be one place while keeping two fields apart.
+constexpr int DEFAULT_MEMORY_PLACE_CLUSTER_RADIUS = 3;
+
 // Durability one harvest removes from each tool used for it, when the object
 // does not declare a "durabilityCost" of its own. Durability is opt-in per item
 // (an item whose definition declares no "durability" never wears out), so this

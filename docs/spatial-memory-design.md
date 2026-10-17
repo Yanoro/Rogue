@@ -10,7 +10,8 @@ implementation target is **the player character only**, used as a test rig: the 
 body, `Velocity` and path-following as an NPC, it is drivable by hand, and it has no `AgentBrain`,
 so a vision or memory bug cannot be mistaken for a model bug.
 
-Companion documents: `docs/placement-design.md` (why ground knowledge is the weak link),
+Companion documents: `docs/place-derivation-design.md` (the place rule that replaces §3.3),
+`docs/placement-design.md` (why ground knowledge is the weak link),
 `docs/agent-attention-design.md` (the perception event pipeline, which this deliberately does
 **not** depend on), `docs/task-system-design.md` (the component-not-history argument, and the
 persistence deferral this doc inherits).
@@ -133,15 +134,31 @@ Two properties are load-bearing and match the argument in `docs/task-system-desi
 
 ### 3.3 Which place claims a cell
 
+> **Superseded.** The rule in this section — authored rects claim cells, cells cluster by terrain
+> surface — was implemented, tested, and produced arbitrary places on a single-surface map. It is
+> replaced by `docs/place-derivation-design.md`: objects and terrain are *seeds*, clusters are
+> computed globally, and authored rects no longer claim anything. This section is kept because the
+> record shapes it introduced (members, extents, facts) are still the ones the new rule fills.
+
 **Authored geometry wins where it overlaps.** When the agent observes cells inside an authored
 `Location`, the place is that Location, labelled with its authored name. Inferred clusters only form
 where no authored rect claims the cells. This prevents two labels for one area, and it makes the
 first observable milestone simple: *walk into the mill and "The Mill" appears in your place list* —
 the place table filling in as a consequence of vision, not of a spawn-time dump.
 
+The extent is the **observed** extent, never the authored rectangle: a place claims only the cells
+the agent actually saw. That is what makes "no authored place appears before its cells are seen"
+true, and it is why the record stores `memberCells` and recomputes the box from them.
+
+The authored name becoming the label **on sight** is the convenient policy — the reason `authoringId`
+is a separate field is that the data-driven `OnSight` / `OnTold` split (a mill is a mill you can see;
+a settlement's name has to be heard) then changes only whether `label` is copied, not the schema.
+
 `attribute` splits contested ground. Cells sharing a surface (or crop) under one label form one
 cluster; a different `attribute` on touching cells forms a second place. That is the whole mechanism
-behind "a different location per field, depending on what is planted" without any new concept.
+behind "a different location per field, depending on what is planted" without any new concept. The
+limitation to name now: `attribute` is the **surface**, so two fields distinguished only by what is
+planted *on* the same soil are one place until object-derived attributes exist.
 
 ### 3.4 The record: three layers, three lifetimes
 
@@ -175,8 +192,12 @@ struct SeenObject {
 
 // ---- Layer 2: durable structure. Survives eviction, capped, queryable. ------
 // Counts, never a verdict. "7 structures" is evidence; "village" is a conclusion.
+// `name` is the raw vocabulary and `category` only says which kind it is: grouping
+// "mill" and "smeltery" into "workshop" is the renderer's interpretation, so a
+// genre pack can rename content without editing C++.
 struct PlaceFact {
-  std::string category;  // "structure", "workshop", "planted row", "route", "water"
+  std::string category;  // "surface" or "object"
+  std::string name;      // tile name, or object template id
   int count = 0;
 };
 
@@ -191,6 +212,7 @@ enum class PlaceOrigin { Origin, Inferred, Authored };
 enum class KnowledgeSource { Observed, Told, Inferred };
 
 struct KnownPlace {
+  int id = 0;                       // stable for the session; a label attaches to it
   PlaceOrigin origin = PlaceOrigin::Inferred;
   KnowledgeSource source = KnowledgeSource::Observed;
   unsigned char confidence = 255;   // observed full, told lower, inferred lower still
@@ -201,6 +223,7 @@ struct KnownPlace {
   std::string label;                // EMPTY until something names it
   std::string authoringId;          // the map's name, once learned -- not on sight
   int firstSeenTick = 0, lastSeenTick = 0;
+  std::vector<std::uint64_t> memberCells;  // the observed cells this place claims
 };
 
 // ---- Layer 3: the only stored prose, and only when authored -----------------
@@ -249,6 +272,15 @@ by *naming a cluster it has evidence for*, not by being handed one.
 knowledge to the east" is recomputed from `cells` on demand. Storing it would create a second
 authority for the same fact and a staleness bug of its own.
 
+**Shapes are a derived index, and only because the decomposition is exact.** `ToShapes` merges
+horizontal runs of one surface and then stacks vertically adjacent runs with an identical span. The
+union of the resulting rects is *precisely* the set of known cells, so unlike a bounding box it
+cannot claim ground the agent never saw — which is the only reason a shape may be shown to a model at
+all. Measured on a ragged disc of explored ground (the shape a union of cone sweeps produces):
+**1961 cells → 98 rects, 8.5× smaller** than the cell list. A diagonal road or scattered single cells
+decompose into 1×1 rects (~1×), and no circle or curve fitting is attempted: a coastline is not a
+circle, and a failed fit is a shape worse than the cells it replaced.
+
 ---
 
 ## 4. Acquisition: facing, cone, radar
@@ -278,6 +310,11 @@ constantly.
 **Player exception:** while moving, velocity; while stationary, the mouse cursor, which
 `GetScreenToWorld2D(GetMousePosition(), camera)` already provides (`src/Game.cpp:333`). A player who
 can sweep the cone without walking is a player who can debug the cone.
+
+That cursor rule has a persisted debug switch (`cursorFacing`, on by default, in the Vision tab)
+which pins a stationary player's facing so a cone can be held still or swept past something without
+the cursor dragging it. Walking still turns the character either way — this is a debugging control,
+not a gameplay mode.
 
 Per-character parameters are *fields on `Vision`* with global defaults — the schema is per-character
 from the start, the content is not (§9).
@@ -380,8 +417,11 @@ comparison per frame rather than a sweep.
 append. The memory is a set of cells, not a log of sightings.
 
 A re-observation that *disagrees* with what was stored (surface changed, a cell became blocked) is
-the one interesting write: it is the engine's chance to record a contradiction. In this phase it
-overwrites and bumps nothing else; the repair loop proper belongs with perception (§9).
+the one interesting write. In this phase it **overwrites** the stored surface and walkability and
+bumps the tick and the visit count — never the other way round. Keeping the first sighting would
+leave sand laid over an already-remembered floor recorded as floor forever, which is the bug this
+paragraph exists to prevent. Marking the contradiction (`[!]` in a digest) and the repair loop proper
+belong with perception (§9).
 
 ### 4.5 Passive sampling and the active probe stay separate
 
@@ -520,28 +560,57 @@ is seeing" than of cost.
 
 ### 7.2 The memory window
 
-The window starts life in **stage 0** as `VisionDebugWindow` — a facing-marker toggle plus a count of
-characters with and without a `Facing`. That count is the whole point of shipping it early: "every
-character got a direction" is a question that otherwise turns into a cone bug two stages later.
-Stage 1 adds the cone parameters to it; stage 2 turns it into the memory board.
+The window is `VisionDebugWindow`, in two tabs.
 
-The board itself follows `TaskBoardWindow` (`src/DebugWindows.cpp:2492`): **collect rows, then sort,
-then draw** — an ImGui table cannot be reordered while rows are being emitted, and querying flecs
-mid-draw invites mutation hazards.
+**Vision** is what the sweep sees right now: the facing-marker and visible-cell toggles, the cone
+parameters (edited live on the component, so tuning needs no rebuild), the visible-cell count, and a
+count of characters with and without a `Facing`. That count is why the window shipped before anything
+consumed a facing: "every character got a direction" otherwise turns into a cone bug two stages
+later.
 
-- Query: `ecs.filter<SpatialMemory>()`. Whoever has the component appears, which makes the
-  "player only, for now" gate self-documenting rather than a hardcoded name check.
-- Per character: cell count, place count, age of the newest cell, last consolidation (counts in and
-  out, tick).
-- Live-editable cone parameters (angle, range, radar radius) so tuning does not require a rebuild.
+**Memory** is what has been written down — cell/object/place counts against their caps, the origin,
+when the last sample was consumed, and **the record itself as JSON**.
+
+The record is JSON rather than a table, and that is a deliberate change from the original "board"
+sketch: the dump writes the same string, and the worked examples in §12 use the same shape. One
+serializer means the window, the file and the design document cannot disagree about what the format
+is, and the examples stop being illustrative and become the acceptance artifact.
+
+- Query: the window reads `playerEntity`'s `SpatialMemory` directly today. The per-character board —
+  `ecs.filter<SpatialMemory>()`, collect rows, sort, then draw, following `TaskBoardWindow` — arrives
+  with the agent phase, when more than one character has a memory.
+- **Place rectangles.** A toggle draws one box per place in the player's memory: the extent as an
+  outline, the cells the place actually claims tinted inside it, and a floating label (`#id surface`
+  for an unnamed inferred place, the label once one is given). The gap between outline and tint is
+  deliberate — the outline is a bounding box, so for an L-shaped cluster it covers ground the
+  character never observed, and the tint is what makes that visible instead of implied.
+- **Colour swatches.** The Memory tab lists each place with the same colour its rectangle uses, its
+  extent, whether it is authored or inferred, and its facts in raw vocabulary. Colours are a stable
+  function of the place id, so the same place keeps its colour across runs.
+- Live-editable cone parameters stay here, because this is the window a developer has open while
+  tuning.
 - Two agents showing different labels for the same rect will be the first visible proof that
   subjectivity works, once labels can be authored (§9).
 
-### 7.3 The text dump
+### 7.3 The dump
 
-One file per character, under `logs/`, written on demand: cells, places, consolidation events. The
-repo has no test suite; its verification idiom is reading transcripts (`docs/agent-attention-design.md`
-§12 uses exactly this discipline). A dump is diffable between runs in a way a window is not.
+One JSON file per character, under `logs/`, written on demand from the Memory tab:
+`logs/<run>-<name>-memory.json`. The repo has no test suite; its verification idiom is reading
+transcripts (`docs/agent-attention-design.md` §12 uses exactly this discipline), and a JSON dump is
+diffable between runs in a way a window is not — which is what makes "did the walk fill the same cells
+twice" answerable.
+
+It is the same serializer the window renders (`Memory::DumpJson` in `include/SpatialMemory.hpp`), so
+"the dump reproduces the window" is true by construction rather than by discipline.
+
+**Compact by default.** Cells are one documented tuple per line rather than one indented object per
+cell — `"cellFormat": "x, y, surface, walkable, observedTick, visitCount"` then `[12, 14, "path",
+true, 5380, 1]` — which is about 42 bytes per cell instead of ~170, and still line-diffable because
+nlohmann's pretty-printer would otherwise spend eight lines on a six-field entry. The `shapes` array
+is always present; the raw `cells` array is behind the window's **Include cells (full detail)**
+switch, which is a view preference and therefore not persisted.
+
+Measured on the 1961-cell disc above: 82 KB detail, 9.7 KB compact.
 
 ### 7.4 The rendering rule: situation, never intention
 
@@ -598,7 +667,7 @@ the AI path; here the first three stages have no AI path at all, which is the po
 | **0. Facing** | `Facing` component + derive system; players and NPCs; no consumer yet; marker overlay + `VisionDebugWindow` | Facing follows movement; holds when stopped; the player's follows the cursor when idle; overlay draws the marker; the toggle survives a restart; the window reports zero characters without a `Facing` |
 | **1. Vision** | `Vision` component (angle, range, radar), `VisibleCells` + Bresenham LOS in `include/VisionQuery.hpp`, overlay | Cells appear/disappear as you turn; an object carrying `BlocksVision` casts a gap behind it (a tree, the mill); the radar fills the close ring; toggle off costs nothing; tiles never block |
 | **2. Memory** | `SpatialMemory` (§3.4), the memory writer consuming `Vision::lastVisible`, the `Origin` place, caps, idempotent writes, memory section in the Vision Debug window + dump. Place clustering is stage 3 | Walking fills cells with no duplicates; a revisit bumps `visitCount` rather than appending; the cap holds and evicts the least-visited first; cells and objects are zero on spawn; the dump reproduces the window |
-| **3. Places** | place derivation from cells, `Authored` match against `Location`, `attribute` clustering | Walking into the mill adds "The Mill"; two touching crops yield two places; no authored place appears before its cells are seen |
+| **3. Places** (superseded — see `docs/place-derivation-design.md` for the rule that replaces it) | `Memory::DerivePlaces`: `Authored` match against `Location`, surface clustering with a radius, membership-based extent, facts in raw vocabulary | Walking into the mill adds "The Mill" with `authoringId` set; two touching surfaces yield two places; no authored place appears before its cells are seen; a place's extent never exceeds its member cells |
 | **4. Engine consolidation** | ranking, merge runs, drops at cap, event log | Counts in/out visible; a drop never removes a place cell; raw cells still inspectable |
 | **5. Model consolidation** | Jev salience (goal digest in state) + out-of-band merge, behind a setting, stage 4 the default | Off by default; identical outputs when the backend is unavailable; logged verdicts before behaviour depends on them |
 
@@ -656,8 +725,8 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
   `Tile:156`, `Location:202`, `TaskList:411`, `BlocksVision:573`, `std_vector_support:694`,
   registration order example `:765`, `AgentGoal` registration `:816`
 - `include/VisionQuery.hpp` — `CellKey`, `PathIsOpaque`, `VisibleCells` (the one sweep)
-- `include/SpatialMemory.hpp` — `EnsureOrigin:37`, `ObserveCells:55`, `ObserveObjects:88`,
-  `EnforceCellCap:133`, `Dump:176`
+- `include/SpatialMemory.hpp` — `EnsureOrigin`, `ObserveCells`, `ObserveObjects`,
+  `EnforceCellCap`, `ToShapes`, `DumpJson`
 - `src/GameECS.cpp` — `ECSInitMemorySystems:1213`, `DumpSpatialMemory:1238`,
   `%LOCATIONS% :302`, tile layer `:370`, steer system `:898`, player setup `:3148`,
   player `Velocity` `:3155`, player `CharacterTag` `:3171`
@@ -748,10 +817,10 @@ Engine:
   { "origin": "Inferred", "confidence": 255,
     "anchor": {"x":40,"y":18}, "width": 8, "height": 6,
     "label": "", "attribute": "stone",
-    "facts": [ {"category":"structure","count":7},
-               {"category":"workshop","count":2},
-               {"category":"route","count":30},
-               {"category":"planted row","count":12} ] }]
+    "facts": [ {"category":"object","name":"mill","count":1},
+               {"category":"object","name":"anvil","count":2},
+               {"category":"surface","name":"path","count":30},
+               {"category":"surface","name":"tilled soil","count":12} ] }]
 ```
 
 Agent:
@@ -765,7 +834,9 @@ WHERE YOU ARE
   Nobody has named this place. You have not heard anyone call it anything.
 ```
 
-The engine never says *village*. The phrase is rendered from `attribute` and the largest facts.
+The engine never says *village*, and it never says *workshop* either: "7 buildings, 2 workshops" is
+the renderer grouping `mill`/`smeltery`/`anvil` from their template components. Storing counts of the
+raw vocabulary is what lets that interpretation live outside the record.
 
 ### 12.4 Named, and told — two kinds of knowledge
 
@@ -821,7 +892,7 @@ Engine:
 
 ```json
 { "place": { "label": "the abandoned house", "confidence": 255,
-             "facts": [ {"category":"structure","count":1} ] },
+             "facts": [ {"category":"surface","name":"stone floor","count":1} ] },
   "objects": [ { "templateId": "", "name": "Pietro", "character": true,
                  "pos": {"x":17,"y":6}, "firstSeenTick": 7200, "lastSeenTick": 7260 } ] }
 ```

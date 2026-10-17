@@ -757,8 +757,10 @@ private:
   // A consumer of the sweep above, never a second sampler.
   void ECSInitMemorySystems();
 
-  // Writes one character's record to logs/ on demand (section 7.3).
-  void DumpSpatialMemory(flecs::entity entity);
+  // Writes one character's record to logs/ on demand (section 7.3). `includeCells`
+  // is the detail switch: shapes and counts by default, the raw cell list on
+  // request.
+  void DumpSpatialMemory(flecs::entity entity, bool includeCells = false);
 
   // Registers the tile-art queue's main-thread pump. Separate from the agent
   // systems because it is not part of the AI path -- it mirrors that path's shape,

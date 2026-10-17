@@ -1,5 +1,6 @@
 #include "Components.h"
 #include "Defaults.h"
+#include "SpatialMemory.hpp"
 #include "Game.h"
 #include "PathFinding.h"
 #include "DebugLog.h"
@@ -213,6 +214,62 @@ void Game::Draw() {
                               ColorAlpha(SKYBLUE, 0.35f));
             }
           });
+    }
+
+    // Places, as the character's memory claims them (docs/spatial-memory-design.md
+    // section 7.2): one outline for the extent, the member cells tinted inside it,
+    // and a label above the box.
+    //
+    // The outline is a bounding box, so for an L-shaped cluster it can cover cells
+    // the character never observed. The tinted members are drawn precisely for
+    // that reason: the box says "this is the area", the tint says "this is what was
+    // actually seen", and the gap between them is visible rather than implied.
+    if (debugWindowState->GetShowPlaceOverlay()) {
+      if (const SpatialMemory *memory = playerEntity.get<SpatialMemory>()) {
+        for (const KnownPlace &place : memory->places) {
+          const Color placeColor = Memory::PlaceColor(place.id);
+
+          for (const std::uint64_t key : place.memberCells) {
+            const auto cell = memory->cells.find(key);
+            if (cell == memory->cells.end()) {
+              continue;  // evicted under the cap; the member entry is stale
+            }
+            const ScreenPosition at = map->GameCoordsToScreenCoords(
+                cell->second.pos.x, cell->second.pos.y);
+            DrawRectangle(static_cast<int>(at.x), static_cast<int>(at.y), tileW,
+                          tileH, ColorAlpha(placeColor, 0.22f));
+          }
+
+          const ScreenPosition origin =
+              map->GameCoordsToScreenCoords(place.anchor.x, place.anchor.y);
+          const Rectangle box = {origin.x, origin.y,
+                                 place.width * static_cast<float>(tileW),
+                                 place.height * static_cast<float>(tileH)};
+          DrawRectangleLinesEx(box, 2.0f, placeColor);
+
+          // Unnamed places show their id and surface, which is what the JSON
+          // record calls them; a named one shows the name it was given.
+          const std::string label =
+              place.label.empty()
+                  ? "#" + std::to_string(place.id) + " " + place.attribute
+                  : place.label;
+          const int fontSize = 12;
+          const int textWidth = MeasureText(label.c_str(), fontSize);
+          float textX = origin.x + (box.width - textWidth) / 2.0f;
+          float textY = origin.y - fontSize - 4.0f;
+          if (textY < 0.0f) {
+            textY = origin.y + 2.0f;  // keep the label on screen at the top edge
+          }
+          if (textX < 0.0f) {
+            textX = 0.0f;
+          }
+          DrawRectangle(static_cast<int>(textX) - 2, static_cast<int>(textY) - 1,
+                        textWidth + 4, fontSize + 2,
+                        ColorAlpha(BLACK, 0.55f));
+          DrawText(label.c_str(), static_cast<int>(textX),
+                   static_cast<int>(textY), fontSize, placeColor);
+        }
+      }
     }
 
     // Stage 0 of docs/spatial-memory-design.md: one short line per character

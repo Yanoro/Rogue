@@ -11,6 +11,7 @@
 #include "DebugLog.h"
 #include "DebugWindowState.h"
 #include "Defaults.h"
+#include "SpatialMemory.hpp"
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
@@ -2698,168 +2699,225 @@ void TaskBoardWindow::Draw() {
 
 VisionDebugWindow::VisionDebugWindow(Game* game) : game(game) {}
 
-// Stage 0 of docs/spatial-memory-design.md: the facing marker, and nothing that
-// consumes it yet. The counts are the point of the window at this stage -- they
-// answer "did every character get a direction", which is the question that
-// otherwise turns into a cone bug two stages later.
+// Facing, vision and the spatial-memory record (docs/spatial-memory-design.md
+// sections 3.4 and 4).
 //
-// The checkbox value is written through to DebugWindowState on change only, while
-// the window's own visibility is written every frame, matching TaskBoardWindow.
-// The two differ because a checkbox written every frame would be harmless but a
-// visibility flag read once means a closed window reopens on the next launch.
+// Two tabs because they answer different questions: "what can it see right now"
+// is a live view of the sweep, and "what has it written down" is the record. The
+// record is rendered as JSON rather than as a table -- that is the serialization
+// the dump writes and the shape the worked examples in section 12 use, so the
+// window, the file and the document cannot disagree about what the format is.
+//
+// The checkbox values are written through to DebugWindowState on change only,
+// while the window's own visibility is written every frame, matching
+// TaskBoardWindow. The two differ because a checkbox written every frame would be
+// harmless but a visibility flag read once means a closed window reopens on the
+// next launch.
 void VisionDebugWindow::Draw() {
   bool show = game->visionDebugWindowEntity.has<ActiveWindow>();
   if (!show) return;
 
-  ImGui::SetNextWindowSize(ImVec2(430, 380), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(560, 620), ImGuiCond_FirstUseEver);
   if (ImGui::Begin("Vision Debug", &show, ImGuiWindowFlags_None)) {
-    ImGui::TextDisabled(
-        "Stage 1 -- facing and what one character can see. Spatial memory, and "
-        "therefore anything written down, lands in stage 2.");
-    ImGui::Separator();
-
-    bool markers = game->debugWindowState->GetShowFacingMarkers();
-    if (ImGui::Checkbox("Draw facing markers", &markers)) {
-      game->debugWindowState->SetShowFacingMarkers(markers);
-    }
-    ImGui::TextDisabled(
-        "Yellow line = facing (%.0f%% of a tile). Held while standing still.",
-        DEFAULT_FACING_MARKER_TILE_FRACTION * 100.0f);
-
-    bool overlay = game->debugWindowState->GetShowVisionOverlay();
-    if (ImGui::Checkbox("Draw visible cells", &overlay)) {
-      game->debugWindowState->SetShowVisionOverlay(overlay);
-    }
-    ImGui::TextDisabled(
-        "Blue tint = the cached sweep, not a fresh one. Draws over the world "
-        "rather than hiding anything: sight is an acquisition rule in this "
-        "phase, not fog of war.");
-
-    ImGui::Separator();
-
-    // The cone parameters are edited on the character that actually has a
-    // `Vision`, so what is tuned is what will be sampled. Only the player has one
-    // in this stage, and having the component is what makes it eligible at all.
-    if (Vision *vision = game->playerEntity.get_mut<Vision>()) {
-      float range = vision->range;
-      if (ImGui::SliderFloat("Range (tiles)", &range, 1.0f, 40.0f, "%.0f")) {
-        vision->range = range;
-      }
-      float angle = vision->angleDegrees;
-      if (ImGui::SliderFloat("Cone angle (degrees)", &angle, 10.0f, 360.0f,
-                             "%.0f")) {
-        vision->angleDegrees = angle;
-      }
-      int radar = vision->radarRadius;
-      if (ImGui::SliderInt("Radar radius (tiles)", &radar, 0, 10)) {
-        vision->radarRadius = radar;
-      }
-      ImGui::TextDisabled(
-        "Radar = the small all-round ring, so a character walking into a room "
-        "does not miss the barrel beside the door. The cone reaches further and "
-        "sees nothing behind.");
-
-      ImGui::Separator();
-      ImGui::Text("Visible cells: %d", static_cast<int>(vision->lastVisible.size()));
-      ImGui::Text("Sampled at tick: %d", vision->lastSampleTick);
-    } else {
-      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                         "The player has no Vision component, so nothing is "
-                         "sampled. Stage 1 attaches one at spawn.");
-    }
-
-    ImGui::Separator();
-
-    // Counted rather than queried: a filter already yields one canary row per
-    // entity, and an explicit count keeps the two numbers in the same units even
-    // if one of the two queries is ever changed to a narrower one.
-    int facingCount = 0;
-    game->ecs.filter<Facing>().each(
-        [&facingCount](flecs::entity, const Facing &) { ++facingCount; });
-
-    int characterCount = 0;
-    int characterWithoutFacing = 0;
-    game->ecs.filter<CharacterTag>().each(
-        [&](flecs::entity character, const CharacterTag &) {
-          ++characterCount;
-          if (!character.has<Facing>()) ++characterWithoutFacing;
-        });
-
-    ImGui::Text("Characters: %d", characterCount);
-    ImGui::Text("With a Facing component: %d", facingCount);
-    if (characterWithoutFacing == 0) {
-      ImGui::TextDisabled("Every character has a direction.");
-    } else {
-      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                         "%d character(s) have no Facing -- they will not be "
-                         "sampled in stage 1.",
-                         characterWithoutFacing);
-    }
-
-    ImGui::Separator();
-
-    // Stage 2: the record itself (docs/spatial-memory-design.md section 3.4).
-    // Read-only apart from the dump button on purpose -- a debug view that can
-    // edit the thing it inspects stops being evidence.
-    if (const SpatialMemory *memory =
-            game->playerEntity.get<SpatialMemory>()) {
-      const int nowTick = CurrentTaskTick(game->ecs);
-      ImGui::Text("Memory: %d cells, %d objects, %d places",
-                  static_cast<int>(memory->cells.size()),
-                  static_cast<int>(memory->objects.size()),
-                  static_cast<int>(memory->places.size()));
-      ImGui::Text("Caps: %d cells, %d objects", DEFAULT_MEMORY_CELLS_MAX,
-                  DEFAULT_MEMORY_OBJECTS_MAX);
-      ImGui::Text("Origin: (%d,%d)  first seen %s ago",
-                  memory->origin.anchor.x, memory->origin.anchor.y,
-                  FormatTaskAge(nowTick - memory->origin.firstSeenTick).c_str());
-      ImGui::Text("Last sample consumed: tick %d", memory->lastVisionTick);
-
-      if (ImGui::Button("Dump memory to logs/")) {
-        game->DumpSpatialMemory(game->playerEntity);
-      }
-      ImGui::TextDisabled(
-          "Writing is idempotent: a revisited cell bumps its visit count rather "
-          "than appending.");
-
-      // Newest first, and only the newest twenty: the point of this pane is to
-      // watch the record fill while walking, not to browse two thousand cells.
-      // The dump is for that.
-      std::vector<const MemoryCell *> recent;
-      recent.reserve(memory->cells.size());
-      for (const auto &[key, cell] : memory->cells) {
-        recent.push_back(&cell);
-      }
-      const std::size_t shown =
-          std::min<std::size_t>(recent.size(), 20);
-      std::partial_sort(recent.begin(), recent.begin() + shown, recent.end(),
-                        [](const MemoryCell *a, const MemoryCell *b) {
-                          return a->observedTick > b->observedTick;
-                        });
-
-      ImGui::BeginChild("##memory", ImVec2(0, 150), true);
-      ImGui::TextDisabled("Newest cells");
-      for (std::size_t i = 0; i < shown; ++i) {
-        const MemoryCell *cell = recent[i];
-        ImGui::Text("  (%d,%d) %s  %s ago", cell->pos.x, cell->pos.y,
-                    cell->surface.c_str(),
-                    FormatTaskAge(nowTick - cell->observedTick).c_str());
-        if (cell->visitCount > 1) {
-          ImGui::SameLine();
-          ImGui::TextDisabled("seen %dx", cell->visitCount);
+    if (ImGui::BeginTabBar("##visiontabs")) {
+      if (ImGui::BeginTabItem("Vision")) {
+        bool markers = game->debugWindowState->GetShowFacingMarkers();
+        if (ImGui::Checkbox("Draw facing markers", &markers)) {
+          game->debugWindowState->SetShowFacingMarkers(markers);
         }
+        ImGui::TextDisabled(
+            "Yellow line = facing (%.0f%% of a tile). Held while standing still.",
+            DEFAULT_FACING_MARKER_TILE_FRACTION * 100.0f);
+
+        bool overlay = game->debugWindowState->GetShowVisionOverlay();
+        if (ImGui::Checkbox("Draw visible cells", &overlay)) {
+          game->debugWindowState->SetShowVisionOverlay(overlay);
+        }
+        ImGui::TextDisabled(
+            "Blue tint = the cached sweep, not a fresh one. Draws over the world "
+            "rather than hiding anything: sight is an acquisition rule in this "
+            "phase, not fog of war.");
+
+        bool places = game->debugWindowState->GetShowPlaceOverlay();
+        if (ImGui::Checkbox("Draw place rectangles", &places)) {
+          game->debugWindowState->SetShowPlaceOverlay(places);
+        }
+        ImGui::TextDisabled(
+            "One box per place in the player's memory, with its observed cells "
+            "tinted inside it. The box is the extent, so a gap between the "
+            "outline and the tint is ground the place does not actually claim.");
+
+        bool cursorFacing = game->debugWindowState->GetCursorFacingEnabled();
+        if (ImGui::Checkbox("Turn to the mouse when standing still",
+                            &cursorFacing)) {
+          game->debugWindowState->SetCursorFacingEnabled(cursorFacing);
+        }
+        ImGui::TextDisabled(
+            "On by default. Off pins the player's facing while it is stationary, "
+            "so the cone can be swept or held still without the cursor moving it. "
+            "Walking still turns the character either way.");
+
+        ImGui::Separator();
+
+        // The cone parameters are edited on the character that actually has a
+        // `Vision`, so what is tuned is what will be sampled. Only the player has
+        // one in this stage, and having the component is what makes it eligible.
+        if (Vision *vision = game->playerEntity.get_mut<Vision>()) {
+          float range = vision->range;
+          if (ImGui::SliderFloat("Range (tiles)", &range, 1.0f, 40.0f, "%.0f")) {
+            vision->range = range;
+          }
+          float angle = vision->angleDegrees;
+          if (ImGui::SliderFloat("Cone angle (degrees)", &angle, 10.0f, 360.0f,
+                                 "%.0f")) {
+            vision->angleDegrees = angle;
+          }
+          int radar = vision->radarRadius;
+          if (ImGui::SliderInt("Radar radius (tiles)", &radar, 0, 10)) {
+            vision->radarRadius = radar;
+          }
+          ImGui::TextDisabled(
+              "Radar = the small all-round ring, so a character walking into a "
+              "room does not miss the barrel beside the door. The cone reaches "
+              "further and sees nothing behind.");
+
+          ImGui::Separator();
+          ImGui::Text("Visible cells: %d",
+                      static_cast<int>(vision->lastVisible.size()));
+          ImGui::Text("Sampled at tick: %d", vision->lastSampleTick);
+        } else {
+          ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                             "The player has no Vision component, so nothing is "
+                             "sampled.");
+        }
+
+        ImGui::Separator();
+
+        // Counted rather than queried: an explicit count keeps both numbers in
+        // the same units even if one of the queries is later narrowed.
+        int facingCount = 0;
+        game->ecs.filter<Facing>().each(
+            [&facingCount](flecs::entity, const Facing &) { ++facingCount; });
+
+        int characterCount = 0;
+        int characterWithoutFacing = 0;
+        game->ecs.filter<CharacterTag>().each(
+            [&](flecs::entity character, const CharacterTag &) {
+              ++characterCount;
+              if (!character.has<Facing>()) ++characterWithoutFacing;
+            });
+
+        ImGui::Text("Characters: %d", characterCount);
+        ImGui::Text("With a Facing component: %d", facingCount);
+        if (characterWithoutFacing == 0) {
+          ImGui::TextDisabled("Every character has a direction.");
+        } else {
+          ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                             "%d character(s) have no Facing -- they will not be "
+                             "sampled.",
+                             characterWithoutFacing);
+        }
+
+        ImGui::EndTabItem();
       }
-      ImGui::Separator();
-      ImGui::TextDisabled("Objects");
-      for (const auto &[id, object] : memory->objects) {
-        ImGui::Text("  \"%s\" (%d,%d)  %s ago", object.name.c_str(),
-                    object.pos.x, object.pos.y,
-                    FormatTaskAge(nowTick - object.lastSeenTick).c_str());
+
+      // The record itself, as the engine holds it. Read-only apart from the dump
+      // button: a debug view that can edit what it inspects stops being evidence.
+      if (ImGui::BeginTabItem("Memory")) {
+        const SpatialMemory *memory =
+            game->playerEntity.get<SpatialMemory>();
+        if (memory == nullptr) {
+          ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                             "The player has no SpatialMemory -- stage 2 "
+                             "attaches one at spawn.");
+        } else {
+          const int nowTick = CurrentTaskTick(game->ecs);
+          ImGui::Text("%d cells (cap %d)   %d objects (cap %d)   %d places",
+                      static_cast<int>(memory->cells.size()),
+                      DEFAULT_MEMORY_CELLS_MAX,
+                      static_cast<int>(memory->objects.size()),
+                      DEFAULT_MEMORY_OBJECTS_MAX,
+                      static_cast<int>(memory->places.size()) + 1);
+          ImGui::Text("origin (%d,%d), first seen %s ago   last sample consumed: "
+                      "tick %d",
+                      memory->origin.anchor.x, memory->origin.anchor.y,
+                      FormatTaskAge(nowTick - memory->origin.firstSeenTick).c_str(),
+                      memory->lastVisionTick);
+
+          if (ImGui::Button("Dump JSON to logs/")) {
+            game->DumpSpatialMemory(game->playerEntity, includeCells);
+          }
+          ImGui::SameLine();
+          if (ImGui::Button("Refresh")) {
+            jsonDirty = true;
+          }
+          ImGui::SameLine();
+          if (ImGui::Checkbox("Include cells (full detail)", &includeCells)) {
+            jsonDirty = true;
+          }
+          ImGui::TextDisabled(
+              "%d shapes from %d cells; %d bytes. Shapes are an exact run-merge "
+              "decomposition, so they claim no ground the agent never saw.",
+              shapeCount, static_cast<int>(memory->cells.size()),
+              static_cast<int>(jsonCache.size()));
+
+          // The same colours the map boxes use, so a rectangle can be identified
+          // without hovering it. Facts are printed exactly as stored -- raw tile
+          // names and item types, never a category the engine invented.
+          if (memory->places.empty()) {
+            ImGui::TextDisabled("No places derived yet -- walk around.");
+          } else {
+            ImGui::BeginChild("##places", ImVec2(0, 140), true);
+            for (const KnownPlace &place : memory->places) {
+              const Color color = Memory::PlaceColor(place.id);
+              ImGui::PushID(place.id);
+              ImGui::ColorButton("##swatch",
+                                 ImVec4(color.r / 255.0f, color.g / 255.0f,
+                                        color.b / 255.0f, 1.0f),
+                                 ImGuiColorEditFlags_NoTooltip, ImVec2(12, 12));
+              ImGui::PopID();
+              ImGui::SameLine();
+              const std::string name =
+                  place.label.empty()
+                      ? "#" + std::to_string(place.id) + " " + place.attribute
+                      : place.label;
+              ImGui::Text("%s  %dx%d  %s", name.c_str(), place.width,
+                          place.height,
+                          place.origin == PlaceOrigin::Authored ? "(authored)"
+                                                                : "(inferred)");
+              if (!place.facts.empty()) {
+                std::string facts;
+                for (const PlaceFact &fact : place.facts) {
+                  if (!facts.empty()) {
+                    facts += ", ";
+                  }
+                  facts += fact.name + " " + std::to_string(fact.count);
+                }
+                ImGui::TextDisabled("    %s", facts.c_str());
+              }
+            }
+            ImGui::EndChild();
+          }
+
+          // One serializer, two consumers: this text and the dumped file are the
+          // same string, so what you diff is what you inspected.
+          if (jsonDirty || memory->lastVisionTick != jsonCacheTick) {
+            const std::string name = game->playerEntity.has<DisplayName>()
+                                         ? game->playerEntity.get<DisplayName>()->name
+                                         : std::string("character");
+            jsonCache =
+                Memory::DumpJson(*memory, name, nowTick, includeCells);
+            shapeCount = static_cast<int>(Memory::ToShapes(*memory).size());
+            jsonCacheTick = memory->lastVisionTick;
+            jsonDirty = false;
+          }
+          ImGui::InputTextMultiline("##recordjson", &jsonCache,
+                                    ImVec2(-1.0f, -1.0f),
+                                    ImGuiInputTextFlags_ReadOnly);
+        }
+        ImGui::EndTabItem();
       }
-      ImGui::EndChild();
-    } else {
-      ImGui::TextDisabled(
-          "The player has no SpatialMemory -- stage 2 attaches one at spawn.");
+      ImGui::EndTabBar();
     }
   }
   ImGui::End();

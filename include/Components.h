@@ -181,8 +181,14 @@ struct SeenObject {
 
 // Layer 2: counts, never a verdict. "7 structures" is evidence; "village" is a
 // conclusion the agent draws, and nothing in this struct may draw it.
+//
+// `name` is the raw vocabulary -- a tile's name, or an object's item type -- and
+// `category` only says which of the two it is. Deliberately no taxonomy: grouping
+// "mill" and "smeltery" into "workshop" is the renderer's interpretation, so a
+// genre pack can rename content without editing C++.
 struct PlaceFact {
-  std::string category;  // "structure", "workshop", "planted row", "route", "water"
+  std::string category;  // "surface" or "object"
+  std::string name;      // tile name, or object template id
   int count = 0;
 };
 
@@ -197,18 +203,25 @@ enum class PlaceOrigin { Origin, Inferred, Authored };
 enum class KnowledgeSource { Observed, Told, Inferred };
 
 struct KnownPlace {
+  // Stable for the session, so a label can attach to a place while its extent is
+  // still growing. Derived views cannot hold a name for exactly this reason.
+  int id = 0;
   PlaceOrigin origin = PlaceOrigin::Inferred;
   KnowledgeSource source = KnowledgeSource::Observed;
   unsigned char confidence = 255;  // observed full, told lower, inferred lower still
-  GamePosition anchor;             // top-left of the extent
+  GamePosition anchor;             // top-left of the observed extent
   int width = 0;
   int height = 0;
   std::vector<PlaceFact> facts;    // the evidence its description is built from
-  std::string attribute;           // cluster key: surface, crop, or structure kind
+  std::string attribute;           // cluster key for Inferred: the seed surface
   std::string label;               // EMPTY until something names it
-  std::string authoringId;         // the map's name, once learned -- not on sight
+  std::string authoringId;         // the map's Location name, if any
   int firstSeenTick = 0;
   int lastSeenTick = 0;
+  // The cells this place claims, as VisionQuery::CellKey values. Membership is
+  // what makes the extent and the facts exact: the extent is their bounding box,
+  // so a place never claims a cell it did not observe.
+  std::vector<std::uint64_t> memberCells;
 };
 
 // Layer 3: the only stored prose, and only when something authored it. Written by
@@ -237,6 +250,11 @@ struct SpatialMemory {
   // The vision sample this record has already consumed, so the writer runs once
   // per sample rather than once per frame.
   int lastVisionTick = -1;
+  // The sample place derivation has already consumed (section 3.3). Separate from
+  // lastVisionTick because the writer and the deriver are separate passes: the
+  // deriver runs over the cells the writer just produced.
+  int lastPlaceTick = -1;
+  int nextPlaceId = 1;
 };
 
 struct BlocksTile {};

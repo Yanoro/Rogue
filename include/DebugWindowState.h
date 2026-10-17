@@ -177,6 +177,16 @@ public:
   // is it looking", the other is "what can it actually see".
   bool GetShowVisionOverlay() const { return showVisionOverlay; }
   void SetShowVisionOverlay(bool value) { showVisionOverlay = value; }
+  // The place rectangles: one box per place the character's memory holds, with the
+  // cells it actually observed tinted inside it. Separate from the visible-cell
+  // tint because it answers "what did I make of this area", not "what can I see".
+  bool GetShowPlaceOverlay() const { return showPlaceOverlay; }
+  void SetShowPlaceOverlay(bool value) { showPlaceOverlay = value; }
+  // Whether a stationary player turns to face the mouse. On by default; off is
+  // the useful state when you want to walk a cone past something without the
+  // cursor dragging it around, which is exactly the tuning this window exists for.
+  bool GetCursorFacingEnabled() const { return cursorFacingEnabled; }
+  void SetCursorFacingEnabled(bool value) { cursorFacingEnabled = value; }
 
   // Which System 1 backend was serving when the run ended, so a restart resumes on the
   // model you had picked instead of silently reverting to the default profile.
@@ -246,6 +256,10 @@ private:
   bool showVisionDebugWindow;
   bool showFacingMarkers;
   bool showVisionOverlay;
+  bool showPlaceOverlay;
+  // Defaults to true, so a fresh state file keeps the shipped behaviour. The
+  // loader reads the key with `true` as its fallback for the same reason.
+  bool cursorFacingEnabled = true;
   std::string systemOneProfile;
   bool showVisionChatWindow;
   bool showLocations;
