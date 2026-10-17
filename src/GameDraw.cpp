@@ -167,6 +167,34 @@ void Game::Draw() {
           }
         });
 
+    // Stage 0 of docs/spatial-memory-design.md: one short line per character
+    // showing the direction `Facing` holds, so the direction the cone will later
+    // be built on can be judged before anything is sampled from it.
+    //
+    // Drawn here, directly, for the same reason the two overlays above are: an
+    // overlay that lives inside the render pipeline can perturb it, and this one
+    // has to be switchable without attaching a component to anything.
+    //
+    // A marker is drawn for every entity that has all three components, not only
+    // for characters -- the component is the opt-in, which keeps this consistent
+    // with the system that writes it.
+    if (debugWindowState->GetShowFacingMarkers()) {
+      const float markerLength = tileW * DEFAULT_FACING_MARKER_TILE_FRACTION;
+      ecs.filter<const Facing, const ScreenPosition, const Hitbox>().each(
+          [markerLength](const Facing &facing, const ScreenPosition &screenPos,
+                         const Hitbox &hitbox) {
+            const ::Vector2 center = {
+                screenPos.x + hitbox.width / 2.0f,
+                screenPos.y + hitbox.height / 2.0f};
+            const ::Vector2 tip = {center.x + facing.x * markerLength,
+                                   center.y + facing.y * markerLength};
+            DrawLineV(center, tip, YELLOW);
+            // A dot at the tip, so a short marker reads as a direction rather
+            // than a stray artefact at a glance.
+            DrawCircleV(tip, 2.0f, YELLOW);
+          });
+    }
+
     // Live preview of the location rectangle currently being dragged out (and
     // of the one waiting to be named, so the user can see what they marked).
     if (isDraggingLocation || pendingLocationWantsFocus || pendingLocationHasFocus) {

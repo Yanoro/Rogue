@@ -91,6 +91,24 @@ struct PromptVocabulary {
 // vocabulary itself -- the caller assembles it per kind.
 std::string TileVocabulary(const TileRegistry &tiles);
 
+// The shape a request asks for. Two axes, and this is the second: the kind picks the
+// document, and the shape picks which part of that document applies. A single-sprite request
+// and a set request are different briefs -- "define exactly one" and "define four to eight
+// that belong together" are not variations of a sentence -- so each kind's document carries
+// both, marked with comment fences the builder strips.
+//
+// An unmarked document is passed through unchanged: a hand-written prompt file that predates
+// this still works, and simply has no set instructions.
+enum class PromptShape {
+  One,
+  Set,
+};
+
+// Removes the shape section that does not apply. Public for the prompt dump and for tests,
+// because "the set prompt does not still contain the single-sprite instruction" is a claim
+// worth checking rather than assuming.
+std::string SelectShape(std::string document, PromptShape shape);
+
 // The system prompt for an arbitrary kind.
 //
 // `contract` is the shared reply contract -- the format, the refusal protocol, the
@@ -102,7 +120,8 @@ std::string TileVocabulary(const TileRegistry &tiles);
 std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
                                const std::string &promptFile,
                                const std::string &contractFile,
-                               const PromptVocabulary &vocabulary);
+                               const PromptVocabulary &vocabulary,
+                               PromptShape shape = PromptShape::One);
 
 // The glyph table, one line per glyph, as it goes into the prompt. Exposed for
 // the tile designer window's legend pane so the two cannot disagree about what
@@ -159,6 +178,32 @@ struct ApplyResult {
 // stream finishes, exactly like DesignerChatWindow::InspectFinishedExchange.
 ApplyResult ApplyReply(const std::string &reply, TileRegistry &tiles,
                        const std::string &overlayDirectory);
+
+// The one reply produced. `ok` when the reply could be read at all -- which is not the same as
+// every sprite being accepted, because a set is validated entry by entry.
+struct SetApplyResult {
+  // False only when the reply itself could not be read (no fence, bad JSON, a malformed
+  // envelope). A readable reply whose entries were all refused has `ok == true` and a
+  // failure for each, because that is a retryable attempt, not an unreadable one.
+  bool ok = false;
+  std::string error;
+  std::string setName;
+  // One result per definition, in the order the reply gave them. Exactly one entry for a
+  // single-sprite reply, so a caller can treat both shapes the same way.
+  std::vector<ApplyResult> sprites;
+  // Counters, so the window and the log do not have to re-count and risk disagreeing.
+  size_t accepted = 0;
+  size_t refused = 0;
+};
+
+// The many-sprite form: a reply that may carry one definition or a set of them.
+//
+// Entries are validated independently, and **a refused entry does not roll back an accepted
+// one**. That is the design's "one bad sprite refuses only that sprite": a set of six where
+// one entry has a two-character glyph should leave five tiles in the catalog and tell the
+// model to fix the sixth, rather than discarding five good definitions because of the bad one.
+SetApplyResult ApplySetReply(const std::string &reply, TileRegistry &tiles,
+                             const std::string &overlayDirectory);
 
 // Reads `path` and applies its contents, accepting either form ExtractTileJson
 // accepts. This is what `--tile-design` calls, so the mode cannot drift from the

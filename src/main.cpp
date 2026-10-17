@@ -6,6 +6,7 @@
 #include "GapLog.h"
 #include "JevClassifier.h"
 #include "ObjectDesigner.hpp"
+#include "SpriteRouter.hpp"
 #include "ObjectFactory.h"
 #include "RaylibException.hpp"
 #include "RewriteBriefs.hpp"
@@ -101,30 +102,10 @@ int RunGapReport() {
 int RunSystemOneTest() {
   const GameSettings &settings = Settings();
 
-  SystemOne::JevClassifier::Config config;
-  // A `model.endpoint` is a *chat* endpoint -- `http://localhost:11434/api/generate`
-  // in the shipped config -- and a decisions endpoint is a different API on a
-  // different host. Taking it blindly is how this test ended up posting a decisions
-  // body to Ollama. So it is used only when it was actually set for System 1, which
-  // for an unconfigured run means never.
-  const std::string configuredEndpoint = settings.system1.model.endpoint;
-  if (!configuredEndpoint.empty() &&
-      configuredEndpoint.find("/api/generate") == std::string::npos) {
-    config.endpoint = configuredEndpoint;
-  }
-  // Empty means "inherit the main model", which is the state an unconfigured run
-  // is in and is why SystemOneSection clears the field on load rather than letting
-  // ModelSection's llama3 default stand.
-  if (!settings.system1.model.model.empty()) {
-    config.model = settings.system1.model.model;
-  } else if (!settings.model.model.empty()) {
-    config.model = settings.model.model;
-  }
-  // Falls back to the main model's key so an unconfigured system1 section still
-  // works: the two default to sharing a backend (see Settings.h), and this mode
-  // exists to be run before that is wired.
-  config.apiKey = settings.system1.model.apiKey.empty() ? settings.model.apiKey
-                                                        : settings.system1.model.apiKey;
+  // The same resolution the sprite router uses, deliberately shared: the endpoint rule in
+  // particular is subtle enough that two copies would mean one of them getting it wrong.
+  const SystemOne::JevClassifier::Config config = SpriteRouter::ConfigFromSettings();
+  (void)settings;
 
   SystemOne::JevClassifier classifier(config);
   if (!classifier.Available()) {
@@ -410,8 +391,52 @@ int RunSpriteDesign(const SpriteKinds::Descriptor &kind,
   // impossible to test a refusal without editing the world. `--sprite-design-overlay
   // <dir>` points the write somewhere disposable instead, so the *round trip* -- write,
   // reload, resolve -- is testable without touching content a run depends on.
-  const ObjectDesigner::ApplyResult result = ObjectDesigner::ApplyFile(
-      replyPath, objects, overlayDirectory, &tiles);
+  // Read once, because a set has to be applied entry by entry and the file is needed for
+  // that. `--sprite-design` therefore validates a set envelope when the file holds one,
+  // without a separate mode: the file *is* the reply, single or set.
+  std::ifstream replyFile(replyPath);
+  if (!replyFile.is_open()) {
+    std::cerr << "sprite design: could not read " << replyPath << "\n";
+    return 1;
+  }
+  std::stringstream replyBuffer;
+  replyBuffer << replyFile.rdbuf();
+  const std::string replyText = replyBuffer.str();
+
+  const ObjectDesigner::SetApplyResult set =
+      ObjectDesigner::ApplySetReply(replyText, objects, overlayDirectory, &tiles);
+  if (!set.ok) {
+    std::cout << "REFUSED: " << set.error << "\n";
+    return 1;
+  }
+  if (set.sprites.size() > 1) {
+    std::cout << "set:        " << (set.setName.empty() ? "(unnamed)" : set.setName)
+              << " -- " << set.sprites.size() << " definition(s), " << set.accepted
+              << " accepted, " << set.refused << " refused\n";
+    for (size_t index = 0; index < set.sprites.size(); ++index) {
+      const ObjectDesigner::ApplyResult &entry = set.sprites[index];
+      if (entry.ok) {
+        std::cout << "  [" << index << "] ACCEPTED " << entry.name << "  (key "
+                  << entry.key << ")\n";
+      } else {
+        std::cout << "  [" << index << "] REFUSED  " << entry.error << "\n";
+      }
+    }
+    for (size_t index = 0; index < set.sprites.size(); ++index) {
+      const ObjectDesigner::ApplyResult &entry = set.sprites[index];
+      if (!entry.ok) continue;
+      for (const std::string &warning : entry.warnings) {
+        std::cout << "  [" << index << "] warning: " << warning << "\n";
+      }
+    }
+    // A partial set is the designed outcome, not a failure: the accepted entries are in the
+    // catalog and the refused one is named for the retry. Exit non-zero only when nothing
+    // was accepted at all, so a caller can tell "some of it worked" from "none of it did".
+    return set.accepted > 0 ? 0 : 1;
+  }
+
+  const ObjectDesigner::ApplyResult result =
+      set.sprites.empty() ? ObjectDesigner::ApplyResult{} : set.sprites.front();
 
   if (!result.ok) {
     std::cout << "REFUSED: " << result.error << "\n";
@@ -446,7 +471,8 @@ int RunSpriteDesign(const SpriteKinds::Descriptor &kind,
 // the half that exists before any validator: the prompt assembly, the contract
 // substitution and the vocabulary list are all inspectable with no world and no
 // window, which is the same reason --gaps exists.
-int RunSpritePrompt(const SpriteKinds::Descriptor &kind) {
+int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
+                    const std::string &shapeName) {
   const GameSettings &settings = Settings();
   DebugLog log(settings.debug.logMaxEntries);
 
@@ -484,10 +510,23 @@ int RunSpritePrompt(const SpriteKinds::Descriptor &kind) {
     std::cout << "components: " << objects.ComponentNames().size() << " registered\n";
   }
 
+  // Refused by name rather than defaulted, so a typo does not silently dump the wrong
+  // prompt for the shape being investigated.
+  if (!shapeName.empty() && shapeName != "one" && shapeName != "set") {
+    std::cerr << "sprite prompt: --sprite-prompt-shape must be 'one' or 'set', not '"
+              << shapeName << "'\n";
+    return 1;
+  }
+  const TileDesigner::PromptShape shape =
+      shapeName == "set" ? TileDesigner::PromptShape::Set
+                         : TileDesigner::PromptShape::One;
   const std::string prompt = TileDesigner::BuildPromptForKind(
-      kind, promptFile, settings.content.spriteContractFile, vocabulary);
+      kind, promptFile, settings.content.spriteContractFile, vocabulary, shape);
 
   std::cout << "kind:       " << kind.id << " (" << kind.label << ")\n";
+  std::cout << "shape:      " << (shape == TileDesigner::PromptShape::Set ? "set"
+                                                                        : "one")
+            << "\n";
   std::cout << "prompt:     " << promptFile << "\n";
   std::cout << "contract:   " << settings.content.spriteContractFile << "\n";
   std::cout << "vocabulary: " << vocabulary.body.size() << " byte(s), "
@@ -552,7 +591,7 @@ int RunTileArt(const std::string &tileName, const std::string &sourcePng,
   const size_t generated = TileDesigner::LoadOverlayDirectory(
       settings.content.generatedTiles, tiles, &log);
 
-  const TileArt::Target target = TileArt::PlanFor(tileName);
+  const TileArt::Target target = TileArt::PlanForTile(tileName);
 
   std::cout << "tile:       " << tileName << "\n";
   std::cout << "catalog:    " << tiles.Count() << " tile(s) (" << generated
@@ -665,7 +704,7 @@ int RunTileArt(const std::string &tileName, const std::string &sourcePng,
 int RunTileArtSelfTest(Game &game, const std::string &tileName,
                        const std::string &sourcePng, const std::string &palettePath,
                        int settleFrames) {
-  const TileArt::Target target = TileArt::PlanFor(tileName);
+  const TileArt::Target target = TileArt::PlanForTile(tileName);
   std::cout << "self-test:  hot-swap for '" << tileName << "' ("
             << target.conventionId << ")\n";
 
@@ -757,8 +796,11 @@ void DrawTileArtFrames(Game &game, int frames) {
 int RunRewritePreview(const std::string &briefName, const std::string &text) {
   const GameSettings &settings = Settings();
 
-  if (briefName != "tile" && briefName != "building") {
-    std::cerr << "rewrite: --rewrite-brief must be 'tile' or 'building', not '"
+  // Refused by name rather than defaulted, so a typo does not silently produce a
+  // different domain's brief. The three names are the three vocabularies a rewrite can
+  // be held inside: see RewriteBriefs.hpp.
+  if (briefName != "tile" && briefName != "object" && briefName != "building") {
+    std::cerr << "rewrite: --rewrite-brief must be 'tile', 'object' or 'building', not '"
               << briefName << "'\n";
     return 1;
   }
@@ -767,8 +809,16 @@ int RunRewritePreview(const std::string &briefName, const std::string &text) {
   // No backend: a null AI is a supported state for Configure, and all this mode uses
   // is the assembled prompt.
   rewriter.Configure(nullptr, settings.content.rewritePromptFile, "rewrite-preview");
-  rewriter.SetBrief(briefName == "tile" ? RewriteBriefs::Tile()
-                                        : RewriteBriefs::Blueprint());
+  // Three briefs now, and the default stays Blueprint so an unknown name does not
+  // silently become a tile brief. Each is a different vocabulary the rewrite must stay
+  // inside -- see RewriteBriefs.hpp.
+  if (briefName == "tile") {
+    rewriter.SetBrief(RewriteBriefs::Tile());
+  } else if (briefName == "object") {
+    rewriter.SetBrief(RewriteBriefs::Object());
+  } else {
+    rewriter.SetBrief(RewriteBriefs::Blueprint());
+  }
 
   const std::string request = rewriter.DescribeRequest(text);
   if (request.size() < 200) {
@@ -780,8 +830,8 @@ int RunRewritePreview(const std::string &briefName, const std::string &text) {
 
   std::cout << "brief:        " << briefName << "\n";
   std::cout << "instructions: " << settings.content.rewritePromptFile << "\n";
-  if (briefName == "tile") {
-    // Named explicitly, because a tile brief changes with the art pack and that is
+  if (briefName == "tile" || briefName == "object") {
+    // Named explicitly, because both sprite briefs change with the art pack and that is
     // the one input to this feature that lives on disk.
     const TileArt::PackStyle style = TileArt::CurrentPackStyle();
     std::cout << "art pack:     "
@@ -791,6 +841,97 @@ int RunRewritePreview(const std::string &briefName, const std::string &text) {
   std::cout << "text:         " << text << "\n";
   std::cout << "\n---------- what would be sent ----------\n";
   std::cout << request << "\n";
+  return 0;
+}
+
+// Proves the per-request cell cap: a set larger than the cap becomes several requests
+// rather than one huge sheet.
+//
+// The cap trades money for legibility -- one request costs the same whether it fills one cell
+// or sixteen -- so "ten sprites cost three requests instead of one" is a *feature* only if the
+// requests actually happen, one after another, with every sprite still generated. What this
+// checks is that the split neither drops anything nor collapses into one batch: the tiles
+// requested all end up with a sprite, and the request count is ceil(n / cap).
+int RunTileArtSplitTest(Game &game, int count) {
+  const TileArtQueue &queue = game.TileArtQueueState();
+  if (!queue.Enabled()) {
+    std::cerr << "split test: art generation is off (art.generation.enabled)\n";
+    return 1;
+  }
+  const int cap = std::max(1, queue.GetConfig().maxCellsPerRequest);
+  const int expectedRequests = (count + cap - 1) / cap;
+  if (expectedRequests > queue.GetConfig().maxRequestsPerSession) {
+    std::cerr << "split test: " << count << " tiles at a cap of " << cap
+              << " needs " << expectedRequests
+              << " requests, which is over maxRequestsPerSession ("
+              << queue.GetConfig().maxRequestsPerSession << ")\n";
+    return 1;
+  }
+
+  std::cout << "split test: " << count << " tile(s), cap " << cap << " per request -> "
+            << expectedRequests << " request(s) expected\n";
+
+  std::vector<std::string> names;
+  for (int index = 0; index < count; ++index) {
+    names.push_back("split test " + std::to_string(index));
+    std::string reason;
+    if (!game.RequestTileArt(names.back(), &reason)) {
+      std::cerr << "split test: request refused: " << reason << "\n";
+      return 1;
+    }
+  }
+
+  // The frame loop, pumping exactly where the ECS system does. Bounded by wall clock for the
+  // same reason the queue test is: a frame budget is a time budget in disguise.
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(120);
+  int frames = 0;
+  while (std::chrono::steady_clock::now() < deadline) {
+    game.Update();
+    game.PumpTileArtQueue(1.0f / 60.0f);
+    ++frames;
+    size_t done = 0;
+    for (const TileArtQueue::Job &job : queue.Snapshot()) {
+      if (job.state == TileArtQueue::State::Done) ++done;
+      if (job.state == TileArtQueue::State::Failed) {
+        std::cerr << "split test: '" << job.tileName << "' failed: " << job.error
+                  << "\n";
+        return 1;
+      }
+    }
+    if (done == static_cast<size_t>(count)) break;
+  }
+
+  size_t done = 0;
+  size_t withPath = 0;
+  for (const TileArtQueue::Job &job : queue.Snapshot()) {
+    if (job.state == TileArtQueue::State::Done) {
+      ++done;
+      if (!job.path.empty()) ++withPath;
+    }
+  }
+  std::cout << "  settled:  " << done << "/" << count << " after " << frames
+            << " frame(s)\n";
+  std::cout << "  sprites:  " << withPath << " named a placed file\n";
+  std::cout << "  requests: " << queue.RequestsUsed() << " used of "
+            << queue.GetConfig().maxRequestsPerSession << " (expected "
+            << expectedRequests << ")\n";
+
+  if (done != static_cast<size_t>(count)) {
+    std::cout << "FAILED:     not every sprite was generated\n";
+    return 1;
+  }
+  if (queue.RequestsUsed() != static_cast<size_t>(expectedRequests)) {
+    std::cout << "FAILED:     the split produced " << queue.RequestsUsed()
+              << " request(s), not " << expectedRequests
+              << " -- the cap is not being applied\n";
+    return 1;
+  }
+  if (withPath != static_cast<size_t>(count)) {
+    std::cout << "FAILED:     a settled job has no sprite path\n";
+    return 1;
+  }
+  std::cout << "split:      ok (a set larger than the cap is split across requests, and "
+               "every sprite is still generated)\n";
   return 0;
 }
 
@@ -888,10 +1029,12 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
   // ran. This is the number the pipeline sections and the log report.
   size_t swapped = 0;
   std::string jobPath;
+  bool jobIsTile = true;
   for (const TileArtQueue::Job &job : queue.Snapshot()) {
     if (job.tileName != tileName) continue;
     swapped = job.swappedCells;
     jobPath = job.path;
+    jobIsTile = job.kind == SpriteKinds::Kind::Tile;
     break;
   }
 
@@ -918,9 +1061,17 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
                  "cannot draw and the log names no file\n";
     return 1;
   }
+  // Zero swapped cells is a failure only for a *tile*. An object is spawned as an entity
+  // rather than painted onto a cell, so a map holds no cells drawing it and the swap has
+  // nothing to attach to -- that is the normal outcome for an object, not a broken swap.
+  // Reported and asserted separately so the two cannot be confused.
   if (swapped == 0) {
-    std::cout << "FAILED:     the completion swap updated no cells\n";
-    return 1;
+    if (jobIsTile) {
+      std::cout << "FAILED:     the completion swap updated no cells\n";
+      return 1;
+    }
+    std::cout << "note:       an object is not painted on the map, so there are no cells "
+                 "to swap -- the sprite is in the generated layer for its next spawn\n";
   }
   if (cellsWithGlyph > 0) {
     std::cout << "FAILED:     " << cellsWithGlyph << " cell(s) drawing '" << tileName
@@ -950,7 +1101,7 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
     // Where the sprite should be, asked the same way placement asks it rather than
     // from the job -- the job's `path` field is reserved for what the window shows
     // and is not what the swap used.
-    const std::string spritePath = TileArt::PlanFor(tileName).generatedPath;
+    const std::string spritePath = TileArt::PlanForTile(tileName).generatedPath;
     int stageImages = 0;
     bool hasPrompt = false;
     bool spriteReadable = false;
@@ -1013,10 +1164,21 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
     std::cout << "FAILED:     the job did not complete\n";
     return 1;
   }
-  if (cellsAfter == 0) {
+  // Same distinction as the swap count above: a tile must be on the map for a swap to be
+  // observable, and an object must not be, so "zero cells" means opposite things for the
+  // two kinds.
+  if (cellsAfter == 0 && jobIsTile) {
     std::cout << "FAILED:     nothing drew the tile, so no swap happened (is '"
               << tileName << "' on the loaded map?)\n";
     return 1;
+  }
+  if (!jobIsTile) {
+    // The object's own path, taken from the job rather than re-derived: the point of the
+    // assertion is that the file the queue *placed* is named by the object's key, and
+    // re-asking would be checking the derivation against itself.
+    std::cout << "queue:      ok (request -> worker -> drain -> sprite placed as "
+              << jobPath << " for an object, which has no map cells to swap)\n";
+    return 0;
   }
   std::cout << "queue:      ok (request -> worker -> drain -> swap, frames kept "
                "running throughout)\n";
@@ -1054,6 +1216,8 @@ int main(int argc, char *argv[]) {
   //   AIRogue --settings <file.json> -> a different settings file
   //   AIRogue --art-pack <dir>       -> settings.json, art pack overridden
   //   AIRogue --gaps                 -> write the art gap report and exit
+  //   AIRogue --system1-profile <id> -> use that System 1 profile for this run
+  //                                     (outranks the remembered selection)
   //   AIRogue --systemone-test       -> one live System 1 request, printed, and exit
   //   AIRogue --rewrite "<text>" [--rewrite-brief tile|building]
   //                                  -> print the improved-prompt request and exit
@@ -1061,10 +1225,13 @@ int main(int argc, char *argv[]) {
   //   AIRogue --sprite-design <kind> <reply>
   //                                  -> the same, dispatched by kind. An object's
   //                                     validator is phase 2, so it reports that.
+  //   AIRogue --sprite-route "<text>"     -> one live classification: kind, shape and
+  //                                          count, printed with the raw answers
   //   AIRogue --sprite-design <kind> <reply> [--sprite-design-overlay <dir>]
   //                                  -> write an accepted definition to <dir> so the
   //                                     round trip can be reloaded and checked
-  //   AIRogue --sprite-prompt <kind> -> print the system prompt for a kind and exit
+  //   AIRogue --sprite-prompt <kind> [--sprite-prompt-shape one|set]
+  //                                  -> print the system prompt for a kind and exit
   //                                     (no world, no window, no cost)
   //   AIRogue --tile-art <name>      -> report where a tile's art would go
   //   AIRogue --tile-art <name> --tile-art-sprite <png>  -> place and verify it
@@ -1074,9 +1241,22 @@ int main(int argc, char *argv[]) {
   //                                       -> then draw the window for n frames
   //   AIRogue --tile-designer-logtest                    -> write one designer log
   //                                                         and exit (no backend)
+  //   AIRogue --sprite-designer-objecttest               -> the same conversation
+  //                                                         designing an object
+  //   AIRogue --sprite-designer-settest                  -> the same conversation
+  //                                                         asking for a set
+  //   AIRogue --tile-art-split <n>                       -> n sprites become
+  //                                                         ceil(n/cap) requests
+  //   AIRogue --object-art-swap <key>                    -> a spawned object picks up a
+  //                                                         newly generated sprite
   //   AIRogue --object-check <key>                       -> is an object in the running
   //                                                         game's factory, and from
   //                                                         the overlay or the catalog
+  //   AIRogue --draw-probe <key>                         -> place that object on a
+  //                                                         mapped tile, read the frame
+  //                                                         back, and assert the tile
+  //                                                         shows through its
+  //                                                         transparent pixels
   //   AIRogue --art-cache-test                           -> prove a rewritten stage
   //                                                         reloads, not the cache
   //   AIRogue --paint-memo-test <tile>                   -> prove art arriving after
@@ -1090,6 +1270,8 @@ int main(int argc, char *argv[]) {
   std::string spriteDesignKind;
   std::string spriteDesignPath;
   std::string spritePromptKind;
+  std::string spritePromptShape;
+  std::string spriteRouteText;
   std::string spriteDesignOverlay;
   std::string tileArtName;
   std::string tileArtSource;
@@ -1099,8 +1281,13 @@ int main(int argc, char *argv[]) {
   bool tileArtQueueTest = false;
   bool tileDesignerLogTest = false;
   bool tileDesignerArtTest = false;
+  bool spriteDesignerObjectTest = false;
+  bool spriteDesignerSetTest = false;
+  std::string objectArtSwapKey;
   bool artCacheTest = false;
   std::string objectCheckKey;
+  std::string drawProbeKey;
+  int tileArtSplitCount = 0;
   bool paintMemoTest = false;
   std::string rewriteText;
   std::string rewriteBrief = "tile";
@@ -1108,6 +1295,7 @@ int main(int argc, char *argv[]) {
   int tileArtHoldFrames = 0;
   bool gapReportOnly = false;
   bool systemOneTest = false;
+  std::string system1Profile;
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
     if (arg == "--settings" && i + 1 < argc) {
@@ -1127,6 +1315,15 @@ int main(int argc, char *argv[]) {
       // Where an accepted object is written, for testing the round trip. Defaults to
       // nothing, which means "accept in memory only".
       spriteDesignOverlay = argv[++i];
+    } else if (arg == "--sprite-route" && i + 1 < argc) {
+      // One live classification, printed, and exit. Spends a fraction of a cent, so it is
+      // never automatic.
+      spriteRouteText = argv[++i];
+    } else if (arg == "--sprite-prompt-shape" && i + 1 < argc) {
+      // Which shape the dumped prompt is built for: "one" (the default) or "set". A flag
+      // rather than a second mode, because the prompt dump exists to show what the model
+      // would be told and the shape is part of that.
+      spritePromptShape = argv[++i];
     } else if (arg == "--sprite-prompt" && i + 1 < argc) {
       // Prints the built system prompt for a kind and exits. No world, no window, no
       // cost -- the verification for the half of the feature that exists before any
@@ -1158,15 +1355,45 @@ int main(int argc, char *argv[]) {
       // Needs a Game (the window reports through it), so it runs Init and exits
       // rather than being a pre-window mode like --tile-design.
       tileDesignerLogTest = true;
+    } else if (arg == "--sprite-designer-settest") {
+      // The canned conversation asking for a *set* of objects, with one entry deliberately
+      // broken, so the per-entry verdicts are exercised end to end through the window.
+      //
+      // The kind is object rather than tile because the fixture is object-shaped, and a test
+      // whose input does not match its kind tests the refusal path instead of the accept
+      // path -- which is exactly what the first version of this did: every entry was refused
+      // for having a "components" field the *tile* validator does not know.
+      tileDesignerLogTest = true;
+      spriteDesignerSetTest = true;
+      spriteDesignerObjectTest = true;
+    } else if (arg == "--sprite-designer-objecttest") {
+      // The same canned conversation as --tile-designer-logtest, but designing an
+      // *object*: it exercises the object half of the window's inspection path, which is
+      // otherwise reachable only by a live model and a person at a keyboard. Needs a Game
+      // and a window, and exits.
+      tileDesignerLogTest = true;
+      spriteDesignerObjectTest = true;
     } else if (arg == "--tile-designer-arttest") {
       // The same canned conversation with the automatic art request on. Also needs
       // a Game, and also exits.
       tileDesignerArtTest = true;
+    } else if (arg == "--tile-art-split" && i + 1 < argc) {
+      // Queue N sprites and check the per-request cap splits them. Needs a world and a
+      // generation command (a stub is fine and free), and exits.
+      tileArtSplitCount = std::atoi(argv[++i]);
+    } else if (arg == "--object-art-swap" && i + 1 < argc) {
+      // Proves a spawned object picks up a newly generated sprite without a reload. Needs a
+      // world (it spawns an entity), and exits.
+      objectArtSwapKey = argv[++i];
     } else if (arg == "--object-check" && i + 1 < argc) {
       // Asks the *running game's* factory whether a key resolved. Needs a world, because
       // the point is to check the load path Game::ECSInit actually runs rather than a
       // loader the test drives itself.
       objectCheckKey = argv[++i];
+    } else if (arg == "--draw-probe" && i + 1 < argc) {
+      // Draws one frame with the named object placed on a known tile and reads the
+      // pixels back. Needs a window and a world: the whole point is the framebuffer.
+      drawProbeKey = argv[++i];
     } else if (arg == "--art-cache-test") {
       // Proves the pipeline panels notice a stage file rewritten in place. Needs a
       // Game and a window (it loads a real texture), and exits.
@@ -1185,6 +1412,10 @@ int main(int argc, char *argv[]) {
       tileArtSettleFrames = std::atoi(argv[++i]);
     } else if (arg == "--gaps") {
       gapReportOnly = true;
+    } else if (arg == "--system1-profile" && i + 1 < argc) {
+      // Takes a value, so it is checked before the bare flags below and consumes its
+      // own argument -- otherwise the id would be read as the map path.
+      system1Profile = argv[++i];
     } else if (arg == "--systemone-test") {
       // Spends one real API request, so it is never automatic. Headless: it needs
       // no world and no display.
@@ -1207,6 +1438,18 @@ int main(int argc, char *argv[]) {
   // once and caches them.
   if (!artPackOverride.empty()) {
     MutableSettings().art.pack = artPackOverride;
+  }
+  // Kept out of the settings file on purpose: this is a request about *this* run, so it
+  // goes into cliProfile, which outranks both the remembered selection and
+  // system1.activeProfile.
+  if (!system1Profile.empty()) {
+    MutableSettings().system1.cliProfile = system1Profile;
+  }
+
+  // Before the window: it asks a decision model one question and prints the answer, so it
+  // needs no display and no world.
+  if (!spriteRouteText.empty()) {
+    return SpriteRouter::RunRouteTest(spriteRouteText);
   }
 
   // Before the window: it assembles a prompt and prints it, so it needs no display
@@ -1256,7 +1499,7 @@ int main(int argc, char *argv[]) {
       std::cerr << "\n";
       return 1;
     }
-    return RunSpritePrompt(*kind);
+    return RunSpritePrompt(*kind, spritePromptShape);
   }
   // Likewise: the art wiring's file half is provable with no display.
   if (!tileArtName.empty() && !tileArtSelfTest && !tileArtQueueTest) {
@@ -1266,6 +1509,11 @@ int main(int argc, char *argv[]) {
   Game game;
   game.tileDesignerLogSelfTest = tileDesignerLogTest || tileDesignerArtTest;
   game.tileDesignerArtSelfTest = tileDesignerArtTest;
+  // Which kind the canned conversation designs. Set before Init, because the window (and
+  // its first system prompt) is constructed inside ECSInit.
+  game.tileDesignerSelfTestKind = spriteDesignerObjectTest ? SpriteKinds::Kind::Object
+                                                          : SpriteKinds::Kind::Tile;
+  game.tileDesignerSelfTestSet = spriteDesignerSetTest;
   game.Init();
 
   // Writes one complete designer log (header, system prompt, request, reply,
@@ -1279,7 +1527,10 @@ int main(int argc, char *argv[]) {
   if (tileDesignerLogTest || tileDesignerArtTest) {
     const size_t inspected = game.RunTileDesignerLogSelfTest();
     const std::string newest = NewestTileDesignerLog();
-    std::cout << (tileDesignerArtTest ? "art test: " : "log test: ")
+    std::cout << (tileDesignerArtTest   ? "art test: "
+                  : spriteDesignerObjectTest ? "object test: "
+                  : spriteDesignerSetTest    ? "set test: "
+                                             : "log test: ")
               << "inspected " << inspected << " exchange(s)\n";
     if (newest.empty()) {
       std::cout << "log test: no log file was written\n";
@@ -1303,6 +1554,18 @@ int main(int argc, char *argv[]) {
   // The panel caches are the one part of the pipeline view that only misbehaves on
   // the *second* generation, so it gets its own switch rather than being folded into
   // the designer test.
+  if (tileArtSplitCount > 0) {
+    const int code = RunTileArtSplitTest(game, tileArtSplitCount);
+    game.Shutdown();
+    return code;
+  }
+
+  if (!objectArtSwapKey.empty()) {
+    const int code = game.RunObjectArtSelfTest(objectArtSwapKey);
+    game.Shutdown();
+    return code;
+  }
+
   if (!objectCheckKey.empty()) {
     const Game::ObjectLookup lookup = game.LookupObject(objectCheckKey);
     std::cout << "object:     " << objectCheckKey << "\n";
@@ -1327,6 +1590,15 @@ int main(int argc, char *argv[]) {
 
   if (artCacheTest) {
     const int code = game.RunArtCacheSelfTest();
+    game.Shutdown();
+    return code;
+  }
+
+  // The drawn proof that an object's transparency reaches the world. Before the paint
+  // test below because it needs no extra setup: it spawns its own object and paints its
+  // own glyph tile.
+  if (!drawProbeKey.empty()) {
+    const int code = game.RunDrawProbe(drawProbeKey);
     game.Shutdown();
     return code;
   }

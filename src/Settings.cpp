@@ -240,6 +240,16 @@ bool LoadGameSettings(const std::string &path) {
                    "using 1." << std::endl;
       settings.designer.maxDesignAttempts = 1;
     }
+    // The designer's own output budget, independent of the agents' that it would
+    // otherwise inherit (see DesignerSection::maxTokens). 0 stays the "inherit"
+    // sentinel, so a negative value is a mistake rather than a small budget.
+    settings.designer.maxTokens =
+        designer.value("maxTokens", settings.designer.maxTokens);
+    if (settings.designer.maxTokens < 0) {
+      std::cerr << "Settings: designer.maxTokens must not be negative; using 0 "
+                   "(inherit the backend's own limit)." << std::endl;
+      settings.designer.maxTokens = 0;
+    }
     if (designer.contains("model")) {
       const nlohmann::json &designerModel = designer["model"];
       GameSettings::ModelSection &target = settings.designer.model;
@@ -284,6 +294,88 @@ bool LoadGameSettings(const std::string &path) {
                 << std::endl;
       settings.system1.maxRecords = 1;
     }
+    settings.system1.timeoutSeconds =
+        system1.value("timeoutSeconds", settings.system1.timeoutSeconds);
+    // Recorded before the clamp below, so a malformed value still counts as "the file
+    // said something" and gets the warning rather than silently falling back to the
+    // endpoint-derived default.
+    settings.system1.hasTimeoutSeconds = system1.contains("timeoutSeconds");
+    if (settings.system1.timeoutSeconds < 1) {
+      std::cerr << "Settings: system1.timeoutSeconds must be at least 1; using 30."
+                << std::endl;
+      settings.system1.timeoutSeconds = 30;
+    }
+    // Selectable backends. An array rather than an object map so authoring order is
+    // stable -- the picker lists them in the order the file does, which is the order
+    // the person who wrote the file expects.
+    settings.system1.profiles.clear();
+    settings.system1.activeProfile =
+        system1.value("activeProfile", settings.system1.activeProfile);
+    if (system1.contains("profiles") && system1["profiles"].is_array()) {
+      for (const auto &entry : system1["profiles"]) {
+        if (!entry.is_object()) {
+          std::cerr << "Settings: system1.profiles entry is not an object; skipping"
+                    << std::endl;
+          continue;
+        }
+        GameSettings::SystemOneProfileSection profile;
+        profile.id = entry.value("id", std::string());
+        if (profile.id.empty()) {
+          // An unnamed profile cannot be selected or persisted, so it is reported
+          // rather than silently added under an empty id.
+          std::cerr << "Settings: system1.profiles entry has no 'id'; skipping"
+                    << std::endl;
+          continue;
+        }
+        profile.label = entry.value("label", std::string());
+        profile.preset = entry.value("preset", std::string());
+        profile.timeoutSeconds = entry.value("timeoutSeconds", profile.timeoutSeconds);
+        if (profile.timeoutSeconds < 0) {
+          std::cerr << "Settings: system1 profile '" << profile.id
+                    << "' has a negative timeoutSeconds; using the default"
+                    << std::endl;
+          profile.timeoutSeconds = 0;
+        }
+        profile.minConfidence =
+            entry.value("minConfidence", profile.minConfidence);
+        // Every connection field is cleared before the file is read, because
+        // ModelSection's defaults are a *chat* backend: `endpoint` is Ollama's
+        // /api/generate and `model` is llama3. Left in place they would silently
+        // override a preset -- a profile saying only `"preset": "local_kev"` would
+        // resolve to the hosted endpoint with model llama3, which is exactly what
+        // happened the first time this parsed. Absent must mean "use the preset".
+        profile.model.endpoint.clear();
+        profile.model.model.clear();
+        profile.model.apiKey.clear();
+        if (entry.contains("model") && entry["model"].is_object()) {
+          const nlohmann::json &model = entry["model"];
+          GameSettings::ModelSection &target = profile.model;
+          target.type = model.value("type", target.type);
+          target.model = model.value("model", target.model);
+          target.apiKey = model.value("apiKey", target.apiKey);
+          target.endpoint = model.value("endpoint", target.endpoint);
+          target.keepAlive = model.value("keepAlive", target.keepAlive);
+          if (model.contains("temperature")) {
+            target.hasTemperature = true;
+            target.temperature = model["temperature"].get<double>();
+          }
+          if (model.contains("maxTokens")) {
+            target.hasMaxTokens = true;
+            target.maxTokens = model["maxTokens"].get<int>();
+          }
+          if (model.contains("provider")) {
+            target.hasProvider = true;
+            target.provider = model["provider"];
+          }
+        }
+        settings.system1.profiles.push_back(std::move(profile));
+      }
+    }
+
+    settings.system1.routeRequests =
+        system1.value("routeRequests", settings.system1.routeRequests);
+    settings.system1.minConfidence =
+        system1.value("minConfidence", settings.system1.minConfidence);
     if (system1.contains("model")) {
       const nlohmann::json &system1Model = system1["model"];
       GameSettings::ModelSection &target = settings.system1.model;
@@ -469,6 +561,15 @@ bool LoadGameSettings(const std::string &path) {
       if (settings.art.generation.enabled &&
           settings.art.generation.command.empty()) {
         settings.art.generation.command = BuiltinTileArtCommand();
+      }
+      settings.art.generation.maxCellsPerRequest =
+          generation.value("maxCellsPerRequest",
+                           settings.art.generation.maxCellsPerRequest);
+      if (settings.art.generation.maxCellsPerRequest < 1) {
+        std::cerr << "Settings: art.generation.maxCellsPerRequest must be at least 1; "
+                     "using 1."
+                  << std::endl;
+        settings.art.generation.maxCellsPerRequest = 1;
       }
       if (settings.art.generation.maxRequestsPerSession < 1) {
         std::cerr << "Settings: art.generation.maxRequestsPerSession must be at "

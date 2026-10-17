@@ -26,7 +26,10 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <unordered_map>
 
 // Helper function to format JSON with indentation for pretty printing
 static std::string PrettyPrintJson(const char *json) {
@@ -310,6 +313,19 @@ void DebugConsoleWindow::Draw() {
       game->visionChatWindowEntity.remove<ActiveWindow>();
     }
     game->debugWindowState->SetShowVisionChatWindow(showVisionChat);
+  }
+
+  // Its own row, for the reason stated twice above: this row would otherwise be
+  // past the right edge of a narrow Debug Console, which makes a checkbox
+  // unclickable rather than merely clipped.
+  bool showVisionDebug = game->visionDebugWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Vision Debug", &showVisionDebug)) {
+    if (showVisionDebug) {
+      game->visionDebugWindowEntity.set<ActiveWindow>(
+          {std::make_shared<VisionDebugWindow>(game)});
+    } else {
+      game->visionDebugWindowEntity.remove<ActiveWindow>();
+    }
   }
 
   ImGui::Separator();
@@ -1154,6 +1170,213 @@ void MapEditorWindow::DrawDeleteConfirmation() {
   }
 }
 
+// --- Map Editor palette ordering -------------------------------------------
+
+// Case-insensitive, because a catalog's names and keys are lowercase today but
+// there is no reason a future one has to be; an exact tie is broken by the raw
+// strings so the order stays deterministic.
+static int ContentNameCompare(const std::string &a, const std::string &b) {
+  const size_t shared = std::min(a.size(), b.size());
+  for (size_t i = 0; i < shared; ++i) {
+    const unsigned char ca = static_cast<unsigned char>(
+        std::tolower(static_cast<unsigned char>(a[i])));
+    const unsigned char cb = static_cast<unsigned char>(
+        std::tolower(static_cast<unsigned char>(b[i])));
+    if (ca != cb) return ca < cb ? -1 : 1;
+  }
+  if (a.size() == b.size()) return 0;
+  return a.size() < b.size() ? -1 : 1;
+}
+
+static bool ContentNameLess(const std::string &a, const std::string &b) {
+  const int compare = ContentNameCompare(a, b);
+  return compare != 0 ? compare < 0 : a < b;
+}
+
+static bool HasContentTime(const std::filesystem::file_time_type &time) {
+  return time != std::filesystem::file_time_type{};
+}
+
+static size_t ContentUsage(const std::unordered_map<std::string, size_t> &usage,
+                           const std::string &key) {
+  const auto it = usage.find(key);
+  return it == usage.end() ? 0 : it->second;
+}
+
+static const char *ContentSortDirectionLabel(ContentSortMetric metric,
+                                             bool descending) {
+  switch (metric) {
+  case ContentSortMetric::Name:
+    return descending ? "Z to A" : "A to Z";
+  case ContentSortMetric::Date:
+    return descending ? "Newest first" : "Oldest first";
+  case ContentSortMetric::Usage:
+    return descending ? "Most used first" : "Least used first";
+  case ContentSortMetric::Source:
+    return descending ? "Generated first" : "Hand-authored first";
+  }
+  return "";
+}
+
+static const char *ContentSortDirectionTooltip(ContentSortMetric metric,
+                                               bool descending) {
+  switch (metric) {
+  case ContentSortMetric::Name:
+    return "Alphabetical order. Click to reverse it.";
+  case ContentSortMetric::Date:
+    return descending
+               ? "The most recently written source file first. Click for oldest "
+                 "first."
+               : "The oldest source file first. Click for newest first.";
+  case ContentSortMetric::Usage:
+    return descending
+               ? "The most-used content on this map first. Click for least used."
+               : "The least-used content on this map first. Click for most used.";
+  case ContentSortMetric::Source:
+    return descending
+               ? "Generated/designer content first, then the hand-authored "
+                 "catalog. Click to reverse."
+               : "Hand-authored catalog first, then generated/designer content. "
+                 "Click to reverse.";
+  }
+  return "";
+}
+
+// The one sort row, used by both palettes. `id` keeps the combo and button ids
+// unique across the two lists; the visible direction label changes with the
+// metric, but the ## suffix keeps the button's id stable across that change.
+static void DrawContentSortControls(const char *id, ContentSortMetric &metric,
+                                    bool &descending) {
+  static const char *kMetricLabels[] = {"Name", "Date", "Usage on this map",
+                                        "Source"};
+
+  ImGui::AlignTextToFramePadding();
+  ImGui::TextUnformatted("Sort");
+  ImGui::SameLine();
+
+  int selected = static_cast<int>(metric);
+  const std::string comboId = std::string("##sortMetric_") + id;
+  ImGui::SetNextItemWidth(170.0f);
+  if (ImGui::Combo(comboId.c_str(), &selected, kMetricLabels,
+                   IM_ARRAYSIZE(kMetricLabels))) {
+    metric = static_cast<ContentSortMetric>(selected);
+  }
+
+  ImGui::SameLine();
+  const std::string directionLabel =
+      std::string(ContentSortDirectionLabel(metric, descending)) +
+      "##sortDirection_" + id;
+  if (ImGui::Button(directionLabel.c_str())) {
+    descending = !descending;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s", ContentSortDirectionTooltip(metric, descending));
+  }
+}
+
+static void SortTileCatalog(
+    std::vector<const TileDef *> &catalog, ContentSortMetric metric,
+    bool descending, const std::unordered_map<std::string, size_t> &usage,
+    const TileRegistry &registry) {
+  std::stable_sort(catalog.begin(), catalog.end(),
+                   [&](const TileDef *a, const TileDef *b) {
+                     switch (metric) {
+                     case ContentSortMetric::Name: {
+                       const int compare = ContentNameCompare(a->name, b->name);
+                       if (compare != 0) {
+                         return descending ? compare > 0 : compare < 0;
+                       }
+                       break;
+                     }
+                     case ContentSortMetric::Date: {
+                       const bool hasA = HasContentTime(a->sourceTime);
+                       const bool hasB = HasContentTime(b->sourceTime);
+                       // A definition with no recorded date sorts last whichever
+                       // way the list is pointing; putting it first when
+                       // descending would read as "the newest thing".
+                       if (hasA != hasB) return hasA;
+                       if (a->sourceTime != b->sourceTime) {
+                         return descending ? a->sourceTime > b->sourceTime
+                                           : a->sourceTime < b->sourceTime;
+                       }
+                       break;
+                     }
+                     case ContentSortMetric::Usage: {
+                       const size_t usedA = ContentUsage(usage, a->name);
+                       const size_t usedB = ContentUsage(usage, b->name);
+                       if (usedA != usedB) {
+                         return descending ? usedA > usedB : usedA < usedB;
+                       }
+                       break;
+                     }
+                     case ContentSortMetric::Source: {
+                       const bool runtimeA = registry.IsRuntimeAdded(a->name);
+                       const bool runtimeB = registry.IsRuntimeAdded(b->name);
+                       if (runtimeA != runtimeB) {
+                         return descending ? runtimeA > runtimeB
+                                           : runtimeA < runtimeB;
+                       }
+                       break;
+                     }
+                     }
+                     // Ties, and the final ordering within a Source group, are
+                     // alphabetical: a metric that leaves a group unordered is
+                     // not a sort, it is a shuffle.
+                     return ContentNameLess(a->name, b->name);
+                   });
+}
+
+static void SortObjectTemplates(
+    std::vector<const std::pair<const std::string, nlohmann::json> *> &entries,
+    ContentSortMetric metric, bool descending,
+    const std::unordered_map<std::string, size_t> &usage,
+    const ObjectFactory &factory) {
+  std::stable_sort(
+      entries.begin(), entries.end(),
+      [&](const std::pair<const std::string, nlohmann::json> *a,
+          const std::pair<const std::string, nlohmann::json> *b) {
+        switch (metric) {
+        case ContentSortMetric::Name: {
+          const int compare = ContentNameCompare(a->first, b->first);
+          if (compare != 0) {
+            return descending ? compare > 0 : compare < 0;
+          }
+          break;
+        }
+        case ContentSortMetric::Date: {
+          const std::filesystem::file_time_type timeA =
+              factory.GetTemplateTime(a->first);
+          const std::filesystem::file_time_type timeB =
+              factory.GetTemplateTime(b->first);
+          const bool hasA = HasContentTime(timeA);
+          const bool hasB = HasContentTime(timeB);
+          if (hasA != hasB) return hasA;
+          if (timeA != timeB) {
+            return descending ? timeA > timeB : timeA < timeB;
+          }
+          break;
+        }
+        case ContentSortMetric::Usage: {
+          const size_t usedA = ContentUsage(usage, a->first);
+          const size_t usedB = ContentUsage(usage, b->first);
+          if (usedA != usedB) {
+            return descending ? usedA > usedB : usedA < usedB;
+          }
+          break;
+        }
+        case ContentSortMetric::Source: {
+          const bool runtimeA = factory.IsRuntimeAdded(a->first);
+          const bool runtimeB = factory.IsRuntimeAdded(b->first);
+          if (runtimeA != runtimeB) {
+            return descending ? runtimeA > runtimeB : runtimeA < runtimeB;
+          }
+          break;
+        }
+        }
+        return ContentNameLess(a->first, b->first);
+      });
+}
+
 void MapEditorWindow::Draw() {
   // A deletion confirmed last frame is applied before anything else this frame.
   // It has to be here rather than where the button was pressed: this window has
@@ -1305,7 +1528,7 @@ void MapEditorWindow::Draw() {
     // tiles that are already here. Selecting one that is not is fine -- Game::
     // PaintTile creates it on demand from the catalog (Map::CreateTile), and the
     // map only starts "using" it once a cell is actually painted.
-    const std::vector<const TileDef *> catalog = game->tileRegistry.GetAll();
+    std::vector<const TileDef *> catalog = game->tileRegistry.GetAll();
 
     // How many cells of the current map draw each tile, by name. Duplicate names
     // are possible on purpose -- two palette entries with the same name and
@@ -1363,6 +1586,20 @@ void MapEditorWindow::Draw() {
     ImGui::SameLine();
     ImGui::TextDisabled("(%zu on this map, %zu in the catalog)", cellsInUse.size(),
                         catalog.size());
+
+    // The sort is read from and written back to DebugWindowState every frame
+    // rather than held in this window: the window is rebuilt on every toggle, so
+    // a member here would forget the choice. The catalog is sorted after the
+    // controls so a change is visible in the same frame it is made.
+    ContentSortMetric tileSortMetric =
+        game->debugWindowState->GetTileSortMetric();
+    bool tileSortDescending =
+        game->debugWindowState->GetTileSortDescending();
+    DrawContentSortControls("tiles", tileSortMetric, tileSortDescending);
+    game->debugWindowState->SetTileSortMetric(tileSortMetric);
+    game->debugWindowState->SetTileSortDescending(tileSortDescending);
+    SortTileCatalog(catalog, tileSortMetric, tileSortDescending, cellsInUse,
+                    game->tileRegistry);
 
     // A filter, because the catalog is the whole world's vocabulary: an art pack
     // plus every agent-created tile. At today's size the table scrolled; at a few
@@ -1514,9 +1751,36 @@ void MapEditorWindow::Draw() {
     }
 
     ImGui::Text("Object Templates");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%zu)", game->objectFactory.GetTemplates().size());
+
+    // Pointers into the factory's map, sorted by the chosen metric. The map is
+    // not mutated while this window draws -- permanent deletion is deferred to
+    // the top of the next frame -- so the pointers stay valid for this frame.
+    std::vector<const std::pair<const std::string, nlohmann::json> *>
+        objectEntries;
+    objectEntries.reserve(game->objectFactory.GetTemplates().size());
+    for (const auto &pair : game->objectFactory.GetTemplates()) {
+      objectEntries.push_back(&pair);
+    }
+
+    // Same state-ownership rule as the tile palette: the choice lives in
+    // DebugWindowState because this window does not survive a toggle.
+    ContentSortMetric objectSortMetric =
+        game->debugWindowState->GetObjectSortMetric();
+    bool objectSortDescending =
+        game->debugWindowState->GetObjectSortDescending();
+    DrawContentSortControls("objects", objectSortMetric,
+                            objectSortDescending);
+    game->debugWindowState->SetObjectSortMetric(objectSortMetric);
+    game->debugWindowState->SetObjectSortDescending(objectSortDescending);
+    SortObjectTemplates(objectEntries, objectSortMetric, objectSortDescending,
+                        objectsInUse, game->objectFactory);
+
     ImGui::Separator();
     if (ImGui::BeginTable("ObjectsTable", 16)) {
-      for (const auto& pair : game->objectFactory.GetTemplates()) {
+      for (const auto *entry : objectEntries) {
+        const auto &pair = *entry;
         ImGui::TableNextColumn();
         
         char ch = '?';
@@ -1561,7 +1825,18 @@ void MapEditorWindow::Draw() {
             spriteKey, pair.first, game->resourceManager, game->debugLog.get());
         const bool hasSprite = sprite != nullptr;
 
-        ImGui::PushStyleColor(ImGuiCol_Button, bgColor);
+        // The plate is the glyph/art backdrop, and it follows the same rule as the
+        // world renderer (Game::DrawEntityVisual): drawn when there is no sprite,
+        // skipped when a sprite covers the cell. This palette's promise is "what
+        // placing the object will look like", so a plate under a cut-out sprite
+        // would make the object look opaque here right up until it was placed.
+        //
+        // There is no map tile behind a palette button, so what shows through a
+        // sprite's transparent pixels is the window. That is the honest equivalent --
+        // it is *a* background with no claim about which one -- where the world shows
+        // the tile the object is standing on.
+        ImGui::PushStyleColor(
+            ImGuiCol_Button, hasSprite ? ImVec4(0.0f, 0.0f, 0.0f, 0.0f) : bgColor);
         ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
         
         bool isSelected = (game->editorSelection.type == EditorSelectionType::ObjectTemplate && game->editorSelection.name == pair.first);
@@ -1570,8 +1845,9 @@ void MapEditorWindow::Draw() {
           ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
         }
 
-        // The plate is the same in every case; only its contents differ, so both
-        // image paths draw over an empty label.
+        // Both image paths draw over an empty label: the label is the button's click
+        // target and its text would show through a sprite that has the same glyph, so
+        // only the plain-glyph case carries one.
         const std::string label =
             (hasSprite || hasArt) ? ("##" + pair.first)
                                   : (std::string(1, ch) + "##" + pair.first);
@@ -2417,6 +2693,74 @@ void TaskBoardWindow::Draw() {
     game->debugWindowState->SetShowTaskBoardWindow(false);
   } else {
     game->debugWindowState->SetShowTaskBoardWindow(true);
+  }
+}
+
+VisionDebugWindow::VisionDebugWindow(Game* game) : game(game) {}
+
+// Stage 0 of docs/spatial-memory-design.md: the facing marker, and nothing that
+// consumes it yet. The counts are the point of the window at this stage -- they
+// answer "did every character get a direction", which is the question that
+// otherwise turns into a cone bug two stages later.
+//
+// The checkbox value is written through to DebugWindowState on change only, while
+// the window's own visibility is written every frame, matching TaskBoardWindow.
+// The two differ because a checkbox written every frame would be harmless but a
+// visibility flag read once means a closed window reopens on the next launch.
+void VisionDebugWindow::Draw() {
+  bool show = game->visionDebugWindowEntity.has<ActiveWindow>();
+  if (!show) return;
+
+  ImGui::SetNextWindowSize(ImVec2(400, 200), ImGuiCond_FirstUseEver);
+  if (ImGui::Begin("Vision Debug", &show, ImGuiWindowFlags_None)) {
+    ImGui::TextDisabled(
+        "Stage 0 -- facing only. The view cone and spatial memory land in later "
+        "stages; nothing samples from a facing yet.");
+    ImGui::Separator();
+
+    bool markers = game->debugWindowState->GetShowFacingMarkers();
+    if (ImGui::Checkbox("Draw facing markers", &markers)) {
+      game->debugWindowState->SetShowFacingMarkers(markers);
+    }
+    ImGui::TextDisabled(
+        "Yellow line = facing (%.0f%% of a tile). Held while standing still.",
+        DEFAULT_FACING_MARKER_TILE_FRACTION * 100.0f);
+
+    ImGui::Separator();
+
+    // Counted rather than queried: a filter already yields one canary row per
+    // entity, and an explicit count keeps the two numbers in the same units even
+    // if one of the two queries is ever changed to a narrower one.
+    int facingCount = 0;
+    game->ecs.filter<Facing>().each(
+        [&facingCount](flecs::entity, const Facing &) { ++facingCount; });
+
+    int characterCount = 0;
+    int characterWithoutFacing = 0;
+    game->ecs.filter<CharacterTag>().each(
+        [&](flecs::entity character, const CharacterTag &) {
+          ++characterCount;
+          if (!character.has<Facing>()) ++characterWithoutFacing;
+        });
+
+    ImGui::Text("Characters: %d", characterCount);
+    ImGui::Text("With a Facing component: %d", facingCount);
+    if (characterWithoutFacing == 0) {
+      ImGui::TextDisabled("Every character has a direction.");
+    } else {
+      ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                         "%d character(s) have no Facing -- they will not be "
+                         "sampled in stage 1.",
+                         characterWithoutFacing);
+    }
+  }
+  ImGui::End();
+
+  if (!show) {
+    game->visionDebugWindowEntity.remove<ActiveWindow>();
+    game->debugWindowState->SetShowVisionDebugWindow(false);
+  } else {
+    game->debugWindowState->SetShowVisionDebugWindow(true);
   }
 }
 

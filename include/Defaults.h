@@ -44,6 +44,21 @@ constexpr int DEFAULT_SURROUNDINGS_RADIUS = 10;
 // "placement" block may override this per item; see docs/placement-design.md.
 constexpr int DEFAULT_PLACEMENT_MAX_DISTANCE = 1;
 
+// Facing (docs/spatial-memory-design.md section 4.1).
+//
+// Below this speed a character counts as standing still and keeps whatever
+// direction it last had. Not zero on purpose: the steer system decelerates
+// through small non-zero velocities, and a threshold of zero would let those
+// residual values jitter the facing (and, once stage 1 samples on facing change,
+// re-sample the cone for no reason). Compared against Velocity::Length(), whose
+// units are the same screen pixels per second the waypoint constants use.
+constexpr float DEFAULT_FACING_MIN_SPEED = 5.0f;
+
+// Length of the debug facing marker, as a fraction of one tile. Long enough to
+// read at a glance, short enough not to be confused with the vision cone that
+// stage 1 will draw at a much greater range.
+constexpr float DEFAULT_FACING_MARKER_TILE_FRACTION = 0.6f;
+
 // Durability one harvest removes from each tool used for it, when the object
 // does not declare a "durabilityCost" of its own. Durability is opt-in per item
 // (an item whose definition declares no "durability" never wears out), so this

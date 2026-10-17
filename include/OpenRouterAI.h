@@ -51,6 +51,10 @@ public:
   // caller would want this off.
   void setReasoningEnabled(bool enabled) override;
 
+  // Overrides the request's `max_tokens` for this instance. See AI::setMaxTokens for
+  // why one instance needs a budget of its own.
+  void setMaxTokens(int tokens) override;
+
   std::string generate(const std::string &contextId,
                        const std::vector<ChatMessage> &history,
                        std::stop_token stoken = {},

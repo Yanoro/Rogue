@@ -1,0 +1,38 @@
+{
+  "art": [
+    "|~~~|",
+    "|~~~|"
+  ],
+  "backgroundColor": [
+    70,
+    55,
+    40,
+    255
+  ],
+  "character": "r",
+  "characterColor": [
+    160,
+    100,
+    60,
+    255
+  ],
+  "components": [
+    "Portable"
+  ],
+  "description": "A coarse wool rug laid on the uneven floorboards, its edges beginning to fray.",
+  "name": "coarse wool rug",
+  "palette": {
+    "|": [
+      130,
+      80,
+      45,
+      255
+    ],
+    "~": [
+      160,
+      100,
+      60,
+      255
+    ]
+  }
+}

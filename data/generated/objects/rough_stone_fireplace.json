@@ -1,0 +1,64 @@
+{
+  "art": [
+    "WMMMW",
+    "SFFFS",
+    "TTTTT"
+  ],
+  "backgroundColor": [
+    40,
+    35,
+    30,
+    255
+  ],
+  "character": "H",
+  "characterColor": [
+    200,
+    210,
+    220,
+    255
+  ],
+  "components": [
+    "Obstacle",
+    "Interactable"
+  ],
+  "description": "A broad fireplace built from rough grey stone and dark timber, with a soot-black firebox holding glowing embers beneath a worn wooden mantel.",
+  "name": "rough stone fireplace",
+  "nameTagColor": [
+    240,
+    220,
+    180,
+    255
+  ],
+  "palette": {
+    "F": [
+      35,
+      30,
+      28,
+      255
+    ],
+    "M": [
+      120,
+      90,
+      60,
+      255
+    ],
+    "S": [
+      110,
+      115,
+      125,
+      255
+    ],
+    "T": [
+      70,
+      50,
+      40,
+      255
+    ],
+    "W": [
+      160,
+      120,
+      80,
+      255
+    ]
+  }
+}

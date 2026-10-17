@@ -1,0 +1,46 @@
+{
+  "art": [
+    "\"",
+    "O",
+    "#"
+  ],
+  "backgroundColor": [
+    30,
+    30,
+    35,
+    255
+  ],
+  "character": "o",
+  "characterColor": [
+    200,
+    160,
+    80,
+    255
+  ],
+  "components": [
+    "Portable",
+    "Interactable"
+  ],
+  "description": "A small oil lamp with a sooty glass chimney, its wick trimmed short.",
+  "name": "small oil lamp",
+  "palette": {
+    "\"": [
+      200,
+      210,
+      220,
+      255
+    ],
+    "#": [
+      80,
+      60,
+      40,
+      255
+    ],
+    "O": [
+      200,
+      160,
+      80,
+      255
+    ]
+  }
+}

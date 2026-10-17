@@ -27,6 +27,7 @@
 #include "TileArtQueue.hpp"
 #include "SpeechQueue.h"
 #include "StatRegistry.h"
+#include "SystemOneProfiles.hpp"
 #include "SystemOneRecorder.h"
 #include "TaskKindRegistry.h"
 #include "TextToSpeech.h"
@@ -145,7 +146,9 @@ public:
   // one is: the vocabulary has to match the live world, and a hand-written list drifts
   // the moment a tile or a component is added -- and the failure is quiet, because the
   // model then designs against a vocabulary that no longer exists.
-  std::string BuildSpriteSystemPrompt(SpriteKinds::Kind kind) const;
+  std::string BuildSpriteSystemPrompt(
+      SpriteKinds::Kind kind,
+      bool set = false) const;
 
   // Whether an object template is loaded in the *running game's* factory, and whether it
   // came from the generated overlay or from the hand-authored catalog.
@@ -294,6 +297,9 @@ private:
   flecs::entity npcMenuWindowEntity;
   flecs::entity taskBoardWindowEntity;
   flecs::entity systemOneWindowEntity;
+  // Stage 0 of docs/spatial-memory-design.md: holds the facing-marker checkbox
+  // and the counts that prove every character got a direction.
+  flecs::entity visionDebugWindowEntity;
 
   // The Vision Chat window is created once and kept alive for the whole run
   // rather than rebuilt whenever it is toggled on, unlike the other debug
@@ -347,6 +353,13 @@ private:
   // below this point stays private.
 public:
   bool tileDesignerLogSelfTest = false;
+  // Which kind the canned self-test conversation designs for. A member rather than a
+  // parameter because the test hook is set from main() before Init, and the window is
+  // constructed later inside ECSInit.
+  SpriteKinds::Kind tileDesignerSelfTestKind = SpriteKinds::Kind::Tile;
+  // Whether the canned conversation asks for a *set*. Separate from the kind because the two
+  // axes are independent and the point of the set case is the per-entry verdicts.
+  bool tileDesignerSelfTestSet = false;
   // Set by `--tile-designer-arttest`, which is the same canned conversation with the
   // window's automatic art request switched on -- so accepting a tile and asking for
   // its art in one step is exercised without a backend and without spending
@@ -389,6 +402,7 @@ private:
   friend class TaskBoardWindow;
   friend class SystemOneWindow;
   friend class VisionChatWindow;
+  friend class VisionDebugWindow;
 
   // Debug systems
   std::unique_ptr<DebugWindowState> debugWindowState;
@@ -408,6 +422,60 @@ private:
   // lifetime is explicit; the classifier is constructed in ECSInit once the
   // settings and content registries exist (see SystemOneRecorder.h).
   std::unique_ptr<SystemOne::SystemOneRecorder> systemOneRecorder;
+
+  // The live System 1 provider, built in Game::Init once the settings exist. Owned by
+  // Game rather than by a window because a window can be toggled several times in a run:
+  // a provider per window would re-register cURL globals each toggle and would lose any
+  // request still in flight when the window closed.
+  //
+  // Null when no API key is configured, which is a supported state -- the sprite
+  // designer's router reports "no classifier" rather than offering a button that cannot
+  // work. This is the only live classifier in the game; `--sprite-route` and
+  // `--systemone-test` build their own for a single headless call.
+  std::shared_ptr<SystemOne::SystemOneClassifier> systemOneClassifier;
+
+  // Every backend this run can switch to, resolved once from `system1` in the
+  // settings. Resolved at startup rather than per switch so the picker, the resolver
+  // and the game cannot disagree about what a profile means.
+  std::vector<SystemOne::ModelProfile> systemOneProfiles;
+
+  // Which one is serving calls now. An id from `systemOneProfiles`, never a guess:
+  // `SwitchSystemOneProfile` only assigns after the target has been resolved and
+  // probed.
+  std::string activeSystemOneProfile;
+
+  // Last-known health per profile id, for the picker. Deliberately not persisted: a
+  // reachability result from the previous run says nothing about this one, and a stale
+  // "Unreachable" would make a working profile look broken.
+  std::unordered_map<std::string, SystemOne::SystemOneProfileStatus> systemOneStatus;
+
+public:
+  // Switches the backend serving System 1 calls.
+  //
+  // Returns an empty string on success, or a reason on failure -- in which case the
+  // current backend is left untouched, so a failed switch can never leave the game
+  // with no classifier.
+  //
+  // A switch is immediate: any request in flight is cancelled by the old provider's
+  // destructor (see JevClassifier's in-flight guard), which is a deliberate trade --
+  // an instant, deterministic switch over waiting up to ~40s for a local model to
+  // finish. The cancellation is visible as an error on that one record, so it is
+  // never a silent loss.
+  //
+  // Resolves the profile, refuses when it has no key or its endpoint cannot be
+  // reached at transport level, probes, then swaps. The probe is TCP-level on
+  // purpose, so a local server that is still loading its model (503) stays
+  // selectable while one that is not running is refused.
+  std::string SwitchSystemOneProfile(const std::string &id);
+
+  // The active profile, or null when neither the resolved list nor the active id
+  // survived (which is a startup bug rather than a runtime state).
+  const SystemOne::ModelProfile *ActiveSystemOneProfile() const;
+
+  // Health of one profile, defaulting to "untested" for an id nobody has probed.
+  SystemOne::SystemOneProfileStatus SystemOneStatusFor(const std::string &id) const;
+
+private:
 
   std::unique_ptr<InputHandler> inputHandler;
 
@@ -536,6 +604,18 @@ public:
   // art.generation.enabled and capped by art.generation.maxRequestsPerSession.
   bool RequestTileArt(const std::string &tileName, std::string *reason = nullptr);
 
+  // Which kind owns a given definition name, by asking the live registries.
+  //
+  // Derived rather than plumbed because the request path is name-based all the way down
+  // from the window (which knows the name it just accepted) and re-deriving here is one
+  // map lookup at the moment the sprite is asked for. The registries answer for
+  // runtime-added definitions too, so this is right for a design created seconds ago.
+  //
+  // The two namespaces overlap on purpose -- the world ships an 'anvil' that is both a tile
+  // and an object -- so this cannot be a single lookup and the order is documented at the
+  // definition.
+  SpriteKinds::Kind KindForSpriteName(const std::string &name) const;
+
   // The queue, for the window that shows its state. Const because the window only
   // reads; requesting goes through RequestTileArt so the gating lives in one place.
   const TileArtQueue &TileArtQueueState() const { return tileArtQueue; }
@@ -562,6 +642,38 @@ public:
   // -- this keeps the world-facing half inside Game where it belongs, and the
   // callback a one-line forwarder.
   size_t HandleTileArtGenerated(const TileArtQueue::Job &job);
+
+  // Gives every live entity spawned from `templateKey` its sprite, now. The object
+  // counterpart of RefreshTileVisuals, and it exists because the two are not the same
+  // operation: a tile is painted onto map cells, and an object is a spawned entity, so
+  // "the cells that draw this tile" and "the entities spawned from this template" are
+  // different queries.
+  //
+  // Bug this fixes: an object's art was generated, written, and reported `Done`, and the
+  // placed object kept drawing its ASCII art -- because the completion swap only ever
+  // looked for map cells. Nothing was wrong with the file or the naming; nothing was
+  // looking at entities.
+  //
+  // Matching is on `ItemType::id`, which is the template key the entity was spawned from
+  // and is restamped when a template is re-applied (an Evolvable object that grew), so the
+  // swap always targets the template the entity is *currently* using.
+  //
+  // Returns how many entities changed. Zero is normal and not a failure: an object may have
+  // been designed and not yet spawned anywhere, and the next spawn resolves the art anyway
+  // because ApplyTemplate resolves at spawn time.
+  //
+  // Main thread only -- it touches the ECS.
+  size_t RefreshObjectVisuals(const std::string &templateKey);
+
+  // Proves the object half of the hot-swap: spawns one entity from `templateKey`, checks it
+  // starts on its ASCII art, drops a sprite into the generated layer, and checks the
+  // refresh attaches it.
+  //
+  // A self-test rather than a claim because the bug it exists for was invisible: art was
+  // generated, written and reported `Done` while the placed object kept drawing its art,
+  // and nothing about the file, the naming or the log said so. Used by
+  // `--object-art-swap <key>`.
+  int RunObjectArtSelfTest(const std::string &templateKey);
 
   // Drives the tile designer's logged conversation once, with no backend, and
   // returns how many exchanges were inspected. Used by `--tile-designer-logtest`;
@@ -599,6 +711,34 @@ public:
   // Used by `--paint-memo-test`. Needs a window (it loads real textures) and a loaded
   // map with at least one cell drawing the tile it is given.
   int RunPaintMemoSelfTest(const std::string &tileName);
+
+  // Drawn proof that a sprite's transparent pixels show the map tile, not a plate.
+  //
+  // Two things were wrong and either one alone left the symptom, so this checks the
+  // whole visual, from pixels:
+  //
+  //   * the renderer painted the entity's `backgroundColor` behind every visual, so a
+  //     cut-out sprite revealed that plate instead of the tile (fixed in
+  //     DrawEntityVisual);
+  //   * the generated object's own background was never keyed out, because the
+  //     magenta guard rejected what the model actually drew (fixed in
+  //     tools/gen_tile_art.py).
+  //
+  // It draws the real frame into the real render target, reads the framebuffer back
+  // with LoadImageFromScreen, and compares:
+  //
+  //   1. the frame without the object against the frame with it, at every pixel the
+  //      sprite leaves fully transparent -- those must be identical;
+  //   2. the glyph/art fallback (Sprite and then AsciiArt removed) against the
+  //      template's own background colour -- an opaque plate under ink must survive;
+  //   3. a tile that draws a sprite against that sprite's own pixels, and a painted
+  //      tile with no art against its plate + glyph;
+  //
+  // Exists because none of this is visible to a headless test otherwise, and a log
+  // line is not evidence: a previous session recorded "Object overlay: loaded 1
+  // created object(s)" as proof while the sprite was still opaque. Used by
+  // `--draw-probe <templateKey>`. Needs a window; spends nothing.
+  int RunDrawProbe(const std::string &templateKey);
 
 private:
 

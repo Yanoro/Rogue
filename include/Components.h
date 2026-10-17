@@ -3,6 +3,7 @@
 #include "AI.h"
 #include "raylib-cpp.hpp"
 #include <cstdint>
+#include <filesystem>
 #include <flecs.h>
 #include <memory>
 #include <string>
@@ -86,6 +87,27 @@ struct Acceleration : public raylib::Vector2 {
   Acceleration(const ::Vector2 &v) : raylib::Vector2(v) {}
 
   bool operator==(const Acceleration &other) const {
+    return x == other.x and y == other.y;
+  }
+};
+
+// Which way a character is looking, in screen space and normalized.
+//
+// Continuous rather than grid-quantized, because movement is: the steer system
+// accelerates toward a waypoint and the velocity that results is an arbitrary
+// direction, so quantizing here would only throw information away. Nothing
+// consumes this yet -- stage 0 of docs/spatial-memory-design.md adds the
+// component, the system that derives it and the debug marker, so that the cone
+// in stage 1 is built on a direction that is already known to be right.
+//
+// It is derived, never authored: from Velocity while moving, held while stopped,
+// and for the player alone from the mouse while idle (section 4.1).
+struct Facing : public raylib::Vector2 {
+  Facing(float x = 0.0f, float y = 1.0f) : raylib::Vector2(x, y) {}
+  Facing(const raylib::Vector2 &v) : raylib::Vector2(v) {}
+  Facing(const ::Vector2 &v) : raylib::Vector2(v) {}
+
+  bool operator==(const Facing &other) const {
     return x == other.x and y == other.y;
   }
 };
@@ -186,6 +208,14 @@ struct TileDef {
   // The file this definition came from, for reporting. Set by TileRegistry; a
   // duplicate-name warning names both files, which is what makes it fixable.
   std::string sourcePath;
+
+  // When this definition entered the catalog: the source file's last-write time
+  // for content loaded from disk, or the moment it was added when it was created
+  // in memory before its file existed (the designer's accept path). The Map
+  // Editor's date sort reads this; nothing in the world model depends on it.
+  //
+  // A value of file_time_type{} means "no date was recorded" and sorts last.
+  std::filesystem::file_time_type sourceTime{};
 
   // Absent fields are how an override says "leave the catalog's value alone",
   // so presence has to survive parsing. An empty string or a zero alpha would
@@ -730,6 +760,10 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<Velocity>().member<float>("x").member<float>("y");
 
   ecs.component<Acceleration>().member<float>("x").member<float>("y");
+
+  // Same two members as Velocity, and for the same reason: the fields live on
+  // the raylib::Vector2 base, so they are reflected through the derived type.
+  ecs.component<Facing>().member<float>("x").member<float>("y");
 
   ecs.component<Friction>().member<float>("value");
 

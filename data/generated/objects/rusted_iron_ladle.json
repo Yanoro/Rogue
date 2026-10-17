@@ -1,0 +1,52 @@
+{
+  "art": [
+    " o ",
+    "o.o",
+    " o ",
+    "---"
+  ],
+  "backgroundColor": [
+    70,
+    55,
+    45,
+    255
+  ],
+  "character": "l",
+  "characterColor": [
+    120,
+    100,
+    90,
+    255
+  ],
+  "components": [
+    "Portable"
+  ],
+  "description": "A long-handled iron ladle pitted with rust, seen from above.",
+  "name": "rusted iron ladle",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "-": [
+      100,
+      80,
+      70,
+      255
+    ],
+    ".": [
+      90,
+      70,
+      60,
+      255
+    ],
+    "o": [
+      120,
+      100,
+      90,
+      255
+    ]
+  }
+}

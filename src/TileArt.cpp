@@ -178,14 +178,17 @@ class ScopedMeasureDir {
 
 }  // namespace
 
-Target PlanFor(const std::string &tileName) {
+Target PlanFor(const Request &request) {
   Target target;
-  target.tileName = tileName;
-  // The one place the naming rule is applied. TileSpriteId is also what the loader
-  // and PaintTile pass to AttachSprite, so the name written here is by
-  // construction the name looked up there -- that shared call is what keeps
-  // "generated" and "resolved" from drifting apart.
-  target.conventionId = TileSpriteId(tileName);
+  target.name = request.name;
+  // The one place the naming rule is applied, and it is per kind: a tile is
+  // `tile_<slug>` and an object is its bare template key. Both come from
+  // `SpriteKinds::ConventionIdFor`, which calls the same functions the loader and
+  // `AttachSprite` do -- so the name written here is by construction the name looked up
+  // there, and "generated" and "resolved" cannot drift apart. Hardcoding either spelling
+  // here was the bug this replaced: object art was written as `tile_apple_sapling.png`
+  // while the object resolved `apple_sapling.png`, so a paid-for sprite was never seen.
+  target.conventionId = SpriteKinds::ConventionIdFor(request.kind, request.name);
   target.generatedPath = GeneratedSpritePath(target.conventionId);
 
   const SpriteRootsInfo roots = CurrentSpriteRoots();
@@ -207,11 +210,18 @@ Target PlanFor(const std::string &tileName) {
   return target;
 }
 
+Target PlanForTile(const std::string &tileName) {
+  Request request;
+  request.kind = SpriteKinds::Kind::Tile;
+  request.name = tileName;
+  return PlanFor(request);
+}
+
 CopyResult PlaceSprite(const Target &target, const std::string &sourcePng) {
   CopyResult result;
 
-  if (target.conventionId.empty() || target.tileName.empty()) {
-    result.error = "there is no tile name to place art for";
+  if (target.conventionId.empty() || target.name.empty()) {
+    result.error = "there is no name to place art for";
     return result;
   }
   if (target.generatedPath.empty()) {
@@ -382,7 +392,9 @@ SwapResult SwapIn(const std::string &tileName, const std::string &sourcePng,
                   const std::string &paletteFile,
                   const std::function<size_t(const std::string &)> &swap) {
   SwapResult result;
-  const Target target = PlanFor(tileName);
+  // A tile: this entry point is the one the tile self-tests use. An object's swap goes
+  // through the queue's completion, which carries the job's kind.
+  const Target target = PlanForTile(tileName);
 
   result.copy = PlaceSprite(target, sourcePng);
   if (!result.copy.ok) {

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SpriteKinds.hpp"
+
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -43,7 +45,19 @@ public:
   };
 
   struct Job {
+    // The definition's own name. Kept as `tileName` rather than renamed to `name`: it is
+    // read by the window, the panels and `main.cpp`, and the churn would be larger than
+    // the benefit -- but it now holds an object's name as often as a tile's, which the
+    // added `kind` is what disambiguates.
     std::string tileName;
+    // Which kind this job is for. Recorded because the two kinds do not share a sprite
+    // naming convention, and everything downstream -- the worklist, the generator, the
+    // path the window reports -- has to agree about which one applies.
+    SpriteKinds::Kind kind = SpriteKinds::Kind::Tile;
+    // The sprite's convention id: `tile_<slug>` for a tile, the bare key for an object.
+    // Derived once, when the job is created, so the worklist and the generated path cannot
+    // disagree about what the file is called.
+    std::string conventionId;
     State state = State::Queued;
     std::string error;
     // The sprite that was placed, when it was.
@@ -84,6 +98,27 @@ public:
     // agent that decides to invent forty tiles should not be able to run up a bill
     // unattended. Counted in requests, not tiles, because requests are what cost.
     int maxRequestsPerSession = 8;
+
+    // How many sprites may share one image request.
+    //
+    // This is a *legibility* split, not a cost one, and the two pull opposite ways: one
+    // request costs the same whether it fills one cell or sixteen, so batching more is
+    // cheaper per sprite and splitting costs whole requests. The number is therefore set as
+    // high as the sheet stays legible and no higher.
+    //
+    // Four because that is the largest sheet this project has measured as usable -- the
+    // four generated surface tiles came back from a four-cell sheet and hold up -- and
+    // nothing above four has been measured at all. docs/sprite-designer-design.md §4
+    // proposed capping it there "until the measurement justifies more", and §16 records
+    // that the free way to measure it does not exist. So this is a *setting* rather than a
+    // constant, precisely so it can be raised the moment a real set has been looked at --
+    // and the prompt deliberately does not claim a number, because a cell count is not a
+    // legibility guarantee.
+    //
+    // A set larger than this is split across several requests, one batch at a time, rather
+    // than being refused: the alternative to "twelve sprites cost three requests" is
+    // "twelve sprites cost one illegible sheet", and the first is recoverable.
+    int maxCellsPerRequest = 4;
   };
 
   // Called on the main thread once per settled job, in the order results arrive.
@@ -134,7 +169,8 @@ public:
   // Adds one tile to the next batch. Returns false when generation is disabled, the
   // name is empty, the tile is already queued or done, or the session cap is
   // reached -- in which case `reason` says which.
-  bool Request(const std::string &tileName, std::string *reason = nullptr);
+  bool Request(SpriteKinds::Kind kind, const std::string &name,
+               std::string *reason = nullptr);
 
   // True while anything is waiting or in flight, so a caller can show "working".
   bool Busy() const;
@@ -182,7 +218,15 @@ private:
   };
 
   void StartWorker();
-  void RunBatch(std::vector<std::string> tileNames);
+  // One batch's cells. A struct rather than parallel vectors, because the three fields
+  // are meaningless apart: a name without its kind cannot be named as a file, and a
+  // convention id without a kind cannot be checked.
+  struct BatchCell {
+    std::string name;
+    SpriteKinds::Kind kind = SpriteKinds::Kind::Tile;
+    std::string conventionId;
+  };
+  void RunBatch(std::vector<BatchCell> cells);
 
   Config config;
   std::string workDirectory;

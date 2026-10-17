@@ -1,0 +1,42 @@
+{
+  "art": [
+    "####",
+    "#..#",
+    "#..#",
+    "####"
+  ],
+  "backgroundColor": [
+    90,
+    70,
+    50,
+    255
+  ],
+  "capacity": 6,
+  "character": "k",
+  "characterColor": [
+    180,
+    140,
+    90,
+    255
+  ],
+  "components": [
+    "Portable",
+    "Storage"
+  ],
+  "description": "A sturdy woven basket for carrying goods, viewed from above.",
+  "name": "wicker basket",
+  "palette": {
+    "#": [
+      180,
+      140,
+      90,
+      255
+    ],
+    ".": [
+      120,
+      80,
+      50,
+      255
+    ]
+  }
+}

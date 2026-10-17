@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "DebugLog.h"
+#include "SpriteReply.hpp"
 
 namespace TileDesigner {
 
@@ -37,6 +38,27 @@ constexpr const char *kContractPlaceholder = "%CONTRACT%";
 // between two documents. The setting that overrides it is
 // `content.spriteContractFile`.
 constexpr const char *kDefaultContractFile = "data/prompts/SPRITE_CONTRACT.md";
+
+// The comment fences that mark a shape section inside a kind document. HTML comments so that
+// a kind document read on its own, in an editor or on a forge, shows no scaffolding; the
+// builder strips the fence that marks the section it did not select.
+constexpr const char *kSingleOpen = "<!--%%SINGLE%%-->";
+constexpr const char *kSingleClose = "<!--%%/SINGLE%%-->";
+constexpr const char *kSetOpen = "<!--%%SET%%-->";
+constexpr const char *kSetClose = "<!--%%/SET%%-->";
+
+// Removes every block delimited by `open`/`close`, fences included. A block with no closing
+// fence is left alone rather than eating the rest of the document: a broken fence should
+// produce a slightly-too-long prompt, not an empty one.
+void RemoveSection(std::string &text, const char *open, const char *close) {
+  for (;;) {
+    const size_t start = text.find(open);
+    if (start == std::string::npos) return;
+    const size_t end = text.find(close, start);
+    if (end == std::string::npos) return;
+    text.erase(start, end - start + std::string(close).size());
+  }
+}
 
 // What a kind's document degrades to when the file is missing or unreadable.
 //
@@ -288,10 +310,40 @@ std::string BuildSystemPrompt(const std::string &promptFile,
                             kDefaultContractFile, vocabulary);
 }
 
+std::string SelectShape(std::string document, PromptShape shape) {
+  // Strip the *other* shape's sections, and the fences of the one that applies. Leaving the
+  // fences in would put `<!--%%SET%%-->` in front of the model, which is exactly the kind of
+  // machine scaffolding that makes a model treat a document as a template.
+  if (shape == PromptShape::Set) {
+    RemoveSection(document, kSingleOpen, kSingleClose);
+    document = [&] {
+      std::string out = document;
+      // The SET fences come off, the content stays.
+      for (const char *fence : {kSetOpen, kSetClose}) {
+        for (size_t at = out.find(fence); at != std::string::npos;
+             at = out.find(fence)) {
+          out.erase(at, std::string(fence).size());
+        }
+      }
+      return out;
+    }();
+  } else {
+    RemoveSection(document, kSetOpen, kSetClose);
+    for (const char *fence : {kSingleOpen, kSingleClose}) {
+      for (size_t at = document.find(fence); at != std::string::npos;
+           at = document.find(fence)) {
+        document.erase(at, std::string(fence).size());
+      }
+    }
+  }
+  return document;
+}
+
 std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
                                const std::string &promptFile,
                                const std::string &contractFile,
-                               const PromptVocabulary &vocabulary) {
+                               const PromptVocabulary &vocabulary,
+                               PromptShape shape) {
   std::string prompt = kFallbackPrompt;
   if (!promptFile.empty()) {
     std::ifstream file(promptFile);
@@ -309,6 +361,11 @@ std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
                 << "vocabulary." << std::endl;
     }
   }
+
+  // The shape first, so the contract is substituted into the document the model will
+  // actually see. Doing it after would substitute into text that is about to be thrown away,
+  // which is harmless but makes the order confusing for no gain.
+  prompt = SelectShape(prompt, shape);
 
   // The contract goes in first, and *only* by replacement.
   //
@@ -391,6 +448,53 @@ nlohmann::json WriteTileDef(const TileDef &def) {
 }
 
 std::string SlugifyFileName(const std::string &name) { return SanitizeStem(name); }
+
+SetApplyResult ApplySetReply(const std::string &reply, TileRegistry &tiles,
+                             const std::string &overlayDirectory) {
+  SetApplyResult result;
+
+  // The extract is the same one the single path does, deliberately: the fence and the
+  // reasoning stripping are about the *reply*, and the envelope is about what is inside it.
+  // Two implementations here would be two things able to disagree about what a reply is.
+  const std::string cleaned = StripReasoning(reply);
+  bool fromBlock = false;
+  const std::string block = ExtractTileJson(cleaned, &fromBlock);
+  if (block.empty()) {
+    result.error = "the reply was empty. Send the definition as one ```json block, as the "
+                   "instructions require.";
+    return result;
+  }
+
+  const SpriteReply::Parsed parsed = SpriteReply::SplitText(block);
+  if (!parsed.ok) {
+    result.error = parsed.error;
+    return result;
+  }
+
+  result.ok = true;
+  result.setName = parsed.setName;
+
+  // Applied one at a time, and each one's verdict kept even when an earlier entry failed. The
+  // catalog is only changed by the entries that pass, which is what makes a partial set
+  // usable rather than all-or-nothing.
+  for (size_t index = 0; index < parsed.definitions.size(); ++index) {
+    const nlohmann::json &definition = parsed.definitions[index];
+    ApplyResult applied = ApplyJson(definition, tiles, overlayDirectory);
+    if (!applied.ok) {
+      // The index is the whole point of per-entry refusal: the retry message can say
+      // "entry 3" and the model knows which one to fix. Prefixing rather than replacing,
+      // because the validator's own words are what it has to act on.
+      applied.error = "entry " + std::to_string(index) + ": " + applied.error;
+    }
+    if (applied.ok) {
+      ++result.accepted;
+    } else {
+      ++result.refused;
+    }
+    result.sprites.push_back(std::move(applied));
+  }
+  return result;
+}
 
 ApplyResult ApplyJson(const nlohmann::json &tileJson, TileRegistry &tiles,
                       const std::string &overlayDirectory) {

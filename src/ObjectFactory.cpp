@@ -36,6 +36,16 @@ void ObjectFactory::RecordComponentInfo(const std::string& name,
 
 namespace {
 
+// When a template entered the factory. A loaded file's last-write time is what
+// the Map Editor's date sort means by "creation date"; a source that is not a
+// readable file -- a designer's in-memory add, whose file ObjectDesigner writes
+// separately -- falls back to now, which is when it was created.
+std::filesystem::file_time_type SourceTimeOrNow(const std::string& sourcePath) {
+  std::error_code ec;
+  const auto time = std::filesystem::last_write_time(sourcePath, ec);
+  return ec ? std::filesystem::file_time_type::clock::now() : time;
+}
+
 // What kind of JSON value a parameter must hold.
 //
 // This table exists because the setters are *lenient*: `capacity` read with
@@ -300,6 +310,7 @@ void ObjectFactory::LoadTemplates(const std::string& directoryPath) {
           // Use filename without extension as the type key
           std::string type = entry.path().stem().string();
           templates[type] = j;
+          templateTimes[type] = SourceTimeOrNow(entry.path().string());
           
         } catch (const std::exception& e) {
           std::string errStr = "Failed to parse object template " + entry.path().string() + ": " + std::string(e.what()) + "\n";
@@ -318,7 +329,15 @@ bool ObjectFactory::RemoveTemplate(const std::string& key) {
   // The runtime record goes with it: a key that is no longer in `templates` is not
   // runtime-added either, whatever it used to be.
   runtimeKeys.erase(key);
+  templateTimes.erase(key);
   return templates.erase(key) > 0;
+}
+
+std::filesystem::file_time_type ObjectFactory::GetTemplateTime(
+    const std::string& key) const {
+  const auto it = templateTimes.find(key);
+  return it == templateTimes.end() ? std::filesystem::file_time_type{}
+                                   : it->second;
 }
 
 namespace {
@@ -505,6 +524,7 @@ ObjectFactory::RuntimeAddResult ObjectFactory::AddRuntime(
 
   templates[result.key] = definition;
   runtimeKeys[result.key] = source;
+  templateTimes[result.key] = SourceTimeOrNow(source);
 
   result.ok = true;
   return result;
@@ -528,6 +548,7 @@ size_t ObjectFactory::RemoveRuntimeTemplates() {
   size_t removed = 0;
   for (const auto& pair : runtimeKeys) {
     removed += templates.erase(pair.first) > 0 ? 1 : 0;
+    templateTimes.erase(pair.first);
   }
   runtimeKeys.clear();
   return removed;

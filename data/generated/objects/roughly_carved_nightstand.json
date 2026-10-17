@@ -1,0 +1,53 @@
+{
+  "art": [
+    "###",
+    "/-\\",
+    "/ \\"
+  ],
+  "backgroundColor": [
+    60,
+    45,
+    35,
+    255
+  ],
+  "capacity": 2,
+  "character": "n",
+  "characterColor": [
+    120,
+    80,
+    45,
+    255
+  ],
+  "components": [
+    "Obstacle",
+    "Storage"
+  ],
+  "description": "A roughly carved wooden nightstand holding a clay candleholder and a chipped ceramic washbasin.",
+  "name": "roughly carved nightstand",
+  "palette": {
+    "#": [
+      120,
+      80,
+      45,
+      255
+    ],
+    "-": [
+      120,
+      80,
+      45,
+      255
+    ],
+    "/": [
+      100,
+      65,
+      35,
+      255
+    ],
+    "\\": [
+      100,
+      65,
+      35,
+      255
+    ]
+  }
+}

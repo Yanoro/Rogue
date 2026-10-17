@@ -97,6 +97,19 @@ public:
   // caller can ask unconditionally.
   virtual void setReasoningEnabled(bool /*enabled*/) {}
 
+  // Overrides the completion budget for one instance, after the backend was built
+  // from its settings block.
+  //
+  // Exists because two callers can share a backend and still want different
+  // budgets. The sprite designers emit a set of definitions as JSON and need room
+  // for it; the NPC agents sharing the same backend emit one command line and do
+  // not. Without this the only way to give the designer room was to raise the
+  // agents' ceiling as well, which is a change to a different system.
+  //
+  // The default does nothing, so a backend with no output limit -- or none that can
+  // be set after construction -- is unchanged and a caller can ask unconditionally.
+  virtual void setMaxTokens(int /*tokens*/) {}
+
   virtual std::string getAIName() const = 0;
   virtual std::string getModelName() const = 0;
   virtual std::string getProviderName() const { return "Unknown"; }

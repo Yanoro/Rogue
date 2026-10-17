@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 struct GameSettings {
   struct MapSection {
@@ -106,6 +107,25 @@ struct GameSettings {
     // up. Every attempt is shown, so this bounds cost rather than hiding failure.
     int maxDesignAttempts = 3;
 
+    // How much completion budget the designer gets, overriding the `maxTokens` of
+    // whichever backend it ends up on. 0 means "inherit", which is what this
+    // section did before the field existed -- and that inheritance was the bug it
+    // fixes: with `useMainModel` on, the designer shares the *agent* backend, so it
+    // shared the agents' output budget too, as though the two jobs wanted the same
+    // number.
+    //
+    // They do not. An agent turn emits one `[COMMAND ...]` line, and 1500 tokens is
+    // a ceiling it never approaches. A designer emits a whole set of definitions as
+    // JSON: eight objects with art blocks and notes is 1300-1500 tokens before
+    // reasoning spends any of it. Measured in logs/tile-designer, three consecutive
+    // attempts at a set of eight were cut off at the shared 1500, the last losing a
+    // single object out of the eight it had almost finished.
+    //
+    // Only the OpenRouter backend honours it, matching `model.maxTokens` -- that is
+    // the only backend BuildAIBackend sets an output limit on at all. See
+    // AI::setMaxTokens.
+    int maxTokens = 0;
+
     // Reading the designer's reply aloud. Off by default: it is a development
     // window, and a feature that starts making noise on first launch is a
     // feature people turn off before judging.
@@ -168,6 +188,41 @@ struct GameSettings {
   // case the game runs exactly as it did before this existed: no System 1 backend
   // is constructed and `SystemOneClassifier::Available()` has nothing to report
   // (see SystemOneRecorder.h).
+  // One selectable System 1 backend.
+  //
+  // A profile is *how to reach a model*, plus the two knobs that are only
+  // meaningful per model. Everything else about how System 1 is used -- whether the
+  // sprite designer routes, how many records the window keeps -- is a property of
+  // the game, not of the endpoint, so it stays on the section below.
+  //
+  // `minConfidence` is per model because it is calibration, and calibration is not
+  // portable: measured on this machine, Kev reported 0.69/0.66/0.50 where hosted Jev
+  // reported a different spread for the same questions. A threshold tuned for one
+  // silently means something else on the other.
+  struct SystemOneProfileSection {
+    // The identifier used to select this profile: `system1.activeProfile`, the
+    // `--system1-profile` flag and every status line. Required in the file.
+    std::string id;
+    // Display name. Falls back to `id`, so a small config does not have to say the
+    // same thing twice.
+    std::string label;
+    // "hosted_jev" or "local_kev": seeds endpoint/model/key/timeout from the preset
+    // before the explicit fields below are applied. Empty means "no seed", which is
+    // how a profile points at a server this codebase has no preset for (Lev, Laya,
+    // OpenJev, a remote llama-server) using only `model`.
+    std::string preset;
+    ModelSection model;
+    // 0 means "not stated", which follows the preset's budget and otherwise the
+    // endpoint rule (120s for a local server, 30s hosted). Unlike the section-level
+    // field this needs no `has` flag: 0 is not a usable budget, so it is free to
+    // mean "absent".
+    long timeoutSeconds = 0;
+    // Below this, a verdict is reported as unsure rather than acted on. 0 disables
+    // the check, which is why it needs no `has` flag -- unlike a budget, 0 is a
+    // legitimate value.
+    float minConfidence = 0.0f;
+  };
+
   struct SystemOneSection {
     // False shares the NPC backend, which is the least surprising default for an
     // unconfigured run. True reads `model` below instead.
@@ -191,6 +246,51 @@ struct GameSettings {
     // Bounds the in-memory view the overview window keeps. The log file is
     // unaffected and keeps everything, so a long session stays fully recorded.
     int maxRecords = 500;
+    // Whole-request budget for one decision. A decision model answers in roughly
+    // 100ms, so a request still running after this is not going to produce a useful
+    // verdict -- and a designer waiting on a router must not block on a hung socket.
+    long timeoutSeconds = 30;
+    // Whether that value came from a file.
+    //
+    // This exists because "absent" and "set to 30" want opposite behaviour: absent
+    // should follow the endpoint -- a local llama-server needs ~120s, a hosted call
+    // 30s -- while an explicit 30 means the user really does want 30. Without the
+    // flag the field's non-zero default makes the two indistinguishable, so an
+    // endpoint-derived default can never apply. Same reason `ModelSection` carries
+    // `hasTemperature` and `hasMaxTokens`.
+    bool hasTimeoutSeconds = false;
+    // Whether the sprite designer asks a classifier what kind of sprite a request is
+    // for, instead of starting in whichever mode the window is already showing.
+    //
+    // On by default, and the one place in this file where that is the right call for a
+    // feature that costs money: a classification is a *decision* call -- a fraction of a
+    // cent, with no image -- and without it the user has to pick the mode themselves
+    // before typing, which is the thing the router exists to remove. The image request
+    // that follows is separately gated by `art.generation.enabled`.
+    bool routeRequests = true;
+    // What to do with the route verdict. Below this, the window keeps its current mode
+    // and says the classifier was unsure rather than silently acting on a coin flip.
+    //
+    // Advisory in practice: `choice` answers carry no confidence field at all on hosted
+    // Jev (see SystemOneRecorder.h), so this is 0 for most real verdicts and a threshold
+    // above 0 would send nearly everything to "unsure". Kept as a knob because a backend
+    // that does report confidence -- Laya's decision head -- makes it meaningful.
+    float minConfidence = 0.0f;
+
+    // The selectable backends.
+    //
+    // The flat fields above are always available as one more profile, whose id is
+    // "default". That is why nothing has to be migrated: an existing config keeps
+    // working untouched, and `profiles` adds choices beside it. A profile may reuse
+    // the id "default" to override it.
+    std::vector<SystemOneProfileSection> profiles;
+    // Which profile starts active, unless the persisted choice from a previous run
+    // or `--system1-profile` says otherwise. Empty means "default".
+    std::string activeProfile;
+    // `--system1-profile`, applied by main() after the file is loaded. Never read from
+    // the file itself, and it outranks everything else -- an explicit flag is a
+    // request about *this* run, so a remembered selection must not win over it.
+    std::string cliProfile;
   } system1;
 
   struct AISection {
@@ -349,6 +449,11 @@ struct GameSettings {
       // Hard ceiling on requests for the session. A request is ~$0.04 (measured),
       // so this default caps a session at about 32 cents.
       int maxRequestsPerSession = 8;
+      // How many sprites may share one image request. A set larger than this is split
+      // across several requests rather than asked for as one illegible sheet, which costs
+      // whole requests -- so this trades money for legibility and is meant to be raised
+      // once a real sheet has been looked at. See TileArtQueue::Config for why it is four.
+      int maxCellsPerRequest = 4;
       // Where the worklist and the raw sheets go. Empty uses the default,
       // `data/generated/work`, which is where tools/gen_tile_art.py already keeps
       // them and which .gitignore excludes -- a raw sheet is ~1-3MB and is the one

@@ -299,6 +299,14 @@ struct SystemOneRecord {
   bool ParsedOk() const { return error.empty() && !answers.empty(); }
 };
 
+// A non-call event worth keeping beside the calls: a profile switch, a probe
+// failure, a backend going away. Kept separate from SystemOneRecord because it is not
+// an observation of a model and must not inflate the call counts the window shows.
+struct SystemOneNote {
+  std::string clockTime;
+  std::string text;
+};
+
 // The running record: a bounded ring in memory, plus an append-only file.
 //
 // Thread-safe by construction. `Record` is called from the provider's worker
@@ -320,6 +328,15 @@ public:
 
   std::size_t Count() const;
   void Clear();
+
+  // Appends an event to the log file and keeps it for the window, without creating a
+  // call record. Used for things that explain a run rather than describe a decision --
+  // above all "the backend was switched here", which is otherwise only inferable from
+  // the model label changing between two records.
+  void Note(const std::string &text);
+
+  // Newest first, bounded, for the window's event strip.
+  std::vector<SystemOneNote> RecentNotes() const;
 
   // How many records used a given scenario id, and how many were not advisory.
   // Cheap enough for per-frame use at the sizes involved.
@@ -352,6 +369,11 @@ private:
 
   int nonAdvisoryCount = 0;
   std::unordered_map<std::string, int> scenarioCounts;
+
+  // Bounded: notes are context for the calls around them, and a long session would
+  // otherwise accumulate one per switch forever.
+  static constexpr std::size_t kMaxNotes = 64;
+  std::deque<SystemOneNote> notes;
 };
 
 }  // namespace SystemOne

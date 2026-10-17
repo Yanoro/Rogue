@@ -133,7 +133,10 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
   // ("npc-<id>"), the blueprint designer's or the vision window's.
   contextId = "tile-designer-" + std::to_string(reinterpret_cast<uintptr_t>(this));
   if (game != nullptr) {
-    systemPrompt = game->BuildTileDesignerSystemPrompt();
+    // By the current mode rather than the tile-specific entry point, so the two cannot
+    // disagree about what the model was told. The mode starts as Tile, so this is the same
+    // prompt the old call produced.
+    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
   }
 
   // The Improve button. Same backend as the conversation, its own provider context,
@@ -142,7 +145,7 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
                      Settings().content.rewritePromptFile,
                      contextId + "-rewriter",
                      game != nullptr ? game->debugLog.get() : nullptr);
-  rewriter.SetBrief(RewriteBriefs::Tile());
+  RefreshRewriteBrief();
   promptBox.Setup(game, &rewriter, inputBuffer, sizeof(inputBuffer));
   // The rewrite transcript goes into the same file as the conversation, so a rewrite
   // that produced the wrong half is diagnosable from the log rather than by replaying
@@ -150,21 +153,41 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
   promptBox.SetLogSink([this](const std::string &line) { Log(line); });
 }
 
-size_t TileDesignerWindow::RunSelfTestConversation(bool requestArt) {
+size_t TileDesignerWindow::RunSelfTestConversation(bool requestArt,
+                                                 SpriteKinds::Kind kind,
+                                                 bool setTest) {
   if (!selfTest) return 0;
+
+  // The mode is set here because the canned reply below is a reply for that kind, and the
+  // whole point of the object variant is to run the object half of the inspection path --
+  // a tile-shaped reply inspected as an object would be refused for having no components,
+  // which tests the refusal and not the accept.
+  mode = kind;
+  designMode = kind;
+  // The shape, before the request is "sent": inspection reads it per exchange, and a set
+  // reply judged by the single path is refused for having no "name" at the top level.
+  requestSet = setTest;
+  RefreshRewriteBrief();
+  if (game != nullptr) {
+    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+  }
 
   // Switched on here rather than through the settings, because the point is to test
   // the window's automatic request and not the configuration that normally turns it
   // on. Whether the request is then *accepted* is up to the queue, which is exactly
   // what the caller goes on to check.
-  autoRequestArt = requestArt;
+  // The set case asks for art as well, even though it is not the auto-art mode: a set is
+  // where "several sprites become several requests" happens, and a test that stops before the
+  // estimate and the queue has not run the part of the set flow that spends money.
+  autoRequestArt = requestArt || setTest;
 
   // The same sequence a real request runs, with the reply supplied instead of
-  // streamed: header, user request, reply, inspection. The reply is a real one --
-  // it is the puddle the tile designer actually produced -- because a hand-written
-  // "valid tile" would not exercise the notes stripping, the ASCII renderer or the
-  // catalog's response to a name it has seen before.
-  const std::string kCannedReply = R"(<think>Keep it short.</think>
+  // streamed: header, user request, reply, inspection. Both replies are real ones --
+  // the puddle the tile designer produced, and an object of the shape the object designer
+  // is meant to produce -- because a hand-written "valid definition" would not exercise
+  // the notes stripping, the ASCII renderer, the component vocabulary or the catalog's
+  // response to a name it has seen before.
+  const std::string kCannedTileReply = R"(<think>Keep it short.</think>
 A walkable puddle, non-blocking, using a free glyph.
 
 ```json
@@ -179,6 +202,71 @@ A walkable puddle, non-blocking, using a free glyph.
 ```
 )";
 
+  // The object reply. Deliberately ordinary rather than exotic: two capabilities, one
+  // parameter, an art block whose palette covers every character it uses. A reply with a
+  // palette gap would be accepted with a warning, which is a useful case to *have* but a
+  // poor default -- an unknown warning in the log of a passing test is noise.
+  const std::string kCannedObjectReply = R"(<think>Two capabilities, and art the palette covers.</think>
+A stout post you can see from a distance and lean on; it blocks movement.
+
+```json
+{
+  "name": "self test post",
+  "description": "A weathered post set into the ground.",
+  "components": ["Obstacle", "Interactable"],
+  "art": ["#--#", "#++#", " ## "],
+  "palette": {
+    "#": [94, 72, 52, 255],
+    "-": [140, 108, 74, 255],
+    "+": [176, 140, 96, 255]
+  },
+  "character": "P",
+  "characterColor": [176, 140, 96, 255],
+  "backgroundColor": [46, 36, 26, 255],
+  "designerNotes": "Written by the self test to exercise the object half of the inspection path end to end. Two capabilities, one art block, and a palette that covers every character the art uses."
+}
+```
+)";
+
+  // The set reply. Three entries with the middle one deliberately broken, so the canned
+  // conversation exercises the property that matters most about a set: the entries are
+  // validated independently and a refused one does not discard the accepted ones.
+  const std::string kCannedSetReply = R"(<think>Three fittings that share a material, one of them broken on purpose.</think>
+A set of iron fittings for one room.
+
+```json
+{
+  "set": "self test set",
+  "sprites": [
+    {
+      "name": "self test grate",
+      "components": ["Obstacle"],
+      "character": "g",
+      "designerNotes": "Written by the self test. One capability, so it is a valid entry."
+    },
+    {
+      "name": "self test broken",
+      "components": ["Obstacle"],
+      "character": "x",
+      "designerNotes": ""
+    },
+    {
+      "name": "self test bucket",
+      "components": ["Portable", "Storage"],
+      "capacity": 3,
+      "character": "u",
+      "designerNotes": "Written by the self test. Carries and holds a little."
+    }
+  ]
+}
+```
+)";
+
+  const std::string kCannedReply =
+      setTest ? kCannedSetReply
+              : (kind == SpriteKinds::Kind::Object ? kCannedObjectReply
+                                                   : kCannedTileReply);
+
   LogSessionHeader();
 
   Exchange ex;
@@ -186,6 +274,12 @@ A walkable puddle, non-blocking, using a free glyph.
   ex.fromUser = true;
   ex.done = true;
   ex.answer = kCannedReply;
+  // Latched here as `SendUserMessage` does for a real request. The self-test builds its
+  // exchange directly, so anything the normal path sets has to be set here too -- and
+  // forgetting this one made the set reply be judged as a single definition, refused for
+  // having no top-level "name", and retried. A test that runs the wrong path convincingly is
+  // worse than no test.
+  ex.wasSet = setTest;
   size_t index = 0;
   {
     std::lock_guard<std::mutex> lock(transcriptMutex);
@@ -302,28 +396,35 @@ void TileDesignerWindow::LogSessionHeader() {
   if (headerLogged) return;
   headerLogged = true;
 
-  Log("\n================ TILE DESIGNER SESSION ================\n");
+  // The kind this session designs, named in the header because a log with two kinds of
+  // session in it is otherwise ambiguous -- and the two are told apart by their prompt
+  // file and their overlay, both of which follow from this line.
+  const SpriteKinds::Descriptor &kind = SpriteKinds::For(mode);
+  Log("\n================ SPRITE DESIGNER SESSION (" + kind.label +
+      ") ================\n");
   Log("started:   " + TimeUtils::GetCurrentTimeString() + "\n");
+  Log("kind:      " + kind.id + "\n");
   Log("backend:   " + (modelLabel.empty() ? std::string("(none)") : modelLabel) +
       "\n");
   Log("context:   " + contextId + "\n");
 
   const GameSettings &settings = Settings();
-  Log("overlay:   " + (settings.content.generatedTiles.empty()
-                           ? std::string("(none)")
-                           : settings.content.generatedTiles) + "\n");
+  const std::string overlay = ModeOverlayDirectory();
+  Log("overlay:   " + (overlay.empty() ? std::string("(none)") : overlay) + "\n");
   Log("art:       pack=" +
       (settings.art.pack.empty() ? std::string("(none)") : settings.art.pack) +
       "  generation=" + (settings.art.generation.enabled ? "on" : "off") + "\n");
   Log("attempts:  " + std::to_string(game != nullptr ? game->maxDesignAttempts() : 0) +
       " per request\n");
 
-  LogPromptFile(settings.content.tileDesignerPromptFile);
+  LogPromptFile(kind.id == "object" ? settings.content.objectDesignerPromptFile
+                                    : settings.content.tileDesignerPromptFile);
 
-  // The system prompt as it will be sent: the file above with %GLYPHS% and %TILES%
-  // substituted from the live catalog at the moment the window was constructed. This
-  // is the single most valuable line in the log, because it is the only record of
-  // what the model was actually told.
+  // The system prompt as it will be sent: the file above with %CONTRACT%, %GLYPHS% and
+  // %VOCAB% substituted from the live world at the moment the window was constructed --
+  // the tile catalog for a tile, the factory's components for an object. This is the
+  // single most valuable line in the log, because it is the only record of what the model
+  // was actually told.
   Log("--- system prompt as sent (" + std::to_string(systemPrompt.size()) +
       " bytes) ---\n");
   if (systemPrompt.empty()) {
@@ -409,6 +510,15 @@ std::string TileDesignerWindow::SaveEditedTile() {
   if (!out.good()) {
     return "writing " + path.string() + " failed.";
   }
+
+  // Keep the catalog's date in step with the file that now backs it, so the Map
+  // Editor's date sort reflects a saved edit in this session rather than only
+  // after the next overlay reload.
+  std::error_code timeEc;
+  const auto written = std::filesystem::last_write_time(path, timeEc);
+  if (!timeEc) {
+    edited->sourceTime = written;
+  }
   return {};
 }
 
@@ -422,9 +532,20 @@ void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
   attempts = 0;
   statusLine.clear();
 
+  // The kind this request is being built for, latched here rather than read at
+  // inspection time. The dropdown may move while the reply is in flight, and the reply
+  // must be judged by the grammar it was asked for -- validating object JSON through the
+  // tile validator would refuse it for having no glyph. See InspectFinishedExchange.
+  designMode = mode;
+  // The shape has to be latched for the same reason: inspection happens on a later frame, and
+  // a set reply judged by the single-sprite path would be refused for having no "name" at the
+  // top level.
+  const bool designSet = requestSet;
+
   Exchange ex;
   ex.prompt = prompt;
   ex.fromUser = true;
+  ex.wasSet = designSet;
 
   size_t index = 0;
   {
@@ -597,20 +718,156 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     return;
   }
 
-  TileRegistry *registry =
-      game != nullptr ? &game->tileRegistry : nullptr;
+  // ---- apply the reply, by the kind it was *asked* for ---------------------------
+  //
+  // `designMode`, not `mode`: a reply is inspected on a later frame than it was
+  // requested, so flipping the dropdown while a request is in flight must not make the
+  // reply be judged against the other kind's grammar. Validating object JSON through the
+  // tile validator would refuse it for having no glyph and no colour, which is a
+  // confusing way to be told about a dropdown.
+  //
+  // One small local struct rather than the two ApplyResult types, because the rest of this
+  // function -- the transcript, the retry, the art request, the log -- is identical for
+  // both kinds and duplicating it would be a second place for the retry logic to drift.
+  struct Applied {
+    bool ok = false;
+    std::string error;
+    std::string name;
+    std::string savedPath;
+    std::string notes;
+    std::vector<std::string> warnings;
+    bool saveFailed = false;
+    bool revised = false;
+    const TileDef *tileDefinition = nullptr;
+    nlohmann::json objectDefinition;
+    std::string objectKey;
+    std::string objectOverlayPath;
+    // Set-only: the group's name, the names that were accepted (in reply order), and one
+    // display line per entry so a partial set reads as "which one failed".
+    bool wasSet = false;
+    std::string setName;
+    std::vector<std::string> acceptedNames;
+    std::vector<std::pair<bool, std::string>> entryVerdicts;
+  };
+
   std::string reason;
   // Filled in the accepted branch below and written to the exchange afterwards.
   // Declared out here because the exchange's fields are published under the mutex
   // before that branch runs -- writing `ex.artNote` in the branch would be writing
   // to a local copy, which is exactly the bug this shape avoids.
   std::string artNote;
-  TileDesigner::ApplyResult applied;
-  if (registry == nullptr) {
-    reason = "there is no tile catalog to add to.";
+  Applied applied;
+
+  // Four combinations, because the two axes are genuinely independent: kind picks the
+  // document and the validator, shape picks how many definitions one reply carries. Written
+  // as two nested branches rather than a table so each arm reads as what it does.
+  if (designMode == SpriteKinds::Kind::Object && finished.wasSet) {
+    ObjectFactory *objects = Objects();
+    if (objects == nullptr) {
+      reason = "there is no object factory to add to.";
+    } else {
+      const ObjectDesigner::SetApplyResult set = ObjectDesigner::ApplySetReply(
+          finished.ParsedAnswer(), *objects,
+          ModeOverlayDirectoryFor(SpriteKinds::Kind::Object),
+          game != nullptr ? &game->tileRegistry : nullptr);
+      applied.wasSet = true;
+      applied.setName = set.setName;
+      applied.ok = set.ok && set.accepted > 0;
+      applied.error = set.ok ? std::string() : set.error;
+      for (const ObjectDesigner::ApplyResult &entry : set.sprites) {
+        if (entry.ok) applied.acceptedNames.push_back(entry.name);
+        applied.entryVerdicts.emplace_back(
+            entry.ok, entry.ok ? ("'" + entry.name + "'") : entry.error);
+        for (const std::string &warning : entry.warnings) {
+          applied.warnings.push_back(entry.name + ": " + warning);
+        }
+      }
+      if (!set.ok) {
+        applied.entryVerdicts.clear();
+      }
+      // The last accepted definition is what the object preview shows, matching the tile
+      // pane's "the most recent thing this attempt produced".
+      for (const ObjectDesigner::ApplyResult &entry : set.sprites) {
+        if (!entry.ok) continue;
+        applied.objectDefinition = entry.definition;
+        applied.objectKey = entry.key;
+        applied.objectOverlayPath = entry.savedPath;
+        // Both, because they mean different things here: `savedPath` is what the log and the
+        // transcript report, and `objectOverlayPath` is what the object pane shows. The
+        // object-only field was set and this one was not, so a set logged as "(not saved)"
+        // while its files were on disk.
+        applied.savedPath = entry.savedPath;
+        applied.name = entry.name;
+      }
+    }
+  } else if (designMode == SpriteKinds::Kind::Tile && finished.wasSet) {
+    TileRegistry *registry = game != nullptr ? &game->tileRegistry : nullptr;
+    if (registry == nullptr) {
+      reason = "there is no tile catalog to add to.";
+    } else {
+      const TileDesigner::SetApplyResult set = TileDesigner::ApplySetReply(
+          finished.ParsedAnswer(), *registry,
+          ModeOverlayDirectoryFor(SpriteKinds::Kind::Tile));
+      applied.wasSet = true;
+      applied.setName = set.setName;
+      applied.ok = set.ok && set.accepted > 0;
+      applied.error = set.ok ? std::string() : set.error;
+      for (const TileDesigner::ApplyResult &entry : set.sprites) {
+        if (entry.ok) applied.acceptedNames.push_back(entry.name);
+        applied.entryVerdicts.emplace_back(
+            entry.ok, entry.ok ? ("'" + entry.name + "'") : entry.error);
+        for (const std::string &warning : entry.warnings) {
+          applied.warnings.push_back(entry.name + ": " + warning);
+        }
+      }
+      if (!set.ok) {
+        applied.entryVerdicts.clear();
+      }
+      for (const TileDesigner::ApplyResult &entry : set.sprites) {
+        if (!entry.ok) continue;
+        applied.tileDefinition = entry.definition;
+        applied.name = entry.name;
+        applied.savedPath = entry.savedPath;
+      }
+    }
+  } else if (designMode == SpriteKinds::Kind::Object) {
+    ObjectFactory *objects = Objects();
+    if (objects == nullptr) {
+      reason = "there is no object factory to add to.";
+    } else {
+      const ObjectDesigner::ApplyResult result = ObjectDesigner::ApplyReply(
+          finished.ParsedAnswer(), *objects, ModeOverlayDirectoryFor(
+                                              SpriteKinds::Kind::Object),
+          game != nullptr ? &game->tileRegistry : nullptr);
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.name;
+      applied.savedPath = result.savedPath;
+      applied.notes = result.notes;
+      applied.warnings = result.warnings;
+      applied.saveFailed = result.saveFailed;
+      applied.revised = result.revised;
+      applied.objectDefinition = result.definition;
+      applied.objectKey = result.key;
+      applied.objectOverlayPath = result.savedPath;
+    }
   } else {
-    applied = TileDesigner::ApplyReply(finished.ParsedAnswer(), *registry,
-                                       OverlayDirectory());
+    TileRegistry *registry = game != nullptr ? &game->tileRegistry : nullptr;
+    if (registry == nullptr) {
+      reason = "there is no tile catalog to add to.";
+    } else {
+      const TileDesigner::ApplyResult result = TileDesigner::ApplyReply(
+          finished.ParsedAnswer(), *registry,
+          ModeOverlayDirectoryFor(SpriteKinds::Kind::Tile));
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.name;
+      applied.savedPath = result.savedPath;
+      applied.notes = result.notes;
+      applied.warnings = result.warnings;
+      applied.saveFailed = result.saveFailed;
+      applied.tileDefinition = result.definition;
+    }
   }
 
   {
@@ -619,14 +876,35 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
       Exchange &ex = exchanges[index];
       ex.inspected = true;
       ex.ok = applied.ok;
-      ex.failureReason = applied.ok ? std::string() : reason.empty() ? applied.error
-                                                                    : reason;
+      ex.failureReason =
+          applied.ok ? std::string() : reason.empty() ? applied.error : reason;
       ex.tileName = applied.name;
       ex.savedPath = applied.savedPath;
       ex.notes = applied.notes;
       ex.warnings = applied.warnings;
       ex.saveFailed = applied.saveFailed;
-      ex.definition = applied.definition;
+      ex.definition = applied.tileDefinition;
+      ex.wasSet = applied.wasSet;
+      ex.setName = applied.setName;
+      ex.acceptedNames = applied.acceptedNames;
+      ex.entryVerdicts = applied.entryVerdicts;
+    }
+  }
+
+  // The preview, on the accepted branch only. For a tile this is the pointer the editor
+  // writes through; for an object it is a copy, because ObjectFactory owns its templates
+  // by value and a pointer into that map is invalidated by the next runtime add.
+  if (applied.ok) {
+    if (designMode == SpriteKinds::Kind::Object) {
+      editedObject = applied.objectDefinition;
+      editedObjectKey = applied.objectKey;
+      editedObjectOverlayPath = applied.objectOverlayPath;
+    } else {
+      edited = const_cast<TileDef *>(applied.tileDefinition);
+      editedIsRuntime = true;
+      if (edited != nullptr) {
+        LoadEditorFrom(*edited);
+      }
     }
   }
 
@@ -637,8 +915,25 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   history.push_back({"assistant", finished.HistoryAnswer()});
 
   if (applied.ok) {
-    LogEvent("ADDED: " + applied.name +
-             (applied.savedPath.empty() ? " (not saved)" : " -> " + applied.savedPath));
+    if (applied.wasSet) {
+      // Names every accepted entry: the point of a set is *which* sprites it produced, and a
+      // single "ADDED: <last one>" line would hide the rest.
+      LogEvent("ADDED SET" +
+               (applied.setName.empty() ? std::string()
+                                        : " '" + applied.setName + "'") +
+               ": " + std::to_string(applied.acceptedNames.size()) + " of " +
+               std::to_string(applied.entryVerdicts.size()) + " definition(s)");
+      for (size_t entry = 0; entry < applied.entryVerdicts.size(); ++entry) {
+        const bool accepted = applied.entryVerdicts[entry].first;
+        Log("  [" + std::to_string(entry) + "] " +
+            (accepted ? "ACCEPTED " : "REFUSED  ") + applied.entryVerdicts[entry].second +
+            "\n");
+      }
+    } else {
+      LogEvent("ADDED: " + applied.name +
+               (applied.savedPath.empty() ? " (not saved)"
+                                          : " -> " + applied.savedPath));
+    }
     if (!applied.notes.empty()) {
       Log("designerNotes: " + applied.notes + "\n");
     }
@@ -646,13 +941,13 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
       Log("warning: " + warning + "\n");
     }
     if (game != nullptr && game->debugLog) {
-      game->debugLog->LogInfo("Tile designer: added tile '" + applied.name + "'" +
+      game->debugLog->LogInfo(std::string("Sprite designer: added ") +
+                              SpriteKinds::IdOf(designMode) + " '" + applied.name +
+                              "'" +
                               (applied.savedPath.empty()
                                    ? ""
-                                   : " to " + applied.savedPath));
-    }
-    if (applied.definition != nullptr) {
-      LoadEditorFrom(*applied.definition);
+                                   : " to " + applied.savedPath) +
+                              (applied.revised ? " (revision of an earlier design)" : ""));
     }
 
     // The prompt-driven half: with this on, naming a tile is the whole instruction
@@ -668,8 +963,19 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     // indistinguishable from a broken one, and the earlier version of this block was
     // silent whenever the toggle was off -- so a user who never found the checkbox
     // saw exactly that.
-    if (game != nullptr && applied.definition != nullptr) {
-      const std::string &tile = applied.definition->name;
+    // Both kinds are requested the same way: the art queue generates a sprite for a
+    // *name*, and the convention id it resolves is the kind's own (tile_<slug> for a
+    // tile, <slug> for an object). So this needs no per-kind branch -- which is the point
+    // of `TileArt::PlanFor` taking the convention from the job rather than deriving it.
+    // The names to ask art for: one for a single reply, every accepted entry for a set. The
+    // queue batches them and splits at `maxCellsPerRequest`, so a set of ten becomes several
+    // requests without this code knowing or caring about the cap.
+    std::vector<std::string> artNames = applied.acceptedNames;
+    if (artNames.empty() && !applied.name.empty()) {
+      artNames.push_back(applied.name);
+    }
+
+    if (game != nullptr && !artNames.empty()) {
       const TileArtQueue &queue = game->TileArtQueueState();
       const std::string unavailable = queue.UnavailableReason();
 
@@ -683,21 +989,67 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
         artNote = "no art was requested -- " + unavailable;
         LogEvent("ART NOT REQUESTED: " + unavailable);
       } else {
-        std::string requestReason;
-        if (game->RequestTileArt(tile, &requestReason)) {
+        // The estimate, worked out from the number of accepted sprites and the cap rather
+        // than guessed: one request holds at most `maxCellsPerRequest` sprites, so the count
+        // is ceil(n / cap) and the money is that times the measured per-request price.
+        //
+        // Shown for a single sprite too, where it is always "1 request" -- because the point
+        // of the line is that the *cost of a set* is visible before it is spent, and a line
+        // that only appears for sets would make a set feel like the exceptional case.
+        const int cap = std::max(1, queue.GetConfig().maxCellsPerRequest);
+        const int requests =
+            (static_cast<int>(artNames.size()) + cap - 1) / cap;
+        char estimate[160];
+        std::snprintf(estimate, sizeof(estimate),
+                      "%zu sprite(s) will take %d image request(s) at a cap of %d per "
+                      "request (~$%.2f)",
+                      artNames.size(), requests, cap, 0.039 * requests);
+
+        std::vector<std::string> accepted;
+        std::vector<std::string> refused;
+        for (const std::string &name : artNames) {
+          std::string requestReason;
+          if (game->RequestTileArt(name, &requestReason)) {
+            accepted.push_back(name);
+          } else {
+            refused.push_back(name + " (" + requestReason + ")");
+          }
+        }
+
+        if (!accepted.empty()) {
           // The delay is named because the default batch window is two seconds:
           // "a later frame" would read as "any moment now" and look like a hang.
           char window[48];
           std::snprintf(window, sizeof(window), "%.0f",
-                        static_cast<double>(
-                            queue.GetConfig().batchDelaySeconds));
-          artNote = std::string("art requested -- it is batched for up to ") +
-                    window + "s, then generated on a worker thread. This tile "
-                    "draws as its glyph until the sprite arrives.";
-          LogEvent("ART REQUESTED (automatic): " + tile);
-        } else {
-          artNote = "no art was requested -- " + requestReason;
-          LogEvent("ART NOT REQUESTED: " + requestReason);
+                        static_cast<double>(queue.GetConfig().batchDelaySeconds));
+          artNote = estimate;
+          artNote += std::string(". Batched for up to ") + window +
+                     "s, then generated on a worker thread; sprites appear as they "
+                     "arrive.";
+          LogEvent(std::string("ART REQUESTED (automatic): ") + estimate);
+          for (const std::string &name : accepted) {
+            Log("  queued: " + name + "\n");
+          }
+        }
+        if (!refused.empty()) {
+          if (artNote.empty()) artNote = "no art was requested -- ";
+          else artNote += " ";
+          artNote += std::to_string(refused.size()) + " refused";
+          LogEvent("ART NOT REQUESTED for " + std::to_string(refused.size()) +
+                   " sprite(s):");
+          for (const std::string &line : refused) {
+            Log("  " + line + "\n");
+          }
+          // The reason for the first refusal is the one worth showing in the transcript: a
+          // cap or a disabled feature explains all of them.
+          if (accepted.empty() && !refused.empty()) {
+            const size_t open = refused.front().find('(');
+            artNote = "no art was requested -- " +
+                      (open == std::string::npos
+                           ? std::string("see the log")
+                           : refused.front().substr(open + 1,
+                                                    refused.front().size() - open - 2));
+          }
         }
       }
     }
@@ -721,7 +1073,8 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   if (attempts >= maxAttempts) {
     LogEvent("GIVING UP after " + std::to_string(attempts) + " attempt(s)");
     if (game != nullptr && game->debugLog) {
-      game->debugLog->LogWarning("Tile designer: giving up after " +
+      game->debugLog->LogWarning(std::string("Sprite designer: giving up on a ") +
+                                 SpriteKinds::IdOf(designMode) + " after " +
                                  std::to_string(attempts) +
                                  " attempt(s); last reason: " + applied.error);
     }
@@ -732,10 +1085,16 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
            std::to_string(maxAttempts) + " used)");
 
   Exchange retry;
-  retry.prompt =
-      "That tile was refused: " + applied.error +
-      "\n\nSend the corrected tile as a complete ```json block, with "
-      "designerNotes. Do not describe the fix in prose instead of sending it.";
+  // The same shape as the attempt being retried. Without this a set is retried as a single
+  // definition, refused again for having no top-level "name", and burns the whole attempt
+  // budget on a question the model already answered -- which is exactly what the first run of
+  // this did.
+  retry.wasSet = finished.wasSet;
+  retry.prompt = std::string("That ") + SpriteKinds::IdOf(designMode) +
+                 " was refused: " + applied.error +
+                 "\n\nSend the corrected " + SpriteKinds::IdOf(designMode) +
+                 " as a complete ```json block, with designerNotes. Do not describe the "
+                 "fix in prose instead of sending it.";
   retry.fromUser = false;
 
   size_t retryIndex = 0;
@@ -749,6 +1108,287 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   Log("\n");
 
   GenerateResponse(retryIndex, exchanges[retryIndex].prompt);
+}
+
+const SpriteKinds::Descriptor *TileDesignerWindow::ModeDescriptor() const {
+  // Address of the table row. The table is a function-local static, so the pointer is
+  // stable for the run and a caller may hold it.
+  return &SpriteKinds::For(mode);
+}
+
+const char *TileDesignerWindow::ModeName() const {
+  // A literal rather than the descriptor's `id`, because this is used in log lines and
+  // prose that outlive a mode change and a dangling reference into the table would be a
+  // worse bug than a missing abbreviation.
+  return mode == SpriteKinds::Kind::Object ? "object" : "tile";
+}
+
+std::string TileDesignerWindow::ModeOverlayDirectoryFor(SpriteKinds::Kind kind) const {
+  // Read from the settings rather than from the descriptor's default: the descriptor
+  // carries the default so a caller with no settings can still name a path, and this is
+  // the caller that has settings.
+  const GameSettings &settings = Settings();
+  return kind == SpriteKinds::Kind::Object ? settings.content.generatedObjects
+                                           : settings.content.generatedTiles;
+}
+
+std::string TileDesignerWindow::ModeOverlayDirectory() const {
+  return ModeOverlayDirectoryFor(mode);
+}
+
+ObjectFactory *TileDesignerWindow::Objects() const {
+  return game != nullptr ? &game->objectFactory : nullptr;
+}
+
+void TileDesignerWindow::RefreshRewriteBrief() {
+  // The Improve button has to speak the vocabulary of the kind being designed, or an
+  // "improved" object request comes back enriched with ground-surface words and the
+  // designer has no way to honour it. See RewriteBriefs.hpp.
+  rewriter.SetBrief(mode == SpriteKinds::Kind::Object ? RewriteBriefs::Object()
+                                                      : RewriteBriefs::Tile());
+}
+
+void TileDesignerWindow::RequestRoute(const std::string &text) {
+  if (game == nullptr || game->systemOneClassifier == nullptr) {
+    routeNote = "no System 1 classifier is configured, so the request cannot be read. "
+                "Pick the kind with the dropdown instead.";
+    return;
+  }
+  if (routeInFlight) return;
+  if (text.empty()) {
+    routeNote = "type a request first -- there is nothing to classify yet.";
+    return;
+  }
+
+  // The object vocabulary, so the classifier can judge "a crate that holds things" the
+  // same way the object prompt would. Built from the factory, which is the only source
+  // that cannot drift from what the designer may write.
+  SpriteRouter::Context context;
+  if (const ObjectFactory *objects = Objects()) {
+    std::string list;
+    for (const std::string &name : objects->ComponentNames()) {
+      if (!list.empty()) list += ", ";
+      list += name;
+    }
+    context.objectVocabulary = list;
+  }
+
+  routeInFlight = true;
+  routeNote = "asking which kind this is...";
+  LogEvent("ROUTE REQUESTED: " + text);
+
+  // The callback runs on the classifier's own thread. It only latches the verdict; `Draw`
+  // picks it up and applies it on the main thread. Touching ImGui, the ECS or the
+  // transcript from here is exactly what this shape exists to prevent.
+  //
+  // The provider guarantees the callback fires exactly once -- transport failure, HTTP
+  // error, unparseable body and cancellation included -- so `routeInFlight` cannot stick.
+  //
+  // The active profile's threshold, if there is one. Read here rather than inside the
+  // router because it belongs to the *model* that is serving, and the router is handed a
+  // bare classifier with no idea which profile built it.
+  const SystemOne::ModelProfile *profile =
+      game != nullptr ? game->ActiveSystemOneProfile() : nullptr;
+  const float minConfidence = profile != nullptr ? profile->minConfidence : 0.0f;
+
+  SpriteRouter::Classify(
+      *game->systemOneClassifier, text, context,
+      [this](const SpriteRouter::Verdict &verdict) {
+        std::lock_guard<std::mutex> lock(routeMutex);
+        routeVerdict = verdict;
+        routeInFlight = false;
+      },
+      /*stoken=*/{}, /*minConfidence=*/minConfidence);
+}
+
+void TileDesignerWindow::ApplyRouteVerdict(const SpriteRouter::Verdict &verdict) {
+  if (verdict.unsure) {
+    // The answer arrived but is below the active profile's threshold. The mode stays
+    // where it is -- switching on a coin flip is worse than doing nothing -- and the
+    // window says what it read so the threshold itself can be judged.
+    routeNote = "the classifier was not confident enough to act: " + verdict.why;
+    LogEvent("ROUTE: unsure -- " + routeNote);
+    return;
+  }
+
+  if (verdict.kind == nullptr) {
+    // Unanswered is not a verdict. The mode stays where it is, and the window says why
+    // rather than picking the more likely kind.
+    routeNote = verdict.error.empty()
+                    ? "the classifier did not say which kind this is, so the mode is "
+                      "unchanged"
+                    : "the classifier could not be used: " + verdict.error;
+    LogEvent("ROUTE: no kind -- " + routeNote);
+    return;
+  }
+
+  mode = verdict.kind->kind;
+  RefreshRewriteBrief();
+  if (game != nullptr) {
+    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+  }
+
+  // The shape too, when the classifier answered it -- that is what the question is for. An
+  // unanswered shape leaves the checkbox alone rather than being guessed, for the same reason
+  // an unanswered kind leaves the dropdown alone.
+  if (verdict.shapeAnswered) {
+    requestSet = verdict.sheet;
+    requestSetSize = verdict.requested;
+    if (game != nullptr) {
+      systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+    }
+  }
+
+  routeNote = "the classifier read this as " + verdict.kind->label;
+  if (verdict.shapeAnswered) {
+    routeNote += verdict.sheet
+                     ? ", a set of about " + std::to_string(verdict.requested)
+                     : ", a single sprite";
+  }
+  // The confidence and the model's own words are shown rather than only the conclusion: a
+  // classifier that is confidently wrong should be visibly confident.
+  if (verdict.kindConfidence > 0.0f) {
+    routeNote += " (confidence " + std::to_string(verdict.kindConfidence) + ")";
+  }
+  if (!verdict.why.empty()) {
+    routeNote += " -- " + verdict.why;
+  }
+  LogEvent("ROUTE: " + verdict.kind->id + " -- " + routeNote);
+}
+
+void TileDesignerWindow::DrawObjectPreview() {
+  // Read-only by design, for this phase. An object is a component set, a palette and an
+  // art block, and an editor for all four is a larger surface than phase 5 needs to
+  // claim; what matters here is that the accepted definition is *visible*, so a model
+  // that produced something plausible but wrong is caught by eye.
+  if (!editedObject.is_object()) {
+    ImGui::TextWrapped(
+        "The object from the latest reply appears here. An object is a set of "
+        "capabilities, a glyph and an ASCII art block -- it has no art from the model "
+        "in this step.");
+    return;
+  }
+
+  ImGui::Text("%s", editedObject.value("name", std::string("(unnamed)")).c_str());
+  ImGui::SameLine();
+  ImGui::TextDisabled("(key %s)", editedObjectKey.c_str());
+  if (editedObject.contains("description")) {
+    ImGui::TextWrapped("%s",
+                       editedObject.value("description", std::string()).c_str());
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled("Capabilities");
+
+  // The components, with the parameter each one was given, read back out of the
+  // definition. This is the object's real design content: a preview that showed only its
+  // glyph would hide everything that makes it an object rather than a tile.
+  const ObjectFactory *objects = Objects();
+  if (editedObject.contains("components") && editedObject["components"].is_array()) {
+    for (const auto &component : editedObject["components"]) {
+      if (!component.is_string()) continue;
+      const std::string name = component.get<std::string>();
+      ImGui::BulletText("%s", name.c_str());
+
+      // The parameter names come from the factory, so the preview lists exactly what the
+      // setter will read rather than a hand-written copy that can fall behind.
+      if (objects != nullptr) {
+        for (const ObjectFactory::ComponentInfo &info : objects->ComponentVocabulary()) {
+          if (info.name != name) continue;
+          for (const std::string &parameter : info.parameters) {
+            const size_t dot = parameter.find('.');
+            const std::string top = dot == std::string::npos
+                                        ? parameter
+                                        : parameter.substr(0, dot);
+            if (editedObject.contains(top)) {
+              ImGui::TextDisabled("    %s: %s", top.c_str(),
+                                  editedObject[top].dump().c_str());
+            }
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled("Appearance");
+
+  // The glyph fallback, tinted the way the world draws it.
+  if (editedObject.contains("character")) {
+    const std::string glyph = editedObject.value("character", std::string("?"));
+    const auto colourFor = [&](const char *key, Color fallback) {
+      if (!editedObject.contains(key) || !editedObject[key].is_array() ||
+          editedObject[key].size() < 3) {
+        return fallback;
+      }
+      return Color{static_cast<unsigned char>(editedObject[key][0].get<int>()),
+                   static_cast<unsigned char>(editedObject[key][1].get<int>()),
+                   static_cast<unsigned char>(editedObject[key][2].get<int>()),
+                   static_cast<unsigned char>(
+                       editedObject[key].size() > 3 ? editedObject[key][3].get<int>()
+                                                    : 255)};
+    };
+    const Color foreground =
+        colourFor("characterColor", Color{255, 255, 255, 255});
+    const Color background = colourFor("backgroundColor", Color{0, 0, 0, 0});
+    ImGui::TextDisabled("glyph");
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(foreground.r / 255.0f, foreground.g / 255.0f,
+                              foreground.b / 255.0f, 1.0f),
+                       "'%s'", glyph.empty() ? "?" : glyph.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("on");
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(background.r / 255.0f, background.g / 255.0f,
+                              background.b / 255.0f, 1.0f),
+                       "  ");
+  }
+
+  // The art block, drawn in its own palette colours -- the same reading the map editor's
+  // palette gives it, so the preview cannot promise a look the world would not deliver.
+  if (editedObject.contains("art") && editedObject["art"].is_array()) {
+    ImGui::TextDisabled("art");
+    const nlohmann::json &palette =
+        editedObject.contains("palette") && editedObject["palette"].is_object()
+            ? editedObject["palette"]
+            : nlohmann::json::object();
+    for (const auto &line : editedObject["art"]) {
+      if (!line.is_string()) continue;
+      const std::string text = line.get<std::string>();
+      // Per codepoint, because a palette key is one character and the art may use
+      // multi-byte block characters.
+      for (size_t i = 0; i < text.size();) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        const size_t length = (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+        const std::string glyph = text.substr(i, length);
+        i += length;
+        if (glyph == " ") {
+          ImGui::SameLine();
+          ImGui::TextDisabled(" ");
+          continue;
+        }
+        Color colour{255, 255, 255, 255};
+        if (palette.contains(glyph) && palette[glyph].is_array() &&
+            palette[glyph].size() >= 3) {
+          colour = Color{static_cast<unsigned char>(palette[glyph][0].get<int>()),
+                         static_cast<unsigned char>(palette[glyph][1].get<int>()),
+                         static_cast<unsigned char>(palette[glyph][2].get<int>()), 255};
+        }
+        ImGui::SameLine();
+        ImGui::TextColored(
+            ImVec4(colour.r / 255.0f, colour.g / 255.0f, colour.b / 255.0f, 1.0f),
+            "%s", glyph.c_str());
+      }
+      ImGui::NewLine();
+    }
+  }
+
+  if (!editedObjectOverlayPath.empty()) {
+    ImGui::TextDisabled("written to %s", editedObjectOverlayPath.c_str());
+  } else {
+    ImGui::TextDisabled("not written to disk -- it exists for this session only");
+  }
 }
 
 void TileDesignerWindow::DrawPreviewPane() {
@@ -1575,11 +2215,111 @@ TileDesignerWindow::PixelViewLookup TileDesignerWindow::InspectPixelViewForTest(
 void TileDesignerWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(780, 560), ImGuiCond_FirstUseEver);
-  ImGui::Begin("Tile Designer", &isOpen, ImGuiWindowFlags_None);
+  // Renamed user-facing only: the class, the files and the settings keys keep their
+  // names (see docs/sprite-designer-design.md, decision 6), so nothing that referenced
+  // "Tile Designer" breaks -- only the label a person reads changes, because it now
+  // designs two kinds of thing.
+  ImGui::Begin("Sprite Designer", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->tileDesignerWindowEntity.remove<ActiveWindow>();
     ImGui::End();
     return;
+  }
+
+  // What is being designed, and who decided. The dropdown is the correction path for the
+  // router: a wrong classification costs one decision call, and switching it here before
+  // sending means the prompt is built for the right kind from the start.
+  {
+    const SpriteKinds::Descriptor &current = SpriteKinds::For(mode);
+    ImGui::TextDisabled("Designing:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120.0f);
+    if (ImGui::BeginCombo("##sprite_kind", current.label.c_str())) {
+      for (const SpriteKinds::Descriptor &candidate : SpriteKinds::All()) {
+        const bool selected = candidate.kind == mode;
+        if (ImGui::Selectable(candidate.label.c_str(), selected)) {
+          if (candidate.kind != mode) {
+            mode = candidate.kind;
+            RefreshRewriteBrief();
+            if (game != nullptr) {
+              systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+            }
+            // A mode change invalidates the prompt, not the transcript: the
+            // conversation so far stays readable, and the next request is built from
+            // the new kind's document.
+            routeNote.clear();
+            LogEvent(std::string("MODE: switched to ") + candidate.id +
+                     " by hand; the next request uses the " + candidate.id +
+                     " prompt");
+          }
+        }
+        if (selected) ImGui::SetItemDefaultFocus();
+      }
+      ImGui::EndCombo();
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Which kind of sprite the next request is built for.\n"
+          "The classifier guesses this from your text when you press Route;\n"
+          "this dropdown overrides it, and the choice is what the prompt is built "
+          "from.");
+    }
+
+    // Single or set. The router proposes it, but a person can ask for one without a
+    // classifier, and can correct the router -- so it is a control, not a hidden decision.
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Set", &requestSet)) {
+      // The prompt is per shape, so a shape change rebuilds it, exactly as a kind change
+      // does. The transcript is left alone: what was already designed is still true.
+      if (game != nullptr) {
+        systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+      }
+      LogEvent(std::string("SHAPE: ") + (requestSet ? "set" : "single") +
+               " by hand; the next request uses the " +
+               (requestSet ? "set" : "single") + " prompt");
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Ask for a set of sprites that belong together, instead of one.\n"
+          "The designer answers with a \"sprites\" array; every entry is validated on its "
+          "own, so one bad entry does not discard the rest.\nArt for the set is requested "
+          "one batch at a time, at most art.generation.maxCellsPerRequest sprites per "
+          "image request.");
+    }
+    if (requestSet && requestSetSize > 0) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(~%d)", requestSetSize);
+    }
+
+    // The router. Disabled with a reason rather than hidden: a missing classifier is a
+    // configuration state, and a control that vanishes explains nothing.
+    const bool canRoute = game != nullptr && game->systemOneClassifier != nullptr &&
+                          !routeInFlight;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!canRoute);
+    if (ImGui::Button("Route from text")) {
+      RequestRoute(inputBuffer);
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          game != nullptr && game->systemOneClassifier != nullptr
+              ? "Ask a decision model which kind, shape and size your request is, then "
+                "switch the dropdown to match.\nIt reads the text currently in the box. "
+                "Costs a fraction of a cent -- no image is generated."
+              : "No System 1 classifier is configured (system1.model.apiKey or "
+                "model.apiKey), so the request cannot be read.\nPick the kind with the "
+                "dropdown instead.");
+    }
+    if (routeInFlight) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(asking...)");
+    }
+    if (!routeNote.empty()) {
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+      ImGui::TextWrapped("%s", routeNote.c_str());
+      ImGui::PopStyleColor();
+    }
   }
 
   ImGui::TextDisabled("Backend: %s",
@@ -1679,8 +2419,29 @@ void TileDesignerWindow::Draw() {
   const float paneWidth = std::clamp(available * 0.42f, 220.0f,
                                      std::max(220.0f, available - 260.0f));
 
+  // The router's answer, applied on the main thread on the frame it arrives. Doing it in
+  // the callback would mean switching the mode and rebuilding a prompt from a worker
+  // thread while the frame is mid-draw.
+  {
+    std::optional<SpriteRouter::Verdict> pending;
+    {
+      std::lock_guard<std::mutex> lock(routeMutex);
+      if (routeVerdict.has_value()) {
+        pending = routeVerdict;
+        routeVerdict.reset();
+      }
+    }
+    if (pending.has_value()) {
+      ApplyRouteVerdict(*pending);
+    }
+  }
+
   ImGui::BeginChild("tile_designer_preview", ImVec2(paneWidth, -70), true);
-  DrawPreviewPane();
+  if (mode == SpriteKinds::Kind::Object) {
+    DrawObjectPreview();
+  } else {
+    DrawPreviewPane();
+  }
   ImGui::EndChild();
 
   ImGui::SameLine();
@@ -1693,11 +2454,21 @@ void TileDesignerWindow::Draw() {
   }
 
   if (snapshot.empty()) {
-    ImGui::TextWrapped(
-        "Ask for a tile -- \"a stone hearth\", \"mossy flagstones\", \"a puddle\". "
-        "The designer replies with one tile definition and its own notes; an "
-        "accepted tile is written to the generated overlay and is immediately "
-        "paintable from a blueprint.");
+    if (mode == SpriteKinds::Kind::Object) {
+      ImGui::TextWrapped(
+          "Ask for an object -- \"a wooden crate\", \"a brass candelabra\", \"a "
+          "young apple tree\". The designer replies with one object definition and its "
+          "own notes; an accepted object is written to the generated overlay and is "
+          "available to blueprints and spawns on the next load.\n\nPress \"Route from "
+          "text\" to have a classifier read your request before the designer does.");
+    } else {
+      ImGui::TextWrapped(
+          "Ask for a tile -- \"a stone hearth\", \"mossy flagstones\", \"a puddle\". "
+          "The designer replies with one tile definition and its own notes; an "
+          "accepted tile is written to the generated overlay and is immediately "
+          "paintable from a blueprint.\n\nPress \"Route from text\" to have a "
+          "classifier read your request before the designer does.");
+    }
   }
 
   bool needsInspection = false;
@@ -1732,7 +2503,35 @@ void TileDesignerWindow::Draw() {
     }
 
     if (ex.inspected) {
-      if (ex.ok) {
+      // A set is shown entry by entry: the interesting fact about a six-entry reply where one
+      // failed is *which* one, and a single "Added" line would hide it.
+      if (ex.wasSet && !ex.entryVerdicts.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+        ImGui::TextWrapped("Set '%s' -- %zu of %zu accepted",
+                           ex.setName.empty() ? "(unnamed)" : ex.setName.c_str(),
+                           ex.acceptedNames.size(), ex.entryVerdicts.size());
+        ImGui::PopStyleColor();
+        for (size_t entry = 0; entry < ex.entryVerdicts.size(); ++entry) {
+          const bool accepted = ex.entryVerdicts[entry].first;
+          ImGui::PushStyleColor(ImGuiCol_Text,
+                                accepted ? ImVec4(0.55f, 0.85f, 0.55f, 1.0f)
+                                         : ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
+          ImGui::TextWrapped("  [%zu] %s %s", entry,
+                             accepted ? "accepted" : "refused",
+                             ex.entryVerdicts[entry].second.c_str());
+          ImGui::PopStyleColor();
+        }
+        if (!ex.artNote.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+          ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
+          ImGui::PopStyleColor();
+        }
+        for (const std::string &warning : ex.warnings) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
+          ImGui::TextWrapped("Note: %s", warning.c_str());
+          ImGui::PopStyleColor();
+        }
+      } else if (ex.ok) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
         ImGui::TextWrapped("Added '%s'%s", ex.tileName.c_str(),
                            ex.savedPath.empty()

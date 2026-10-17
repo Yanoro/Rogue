@@ -2,7 +2,7 @@
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
 
   "map": {
-    "file": "./maps/Map_Farm.json",
+    "file": "./maps/Map.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
@@ -22,6 +22,33 @@
 
   "ai": {
     "npcPromptFile": ""
+  },
+
+  "vision": {
+    "enabled": true,
+    "model": "qwen2.5vl",
+    "endpoint": "http://localhost:11434/api/generate",
+    "keepAlive": "30m"
+  },
+
+  "designer": {
+    "maxTokens": 3000,
+    "tts": {
+      "enabled": true,
+      "binary": "piper",
+      "voice": "models/tts/en_GB-alba-medium.onnx",
+      "volume": 1.0,
+      "content": "notes"
+    }
+  },
+
+  "system1": {
+    "useMainModel": true,
+    "disableReasoning": true,
+    "maxRecords": 500,
+    "model": {
+      "model": "~typesafe/jev-latest"
+    }
   },
 
   "window": {

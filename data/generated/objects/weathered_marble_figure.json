@@ -1,0 +1,41 @@
+{
+  "art": [
+    " ███ ",
+    "█   █",
+    "█████",
+    "█ █ █",
+    " █ █ "
+  ],
+  "backgroundColor": [
+    80,
+    70,
+    60,
+    255
+  ],
+  "character": "M",
+  "characterColor": [
+    225,
+    220,
+    210,
+    255
+  ],
+  "components": [
+    "Obstacle"
+  ],
+  "description": "A pale marble statue of a man with arms spread wide, smooth but weathered, with fine cracks and grey settling in the folds of his tunic.",
+  "name": "weathered marble figure",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "█": [
+      225,
+      220,
+      210,
+      255
+    ]
+  }
+}

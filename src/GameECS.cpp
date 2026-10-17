@@ -228,6 +228,11 @@ flecs::entity Game::createNPC(const NPCData &data) {
           })
           .set<WindowOnClick>({WindowType::EntityInfoWindowType})
           .set<Velocity>({0, 0})
+          // Authored here rather than attached lazily by the facing system, for
+          // the same reason Velocity is: a character without it would be a
+          // character the system silently skips, and a component that appears a
+          // frame late is harder to explain than one set at birth.
+          .set<Facing>({})
           .set<Acceleration>({0, 0})
           .set<Friction>({DEFAULT_ENTITY_FRICTION})
           .set<WindowOnClick>({WindowType::NPCContextWindowType})
@@ -392,16 +397,14 @@ void Game::ECSInitRenderSystems() {
 
 void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                             const ScreenPosition &screenPos) {
-  DrawRectangleV(
-      {screenPos.x, screenPos.y},
-      {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
-      ascii.backgroundColor);
-
   // A raster sprite wins over the ASCII look when the entity has one.
   // Sprite is only ever attached once its image loaded (SpritePaths.hpp),
   // and the lookup is a cache hit, so a null here means the texture was
   // evicted rather than that the path was bad -- and falling through to the
   // art below is the right answer for that, not a blank tile.
+  //
+  // Resolved *before* the plate because whether a sprite draws is what decides
+  // whether the plate is drawn at all -- see the comment on it below.
   const Sprite *sprite = e.get<Sprite>();
   Rectangle spriteRect = {0.0f, 0.0f, 0.0f, 0.0f};
   if (sprite != nullptr) {
@@ -413,10 +416,28 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
   }
   const bool drewSprite = spriteRect.width > 0.0f;
 
+  // The plate is the glyph/art backdrop, and it is drawn only when nothing else
+  // covers the cell. When it was drawn unconditionally -- before the sprite --
+  // every transparent pixel of a sprite revealed this plate instead of the map
+  // tile underneath, so a generated object with a keyed-out background still
+  // arrived in the world as a solid rectangle of its background colour. The
+  // condition has to be "a sprite actually drew", not "the entity has a Sprite
+  // component": a Sprite whose texture was evicted falls through to the art
+  // below, which needs the plate.
+  if (!drewSprite) {
+    DrawRectangleV(
+        {screenPos.x, screenPos.y},
+        {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
+        ascii.backgroundColor);
+  }
+
   // Multi-line art when the entity has it, the single glyph otherwise.
   // Both paths live in AsciiArtDraw.hpp so the world, the storage window
   // and the editor palettes lay an art block out identically. Art cells are
   // drawn from the art font ladder, not from the 32px gameFont.
+  //
+  // Same condition as the plate, and for the same reason: these two are the
+  // fallback look, and a sprite already drew the whole cell.
   const AsciiArt *art = e.get<AsciiArt>();
   if (!drewSprite) {
     DrawAsciiEntityRaylib(artFonts, gameFont, ascii, art, screenPos.x,
@@ -1064,7 +1085,51 @@ void Game::ECSInitActionSystems() {
         }
       });
 
+  // Facing, derived and never authored (docs/spatial-memory-design.md 4.1).
+  //
+  // Registered after the steer system in the same function so it reads the
+  // velocity that was just written rather than last frame's. It has no
+  // CharacterTag term on purpose: what makes an entity faceable is having the
+  // component, and that is exactly what stage 1 will sample from -- so this stays
+  // correct if a future non-character ever needs a direction.
+  ecs.system<const Velocity, const ScreenPosition, const Hitbox, Facing>()
+      .each([this](flecs::entity entity, const Velocity &vel,
+                   const ScreenPosition &screenPos, const Hitbox &hitbox,
+                   Facing &facing) {
+        // Moving: face the way the body is going. The steer system decelerates
+        // through small non-zero velocities, hence a threshold rather than a
+        // zero test -- otherwise a stopping character's facing spins on residual
+        // values.
+        if (vel.Length() > DEFAULT_FACING_MIN_SPEED) {
+          facing = Facing(vel.Normalize());
+          return;
+        }
 
+        // Standing still: the player aims, everyone else keeps whatever
+        // direction it last had. Aiming at the cursor is what makes the cone
+        // testable without walking, and it is the only player-specific rule in
+        // the system.
+        if (entity != playerEntity) {
+          return;
+        }
+
+        // Not while a window owns the mouse: dragging a debug window would
+        // otherwise swing the player's facing around the screen.
+        if (ImGui::GetIO().WantCaptureMouse) {
+          return;
+        }
+
+        const raylib::Vector2 center =
+            screenPos + raylib::Vector2(hitbox.width, hitbox.height) / 2.0f;
+        const raylib::Vector2 toCursor =
+            raylib::Vector2(GetScreenToWorld2D(GetMousePosition(), camera)) -
+            center;
+        // A cursor exactly on the character has no direction to offer, so the
+        // last one stands rather than being replaced by a zero vector.
+        if (toCursor.Length() > 0.0f) {
+          facing = Facing(toCursor.Normalize());
+        }
+      });
 
 }
 
@@ -3010,12 +3075,23 @@ void Game::ECSInit() {
     GameSettings::ModelSection designerModel =
         settings.designer.useMainModel ? modelSettings : settings.designer.model;
     designerAI = BuildAIBackend(designerModel, debugLog.get());
+    // The designer's own output budget, applied after the backend was built so it
+    // overrides the max_tokens the model block just set. 0 means inherit, which
+    // leaves both the agent shared case and a bespoke designer model exactly as
+    // configured. See DesignerSection::maxTokens for why the two budgets differ.
+    if (designerAI && settings.designer.maxTokens > 0) {
+      designerAI->setMaxTokens(settings.designer.maxTokens);
+    }
     if (debugLog && designerAI) {
       debugLog->LogInfo(
           "Designer backend: " + designerAI->getAIName() + " / " +
           designerAI->getModelName() +
           (settings.designer.useMainModel ? " (shares the NPC backend settings)"
-                                          : " at " + designerModel.endpoint));
+                                          : " at " + designerModel.endpoint) +
+          (settings.designer.maxTokens > 0
+               ? ", output budget " +
+                     std::to_string(settings.designer.maxTokens) + " tokens"
+               : ""));
     }
 
     // The Improve button's backend. Built beside the designer's because it is the same
@@ -3173,6 +3249,7 @@ void Game::ECSInit() {
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
   taskBoardWindowEntity = ecs.entity("Task Board Window");
   systemOneWindowEntity = ecs.entity("System 1 Overview Window");
+  visionDebugWindowEntity = ecs.entity("Vision Debug Window");
   visionChatWindowEntity = ecs.entity("Vision Chat Window");
   designerWindowEntity = ecs.entity("Designer Window");
   tileDesignerWindowEntity = ecs.entity("Tile Designer Window");
@@ -3277,6 +3354,10 @@ void Game::ECSInit() {
     // live on Game::systemOneRecorder, so nothing is lost by doing that.
     systemOneWindowEntity.set<ActiveWindow>(
         {std::make_shared<SystemOneWindow>(this, systemOneRecorder.get())});
+  }
+  if (debugWindowState->GetShowVisionDebugWindow()) {
+    visionDebugWindowEntity.set<ActiveWindow>(
+        {std::make_shared<VisionDebugWindow>(this)});
   }
   if (debugWindowState->GetShowEntityInfoWindow()) {
     playerEntity.set<ActiveWindow>(

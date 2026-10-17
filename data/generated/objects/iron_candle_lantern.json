@@ -1,0 +1,46 @@
+{
+  "art": [
+    " | ",
+    "-O-",
+    " | "
+  ],
+  "backgroundColor": [
+    30,
+    30,
+    35,
+    255
+  ],
+  "character": "l",
+  "characterColor": [
+    255,
+    200,
+    50,
+    255
+  ],
+  "components": [
+    "Portable",
+    "Interactable"
+  ],
+  "description": "A simple iron candle lantern with a sooty glass pane, hanging from a hook on the wall.",
+  "name": "iron candle lantern",
+  "palette": {
+    "-": [
+      120,
+      120,
+      120,
+      255
+    ],
+    "O": [
+      200,
+      140,
+      60,
+      255
+    ],
+    "|": [
+      120,
+      120,
+      120,
+      255
+    ]
+  }
+}

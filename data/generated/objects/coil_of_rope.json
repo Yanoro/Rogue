@@ -1,0 +1,45 @@
+{
+  "art": [
+    " # ",
+    "#.#",
+    " # "
+  ],
+  "backgroundColor": [
+    80,
+    65,
+    45,
+    255
+  ],
+  "character": "r",
+  "characterColor": [
+    180,
+    150,
+    100,
+    255
+  ],
+  "components": [
+    "Portable"
+  ],
+  "description": "A neatly coiled length of hemp rope, seen from above.",
+  "name": "coil of rope",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "#": [
+      180,
+      150,
+      100,
+      255
+    ],
+    ".": [
+      140,
+      110,
+      70,
+      255
+    ]
+  }
+}

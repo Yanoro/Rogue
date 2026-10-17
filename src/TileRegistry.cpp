@@ -103,6 +103,16 @@ bool IsSafeSpritePath(const std::string& sprite) {
   return true;
 }
 
+// When a definition entered the catalog. A real file's last-write time is what
+// the Map Editor's date sort means by "creation date"; a sourcePath that does
+// not resolve -- a designer's in-memory add, whose file is written a moment
+// later -- falls back to now, which is the moment it was created.
+std::filesystem::file_time_type SourceTimeOrNow(const std::string& sourcePath) {
+  std::error_code ec;
+  const auto time = std::filesystem::last_write_time(sourcePath, ec);
+  return ec ? std::filesystem::file_time_type::clock::now() : time;
+}
+
 // Reads one definition object from JSON, applying the same schema and the same
 // validation whether it came from a file in the catalog directory or from a model
 // at runtime.
@@ -234,6 +244,7 @@ bool ParseTileDef(const nlohmann::json& j, const std::string& sourcePath,
   }
 
   out.sourcePath = sourcePath;
+  out.sourceTime = SourceTimeOrNow(sourcePath);
   return true;
 }
 

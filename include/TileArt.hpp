@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SpriteKinds.hpp"
+
 #include <functional>
 #include <string>
 #include <vector>
@@ -34,9 +36,13 @@ namespace TileArt {
 // Where the generated sprite for a tile will be written, and whether the art pack
 // already supplies one.
 struct Target {
-  std::string tileName;
-  // The convention id: `tile_<slug>`, from TileSpriteId. This is the name, not a
-  // path, and it is the one place the prefix rule is applied.
+  // The definition's own name, for the report. Renamed from `tileName` when objects
+  // arrived: a job for an object is not a tile, and the field is read by
+  // `--tile-art` to say what it looked for.
+  std::string name;
+  // The convention id: `tile_<slug>` for a tile, the bare key for an object, via
+  // `SpriteKinds::ConventionIdFor`. This is the name, not a path, and it is the one
+  // place the per-kind naming rule is applied.
   std::string conventionId;
   // The path in the generated layer. Empty when no generated layer is configured,
   // which is a supported state and not an error: with no art pack there is no
@@ -55,10 +61,22 @@ struct Target {
   bool packWins = false;
 };
 
-// Resolves the naming and the roots for `tileName` without touching the
-// filesystem. This is the function both the swap and `--tile-art` ask, so the
-// headless report cannot disagree with what the game would do.
-Target PlanFor(const std::string &tileName);
+// What to plan art for. A name plus the kind, because the two kinds do not share a
+// naming convention and a caller that passed only the name would have to guess which.
+struct Request {
+  SpriteKinds::Kind kind = SpriteKinds::Kind::Tile;
+  std::string name;
+};
+
+// Resolves the naming and the roots for a request without touching the filesystem. This is
+// the function the swap, the queue's report and `--tile-art` all ask, so none of them can
+// disagree about what the game would do.
+Target PlanFor(const Request &request);
+
+// Convenience for the common case of a tile by name. Kept so the many existing call sites
+// do not have to spell out a Request to say "a tile" -- and named so it is obvious which
+// kind it assumes.
+Target PlanForTile(const std::string &tileName);
 
 // Moves/copies `sourcePng` into the generated layer at the tile's convention name.
 //

@@ -27,7 +27,13 @@
       "name": "Pietro",
       "sprite": "data/sprites/farmer.png",
       "position": [20, 1],
-      "background": "Your name is Pietro, you are an ambitios young farmer living in a remote village. Harvest your wheat crops, store it in the chest inside the farmer's hourse and plant more wheat to increase your farm."
+      "background": "Your name is Pietro, you are an ambitios young farmer living in a remote village. Harvest your wheat crops, store it in the chest inside the farmer's hourse and plant more wheat to increase your farm.",
+      "goals": {
+        "terminal": [
+          "be an important member of the community",
+          "keep the family farm in good standing"
+        ]
+      }
     }
   ],
   "positions": [

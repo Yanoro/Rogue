@@ -57,4 +57,11 @@ private:
   // show a record the list no longer lists.
   int selected = 0;
   bool followNewest = true;
+
+  // The profile the picker has highlighted but not committed. Separate from the active
+  // id so choosing from the list does not switch by itself: a switch cancels whatever
+  // is in flight, and that should be one deliberate click.
+  std::string pendingProfile;
+  // Why the last switch was refused, shown until the next attempt. Empty on success.
+  std::string lastSwitchError;
 };

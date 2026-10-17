@@ -17,6 +17,9 @@
 #include "AI.h"
 #include "TileArtQueue.hpp"
 #include "TileDesigner.hpp"
+#include "ObjectDesigner.hpp"
+#include "SpriteKinds.hpp"
+#include "SpriteRouter.hpp"
 #include "TileRegistry.h"
 #include "PromptRewriter.hpp"
 #include "RewriteInputBox.hpp"
@@ -81,7 +84,10 @@ public:
   // `requestArt` turns on the automatic art request for the run, so the accept-then-
   // request path can be exercised without a backend. Left false by the log test,
   // which is about the transcript and should not depend on generation being set up.
-  size_t RunSelfTestConversation(bool requestArt = false);
+  size_t RunSelfTestConversation(
+      bool requestArt = false,
+      SpriteKinds::Kind kind = SpriteKinds::Kind::Tile,
+      bool setTest = false);
 
   // What one cache lookup resolved to: the GL texture it would draw and the file
   // identity the cache is keyed on. Returned together because the texture id alone
@@ -151,6 +157,17 @@ private:
     // generation is off, misconfigured, refused, or quietly working. Every value
     // here says which, and the reasons are actionable.
     std::string artNote;
+    // For a set: the group's name, the entries that were accepted, and one display line per
+    // entry so a partial set reads as "five of six, and here is the sixth". Kept on the
+    // exchange rather than recomputed because the transcript is the record of the attempt.
+    std::string setName;
+    std::vector<std::string> acceptedNames;
+    // One pair per entry: accepted, and the line to show. The flag is kept rather than
+    // inferred from the text -- comparing a display string's prefix to decide a verdict is
+    // the kind of coupling that breaks the first time the wording changes.
+    std::vector<std::pair<bool, std::string>> entryVerdicts;
+    // The shape this attempt asked for.
+    bool wasSet = false;
     // The definition this attempt produced, for the preview pane. Null when the
     // reply never got as far as a definition.
     const TileDef *definition = nullptr;
@@ -174,6 +191,80 @@ private:
   // point -- the editor writes through it and then tells the registry.
   TileDef *edited = nullptr;
   bool editedIsRuntime = false;
+
+  // ---- which kind is being designed ------------------------------------------------
+  //
+  // The mode the next request is built for, and the mode the last accepted design was
+  // for. `mode` is what the user or the router chose; `designMode` is what a reply was
+  // validated as, which is the same thing unless the user changes the dropdown mid-flight.
+  //
+  // `designMode` exists because a reply is inspected on a later frame than it was
+  // requested: flipping the dropdown while a request is in flight must not make the
+  // reply be validated against the wrong kind's grammar. The verdict says which kind it
+  // was asked for, and that is what is honoured.
+  SpriteKinds::Kind mode = SpriteKinds::Kind::Tile;
+  SpriteKinds::Kind designMode = SpriteKinds::Kind::Tile;
+
+  // Whether the next request asks for a set, and how big. Two pieces of state because they
+  // come from different places: the router proposes both (`shape` and `size`), and the
+  // checkbox lets a person override the shape without a classifier.
+  //
+  // Latched into the Exchange at send time, like `designMode`, because a reply is inspected
+  // on a later frame and must be judged by the shape it was asked for.
+  bool requestSet = false;
+  int requestSetSize = 0;
+
+  // The accepted object, as the definition rather than a pointer into the factory.
+  //
+  // A copy, unlike `edited`, and the difference is not an oversight: TileRegistry stores
+  // its definitions behind unique_ptrs so a pointer stays valid for the run, while
+  // ObjectFactory owns its templates by value in a map that the next runtime add can
+  // rehash. Handing out a pointer into that would be a use-after-free waiting for the
+  // second object of a session.
+  nlohmann::json editedObject;
+  std::string editedObjectKey;
+  std::string editedObjectOverlayPath;
+
+  // The router's verdict, once it arrives. Filled on the classifier's worker thread and
+  // consumed on the main thread, so it is guarded and latched: the button starts a
+  // request, `Draw` picks the answer up on a later frame.
+  std::mutex routeMutex;
+  std::optional<SpriteRouter::Verdict> routeVerdict;
+  bool routeInFlight = false;
+  std::string routeNote;
+
+  // The kind's descriptor for the current mode, or null when there is no game.
+  const SpriteKinds::Descriptor *ModeDescriptor() const;
+
+  // The mode name for prose and the log: "tile" or "object".
+  const char *ModeName() const;
+
+  // The overlay an accepted design of the current mode is written to, resolved from the
+  // settings. Empty means "session only", which the pane reports.
+  std::string ModeOverlayDirectory() const;
+
+  // The same for an explicitly named kind. Inspection uses this rather than
+  // ModeOverlayDirectory, because a reply is written to the overlay of the kind it was
+  // *asked* for, which the dropdown may have moved away from while the request was in
+  // flight. Writing an object into the tile overlay would be a silent corruption of the
+  // wrong directory.
+  std::string ModeOverlayDirectoryFor(SpriteKinds::Kind kind) const;
+
+  // Asks the classifier which kind the typed request is for. No-op when there is no
+  // classifier or one is already in flight. The answer is picked up by Draw.
+  void RequestRoute(const std::string &text);
+  void ApplyRouteVerdict(const SpriteRouter::Verdict &verdict);
+
+  // Applies the rewritten brief for the current mode to the Improve button, so an
+  // improved request is enriched inside the vocabulary it will actually be built with.
+  void RefreshRewriteBrief();
+
+  // The object half of the preview: read-only, because an object has more shape than a
+  // tile and an editor for it is a larger surface than this phase needs to claim.
+  void DrawObjectPreview();
+
+  // Convenience: the object factory, or null when there is no game.
+  class ObjectFactory *Objects() const;
   // True once the editor has changed something that is not on disk yet, so the
   // pane can say so instead of implying every edit was saved.
   bool editedIsDirty = false;

@@ -1,6 +1,7 @@
 #pragma once
 #include <flecs.h>
 #include <nlohmann/json.hpp>
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -57,6 +58,16 @@ public:
   // editor's permanent content deletion needs in order to name the file behind a
   // template. BlueprintRegistry keeps its directory for the same reason.
   const std::string& GetDirectory() const { return directory; }
+
+  // When this template entered the factory, for the Map Editor's date sort:
+  // the source file's last-write time for a template read from disk, or the
+  // moment it was added for one a designer created in memory before its file
+  // was written. Zero when the key is unknown and sorts last.
+  //
+  // Recorded here rather than derived from a path at display time because a
+  // designer-created key has no path until ObjectDesigner writes it, and a
+  // runtime template does not necessarily live in GetDirectory().
+  std::filesystem::file_time_type GetTemplateTime(const std::string& key) const;
 
   // Drops one template from the factory. Returns false when the key is unknown.
   //
@@ -217,6 +228,8 @@ private:
   std::unordered_map<std::string, std::string> runtimeKeys;
 
   std::unordered_map<std::string, nlohmann::json> templates;
+  // Key -> when that template entered the factory. See GetTemplateTime.
+  std::unordered_map<std::string, std::filesystem::file_time_type> templateTimes;
   // Where the templates came from. See GetDirectory.
   std::string directory;
   DebugLog* debugLog = nullptr;

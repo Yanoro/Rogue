@@ -1,0 +1,47 @@
+{
+  "art": [
+    "####",
+    "#+#",
+    "#_#"
+  ],
+  "backgroundColor": [
+    50,
+    40,
+    30,
+    255
+  ],
+  "capacity": 10,
+  "character": "c",
+  "characterColor": [
+    101,
+    67,
+    33,
+    255
+  ],
+  "components": [
+    "Obstacle",
+    "Storage"
+  ],
+  "description": "A splintered wooden chest for storage, its iron latch rusted but functional.",
+  "name": "splintered wooden chest",
+  "palette": {
+    "#": [
+      101,
+      67,
+      33,
+      255
+    ],
+    "+": [
+      180,
+      140,
+      50,
+      255
+    ],
+    "_": [
+      80,
+      50,
+      25,
+      255
+    ]
+  }
+}

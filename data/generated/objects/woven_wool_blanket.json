@@ -1,0 +1,38 @@
+{
+  "art": [
+    "@@@@",
+    "===="
+  ],
+  "backgroundColor": [
+    70,
+    60,
+    50,
+    255
+  ],
+  "character": "b",
+  "characterColor": [
+    189,
+    170,
+    130,
+    255
+  ],
+  "components": [
+    "Portable"
+  ],
+  "description": "A thick woven wool blanket, folded neatly at the foot of the bed.",
+  "name": "woven wool blanket",
+  "palette": {
+    "=": [
+      170,
+      150,
+      110,
+      255
+    ],
+    "@": [
+      189,
+      170,
+      130,
+      255
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "art": [
+    " oo/",
+    "o..o",
+    " oo "
+  ],
+  "backgroundColor": [
+    100,
+    70,
+    50,
+    255
+  ],
+  "capacity": 4,
+  "character": "j",
+  "characterColor": [
+    200,
+    140,
+    90,
+    255
+  ],
+  "components": [
+    "Portable",
+    "Storage"
+  ],
+  "description": "A small earthenware jug for water or ale, seen from above.",
+  "name": "clay jug",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    ".": [
+      160,
+      100,
+      60,
+      255
+    ],
+    "/": [
+      140,
+      90,
+      50,
+      255
+    ],
+    "o": [
+      200,
+      140,
+      90,
+      255
+    ]
+  }
+}

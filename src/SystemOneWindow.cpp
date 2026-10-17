@@ -56,6 +56,92 @@ void SystemOneWindow::Draw() {
       return;
     }
 
+    // ---- backend picker ---------------------------------------------------
+    //
+    // Lives here rather than in its own window because the two questions belong
+    // together: "which model" and "what did it answer". Switching is the one action in
+    // this window that changes the game, so the failure path is shown in place rather
+    // than logged somewhere else -- a switch that silently did nothing would look
+    // exactly like a switch that worked.
+    if (game->systemOneProfiles.empty()) {
+      ImGui::TextDisabled("No System 1 profiles resolved from settings.");
+    } else {
+      const SystemOne::ModelProfile *active = game->ActiveSystemOneProfile();
+
+      ImGui::Text("Backend:");
+      ImGui::SameLine();
+      if (active != nullptr) {
+        ImGui::Text("%s", active->label.c_str());
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s: %s · %s)", active->id.c_str(),
+                            active->config.model.c_str(),
+                            active->config.endpoint.c_str());
+      } else {
+        ImGui::TextDisabled("(none -- nothing can be asked)");
+      }
+
+      ImGui::SetNextItemWidth(320.0f);
+      if (ImGui::BeginCombo("##profile", pendingProfile.empty() ? "choose a profile..."
+                                                               : pendingProfile.c_str())) {
+        for (const SystemOne::ModelProfile &profile : game->systemOneProfiles) {
+          const SystemOne::SystemOneProfileStatus status =
+              game->SystemOneStatusFor(profile.id);
+          const char *health = "untested";
+          switch (status.health) {
+            case SystemOne::ProfileHealth::InUse: health = "in use"; break;
+            case SystemOne::ProfileHealth::Reachable: health = "reachable"; break;
+            case SystemOne::ProfileHealth::Unreachable: health = "unreachable"; break;
+            case SystemOne::ProfileHealth::Untested: default: health = "untested"; break;
+          }
+          // The model id is in the label because two profiles can point at the same
+          // endpoint with different models, and the id alone would not show that.
+          const std::string label = profile.id + "  --  " + profile.config.model +
+                                    "  [" + health + "]";
+          if (ImGui::Selectable(label.c_str(), pendingProfile == profile.id)) {
+            pendingProfile = profile.id;
+          }
+        }
+        ImGui::EndCombo();
+      }
+
+      ImGui::SameLine();
+      const bool canSwitch = !pendingProfile.empty() &&
+                             (active == nullptr || pendingProfile != active->id);
+      ImGui::BeginDisabled(!canSwitch);
+      if (ImGui::Button("Switch")) {
+        // Refuses rather than half-applies: an empty return means the swap happened.
+        lastSwitchError = game->SwitchSystemOneProfile(pendingProfile);
+        if (lastSwitchError.empty()) pendingProfile.clear();
+      }
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "Probes the endpoint and swaps immediately. A call already in flight is\n"
+            "cancelled and shows as an error on that one record.\n"
+            "A local model's first answer may take a while even though the switch is instant.");
+      }
+
+      if (!lastSwitchError.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "Switch refused: %s",
+                           lastSwitchError.c_str());
+        ImGui::PopTextWrapPos();
+      }
+    }
+
+    // ---- events (profile switches and other non-call notes) ----------------
+    const std::vector<SystemOne::SystemOneNote> notes = recorder->RecentNotes();
+    if (!notes.empty()) {
+      ImGui::TextDisabled("Events:");
+      const std::size_t shownNotes = notes.size() < 4 ? notes.size() : 4;
+      for (std::size_t i = 0; i < shownNotes; ++i) {
+        ImGui::TextDisabled("  [%s] %s", notes[i].clockTime.c_str(),
+                            notes[i].text.c_str());
+      }
+    }
+
+    ImGui::Separator();
+
     // Taken once per frame. The call sites record from a worker thread, so this
     // is a copy rather than a reference -- see SystemOneRecorder::Snapshot.
     const std::vector<SystemOne::SystemOneRecord> all = recorder->Snapshot();

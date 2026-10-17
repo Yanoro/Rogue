@@ -1,0 +1,52 @@
+{
+  "art": [
+    "|###|",
+    "|===|",
+    "|---|"
+  ],
+  "backgroundColor": [
+    80,
+    60,
+    50,
+    255
+  ],
+  "character": "B",
+  "characterColor": [
+    245,
+    235,
+    220,
+    255
+  ],
+  "components": [
+    "Obstacle",
+    "Interactable"
+  ],
+  "description": "A simple bed with a wooden frame, a lumpy straw mattress, and plain linen sheets.",
+  "name": "wooden-framed bed",
+  "palette": {
+    "#": [
+      101,
+      67,
+      33,
+      255
+    ],
+    "-": [
+      245,
+      235,
+      220,
+      255
+    ],
+    "=": [
+      210,
+      180,
+      140,
+      255
+    ],
+    "|": [
+      101,
+      67,
+      33,
+      255
+    ]
+  }
+}

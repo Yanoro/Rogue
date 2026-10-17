@@ -1,0 +1,23 @@
+{
+  "backgroundColor": [
+    60,
+    40,
+    20,
+    255
+  ],
+  "capacity": 8,
+  "character": "C",
+  "characterColor": [
+    255,
+    215,
+    0,
+    255
+  ],
+  "components": [
+    "Obstacle",
+    "Storage",
+    "Interactable"
+  ],
+  "description": "A gleaming golden chest, possibly containing treasures.",
+  "name": "golden chest"
+}

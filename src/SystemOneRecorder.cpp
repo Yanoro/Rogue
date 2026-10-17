@@ -174,6 +174,31 @@ std::vector<SystemOneRecord> SystemOneRecorder::Snapshot() const {
   return {entries.begin(), entries.end()};
 }
 
+void SystemOneRecorder::Note(const std::string &text) {
+  std::lock_guard<std::mutex> lock(mutex);
+  SystemOneNote note;
+  note.clockTime = TimeUtils::GetClockTimeString();
+  note.text = text;
+
+  notes.push_front(note);
+  while (notes.size() > kMaxNotes) notes.pop_back();
+
+  // Written with the same lazy-open rule as the records, so a run that never calls
+  // System 1 does not leave a log behind just because a switch happened.
+  EnsureLogFile();
+  if (logFilePath.empty() || logFilePath == " ") return;
+
+  std::ofstream out(logFilePath, std::ios::app);
+  if (out.is_open()) {
+    out << "=== [" << note.clockTime << "] EVENT " << note.text << "\n";
+  }
+}
+
+std::vector<SystemOneNote> SystemOneRecorder::RecentNotes() const {
+  std::lock_guard<std::mutex> lock(mutex);
+  return {notes.begin(), notes.end()};
+}
+
 std::size_t SystemOneRecorder::Count() const {
   std::lock_guard<std::mutex> lock(mutex);
   return entries.size();

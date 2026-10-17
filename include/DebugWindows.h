@@ -201,3 +201,22 @@ public:
 private:
   Game* game;
 };
+
+// The vision debug window (docs/spatial-memory-design.md section 7).
+//
+// Stage 0 holds one control -- whether the map draws a facing marker per
+// character -- plus the counts that say whether every character actually has a
+// `Facing`. It exists this early on purpose: the marker has to be trustworthy
+// before anything is sampled from it, and "I turned it on and some characters
+// have no direction" is exactly the bug that would otherwise be blamed on the
+// cone in stage 1.
+//
+// The window owns no state. The checkbox value lives in DebugWindowState so it
+// survives the window being closed and the process being restarted.
+class VisionDebugWindow : public Window {
+public:
+  explicit VisionDebugWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+};

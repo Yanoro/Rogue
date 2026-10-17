@@ -1,0 +1,47 @@
+{
+  "art": [
+    " ooo ",
+    "o...o",
+    " ooo "
+  ],
+  "backgroundColor": [
+    80,
+    60,
+    40,
+    255
+  ],
+  "capacity": 2,
+  "character": "b",
+  "characterColor": [
+    180,
+    130,
+    70,
+    255
+  ],
+  "components": [
+    "Portable",
+    "Storage"
+  ],
+  "description": "A hand-carved bowl for food or small goods, viewed from above.",
+  "name": "wooden bowl",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    ".": [
+      140,
+      90,
+      50,
+      255
+    ],
+    "o": [
+      180,
+      130,
+      70,
+      255
+    ]
+  }
+}

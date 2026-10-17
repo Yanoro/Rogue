@@ -25,6 +25,8 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showNPCMenuWindow(false),
     showTaskBoardWindow(false),
     showSystemOneWindow(false),
+    showVisionDebugWindow(false),
+    showFacingMarkers(false),
     showVisionChatWindow(false),
     showLocations(false),
     stopAllAI(false),
@@ -42,6 +44,13 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["drawAsciiToggle"] = showDrawAsciiToggleWindow;
   state["fontSelection"] = showFontSelectionWindow;
   state["mapEditor"] = showMapEditorWindow;
+  // Stored as ids ("name", "date", "usage", "source") so a future enum reorder
+  // cannot reinterpret an existing file. The direction is explicit because the
+  // same metric means different things at each end (newest/oldest, most/least).
+  state["mapEditorTileSort"] = ContentSortMetricId(tileSortMetric);
+  state["mapEditorTileSortDescending"] = tileSortDescending;
+  state["mapEditorObjectSort"] = ContentSortMetricId(objectSortMetric);
+  state["mapEditorObjectSortDescending"] = objectSortDescending;
   state["blueprint"] = showBlueprintWindow;
   state["designer"] = showDesignerWindow;
   state["tileDesigner"] = showTileDesignerWindow;
@@ -56,6 +65,9 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["npcMenu"] = showNPCMenuWindow;
   state["taskBoard"] = showTaskBoardWindow;
   state["systemOne"] = showSystemOneWindow;
+  state["visionDebug"] = showVisionDebugWindow;
+  state["facingMarkers"] = showFacingMarkers;
+  state["systemOneProfile"] = systemOneProfile;
   state["visionChat"] = showVisionChatWindow;
   state["showLocations"] = showLocations;
   state["stopAllAI"] = stopAllAI;
@@ -95,6 +107,16 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showDrawAsciiToggleWindow = state.value("drawAsciiToggle", false);
       showFontSelectionWindow = state.value("fontSelection", false);
       showMapEditorWindow = state.value("mapEditor", false);
+      tileSortMetric = ContentSortMetricFromId(
+          state.value("mapEditorTileSort", std::string("name")),
+          ContentSortMetric::Name);
+      tileSortDescending =
+          state.value("mapEditorTileSortDescending", false);
+      objectSortMetric = ContentSortMetricFromId(
+          state.value("mapEditorObjectSort", std::string("name")),
+          ContentSortMetric::Name);
+      objectSortDescending =
+          state.value("mapEditorObjectSortDescending", false);
       showBlueprintWindow = state.value("blueprint", false);
       showDesignerWindow = state.value("designer", false);
       showTileDesignerWindow = state.value("tileDesigner", false);
@@ -115,6 +137,9 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showNPCMenuWindow = state.value("npcMenu", false);
       showTaskBoardWindow = state.value("taskBoard", false);
       showSystemOneWindow = state.value("systemOne", false);
+      showVisionDebugWindow = state.value("visionDebug", false);
+      showFacingMarkers = state.value("facingMarkers", false);
+      systemOneProfile = state.value("systemOneProfile", std::string());
       showVisionChatWindow = state.value("visionChat", false);
       showLocations = state.value("showLocations", false);
       stopAllAI = state.value("stopAllAI", false);

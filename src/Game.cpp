@@ -12,15 +12,22 @@
 #include "ObjectDesigner.hpp"
 #include "PathFinding.h"
 #include "Settings.h"
+#include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "SpriteRouter.hpp"
 #include "TileArt.hpp"
 #include "TileDesigner.hpp"
 #include "TileDesignerWindow.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
+// For rlDrawRenderBatchActive, which the draw probe needs before reading the
+// framebuffer back. raylib.h does not re-export rlgl.h; ImageEncode.cpp already
+// includes it directly for the same reason.
+#include "rlgl.h"
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -71,6 +78,62 @@ void Game::Init() {
   systemOneRecorder->SetWarningSink([this](const std::string &message) {
     if (debugLog) debugLog->LogWarning(message);
   });
+
+  // The live System 1 provider. Built here, before any window can be shown, so a window
+  // never has to cope with it appearing later. `Available()` is false without a key, which
+  // is a supported state: the sprite designer's router then reports that it cannot ask
+  // rather than offering a control that cannot work.
+  //
+  // The recorder is attached so every decision made in a real run is recorded -- the whole
+  // reason the overview window exists -- and a harness (`--sprite-route`) builds its own
+  // provider and leaves `harness` attribution on its calls.
+  {
+    // Resolved once, here, so the picker and the game share one idea of what a
+    // profile is. The flat `system1` block always contributes profile "default", so a
+    // config with no `profiles` array behaves exactly as it did before profiles
+    // existed.
+    systemOneProfiles = SystemOne::ResolveProfiles(settings);
+
+    const std::string persisted =
+        debugWindowState ? debugWindowState->GetSystemOneProfile() : std::string();
+    const std::string wanted =
+        SystemOne::ResolveActiveId(systemOneProfiles, settings, persisted,
+                                   settings.system1.cliProfile);
+
+    auto classifierFor = [](const SystemOne::ModelProfile &profile) {
+      return std::make_shared<SystemOne::JevClassifier>(profile.config);
+    };
+
+    // Startup does not probe: a probe at launch would add seconds to every run and
+    // cannot tell "not running yet" from "not running", which is a distinction only a
+    // person can act on. The picker probes on demand; startup just reports.
+    if (const SystemOne::ModelProfile *profile =
+            SystemOne::FindProfile(systemOneProfiles, wanted)) {
+      auto classifier = classifierFor(*profile);
+      if (classifier->Available()) {
+        classifier->SetRecorder(systemOneRecorder.get());
+        systemOneClassifier = classifier;
+        activeSystemOneProfile = profile->id;
+        systemOneStatus[profile->id] = {SystemOne::ProfileHealth::InUse,
+                                        "serving calls since startup"};
+        if (debugLog) {
+          debugLog->LogInfo("System 1 router: profile '" + profile->id + "' (" +
+                            classifier->ModelLabel() + ") via " +
+                            classifier->Endpoint());
+        }
+      } else {
+        activeSystemOneProfile = profile->id;
+        systemOneStatus[profile->id] = {SystemOne::ProfileHealth::Unreachable,
+                                        "no API key configured"};
+        if (debugLog) {
+          debugLog->LogInfo("System 1 router: profile '" + profile->id +
+                            "' has no API key, so nothing can be asked");
+        }
+      }
+    } else if (debugLog) {
+      debugLog->LogInfo("System 1 router: no profile resolved; nothing can be asked");
+    }
+  }
 
   // Opened here rather than where speech is set up: raylib's audio device is
   // process-wide, everything that might play anything needs it to exist first, and
@@ -662,6 +725,8 @@ void Game::Shutdown() {
         taskBoardWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowSystemOneWindow(
         systemOneWindowEntity.has<ActiveWindow>());
+    debugWindowState->SetShowVisionDebugWindow(
+        visionDebugWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState(Settings().debug.windowStateFile);
     if (debugLog) {
@@ -771,7 +836,8 @@ std::string Game::BuildTileDesignerSystemPrompt() const {
   return BuildSpriteSystemPrompt(SpriteKinds::Kind::Tile);
 }
 
-std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind) const {
+std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind,
+                                          bool set) const {
   // The writing of the prompt -- the file read, the %CONTRACT%/%GLYPHS%/%VOCAB%
   // substitution, the glyph grouping -- lives in TileDesigner so that the headless
   // `--sprite-design` mode and the window cannot disagree about what the model was
@@ -813,9 +879,9 @@ std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind) const {
     // document has no %GLYPHS% placeholder and nothing is appended for it.
   }
 
-  return TileDesigner::BuildPromptForKind(descriptor, promptFile,
-                                          gameSettings.content.spriteContractFile,
-                                          vocabulary);
+  return TileDesigner::BuildPromptForKind(
+      descriptor, promptFile, gameSettings.content.spriteContractFile, vocabulary,
+      set ? TileDesigner::PromptShape::Set : TileDesigner::PromptShape::One);
 }
 
 Game::ObjectLookup Game::LookupObject(const std::string &key) const {
@@ -1245,22 +1311,207 @@ void OnTileArtCompleted(void *context, const TileArtQueue::Job &job) {
   game->HandleTileArtGenerated(job);
 }
 
+size_t Game::RefreshObjectVisuals(const std::string &templateKey) {
+  if (templateKey.empty()) {
+    return 0;
+  }
+
+  // Collected first, then modified. Adding and removing a component while iterating would
+  // be safe here because `Sprite` is not the component being matched on, but relying on
+  // that is the kind of quiet assumption that breaks when the query grows.
+  std::vector<flecs::entity> targets;
+  ecs.each([&](flecs::entity entity, const ItemType &type) {
+    if (type.id == templateKey) {
+      targets.push_back(entity);
+    }
+  });
+  if (targets.empty()) {
+    // Not on the map, and not spawned anywhere -- the common case for an object that was
+    // just designed. Normal: the next spawn resolves the art at spawn time.
+    return 0;
+  }
+
+  // An explicit "sprite" key on the template wins over the convention, exactly as it does in
+  // ApplyTemplate. Read here rather than passed in, because the template is the authority and
+  // the job only knows the key.
+  std::string explicitSprite;
+  const auto &templates = objectFactory.GetTemplates();
+  const auto found = templates.find(templateKey);
+  if (found != templates.end() && found->second.contains("sprite") &&
+      found->second["sprite"].is_string()) {
+    explicitSprite = found->second["sprite"].get<std::string>();
+  }
+
+  // The same targeted forget the tile path does, and for the same reason: ResourceManager
+  // memoises an absent path, so without this the re-resolve is told the file does not exist
+  // -- from the cache -- forever.
+  std::string resolvedPath;
+  SpriteResolves(explicitSprite, templateKey, &resolvedPath);
+  if (!resolvedPath.empty()) {
+    resourceManager.ForgetPath(resolvedPath);
+  }
+
+  size_t updated = 0;
+  for (flecs::entity entity : targets) {
+    if (!entity.is_alive()) continue;
+    // Removing first so a failed re-resolve cannot leave the previous art attached and make
+    // the swap look like it worked.
+    entity.remove<Sprite>();
+    if (AttachSprite(entity, explicitSprite, templateKey, resourceManager,
+                     debugLog.get())) {
+      ++updated;
+    }
+  }
+
+  if (updated > 0 && debugLog) {
+    debugLog->LogInfo("Object art: refreshed " + std::to_string(updated) +
+                      " entity(ies) of '" + templateKey + "'");
+  }
+  return updated;
+}
+
+// Declared here rather than beside its definition (further down, with the other headless
+// test hooks): this function needs it, and the definition carries the long comment about why
+// it exists.
+static bool WriteTestPng(const std::string &path, bool twoColours);
+
+int Game::RunObjectArtSelfTest(const std::string &templateKey) {
+  const auto &templates = objectFactory.GetTemplates();
+  if (templates.find(templateKey) == templates.end()) {
+    std::cerr << "object art swap: no template '" << templateKey << "' is loaded\n";
+    return 1;
+  }
+
+  const std::string sprite = TileArt::PlanFor(
+                                 TileArt::Request{SpriteKinds::Kind::Object,
+                                                  templateKey})
+                                 .generatedPath;
+  if (sprite.empty()) {
+    std::cerr << "object art swap: no generated layer, so there is nowhere to put the "
+                 "sprite\n";
+    return 1;
+  }
+
+  // The sprite has to be *absent* when the entity spawns, or the spawn resolves it and there
+  // is no arrival to observe. Moved aside rather than assumed missing: a previous run of
+  // another mode leaves one behind, and the first version of this test failed exactly that
+  // way -- "the entity already had a sprite" -- which is a fact about the last run, not about
+  // the code.
+  std::error_code ec;
+  const std::filesystem::path spritePath(sprite);
+  const std::filesystem::path hidden = spritePath.string() + ".selftest-hidden";
+  std::filesystem::create_directories(spritePath.parent_path(), ec);
+  const bool existed = std::filesystem::exists(spritePath, ec);
+  if (existed) {
+    std::filesystem::remove(hidden, ec);
+    std::filesystem::rename(spritePath, hidden, ec);
+    if (ec) {
+      std::cerr << "object art swap: could not move " << sprite
+                << " aside: " << ec.message() << "\n";
+      return 1;
+    }
+    // Forget it, so the spawn's resolve is not answered from the memo.
+    resourceManager.ForgetPath(sprite);
+  }
+
+  struct Restore {
+    std::filesystem::path sprite;
+    std::filesystem::path hidden;
+    bool existed;
+    ~Restore() {
+      std::error_code cleanup;
+      if (existed) {
+        std::filesystem::remove(sprite, cleanup);
+        std::filesystem::rename(hidden, sprite, cleanup);
+      } else {
+        std::filesystem::remove(sprite, cleanup);
+      }
+    }
+  } restore{spritePath, hidden, existed};
+
+  // Spawned with no map and no position: this is about the *visual* swap, and a map would
+  // add ground work to an art question. ApplyTemplate resolves the sprite at spawn time, and
+  // the file is absent, so the entity starts on its ASCII art -- which is exactly the state
+  // the bug left it in forever.
+  const flecs::entity probe =
+      objectFactory.SpawnObject(ecs, ecs.entity(), nullptr, templateKey);
+  if (!probe.is_alive()) {
+    std::cerr << "object art swap: could not spawn '" << templateKey << "'\n";
+    return 1;
+  }
+
+  const bool spriteBefore = probe.get<Sprite>() != nullptr;
+  std::cout << "object art:  spawned '" << templateKey << "', sprite before="
+            << (spriteBefore ? "yes" : "no (on its ascii art)") << "\n";
+  if (spriteBefore) {
+    std::cout << "FAILED:     the entity already had a sprite, so the test cannot show "
+                 "one arriving\n";
+    probe.destruct();
+    return 1;
+  }
+
+  // The sprite the pipeline would have written. Created directly rather than generated:
+  // this is about the refresh, and spending money to test a cache invalidation would be a
+  // worse trade than drawing four pixels.
+  if (!WriteTestPng(sprite, /*twoColours=*/true)) {
+    std::cerr << "object art swap: could not write " << sprite << "\n";
+    probe.destruct();
+    return 1;
+  }
+
+  const size_t updated = RefreshObjectVisuals(templateKey);
+  const bool spriteAfter = probe.get<Sprite>() != nullptr;
+  std::cout << "object art:  refresh updated " << updated << " entity(ies), sprite after="
+            << (spriteAfter ? "yes" : "no") << "\n";
+  if (spriteAfter) {
+    std::cout << "object art:  sprite id " << probe.get<Sprite>()->path << "\n";
+  }
+
+  // Clean up the probe entity; the `Restore` guard puts the sprite layer back exactly as it
+  // was. Leaving a placeholder sprite behind would be a junk asset the next real run
+  // overwrites, and deleting one that was there before would lose the owner's art.
+  probe.destruct();
+
+  if (!spriteAfter) {
+    std::cout << "FAILED:     the entity kept its ascii art after the sprite landed, which "
+                 "is the reported bug\n";
+    return 1;
+  }
+  if (updated == 0) {
+    std::cout << "FAILED:     the refresh reported no entities, but the probe is one\n";
+    return 1;
+  }
+  std::cout << "object art:  ok (a spawned object picks up its sprite without a reload)\n";
+  return 0;
+}
+
 size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // The sprite is already in the generated layer -- the tool put it there, because
   // that is where the generated layer is and the tool writes PNGs. So the swap is
   // the refresh: forget the memoised absence, re-resolve, attach.
-  const size_t cells = RefreshTileVisuals(job.tileName);
+  //
+  // Which refresh depends on the kind, and getting that wrong is why object art appeared
+  // generated but never showed: a tile lives in map cells and an object is a spawned
+  // entity, so the cell-based refresh finds nothing to do for an object and reports the
+  // same "not on the map yet" a genuinely unplaced tile does. Two different questions.
+  const size_t updated = job.kind == SpriteKinds::Kind::Object
+                             ? RefreshObjectVisuals(job.conventionId)
+                             : RefreshTileVisuals(job.tileName);
 
-  // Zero is the interesting case, not a no-op: it means the tile is not on the map,
-  // which is normal for a tile that was designed and never painted, and is the
-  // difference between "the swap failed" and "there was nothing to swap yet". Said
-  // in the log because otherwise both look identical from outside.
+  // Zero is the interesting case, not a no-op: it means nothing is currently drawing this
+  // sprite, which is normal for something designed and not placed, and is the difference
+  // between "the swap failed" and "there was nothing to swap yet". Said in the log because
+  // otherwise both look identical from outside.
+  const char *unit = job.kind == SpriteKinds::Kind::Object ? " entity(ies)" : " cell(s)";
+  const char *unplaced = job.kind == SpriteKinds::Kind::Object
+                             ? " (nothing spawned from it yet)"
+                             : " (the tile is not on the map yet)";
   if (debugLog) {
-    debugLog->LogInfo("Tile art: '" + job.tileName + "' generated into " + job.path +
-                      "; " + std::to_string(cells) + " cell(s) updated" +
-                      (cells == 0 ? " (the tile is not on the map yet)" : ""));
+    debugLog->LogInfo(std::string("Tile art: '") + job.tileName + "' generated into " +
+                      job.path + "; " + std::to_string(updated) + unit + " updated" +
+                      (updated == 0 ? unplaced : ""));
   }
-  return cells;
+  return updated;
 }
 
 void Game::ECSConfigureTileArtQueue() {
@@ -1272,6 +1523,7 @@ void Game::ECSConfigureTileArtQueue() {
   queueConfig.batchDelaySeconds = settings.art.generation.batchDelaySeconds;
   queueConfig.maxRequestsPerSession =
       settings.art.generation.maxRequestsPerSession;
+  queueConfig.maxCellsPerRequest = settings.art.generation.maxCellsPerRequest;
 
   const std::string workDirectory = settings.art.generation.workDirectory.empty()
                                         ? "data/generated/work"
@@ -1306,7 +1558,38 @@ void Game::ECSConfigureTileArtQueue() {
 }
 
 bool Game::RequestTileArt(const std::string &tileName, std::string *reason) {
-  return tileArtQueue.Request(tileName, reason);
+  return tileArtQueue.Request(KindForSpriteName(tileName), tileName, reason);
+}
+
+SpriteKinds::Kind Game::KindForSpriteName(const std::string &name) const {
+  // Asked at request time, on the main thread, against the live registries -- which is the
+  // only moment the answer is knowable and cheap. The two are separate namespaces that do
+  // overlap ('anvil' is both a tile and an object), so neither is privileged: this checks
+  // the *tile* catalog first because art for a tile name is the older and more common
+  // request, and a name in both would otherwise generate only one of the two sprites.
+  //
+  // Both registries hold runtime-added definitions, so a design created a moment ago
+  // answers correctly without any extra bookkeeping.
+  if (tileRegistry.Get(name) != nullptr) return SpriteKinds::Kind::Tile;
+
+  // The factory is keyed by the template *key* (`apple_sapling`), while every caller of
+  // this function passes the definition's *display name* ("apple sapling") -- the name the
+  // designer accepted and the window shows. Comparing the one against the other found
+  // nothing and answered "tile" for every object, which is exactly the bug this function
+  // exists to prevent. So both are tried: the key first, because it costs one lookup, then
+  // a scan over display names.
+  const auto &templates = objectFactory.GetTemplates();
+  if (templates.find(name) != templates.end()) return SpriteKinds::Kind::Object;
+  for (const auto &pair : templates) {
+    if (pair.second.value("name", pair.first) == name) {
+      return SpriteKinds::Kind::Object;
+    }
+  }
+  // Neither: a name nobody has defined yet, which is the common case for a request made
+  // before the definition lands. A tile is the safer default because that is what the
+  // feature was built around, and the sprite is named accordingly -- an object that asks
+  // later gets its own, correctly named, because the queue is keyed on kind and name.
+  return SpriteKinds::Kind::Tile;
 }
 
 Game::TileArtPumpResult Game::PumpTileArtQueue(float deltaSeconds) {
@@ -1326,11 +1609,11 @@ Game::TileArtPumpResult Game::PumpTileArtQueue(float deltaSeconds) {
 
 size_t Game::RunTileDesignerLogSelfTest() {
   if (!tileDesignerWindow) {
-    std::cerr << "log test: the tile designer window was not constructed\n";
+    std::cerr << "log test: the sprite designer window was not constructed\n";
     return 0;
   }
-  const size_t inspected =
-      tileDesignerWindow->RunSelfTestConversation(tileDesignerArtSelfTest);
+  const size_t inspected = tileDesignerWindow->RunSelfTestConversation(
+      tileDesignerArtSelfTest, tileDesignerSelfTestKind, tileDesignerSelfTestSet);
 
   // The automatic art request is the one thing here whose *effect* is not in the
   // window: it lands in the queue. Reported so the two outcomes are distinguishable
@@ -1358,15 +1641,31 @@ size_t Game::RunTileDesignerLogSelfTest() {
   // the file is removed here, by the thing that asked for the test. Left behind, it
   // would add a junk tile to the world on every run of this mode.
   if (inspected > 0) {
-    const std::string overlay = Settings().content.generatedTiles;
+    const bool objects = tileDesignerSelfTestKind == SpriteKinds::Kind::Object;
+    const std::string overlay = objects ? Settings().content.generatedObjects
+                                        : Settings().content.generatedTiles;
+    // Keyed by the *key*, not the display name: the object overlay is written under the
+    // slug of the name, and a mismatch here would leave a junk object in the world on
+    // every run of this mode -- which is the bug this whole branch exists to prevent.
+    // Every file the canned conversation can have written, by its key. A set writes one per
+    // accepted entry, and leaving any of them behind would add junk to the world on every run
+    // of this mode -- which is the bug this whole branch exists to prevent.
+    const std::vector<std::string> written = {
+        objects ? "self_test_post.json" : "self_test_puddle.json",
+        "self_test_grate.json",
+        "self_test_bucket.json",
+        // The broken entry in the set fixture must NOT be written (it has no notes), so it is
+        // deliberately absent from this list: if it appears, the test would fail to clean up,
+        // which is a louder signal than silently tidying a file that should never exist.
+    };
     if (!overlay.empty()) {
       std::error_code ec;
-      const std::filesystem::path written =
-          std::filesystem::path(overlay) / "self_test_puddle.json";
-      if (std::filesystem::exists(written, ec)) {
-        std::filesystem::remove(written, ec);
-        std::cout << "log test: removed the tile it wrote ("
-                  << written.string() << ")\n";
+      for (const std::string &name : written) {
+        const std::filesystem::path path = std::filesystem::path(overlay) / name;
+        if (std::filesystem::exists(path, ec)) {
+          std::filesystem::remove(path, ec);
+          std::cout << "log test: removed " << path.string() << "\n";
+        }
       }
     }
   }
@@ -1495,22 +1794,42 @@ bool Game::PaintTileForTest(GamePosition position, const std::string &tileName,
 }
 
 int Game::RunPaintMemoSelfTest(const std::string &tileName) {
-  const std::string sprite = TileArt::PlanFor(tileName).generatedPath;
+  const std::string sprite = TileArt::PlanForTile(tileName).generatedPath;
   if (sprite.empty()) {
     std::cerr << "paint memo test: no generated sprite path for '" << tileName
               << "'\n";
     return 1;
   }
+  // The sprite has to exist for the test to have something to hide. Created when it is
+  // missing rather than refused, because this harness is about the *cache* and not about
+  // whether some earlier run happened to leave a file behind -- and a test that depends on
+  // a previous mode's leftovers fails for a reason that has nothing to do with the code
+  // under test. A run of another art mode that clears the generated layer is enough to
+  // trigger that, which is exactly what happened once.
   std::error_code ec;
   if (!std::filesystem::exists(sprite, ec)) {
-    std::cerr << "paint memo test: " << sprite
-              << " does not exist, so the absence cannot be simulated\n";
-    return 1;
+    std::filesystem::create_directories(
+        std::filesystem::path(sprite).parent_path(), ec);
+    if (!WriteTestPng(sprite, /*twoColours=*/true)) {
+      std::cerr << "paint memo test: " << sprite
+                << " does not exist and could not be created\n";
+      return 1;
+    }
+    std::cout << "paint memo:  created a placeholder sprite at " << sprite << "\n";
   }
 
   int withArt = 0;
   int withGlyph = 0;
-  if (!TileCellSpriteCount(tileName, &withArt, &withGlyph) || withArt == 0) {
+  // The map must have cells drawing this tile; it must *not* have them drawing art.
+  //
+  // Requiring `withArt > 0` was wrong, and wrong in a way that only showed up once the
+  // sprite had been created a moment earlier: cells only carry a `Sprite` if the file
+  // resolved when the map loaded, so a sprite created after the boot leaves every cell on
+  // its glyph -- which is precisely the situation this test exists to fix, made stronger.
+  // A zero-art baseline is therefore accepted, and reported, as long as the map has
+  // somewhere to paint.
+  if (!TileCellSpriteCount(tileName, &withArt, &withGlyph) ||
+      withArt + withGlyph == 0) {
     std::cerr << "paint memo test: no cell on the loaded map draws '" << tileName
               << "', so there is nothing to refresh\n";
     return 1;
@@ -1557,6 +1876,639 @@ int Game::RunPaintMemoSelfTest(const std::string &tileName) {
     return 1;
   }
   std::cout << "paint memo: ok (art that arrives after a paint is noticed)\n";
+  return 0;
+}
+
+// ---------------------------------------------------------------------------
+// --draw-probe: does the map actually show through an object?
+// ---------------------------------------------------------------------------
+//
+// The bug this exists for had two independent causes and was reported from the
+// world, not from a test: an object generated in the sprite designer covered the
+// tile it stood on with a solid rectangle. Both fixes are in the pixels and only
+// the pixels, so this harness is the only thing in the repo that can tell whether
+// they are actually fixed -- a log line cannot say whether a pixel was transparent.
+//
+// It runs the real frame path (Game::Draw -> render pipeline -> the 1920x1080 game
+// texture -> blit) and reads the result back with LoadImageFromScreen, the same way
+// raylib's own TakeScreenshot does. Nothing here is synthetic except the choice of
+// which cell to use.
+
+namespace {
+
+// An Image that releases itself. Four captures and a dozen early returns is exactly
+// the shape that leaks a raylib Image, which is a plain struct with no destructor.
+struct ProbeImage {
+  Image image{};
+
+  ProbeImage() = default;
+  ProbeImage(const ProbeImage &) = delete;
+  ProbeImage &operator=(const ProbeImage &) = delete;
+  ProbeImage(ProbeImage &&other) noexcept : image(other.image) {
+    other.image = Image{};
+  }
+  ProbeImage &operator=(ProbeImage &&other) noexcept {
+    if (this != &other) {
+      if (image.data != nullptr) UnloadImage(image);
+      image = other.image;
+      other.image = Image{};
+    }
+    return *this;
+  }
+  ~ProbeImage() {
+    if (image.data != nullptr) UnloadImage(image);
+  }
+
+  bool valid() const { return image.data != nullptr; }
+  int width() const { return image.data != nullptr ? image.width : 0; }
+  int height() const { return image.data != nullptr ? image.height : 0; }
+  Color At(int x, int y) const { return GetImageColor(image, x, y); }
+};
+
+bool ProbeSameColour(Color a, Color b) {
+  return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+}
+
+// Whether two captures are the same frame, ignoring one rectangle.
+//
+// "The same frame" is the settling test: the first frames after Init are not the
+// settled world -- measured here, the tile layer was still drawn where the previous
+// window size put it -- and the number of frames that takes is not fixed. Rather than
+// guess, draw until two consecutive captures agree. The ignored rectangle is raylib's
+// FPS counter, whose digits change on their own and would make every pair differ.
+bool ProbeFramesEqualExcept(const ProbeImage &a, const ProbeImage &b,
+                            const Rectangle &ignore) {
+  if (!a.valid() || !b.valid()) return false;
+  if (a.width() != b.width() || a.height() != b.height()) return false;
+  if (a.image.format != b.image.format) return false;
+
+  const int ignoreWidth = static_cast<int>(ignore.x + ignore.width);
+  const int ignoreHeight = static_cast<int>(ignore.y + ignore.height);
+  const int stride = a.width() * 4;
+  const auto *left = static_cast<const unsigned char *>(a.image.data);
+  const auto *right = static_cast<const unsigned char *>(b.image.data);
+  for (int y = 0; y < a.height(); ++y) {
+    int skip = 0;
+    if (y < ignoreHeight) {
+      skip = std::min(stride, ignoreWidth * 4);
+    }
+    if (skip >= stride) continue;
+    if (std::memcmp(left + y * stride + skip, right + y * stride + skip,
+                    static_cast<size_t>(stride - skip)) != 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string ProbeColourText(Color c) {
+  return "(" + std::to_string(c.r) + "," + std::to_string(c.g) + "," +
+         std::to_string(c.b) + "," + std::to_string(c.a) + ")";
+}
+
+// How much of a cell is `plate` and how much is something drawn over it. "The plate
+// is present" is the whole assertion for a sprite-less fallback, and the ink count is
+// what makes it not vacuous: a cell that is entirely plate has no glyph.
+struct ProbeCellCounts {
+  int plate = 0;
+  int ink = 0;
+  int total = 0;
+};
+
+// How many pixels inside `box` differ between two frames. The legibility question for a
+// fallback whose plate is *transparent* -- the hand-authored style, where the world shows
+// the tile through it -- is not "is the plate there" but "was anything drawn at all".
+int ProbeChangedPixels(const ProbeImage &a, const ProbeImage &b, const Rectangle &box) {
+  const int x0 = static_cast<int>(std::round(box.x));
+  const int y0 = static_cast<int>(std::round(box.y));
+  const int x1 = x0 + static_cast<int>(std::round(box.width));
+  const int y1 = y0 + static_cast<int>(std::round(box.height));
+  int changed = 0;
+  for (int y = std::max(0, y0); y < std::min(a.height(), y1); ++y) {
+    for (int x = std::max(0, x0); x < std::min(a.width(), x1); ++x) {
+      if (!ProbeSameColour(a.At(x, y), b.At(x, y))) {
+        ++changed;
+      }
+    }
+  }
+  return changed;
+}
+
+ProbeCellCounts ProbeCountCell(const ProbeImage &frame, const Rectangle &box,
+                               Color plate) {
+  ProbeCellCounts counts;
+  const int x0 = static_cast<int>(std::round(box.x));
+  const int y0 = static_cast<int>(std::round(box.y));
+  const int x1 = x0 + static_cast<int>(std::round(box.width));
+  const int y1 = y0 + static_cast<int>(std::round(box.height));
+  for (int y = std::max(0, y0); y < std::min(frame.height(), y1); ++y) {
+    for (int x = std::max(0, x0); x < std::min(frame.width(), x1); ++x) {
+      ++counts.total;
+      if (ProbeSameColour(frame.At(x, y), plate)) {
+        ++counts.plate;
+      } else {
+        ++counts.ink;
+      }
+    }
+  }
+  return counts;
+}
+
+}  // namespace
+
+int Game::RunDrawProbe(const std::string &templateKey) {
+  if (map == nullptr) {
+    std::cerr << "draw probe: no map is loaded, so there is no tile to see through\n";
+    return 1;
+  }
+  if (objectFactory.GetTemplates().find(templateKey) ==
+      objectFactory.GetTemplates().end()) {
+    std::cerr << "draw probe: no object template '" << templateKey << "' is loaded\n";
+    return 1;
+  }
+
+  std::vector<std::string> failures;
+
+  // One frame through the real render path, read back before EndDrawing -- the
+  // moment the frame exists in the draw buffer. raylib's own TakeScreenshot reads
+  // here, and LoadImageFromScreen flips the rows into screen order itself.
+  //
+  // rlDrawRenderBatchActive() is not optional: raylib queues geometry on the CPU and
+  // only hands it to the GPU when a batch fills, a state change forces it, or
+  // EndDrawing runs. A read-back mid-frame therefore sees the cleared buffer -- the
+  // first version of this probe compared five black frames and every differential
+  // passed vacuously. ImageEncode.cpp carries the same line and the same note.
+  auto drawAndCapture = [this]() {
+    window.BeginDrawing();
+    window.ClearBackground(BLACK);
+    Draw();
+    rlDrawRenderBatchActive();
+    ProbeImage frame;
+    frame.image = LoadImageFromScreen();
+    window.EndDrawing();
+    return frame;
+  };
+
+  // A deterministic view. The probe has to know which screen pixel a cell renders to,
+  // and the follow camera's answer depends on where the player happens to stand. Free
+  // mode at zoom 1 with the origin at the top-left keeps the projection on whole
+  // pixels, which is what makes NEAREST-sampled sprites comparable pixel for pixel.
+  cameraMode = GameCameraMode::FreeRoamMode;
+  camera.offset = {0.0f, 0.0f};
+  camera.zoom = 1.0f;
+  camera.target = {0.0f, 0.0f};
+
+  // Settle the frame before taking the baseline. The first frames after Init are not the
+  // settled world -- measured here, the tile layer was drawn 280 pixels from where the
+  // entity layer was, which is exactly the difference between the 1920x1080 render
+  // target and the 1280x800 window -- and how many frames that takes is not fixed. A
+  // two-frame warmup passed on one run and not on the next, which is the worst kind of
+  // harness. So: draw until two consecutive captures are identical, bounded, and refuse
+  // to judge anything if they never are.
+  const Rectangle fpsCounter{0.0f, 0.0f, 160.0f, 48.0f};
+  ProbeImage before = drawAndCapture();
+  bool settled = false;
+  for (int attempt = 0; attempt < 12 && before.valid(); ++attempt) {
+    ProbeImage next = drawAndCapture();
+    if (ProbeFramesEqualExcept(before, next, fpsCounter)) {
+      before = std::move(next);
+      settled = true;
+      break;
+    }
+    before = std::move(next);
+  }
+  if (!before.valid()) {
+    std::cerr << "draw probe: LoadImageFromScreen returned nothing, so no pixel can "
+                 "be sampled\n";
+    return 1;
+  }
+  if (!settled) {
+    std::cerr << "draw probe: the framebuffer never stopped changing across 12 frames, "
+                 "so no frame is trustworthy enough to compare\n";
+    return 1;
+  }
+  std::cout << "draw probe:  framebuffer " << before.width() << "x" << before.height()
+            << ", camera target (" << camera.target.x << "," << camera.target.y
+            << ") offset (" << camera.offset.x << "," << camera.offset.y << ") zoom "
+            << camera.zoom << ", mode "
+            << (cameraMode == GameCameraMode::FreeRoamMode ? "free" : "follow") << "\n";
+
+  const float tileWidth = static_cast<float>(map->GetTileWidth());
+  const float tileHeight = static_cast<float>(map->GetTileHeight());
+
+  auto screenRectFor = [&](GamePosition p) {
+    const ScreenPosition world = map->GameCoordsToScreenCoords(
+        static_cast<float>(p.x), static_cast<float>(p.y));
+    const Vector2 screen = GetWorldToScreen2D({world.x, world.y}, camera);
+    return Rectangle{screen.x, screen.y, tileWidth, tileHeight};
+  };
+
+  // Usable = the whole cell is inside the framebuffer and clear of the FPS counter,
+  // which DrawFPS paints at (10,10) and which would otherwise be compared as if it
+  // were part of the tile.
+  auto usable = [&](GamePosition p) {
+    const Rectangle r = screenRectFor(p);
+    if (r.x < 4.0f || r.y < 4.0f) return false;
+    if (r.x + r.width > static_cast<float>(before.width()) - 4.0f) return false;
+    if (r.y + r.height > static_cast<float>(before.height()) - 4.0f) return false;
+    return !CheckCollisionRecs(r, fpsCounter);
+  };
+
+  // Cells with something already standing on them are refused: the differential
+  // compares two frames of the same view, and another entity redrawing over the cell
+  // would be read as the object's doing.
+  auto occupied = [&](GamePosition p) {
+    bool taken = false;
+    ecs.filter<GamePosition>().each([&](flecs::entity, GamePosition &pos) {
+      if (pos.x == p.x && pos.y == p.y) taken = true;
+    });
+    return taken;
+  };
+
+  auto findFreeCell = [&](GamePosition skip) {
+    for (int y = 0; y < map->GetHeight(); ++y) {
+      for (int x = 0; x < map->GetWidth(); ++x) {
+        const GamePosition p{x, y};
+        if (p.x == skip.x && p.y == skip.y) continue;
+        if (!usable(p) || occupied(p)) continue;
+        return p;
+      }
+    }
+    return GamePosition{-1, -1};
+  };
+
+  // The ground: a cell whose tile draws a *sprite*. "The tile shows through" has to be
+  // a tile that is actually drawn, and a sprite is what this bug was about.
+  GamePosition ground{-1, -1};
+  std::string groundSprite;
+  for (int y = 0; y < map->GetHeight() && ground.x < 0; ++y) {
+    for (int x = 0; x < map->GetWidth(); ++x) {
+      const GamePosition p{x, y};
+      if (!usable(p) || occupied(p)) continue;
+      const CellSpriteState cell = InspectCellSprite(p);
+      if (!cell.hasVisual || !cell.hasSprite) continue;
+      ground = p;
+      groundSprite = cell.spriteId;
+      break;
+    }
+  }
+  if (ground.x < 0) {
+    std::cerr << "draw probe: no visible, unoccupied cell of the loaded map draws a tile "
+                 "sprite, so there is no ground to check\n";
+    return 1;
+  }
+
+  const Rectangle groundRect = screenRectFor(ground);
+  std::cout << "draw probe:  ground cell (" << ground.x << "," << ground.y
+            << ") at screen (" << groundRect.x << "," << groundRect.y << "), tile sprite "
+            << groundSprite << "\n";
+
+  // Check 3a: a tile with a full-bleed sprite still draws that sprite. Tiles share
+  // DrawEntityVisual with entities, so the plate change is on their path too; an opaque
+  // sprite makes it invisible, and this is the assertion that it stayed that way (a
+  // tile that stopped drawing its art would fall back to a glyph and fail here).
+  {
+    raylib::Texture *texture = resourceManager.GetTexture(groundSprite);
+    ProbeImage pixels;
+    pixels.image = LoadImage(groundSprite.c_str());
+    if (texture == nullptr || !pixels.valid()) {
+      failures.push_back("the ground cell's tile sprite '" + groundSprite +
+                         "' could not be read back, so the tile layer is unverified");
+    } else {
+      const SpriteRect fit = SpriteFitRect(*texture, groundRect.x, groundRect.y,
+                                           tileWidth, tileHeight);
+      const float scaleX = fit.width / static_cast<float>(texture->width);
+      const float scaleY = fit.height / static_cast<float>(texture->height);
+      int compared = 0;
+      int matched = 0;
+      for (int dy = 0; dy < static_cast<int>(fit.height); ++dy) {
+        for (int dx = 0; dx < static_cast<int>(fit.width); ++dx) {
+          const int sx = std::min(
+              pixels.image.width - 1, static_cast<int>(static_cast<float>(dx) / scaleX));
+          const int sy = std::min(
+              pixels.image.height - 1, static_cast<int>(static_cast<float>(dy) / scaleY));
+          const Color source = pixels.At(sx, sy);
+          // Only fully opaque source pixels: anything else is a blend with whatever is
+          // under the tile, and exact equality would be asserting the wrong thing.
+          if (source.a != 255) continue;
+          const int x = static_cast<int>(std::round(fit.x)) + dx;
+          const int y = static_cast<int>(std::round(fit.y)) + dy;
+          if (x < 0 || y < 0 || x >= before.width() || y >= before.height()) continue;
+          ++compared;
+          if (ProbeSameColour(before.At(x, y), source)) {
+            ++matched;
+          }
+        }
+      }
+      std::cout << "draw probe:  tile art: " << matched << "/" << compared
+                << " opaque sprite pixel(s) match the rendered cell\n";
+      if (compared == 0) {
+        failures.push_back("the ground tile's sprite has no opaque pixel to compare");
+      } else if (matched != compared) {
+        failures.push_back("only " + std::to_string(matched) + " of " +
+                           std::to_string(compared) +
+                           " tile-sprite pixel(s) were drawn; a tile with art must draw "
+                           "its art, not a glyph");
+      }
+    }
+  }
+
+  // Spawn the object on the ground cell, through the real factory, so this exercises
+  // the same template and sprite resolution a placed object does.
+  flecs::entity parent = ecs.lookup("CurrentMap");
+  if (!parent.is_alive()) parent = ecs.entity();
+  flecs::entity probe =
+      objectFactory.SpawnObject(ecs, parent, map.get(), templateKey, ground);
+  if (!probe.is_alive()) {
+    std::cerr << "draw probe: could not spawn '" << templateKey << "'\n";
+    return 1;
+  }
+
+  const DrawAscii *ascii = probe.get<DrawAscii>();
+  if (ascii == nullptr) {
+    std::cerr << "draw probe: '" << templateKey
+              << "' declares no visual, so there is nothing to sample\n";
+    probe.destruct();
+    return 1;
+  }
+  const Sprite *sprite = probe.get<Sprite>();
+  if (sprite == nullptr) {
+    std::cerr << "draw probe: '" << templateKey
+              << "' has no sprite, so there is no cut-out to see the tile through. "
+                 "Check the sprite path or generate one first\n";
+    probe.destruct();
+    return 1;
+  }
+
+  // Check 1: the sprite's fully transparent pixels leave the frame under them
+  // *identical*. That is "the tile shows through" stated as a pixel assertion: before
+  // the fix the plate was painted into them, so every one of them differed.
+  //
+  // Frames are kept in function scope so a failure can write them out as evidence; a
+  // pixel assertion that cannot show the pixels it disagreed about is a hard bug to
+  // take anyone's word for.
+  ProbeImage withObject;
+  ProbeImage withoutSprite;
+  ProbeImage withGlyph;
+  {
+    withObject = drawAndCapture();
+    raylib::Texture *texture = resourceManager.GetTexture(sprite->path);
+    ProbeImage pixels;
+    pixels.image = LoadImage(sprite->path.c_str());
+    if (texture == nullptr || !pixels.valid()) {
+      failures.push_back("the object's sprite '" + sprite->path +
+                         "' could not be read back, so its transparency is unverified");
+    } else {
+      const SpriteRect fit = SpriteFitRect(*texture, groundRect.x, groundRect.y,
+                                           tileWidth, tileHeight);
+      std::cout << "draw probe:  object '" << templateKey << "' sprite " << texture->width
+                << "x" << texture->height << " drawn at (" << fit.x << "," << fit.y
+                << ") " << fit.width << "x" << fit.height << "\n";
+      const float scaleX = fit.width / static_cast<float>(texture->width);
+      const float scaleY = fit.height / static_cast<float>(texture->height);
+      int transparent = 0;
+      int interiorTransparent = 0;
+      int mismatched = 0;
+      int changed = 0;
+      bool reportedFirst = false;
+      for (int dy = 0; dy < static_cast<int>(fit.height); ++dy) {
+        for (int dx = 0; dx < static_cast<int>(fit.width); ++dx) {
+          const int sx = std::min(
+              pixels.image.width - 1, static_cast<int>(static_cast<float>(dx) / scaleX));
+          const int sy = std::min(
+              pixels.image.height - 1, static_cast<int>(static_cast<float>(dy) / scaleY));
+          const Color source = pixels.At(sx, sy);
+          const int x = static_cast<int>(std::round(fit.x)) + dx;
+          const int y = static_cast<int>(std::round(fit.y)) + dy;
+          if (x < 0 || y < 0 || x >= before.width() || y >= before.height()) continue;
+          const Color plain = before.At(x, y);
+          const Color drawn = withObject.At(x, y);
+          if (source.a == 0) {
+            ++transparent;
+            // Deeper than the sprite's own outer rim. A sprite whose only transparent
+            // pixels are a one-pixel border around a solid rectangle was not cut out at
+            // all -- that is what an un-keyed cell looks like after the trim/pad/resize
+            // -- and a rim is enough to make the check above pass while the object still
+            // covers its tile. See the failure message below.
+            if (sx >= 3 && sy >= 3 && sx < pixels.image.width - 3 &&
+                sy < pixels.image.height - 3) {
+              ++interiorTransparent;
+            }
+            if (!ProbeSameColour(plain, drawn)) {
+              ++mismatched;
+              if (!reportedFirst) {
+                failures.push_back(
+                    "at (" + std::to_string(x) + "," + std::to_string(y) +
+                    ") the sprite is transparent but the frame changed from " +
+                    ProbeColourText(plain) + " to " + ProbeColourText(drawn) +
+                    " -- something is painted behind the sprite");
+                reportedFirst = true;
+              }
+            }
+          } else if (!ProbeSameColour(plain, drawn)) {
+            ++changed;
+          }
+        }
+      }
+      std::cout << "draw probe:  transparency: " << transparent << " transparent sprite "
+                << "pixel(s) (" << interiorTransparent << " inside the rim), " << mismatched
+                << " of them changed; " << changed << " opaque pixel(s) changed\n";
+      if (transparent == 0) {
+        // Not a renderer failure: this sprite's background was never keyed out, which
+        // is the other half of the bug and lives in tools/gen_tile_art.py.
+        failures.push_back(
+            "'" + sprite->path +
+            "' has no fully transparent pixel, so it still covers the tile. Its "
+            "background was not keyed out -- re-cut it with tools/gen_tile_art.py "
+            "--cut-check / --sheet, or regenerate it");
+      } else if (interiorTransparent == 0) {
+        failures.push_back(
+            "'" + sprite->path +
+            "' is transparent only around its outer rim, which is an un-keyed cell's "
+            "padding rather than a cut-out: the object still covers its tile. Re-cut it "
+            "with tools/gen_tile_art.py --sheet, or regenerate it");
+      }
+      if (changed == 0) {
+        failures.push_back("the object drew nothing over the tile, so this test is "
+                           "vacuous");
+      }
+    }
+  }
+
+  // Check 2a: with the sprite gone, the entity falls back to its ASCII art over the
+  // plate. The plate is the template's own background colour, opaque here, so "the
+  // plate is present" is an exact colour match on more than half the cell, and "the
+  // art is legible" is the ink drawn over it.
+  probe.remove<Sprite>();
+  {
+    withoutSprite = drawAndCapture();
+    // Re-read after a component change: flecs moves the entity between archetypes, so
+    // a pointer taken before the removal can be stale.
+    const DrawAscii *fallback = probe.get<DrawAscii>();
+    if (fallback == nullptr) {
+      failures.push_back("the entity lost its DrawAscii when the Sprite was removed");
+    } else {
+      const ProbeCellCounts counts =
+          ProbeCountCell(withoutSprite, groundRect, fallback->backgroundColor);
+      if (fallback->backgroundColor.a == 255) {
+        std::cout << "draw probe:  no-sprite fallback: " << counts.plate << "/"
+                  << counts.total << " plate pixel(s), " << counts.ink << " ink\n";
+        if (counts.plate * 2 <= counts.total) {
+          failures.push_back("a sprite-less object lost its plate: only " +
+                             std::to_string(counts.plate) + " of " +
+                             std::to_string(counts.total) +
+                             " pixel(s) are the template's background colour");
+        }
+        if (counts.ink < 12) {
+          failures.push_back("a sprite-less object drew " + std::to_string(counts.ink) +
+                             " ink pixel(s) over its plate, which is not a legible art "
+                             "block");
+        }
+      } else {
+        // A transparent background is the hand-authored convention: the fallback is
+        // meant to sit on the tile, so there is no plate to look for. What must still
+        // hold is that the art drew something.
+        const int drawn = ProbeChangedPixels(before, withoutSprite, groundRect);
+        std::cout << "draw probe:  no-sprite fallback: no plate (transparent "
+                     "background), "
+                  << drawn << " pixel(s) drawn over the tile\n";
+        if (drawn < 12) {
+          failures.push_back("a sprite-less object with a transparent background drew " +
+                             std::to_string(drawn) + " pixel(s) over the tile, which is "
+                             "not a legible art block");
+        }
+      }
+    }
+  }
+
+  // Check 2b: the single-glyph fallback, same plate. An object with neither art nor a
+  // sprite must still be readable.
+  probe.remove<AsciiArt>();
+  {
+    withGlyph = drawAndCapture();
+    const DrawAscii *glyph = probe.get<DrawAscii>();
+    if (glyph == nullptr) {
+      failures.push_back("the entity lost its DrawAscii when the AsciiArt was removed");
+    } else {
+      const ProbeCellCounts counts =
+          ProbeCountCell(withGlyph, groundRect, glyph->backgroundColor);
+      if (glyph->backgroundColor.a == 255) {
+        std::cout << "draw probe:  glyph fallback: " << counts.plate << "/"
+                  << counts.total << " plate pixel(s), " << counts.ink << " ink\n";
+        if (counts.plate * 2 <= counts.total) {
+          failures.push_back("a glyph-only object lost its plate: only " +
+                             std::to_string(counts.plate) + " of " +
+                             std::to_string(counts.total) +
+                             " pixel(s) are the template's background colour");
+        }
+        if (counts.ink < 4) {
+          failures.push_back("a glyph-only object drew " + std::to_string(counts.ink) +
+                             " ink pixel(s), so its glyph is not legible");
+        }
+      } else {
+        const int drawn = ProbeChangedPixels(before, withGlyph, groundRect);
+        std::cout << "draw probe:  glyph fallback: no plate (transparent background), "
+                  << drawn << " pixel(s) drawn over the tile\n";
+        if (drawn < 4) {
+          failures.push_back("a glyph-only object with a transparent background drew " +
+                             std::to_string(drawn) + " pixel(s), so its glyph is not "
+                             "legible");
+        }
+      }
+    }
+  }
+
+  // Check 3b: a tile *without* art still draws a legible glyph over its plate. Painted
+  // rather than found, because the loaded map is uniform -- one tile with a sprite --
+  // and the fallback has to be exercised on purpose. The tile is chosen from the live
+  // catalog as one with no sprite at all, an opaque plate and a plate colour that is
+  // not the clear colour, which is what makes "the plate is present" mean something.
+  {
+    const TileDef *glyphTile = nullptr;
+    for (const TileDef *candidate : tileRegistry.GetAll()) {
+      if (!candidate->hasCharacter) continue;
+      if (!candidate->hasBackgroundColor || candidate->backgroundColor.a != 255) continue;
+      if (candidate->backgroundColor.r == 128 && candidate->backgroundColor.g == 128 &&
+          candidate->backgroundColor.b == 128) {
+        continue;
+      }
+      std::string resolved;
+      if (SpriteResolves(candidate->sprite, TileSpriteId(candidate->name), &resolved)) {
+        continue;
+      }
+      glyphTile = candidate;
+      break;
+    }
+    const GamePosition glyphCell = findFreeCell(ground);
+    if (glyphTile == nullptr) {
+      failures.push_back("no catalog tile has an opaque plate and no sprite, so the "
+                         "tile-glyph fallback could not be exercised");
+    } else if (glyphCell.x < 0) {
+      failures.push_back("no free visible cell to paint the glyph-only tile on");
+    } else {
+      const CellSpriteState original = InspectCellSprite(glyphCell);
+      if (!PaintTile(glyphCell, glyphTile->name)) {
+        failures.push_back("could not paint '" + glyphTile->name + "' at (" +
+                           std::to_string(glyphCell.x) + "," +
+                           std::to_string(glyphCell.y) + ")");
+      } else {
+        ProbeImage withTileGlyph = drawAndCapture();
+        const ProbeCellCounts counts = ProbeCountCell(
+            withTileGlyph, screenRectFor(glyphCell), glyphTile->backgroundColor);
+        std::cout << "draw probe:  tile glyph ('" << glyphTile->name << "' at "
+                  << glyphCell.x << "," << glyphCell.y << "): " << counts.plate << "/"
+                  << counts.total << " plate pixel(s), " << counts.ink << " ink\n";
+        if (counts.plate * 2 <= counts.total) {
+          failures.push_back("a tile with no art lost its plate: only " +
+                             std::to_string(counts.plate) + " of " +
+                             std::to_string(counts.total) +
+                             " pixel(s) are its background colour");
+        }
+        if (counts.ink < 4) {
+          failures.push_back("a tile with no art drew " + std::to_string(counts.ink) +
+                             " ink pixel(s), so its glyph is not legible");
+        }
+        // Put the map back as it was found. Nothing saves it, but a probe that leaves
+        // the world different from how it started is a trap for the next mode.
+        if (!original.tileName.empty()) {
+          PaintTile(glyphCell, original.tileName);
+        }
+      }
+    }
+  }
+
+  probe.destruct();
+
+  if (!failures.empty()) {
+    for (const std::string &failure : failures) {
+      std::cout << "draw probe FAILED: " << failure << "\n";
+    }
+    // The frames the verdict was reached from. A pixel assertion that cannot show the
+    // pixels it disagreed about is not one anybody should have to take on trust.
+    const std::string base = "/tmp/airogue_draw_probe";
+    int written = 0;
+    if (before.valid() && ExportImage(before.image, (base + "_before.png").c_str())) {
+      ++written;
+    }
+    if (withObject.valid() &&
+        ExportImage(withObject.image, (base + "_object.png").c_str())) {
+      ++written;
+    }
+    if (withoutSprite.valid() &&
+        ExportImage(withoutSprite.image, (base + "_no_sprite.png").c_str())) {
+      ++written;
+    }
+    if (withGlyph.valid() && ExportImage(withGlyph.image, (base + "_glyph.png").c_str())) {
+      ++written;
+    }
+    if (written > 0) {
+      std::cout << "draw probe:  " << written << " frame(s) written to " << base
+                << "_*.png\n";
+    }
+    return 1;
+  }
+  std::cout << "draw probe:  ok (the tile shows through a cut-out object; the glyph "
+               "and art fallbacks keep a legible plate; a tile with art still draws it)\n";
   return 0;
 }
 
@@ -1643,3 +2595,67 @@ int Game::RunArtCacheSelfTest() {
   return 0;
 }
 
+std::string Game::SwitchSystemOneProfile(const std::string &id) {
+  const SystemOne::ModelProfile *profile =
+      SystemOne::FindProfile(systemOneProfiles, id);
+  if (profile == nullptr) {
+    return "no profile named '" + id + "'";
+  }
+
+  // Built first, so nothing is torn down unless the replacement exists and can work.
+  // This ordering is what makes a failed switch a no-op rather than a half-state.
+  auto classifier = std::make_shared<SystemOne::JevClassifier>(profile->config);
+  if (!classifier->Available()) {
+    systemOneStatus[profile->id] = {SystemOne::ProfileHealth::Unreachable,
+                                    "no API key configured"};
+    return "profile '" + profile->id + "' has no API key configured";
+  }
+
+  std::string probeError;
+  if (!SystemOne::JevClassifier::ProbeReachable(profile->config, &probeError)) {
+    systemOneStatus[profile->id] = {SystemOne::ProfileHealth::Unreachable, probeError};
+    return probeError;
+  }
+
+  // Recorder attached before the swap, so a call that lands in the same frame is still
+  // recorded.
+  classifier->SetRecorder(systemOneRecorder.get());
+
+  if (systemOneClassifier != nullptr) {
+    systemOneStatus[activeSystemOneProfile] = {SystemOne::ProfileHealth::Reachable,
+                                               "not in use"};
+  }
+  systemOneStatus[profile->id] = {
+      SystemOne::ProfileHealth::InUse,
+      profile->config.IsLocalEndpoint() ? "local; first call may wait for the model"
+                                        : "serving calls"};
+
+  // The swap. Assigning drops the last reference to the previous provider, whose
+  // destructor cancels anything it had in flight -- deliberate, see Game.h.
+  systemOneClassifier = classifier;
+  activeSystemOneProfile = profile->id;
+  if (debugWindowState) {
+    debugWindowState->SetSystemOneProfile(activeSystemOneProfile);
+  }
+
+  const std::string event = "profile switched to '" + profile->id + "' (" +
+                            classifier->ModelLabel() + ") via " +
+                            classifier->Endpoint();
+  if (debugLog) debugLog->LogInfo("System 1: " + event);
+  // Into the System 1 log too, so a run whose backend changed mid-way is explained
+  // rather than looking like inconsistent model labels in the records.
+  if (systemOneRecorder) systemOneRecorder->Note(event);
+
+  return {};
+}
+
+const SystemOne::ModelProfile *Game::ActiveSystemOneProfile() const {
+  if (activeSystemOneProfile.empty()) return nullptr;
+  return SystemOne::FindProfile(systemOneProfiles, activeSystemOneProfile);
+}
+
+SystemOne::SystemOneProfileStatus Game::SystemOneStatusFor(const std::string &id) const {
+  const auto found = systemOneStatus.find(id);
+  if (found != systemOneStatus.end()) return found->second;
+  return SystemOne::SystemOneProfileStatus{};
+}

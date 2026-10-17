@@ -294,6 +294,19 @@ void OpenRouterAI::setReasoningEnabled(bool enabled) {
                           {"max_tokens", enabled ? DEFAULT_REASONING_MAX_TOKENS : 0}};
 }
 
+void OpenRouterAI::setMaxTokens(int tokens) {
+  // Deliberately not routed through setOption, even though that is the whole
+  // implementation: every caller of this is overriding a max_tokens that
+  // BuildAIBackend already set from the model block, and the difference between
+  // "the model's limit" and "this instance's limit" is worth a name.
+  //
+  // Note what this does not do: it raises the *ceiling*, it does not reserve room.
+  // Reasoning is paid for out of the same budget (see setReasoningEnabled above),
+  // so a reasoning model can still spend the whole raise thinking -- which is
+  // exactly what the first attempt in logs/tile-designer did.
+  options["max_tokens"] = tokens;
+}
+
 std::string OpenRouterAI::generate(const std::string &contextId,
                                    const std::vector<ChatMessage> &history,
                                    std::stop_token stoken,

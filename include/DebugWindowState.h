@@ -6,6 +6,39 @@
 
 class DebugLog;
 
+// How the Map Editor's two content palettes (Tiles, Object Templates) are
+// ordered. Persisted by id rather than by integer, so inserting a metric cannot
+// silently turn a saved "date" into some other ordering.
+enum class ContentSortMetric {
+  Name,
+  Date,
+  Usage,
+  Source,
+};
+
+inline const char *ContentSortMetricId(ContentSortMetric metric) {
+  switch (metric) {
+  case ContentSortMetric::Name:
+    return "name";
+  case ContentSortMetric::Date:
+    return "date";
+  case ContentSortMetric::Usage:
+    return "usage";
+  case ContentSortMetric::Source:
+    return "source";
+  }
+  return "name";
+}
+
+inline ContentSortMetric ContentSortMetricFromId(const std::string &id,
+                                                 ContentSortMetric fallback) {
+  if (id == "name") return ContentSortMetric::Name;
+  if (id == "date") return ContentSortMetric::Date;
+  if (id == "usage") return ContentSortMetric::Usage;
+  if (id == "source") return ContentSortMetric::Source;
+  return fallback;
+}
+
 class DebugWindowState {
 public:
   DebugWindowState(DebugLog* debugLog = nullptr);
@@ -46,6 +79,24 @@ public:
 
   bool GetShowMapEditorWindow() const { return showMapEditorWindow; }
   void SetShowMapEditorWindow(bool value) { showMapEditorWindow = value; }
+
+  // The Map Editor palettes' ordering. Kept here rather than on MapEditorWindow
+  // because that window is rebuilt whenever it is toggled off and on, so a member
+  // there would forget the choice on the next open -- and because the sort is a
+  // preference about how you read the catalog, not about one session.
+  //
+  // Tiles and Object Templates are stored separately: the useful ordering for a
+  // list of terrain and for a list of props is rarely the same, and one control
+  // silently driving both is exactly the confusion independent palettes avoid.
+  ContentSortMetric GetTileSortMetric() const { return tileSortMetric; }
+  void SetTileSortMetric(ContentSortMetric value) { tileSortMetric = value; }
+  bool GetTileSortDescending() const { return tileSortDescending; }
+  void SetTileSortDescending(bool value) { tileSortDescending = value; }
+
+  ContentSortMetric GetObjectSortMetric() const { return objectSortMetric; }
+  void SetObjectSortMetric(ContentSortMetric value) { objectSortMetric = value; }
+  bool GetObjectSortDescending() const { return objectSortDescending; }
+  void SetObjectSortDescending(bool value) { objectSortDescending = value; }
 
   bool GetShowBlueprintWindow() const { return showBlueprintWindow; }
   void SetShowBlueprintWindow(bool value) { showBlueprintWindow = value; }
@@ -111,6 +162,27 @@ public:
   bool GetShowSystemOneWindow() const { return showSystemOneWindow; }
   void SetShowSystemOneWindow(bool value) { showSystemOneWindow = value; }
 
+  // The vision debug window, and whether the map draws one facing marker per
+  // character. Two values rather than one: the window is where the checkbox
+  // lives, so collapsing the window must not switch the overlay off, and leaving
+  // the overlay on must not force the window open. Persisted for the reason every
+  // other debug window is -- "why is that character facing that way" is a
+  // question you come back to across runs.
+  bool GetShowVisionDebugWindow() const { return showVisionDebugWindow; }
+  void SetShowVisionDebugWindow(bool value) { showVisionDebugWindow = value; }
+  bool GetShowFacingMarkers() const { return showFacingMarkers; }
+  void SetShowFacingMarkers(bool value) { showFacingMarkers = value; }
+
+  // Which System 1 backend was serving when the run ended, so a restart resumes on the
+  // model you had picked instead of silently reverting to the default profile.
+  //
+  // This lives here rather than in settings.json because settings.json is read-only at
+  // runtime: the selection is session state, which is exactly what this file already
+  // holds. An id that no longer exists in the config is ignored on load (the resolver
+  // falls through to the next source), so deleting a profile cannot strand the game.
+  std::string GetSystemOneProfile() const { return systemOneProfile; }
+  void SetSystemOneProfile(const std::string &value) { systemOneProfile = value; }
+
   bool GetShowVisionChatWindow() const { return showVisionChatWindow; }
   void SetShowVisionChatWindow(bool value) { showVisionChatWindow = value; }
 
@@ -139,6 +211,14 @@ private:
   bool showDesignerWindow;
   bool showTileDesignerWindow;
 
+  // Map Editor palette ordering. Defaults reproduce the old behaviour for tiles
+  // (alphabetical) and improve it for objects (also alphabetical, where the
+  // factory's unordered_map previously made the order arbitrary).
+  ContentSortMetric tileSortMetric = ContentSortMetric::Name;
+  bool tileSortDescending = false;
+  ContentSortMetric objectSortMetric = ContentSortMetric::Name;
+  bool objectSortDescending = false;
+
   // Clamped to the ranges in DesignerChatWindow when read; the stored value is
   // whatever the user last dragged to.
   float designerPaneWidth = 380.0f;
@@ -158,6 +238,9 @@ private:
   bool showNPCMenuWindow;
   bool showTaskBoardWindow;
   bool showSystemOneWindow;
+  bool showVisionDebugWindow;
+  bool showFacingMarkers;
+  std::string systemOneProfile;
   bool showVisionChatWindow;
   bool showLocations;
   bool stopAllAI;

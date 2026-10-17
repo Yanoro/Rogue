@@ -49,6 +49,48 @@ PromptRewriter::Brief Tile() {
   return brief;
 }
 
+PromptRewriter::Brief Object() {
+  // What the object designer can deliver, and what it cannot. Same structure as Tile()
+  // and deliberately a separate brief -- see the header for why the two must not be one.
+  PromptRewriter::Brief brief;
+  brief.kind = "object";
+
+  std::string context =
+      "The text describes one object that stands in a top-down 2D world: a thing an agent "
+      "can see, walk around, pick up, open, harvest or use -- a crate, a barrel, a "
+      "candelabra, a workbench, an altar, a young tree. It is drawn as a small block of "
+      "ASCII art (a few rows of a few characters) in a limited palette, and it also has a "
+      "single-character fallback.\n"
+      "\nWhat makes something an object is that it *does* something: it can be interacted "
+      "with, carried, block movement, hold a number of items, be harvested for a yield on "
+      "a timer, be crafted at from a set of recipes, grow into another object over time, "
+      "be placed down in the world, require equipment to use, or teach a skill when used. "
+      "Those are the only capabilities that exist, and an object needs at least one of "
+      "them -- a thing that only sits there looking like something is ground, and ground "
+      "is a tile, not an object.\n"
+      "\nDescribe the object itself: what it is made of, its size and shape, how worn or "
+      "new it is, and what it is for. Say what it does in plain words (\"holds a few "
+      "things\", \"you can saw at it\", \"it is growing into a tree\") rather than naming "
+      "an engine capability. Do not ask for behaviour beyond the list above -- no "
+      "containers that sort themselves, no objects that move on their own, nothing "
+      "animated, nothing that changes the world except by being used.";
+
+  const TileArt::PackStyle style = TileArt::CurrentPackStyle();
+  if (!style.description.empty()) {
+    context += "\n\nThe art this sits among is described as: " + style.description +
+               "\nMatch that style. Prefer materials, colours and wear that already "
+               "exist in it over inventing new ones.";
+  } else {
+    context +=
+        "\n\nThe art pack has no written description, so align with the object's own "
+        "name and colours and keep it in the ordinary village register rather than a "
+        "specific art style.";
+  }
+
+  brief.context = std::move(context);
+  return brief;
+}
+
 PromptRewriter::Brief Blueprint() {
   // The building equivalent: what a design can express, so the rewrite does not ask
   // for something the design language has no way to build.
