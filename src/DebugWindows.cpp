@@ -1,4 +1,6 @@
 #include "DebugWindows.h"
+
+#include "Settings.h"
 #include "Game.h"
 #include "AgentBrain.h"
 #include "AsciiArtDraw.hpp"
@@ -11,6 +13,7 @@
 #include "DebugLog.h"
 #include "DebugWindowState.h"
 #include "Defaults.h"
+#include "StringUtils.hpp"
 #include "SpatialMemory.hpp"
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
@@ -165,6 +168,9 @@ void DebugConsoleWindow::Draw() {
     if (showLog) {
       game->debugLogWindowEntity.set<ActiveWindow>({std::make_shared<DebugLogWindow>(game)});
     } else {
+      // The window is the only thing that turns retention on, so closing it must
+      // release the extra entries rather than leaving the log over its cap.
+      game->debugLog->SetRetainOldEntries(false);
       game->debugLogWindowEntity.remove<ActiveWindow>();
     }
   }
@@ -746,48 +752,184 @@ void EntityOverviewWindow::Draw() {
 
 DebugLogWindow::DebugLogWindow(Game* game) : game(game) {}
 
+namespace {
+
+// One colour per level, used both for the filter checkboxes and for the entries
+// they let through, so the two read as the same vocabulary.
+ImVec4 LogLevelColor(DebugLog::LogLevel level) {
+  switch (level) {
+  case DebugLog::LogLevel::INFO:
+    return ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+  case DebugLog::LogLevel::WARNING:
+    return ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+  case DebugLog::LogLevel::ERROR:
+    return ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
+  case DebugLog::LogLevel::DEBUG:
+    return ImVec4(0.0f, 1.0f, 1.0f, 1.0f);
+  }
+  return ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+}
+
+// A checkbox whose label is tinted like the level it controls, so the filter
+// row and the lines it lets through share one colour language.
+void LogLevelCheckbox(const char* label, DebugLog::LogLevel level, bool* value) {
+  ImGui::PushStyleColor(ImGuiCol_Text, LogLevelColor(level));
+  ImGui::Checkbox(label, value);
+  ImGui::PopStyleColor();
+}
+
+}  // namespace
+
 void DebugLogWindow::Draw() {
   bool isOpen = true;
-  ImGui::SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(620, 440), ImGuiCond_FirstUseEver);
   ImGui::Begin("Debug Log", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
+    // Closing the window is the other way retention ends; the log goes back to
+    // its configured cap instead of keeping the extra entries forever.
+    game->debugLog->SetRetainOldEntries(false);
     game->debugLogWindowEntity.remove<ActiveWindow>();
     ImGui::End();
     return;
   }
 
-  ImGui::Text("Debug Log (Latest %zu entries)", game->debugLog->GetMaxEntries());
+  DebugWindowState* state = game->debugWindowState.get();
+  const auto& entries = game->debugLog->GetEntries();
+
+  if (game->debugLog->IsRetainingOldEntries()) {
+    ImGui::Text("Debug Log (%zu entries held)", entries.size());
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Old entries are kept while Auto-scroll is off, so new messages\n"
+          "cannot shift the lines you are reading.");
+    }
+  } else {
+    ImGui::Text("Debug Log (Latest %zu entries)", game->debugLog->GetMaxEntries());
+  }
   ImGui::Separator();
 
+  // --- Filter row ----------------------------------------------------------
+  // Filtering is display-only: DebugLog keeps every entry, so a level switched
+  // back on shows what was written while it was hidden.
+  bool showInfo = state->GetLogShowInfo();
+  bool showWarning = state->GetLogShowWarning();
+  bool showError = state->GetLogShowError();
+  bool showDebug = state->GetLogShowDebug();
+
+  LogLevelCheckbox("INFO", DebugLog::LogLevel::INFO, &showInfo);
+  ImGui::SameLine();
+  LogLevelCheckbox("WARNING", DebugLog::LogLevel::WARNING, &showWarning);
+  ImGui::SameLine();
+  LogLevelCheckbox("ERROR", DebugLog::LogLevel::ERROR, &showError);
+  ImGui::SameLine();
+  LogLevelCheckbox("DEBUG", DebugLog::LogLevel::DEBUG, &showDebug);
+  ImGui::SameLine();
+  if (ImGui::SmallButton("All")) {
+    showInfo = showWarning = showError = showDebug = true;
+  }
+  ImGui::SameLine();
+  if (ImGui::SmallButton("None")) {
+    showInfo = showWarning = showError = showDebug = false;
+  }
+
+  // Following the tail is a control about the view, not a fifth level, so it sits
+  // behind a divider. Turning it back on jumps to the newest entry once, so the
+  // label does what it says instead of needing a manual scroll afterwards.
+  ImGui::SameLine();
+  ImGui::TextDisabled("|");
+  ImGui::SameLine();
+  bool autoScroll = state->GetLogAutoScroll();
+  bool autoScrollJustEnabled = false;
+  if (ImGui::Checkbox("Auto-scroll", &autoScroll)) {
+    state->SetLogAutoScroll(autoScroll);
+    autoScrollJustEnabled = autoScroll;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("Follow new messages.\nOff leaves the view where you scrolled it.");
+  }
+
+  // Off means "reading": keep old entries, because dropping the oldest line on
+  // every append shifts every visible line up by one -- the text moving even
+  // though the view was not scrolled. On means "following", where trimming the
+  // front is invisible because the tail is what is on screen.
+  game->debugLog->SetRetainOldEntries(!autoScroll);
+
+  state->SetLogShowInfo(showInfo);
+  state->SetLogShowWarning(showWarning);
+  state->SetLogShowError(showError);
+  state->SetLogShowDebug(showDebug);
+
+  std::string filterText = state->GetLogFilterText();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputTextWithHint("##DebugLogFilter",
+                               "Filter messages (case-insensitive substring)",
+                               &filterText)) {
+    state->SetLogFilterText(filterText);
+  }
+
+  // A level checkbox and the substring both have to pass. The message text is
+  // matched, not the level tag, so typing "warn" does not silently select the
+  // warning level.
+  auto matches = [&](const DebugLog::LogEntry& entry) {
+    switch (entry.level) {
+    case DebugLog::LogLevel::INFO:
+      if (!showInfo) return false;
+      break;
+    case DebugLog::LogLevel::WARNING:
+      if (!showWarning) return false;
+      break;
+    case DebugLog::LogLevel::ERROR:
+      if (!showError) return false;
+      break;
+    case DebugLog::LogLevel::DEBUG:
+      if (!showDebug) return false;
+      break;
+    }
+    return filterText.empty() ||
+           StringUtils::ContainsIgnoreCase(entry.message, filterText);
+  };
+
+  size_t visibleCount = 0;
+  for (const auto& entry : entries) {
+    if (matches(entry)) ++visibleCount;
+  }
+
+  // Stated even when nothing is hidden: a filtered log must not look like an
+  // empty one.
+  if (visibleCount == entries.size()) {
+    ImGui::TextDisabled("Showing all %zu entries", entries.size());
+  } else {
+    ImGui::TextDisabled("Showing %zu of %zu entries (%zu hidden)", visibleCount,
+                        entries.size(), entries.size() - visibleCount);
+  }
+  ImGui::SameLine();
   if (ImGui::Button("Clear Log")) {
     game->debugLog->Clear();
   }
 
   // Fills whatever is left of the window so resizing grows the log view rather
-  // than leaving a fixed 500x300 hole in it.
+  // than leaving a fixed hole in it.
   if (ImGui::BeginChild("##LogContent", ImVec2(0, 0), ImGuiChildFlags_Borders)) {
-    const auto &entries = game->debugLog->GetEntries();
-    for (const auto &entry : entries) {
-      ImVec4 color;
-      switch (entry.level) {
-      case DebugLog::LogLevel::INFO:
-        color = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-        break;
-      case DebugLog::LogLevel::WARNING:
-        color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
-        break;
-      case DebugLog::LogLevel::ERROR:
-        color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);
-        break;
-      case DebugLog::LogLevel::DEBUG:
-        color = ImVec4(0.0f, 1.0f, 1.0f, 1.0f);
-        break;
-      }
-      ImGui::TextColored(color, "[%s] %s", entry.timestamp.c_str(), entry.message.c_str());
+    if (visibleCount == 0 && !entries.empty()) {
+      ImGui::TextDisabled("No entries match the current filter.");
+    }
+    for (const auto& entry : entries) {
+      if (!matches(entry)) continue;
+      ImGui::TextColored(LogLevelColor(entry.level), "[%s] [%s] %s",
+                         entry.timestamp.c_str(),
+                         game->debugLog->GetLevelString(entry.level),
+                         entry.message.c_str());
     }
 
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - ImGui::GetItemRectSize().y) {
-      ImGui::SetScrollHereY(1.0f);
+    // Follow the tail only when Auto-scroll is on; off leaves the view exactly
+    // where the user put it while entries keep arriving.
+    if (autoScroll) {
+      const bool atBottom =
+          ImGui::GetScrollY() >=
+          ImGui::GetScrollMaxY() - ImGui::GetItemRectSize().y;
+      if (atBottom || autoScrollJustEnabled) {
+        ImGui::SetScrollHereY(1.0f);
+      }
     }
   }
   ImGui::EndChild();
@@ -2832,15 +2974,6 @@ void VisionDebugWindow::Draw() {
             "rather than hiding anything: sight is an acquisition rule in this "
             "phase, not fog of war.");
 
-        bool places = game->debugWindowState->GetShowPlaceOverlay();
-        if (ImGui::Checkbox("Draw place rectangles", &places)) {
-          game->debugWindowState->SetShowPlaceOverlay(places);
-        }
-        ImGui::TextDisabled(
-            "One box per place in the player's memory, with its observed cells "
-            "tinted inside it. The box is the extent, so a gap between the "
-            "outline and the tint is ground the place does not actually claim.");
-
         bool cursorFacing = game->debugWindowState->GetCursorFacingEnabled();
         if (ImGui::Checkbox("Turn to the mouse when standing still",
                             &cursorFacing)) {
@@ -2918,12 +3051,96 @@ void VisionDebugWindow::Draw() {
       // The record itself, as the engine holds it. Read-only apart from the dump
       // button: a debug view that can edit what it inspects stops being evidence.
       if (ImGui::BeginTabItem("Memory")) {
-        const SpatialMemory *memory =
-            game->playerEntity.get<SpatialMemory>();
+        // Every character that perceives, collected before any widget is drawn:
+        // `Vision` and `SpatialMemory` are per entity now, so "the record" is not
+        // one thing. The Task Board's shape -- collect, sort, select -- is used
+        // here for the same reason: querying flecs while emitting widgets invites
+        // the usual mutation hazards.
+        struct MemoryRow {
+          flecs::entity entity;
+          std::string name;
+          bool isPlayer = false;
+        };
+        std::vector<MemoryRow> rows;
+        game->ecs.filter<SpatialMemory>().each(
+            [this, &rows](flecs::entity e, SpatialMemory &) {
+              if (!e.is_alive()) return;
+              MemoryRow row;
+              row.entity = e;
+              if (const DisplayName *display = e.get<DisplayName>()) {
+                row.name = display->name;
+              } else if (e.name().c_str() != nullptr) {
+                row.name = e.name().c_str();
+              }
+              if (row.name.empty()) row.name = "Unnamed character";
+              row.isPlayer = (e == game->playerEntity);
+              rows.push_back(std::move(row));
+            });
+        std::sort(rows.begin(), rows.end(),
+                  [](const MemoryRow &a, const MemoryRow &b) {
+                    if (a.isPlayer != b.isPlayer) return a.isPlayer;
+                    return a.name < b.name;
+                  });
+
+        const SpatialMemory *memory = nullptr;
+        if (!rows.empty()) {
+          // The stored id decides, so the choice survives the frame. A first
+          // frame -- or an entity destroyed by a map reload -- falls back to the
+          // first row, which is the player when the player is alive.
+          std::size_t selected = 0;
+          for (std::size_t i = 0; i < rows.size(); ++i) {
+            if (rows[i].entity.id() == selectedMemoryEntity) {
+              selected = i;
+              break;
+            }
+          }
+          selectedMemoryEntity = rows[selected].entity.id();
+          // The map overlay follows the same selection as the record above:
+          // one character can be watched at a time, and watching a different one
+          // in the tab without the boxes following would be two sources of truth.
+          game->placeOverlayEntity = selectedMemoryEntity;
+          memory = rows[selected].entity.get<SpatialMemory>();
+
+          ImGui::TextUnformatted("Character");
+          ImGui::SameLine();
+          if (ImGui::BeginCombo("##memorycharacter",
+                                rows[selected].name.c_str())) {
+            for (std::size_t i = 0; i < rows.size(); ++i) {
+              const bool isSelected = i == selected;
+              if (ImGui::Selectable(rows[i].name.c_str(), isSelected)) {
+                selectedMemoryEntity = rows[i].entity.id();
+                game->placeOverlayEntity = selectedMemoryEntity;
+                // The cached JSON belongs to the previous character, so it has to
+                // go before this frame draws it.
+                jsonDirty = true;
+                jsonCache.clear();
+                shapeCount = 0;
+                memory = rows[i].entity.get<SpatialMemory>();
+              }
+              if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+          }
+
+          bool drawPlaces = game->debugWindowState->GetShowPlaceOverlay();
+          if (ImGui::Checkbox("Draw this character's places", &drawPlaces)) {
+            game->debugWindowState->SetShowPlaceOverlay(drawPlaces);
+          }
+          ImGui::TextDisabled(
+              "One box per place in the selected character's memory, with its "
+              "observed cells tinted inside it. The box is the extent, so a gap "
+              "between the outline and the tint is ground the place does not "
+              "actually claim.");
+        } else {
+          // Nothing to draw, so the overlay is told to fall back rather than
+          // keeping a selection the selector can no longer show.
+          game->placeOverlayEntity = 0;
+        }
+
         if (memory == nullptr) {
           ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
-                             "The player has no SpatialMemory -- stage 2 "
-                             "attaches one at spawn.");
+                             "No character has a SpatialMemory -- "
+                             "AttachPerception gives one at spawn.");
         } else {
           const int nowTick = CurrentTaskTick(game->ecs);
           ImGui::Text("%d cells (cap %d)   %d runs   %d objects (cap %d)   "
@@ -2941,7 +3158,10 @@ void VisionDebugWindow::Draw() {
                       memory->lastVisionTick);
 
           if (ImGui::Button("Dump JSON to logs/")) {
-            game->DumpSpatialMemory(game->playerEntity, includeCells);
+            // The selected character, not the player: an NPC's record is exactly
+            // the evidence a failed run has to leave behind.
+            game->DumpSpatialMemory(game->ecs.entity(selectedMemoryEntity),
+                                    includeCells);
           }
           ImGui::SameLine();
           if (ImGui::Button("Refresh")) {
@@ -2960,6 +3180,79 @@ void VisionDebugWindow::Draw() {
               "decomposition, so they claim no ground the agent never saw.",
               shapeCount, static_cast<int>(memory->cells.size()),
               static_cast<int>(jsonCache.size()));
+
+          // Stage 5's digest. The state is shown even when there is nothing to
+          // show: "nothing here" and "enabled but no backend" are different bugs
+          // and a silent empty block hides which one you have.
+          const MemoryDigestJob *job = game->memoryDigestJob.get();
+          if (job == nullptr) {
+            ImGui::TextDisabled(
+                "Model digest: off (set ai.memoryDigest to enable).");
+          } else if (!job->Available()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f),
+                               "Model digest: enabled but unavailable -- %s",
+                               job->UnavailableReason().c_str());
+          } else if (job->Busy()) {
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
+                               "Model digest: request in flight...");
+          } else {
+            // The countdown. It is the later of the startup grace and the rate
+            // limit, and it is computed by the same function the loop gates on.
+            const double seconds = game->SecondsUntilNextDigest();
+            const long long newCells = game->NewCellsSinceDigest();
+            const int minCells =
+                std::max(0, Settings().ai.memoryDigestMinCells);
+            const auto countdown = [](int total) {
+              if (total >= 60) {
+                return std::to_string(total / 60) + "m " +
+                       (total % 60 < 10 ? "0" : "") +
+                       std::to_string(total % 60) + "s";
+              }
+              return std::to_string(total) + "s";
+            };
+            if (seconds > 0.0) {
+              ImGui::TextColored(
+                  ImVec4(0.7f, 0.8f, 1.0f, 1.0f), "Next digest in %s",
+                  countdown(static_cast<int>(std::ceil(seconds))).c_str());
+              if (newCells < minCells) {
+                ImGui::TextDisabled(
+                    "  and %lld more newly seen cell(s) are needed first.",
+                    static_cast<long long>(minCells - newCells));
+              }
+            } else if (newCells < minCells) {
+              ImGui::TextDisabled(
+                  "Next digest: needs %lld more newly seen cell(s) (have %lld of "
+                  "%d since the last digest).",
+                  static_cast<long long>(minCells - newCells), newCells,
+                  minCells);
+            } else if (memory->digest.tick < 0) {
+              ImGui::TextDisabled("Model digest: starting the first pass...");
+            } else {
+              ImGui::TextDisabled(
+                  "Model digest: ready when the record next changes.");
+            }
+          }
+
+          if (memory->digest.tick >= 0 || !memory->digest.error.empty()) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.7f, 0.8f, 1.0f, 1.0f),
+                               "Model digest (tick %d, %d candidate(s), %s)",
+                               memory->digest.tick, memory->digest.candidates,
+                               memory->digest.model.empty()
+                                   ? "no model"
+                                   : memory->digest.model.c_str());
+            if (!memory->digest.error.empty()) {
+              ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "%s",
+                                 memory->digest.error.c_str());
+            }
+            for (const MemoryDigestEntry &entry : memory->digest.entries) {
+              ImGui::BulletText("%s  [%s #%d]", entry.text.c_str(),
+                                entry.kind.c_str(), entry.ref);
+            }
+          } else {
+            ImGui::TextDisabled(
+                "No model digest (off by default; see ai.memoryDigest).");
+          }
 
           // The consolidation ledger: the deliverable of stage 4. One line per
           // pass, newest last, exactly the counts the pass moved.
@@ -3042,10 +3335,16 @@ void VisionDebugWindow::Draw() {
           // frame-rate problem.
           if (showJson) {
             if (jsonDirty || jsonCache.empty()) {
-              const std::string name =
-                  game->playerEntity.has<DisplayName>()
-                      ? game->playerEntity.get<DisplayName>()->name
-                      : std::string("character");
+              const flecs::entity selectedEntity =
+                  game->ecs.entity(selectedMemoryEntity);
+              std::string name = "character";
+              if (selectedEntity.is_alive() &&
+                  selectedEntity.has<DisplayName>()) {
+                name = selectedEntity.get<DisplayName>()->name;
+              } else if (selectedEntity.is_alive() &&
+                         selectedEntity.name().c_str() != nullptr) {
+                name = selectedEntity.name().c_str();
+              }
               jsonCache = Memory::DumpJson(*memory, name, nowTick, includeCells);
               shapeCount = static_cast<int>(Memory::ToShapes(*memory).size());
               jsonCacheTick = memory->lastVisionTick;

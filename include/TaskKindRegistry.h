@@ -6,6 +6,11 @@
 #include <unordered_map>
 #include <vector>
 
+// A place in the character's own memory (Components.h). Forward-declared because
+// a kind may be checked against one without this header depending on the ECS
+// component layout.
+struct KnownPlace;
+
 // The engine's vocabulary of task shapes, and the single place a genre adds one
 // (docs/task-system-design.md section 7).
 //
@@ -36,14 +41,24 @@ struct TaskKind {
   // "resolve by name only", which is what a kind whose subject is always named
   // directly wants.
   std::function<bool(flecs::entity)> subjectFilter;
+
+  // Optional. Checked against a place the agent remembers, by the target name,
+  // *instead of* resolving an entity. This is the "finding, not touching" shape:
+  // a place is not an entity, and a kind whose target is "the village you have
+  // heard of" has nothing to grab. Verification prefers this when the name
+  // resolves to a remembered place, and falls back to `check` otherwise, so an
+  // entity target still works for the same kind.
+  std::function<std::vector<std::string>(flecs::entity agent,
+                                         const KnownPlace &place)>
+      placeCheck;
 };
 
 class TaskKindRegistry {
 public:
-  // The four kinds the engine can genuinely check today, all backed by
-  // components that already exist (section 7): harvest, plant, equip and craft,
-  // each with the predicate it is checked by. Adding a fifth is the one thing a
-  // genre has to do in C++.
+  // The kinds the engine can genuinely check today, all backed by components that
+  // already exist (section 7): harvest, plant, equip, craft, and reach -- the
+  // last the only one that can be satisfied by *finding* a place. Adding another
+  // is the one thing a genre has to do in C++.
   void RegisterDefaults();
 
   void Register(TaskKind kind);

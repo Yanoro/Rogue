@@ -67,6 +67,31 @@ public:
   
   bool GetShowDebugLogWindow() const { return showDebugLogWindow; }
   void SetShowDebugLogWindow(bool value) { showDebugLogWindow = value; }
+
+  // Which levels the Debug Log window draws, plus a case-insensitive substring its
+  // messages must contain. Display state only: the log keeps every entry, so a
+  // level switched back on shows what was written while it was hidden.
+  //
+  // Stored here rather than on DebugLogWindow because that window is rebuilt every
+  // time it is toggled, and persisted with the rest of this file because "I never
+  // want DEBUG lines" is a fact about how you work, not about one open window.
+  bool GetLogShowInfo() const { return logShowInfo; }
+  void SetLogShowInfo(bool value) { logShowInfo = value; }
+  bool GetLogShowWarning() const { return logShowWarning; }
+  void SetLogShowWarning(bool value) { logShowWarning = value; }
+  bool GetLogShowError() const { return logShowError; }
+  void SetLogShowError(bool value) { logShowError = value; }
+  bool GetLogShowDebug() const { return logShowDebug; }
+  void SetLogShowDebug(bool value) { logShowDebug = value; }
+  std::string GetLogFilterText() const { return logFilterText; }
+  void SetLogFilterText(const std::string &value) { logFilterText = value; }
+
+  // Whether the log follows new entries by scrolling to the bottom. Separate from
+  // the filter above because they answer different questions -- "which lines do I
+  // want" versus "do I want the view to move under me" -- and off is the useful
+  // state while reading something that arrived a moment ago.
+  bool GetLogAutoScroll() const { return logAutoScroll; }
+  void SetLogAutoScroll(bool value) { logAutoScroll = value; }
   
   bool GetShowMapReloadWindow() const { return showMapReloadWindow; }
   void SetShowMapReloadWindow(bool value) { showMapReloadWindow = value; }
@@ -265,5 +290,16 @@ private:
   bool showPlaceNames;
   bool stopAllAI;
   std::string defaultFontPath;
+
+  // Defaults keep every level visible and no message text excluded, so a state
+  // file written before these keys existed reads as "show everything".
+  bool logShowInfo;
+  bool logShowWarning;
+  bool logShowError;
+  bool logShowDebug;
+  std::string logFilterText;
+  // On by default, which is what the window always did.
+  bool logAutoScroll;
+
   
     static constexpr const char *STATE_FILE_PATH = "./debug_windows_state.json";};

@@ -12,6 +12,8 @@
 #include "AsciiArtFonts.hpp"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
+#include "MemoryDigest.hpp"
+#include "MemoryDigestJob.h"
 #include "PlaceCategoryRegistry.h"
 #include "Defaults.h"
 #include "MapReloader.h"
@@ -95,6 +97,17 @@ public:
 
   void UpdateGUI();
   void Update();
+  // Applies a finished digest and asks for a new one when it is stale. Called once
+  // a frame; does nothing when the feature is off or no backend is available.
+  void UpdateMemoryDigest();
+
+  // Seconds until the *time* gates would allow a digest: the startup grace and
+  // the rate limit, whichever is later. 0 means nothing time-based is holding it.
+  // Negative means the feature is off -- there is no next digest to count to.
+  // The ground gate is not time-based, so it is reported separately.
+  double SecondsUntilNextDigest() const;
+  // Newly discovered cells since the current digest was built.
+  long long NewCellsSinceDigest() const;
 
   void DrawGameWindows();
   void Draw();
@@ -197,6 +210,15 @@ private:
   flecs::world ecs;
   flecs::entity renderPipeline;
   flecs::entity playerEntity;
+
+  // Which character the Vision debug window's place overlay draws. 0 means
+  // "nothing chosen yet", which resolves to the player, so the overlay keeps
+  // doing what it always did until the Memory tab is used. The window writes it
+  // when its selector resolves (it is a friend); GameDraw reads it. An id rather
+  // than a handle for the same reason the window stores an id: a map reload
+  // destroys every entity, and a stale handle would dangle where a stale id is
+  // merely dead.
+  flecs::entity_t placeOverlayEntity = 0;
 
   flecs::entity selectedTile;
   bool hasClicked = false;
@@ -431,6 +453,32 @@ private:
   // work. This is the only live classifier in the game; `--sprite-route` and
   // `--systemone-test` build their own for a single headless call.
   std::shared_ptr<SystemOne::SystemOneClassifier> systemOneClassifier;
+
+  // Stage 5's out-of-band digest: one job for the run, because exactly one
+  // character has a SpatialMemory today (the player). When NPCs get memory, this
+  // moves onto their brain, one per character, which is what "one request in
+  // flight per character" means there.
+  std::unique_ptr<MemoryDigestJob> memoryDigestJob;
+  // The digest's own backend, not the NPC one. Reasoning is switched off for it:
+  // measured on the default backend, a reasoning model spent the entire completion
+  // budget inside <think> and never emitted the array, which is exactly what the
+  // rewriter's comment warns about. Its own instance means toggling reasoning
+  // cannot race an NPC turn that is in flight.
+  std::unique_ptr<AI> memoryDigestAI;
+  // The candidate list the in-flight request was built from. The reply indexes
+  // into *this* list, so composing against a freshly built one could attach a
+  // group to the wrong item after a walk.
+  std::vector<MemoryDigestBuilder::Candidate> pendingDigestCandidates;
+  // The fingerprint at request time, so a reply is stamped with what it described
+  // rather than with whatever the record looks like when it arrives.
+  long long pendingDigestSignature = 0;
+  long long pendingDigestDiscovered = 0;
+  // Wall-clock seconds, not frames: the setting says seconds, and a frame counter
+  // silently turns "120 seconds" into a different interval at every frame rate.
+  double lastDigestAttemptSeconds = -1.0e9;
+  // Wall-clock time before which no digest may be asked for. Set when the job is
+  // built, so it is per world load rather than per session.
+  double memoryDigestGraceUntilSeconds = 0.0;
 
   // Every backend this run can switch to, resolved once from `system1` in the
   // settings. Resolved at startup rather than per switch so the picker, the resolver
@@ -745,6 +793,13 @@ private:
   void ECSInitAgentSystems();
   void ECSInitActionSystems();
   void ECSInitTaskSystems();
+
+  // Gives one character eyes and a record (docs/spatial-memory-design.md section
+  // 8, the agent phase): `Vision`, an empty `SpatialMemory`, and the map's
+  // authored place names as inert seeds. Called for the player and for every
+  // NPC, so the two perceive through the same components rather than through two
+  // code paths. Idempotent enough to call at spawn and on a reload.
+  void AttachPerception(flecs::entity entity);
 
   // Samples `Vision` into its own cache (docs/spatial-memory-design.md section
   // 4.4). Separate from the action systems because it is the acquisition layer,

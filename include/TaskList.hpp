@@ -512,10 +512,14 @@ inline std::string FormatTaskFacts(const std::vector<std::string> &facts) {
 // says it intends (section 8); it is empty when nothing is running and the line
 // is then omitted. `suggestRevision` adds the two-line reminder of the verb,
 // which is how the agent learns [SET_TASKS] exists at all -- the verb is hidden
-// from the advertised command list.
+// from the advertised command list. `kindHint` is the engine's vocabulary of task
+// kinds, rendered by the caller because the registry is a world resource this
+// header must not depend on; it is shown only alongside the reminder, since an
+// agent that is not revising its plan has no use for it.
 inline std::string RenderTaskDigest(const TaskList &list,
                                     const std::string &currentActivity,
-                                    bool suggestRevision) {
+                                    bool suggestRevision,
+                                    const std::string &kindHint = std::string()) {
   std::string out;
 
   std::string lifeGoals;
@@ -614,6 +618,10 @@ inline std::string RenderTaskDigest(const TaskList &list,
         "  [SET_TASKS id | description | horizon | kind | target | parent | "
         "tier; ...]\n"
         "  (separate entries with ';'; parent is the id it serves, or -1)\n\n";
+    // The kinds the engine can actually check. Without this the kind column is a
+    // guessing game, and a "find the village" intention has no way to become a
+    // task the engine can report on.
+    out += kindHint;
   }
 
   return out;

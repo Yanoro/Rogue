@@ -33,7 +33,13 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showVisionChatWindow(false),
     showPlaceNames(false),
     stopAllAI(false),
-    defaultFontPath("") {}
+    defaultFontPath(""),
+    logShowInfo(true),
+    logShowWarning(true),
+    logShowError(true),
+    logShowDebug(true),
+    logFilterText(""),
+    logAutoScroll(true) {}
 
 void DebugWindowState::SaveState(const std::string &filePath) const {
   json state;
@@ -78,6 +84,14 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["showPlaceNames"] = showPlaceNames;
   state["stopAllAI"] = stopAllAI;
   state["defaultFontPath"] = defaultFontPath;
+  // The Debug Log window's filter, so a level hidden on one run stays hidden on
+  // the next instead of quietly coming back.
+  state["logShowInfo"] = logShowInfo;
+  state["logShowWarning"] = logShowWarning;
+  state["logShowError"] = logShowError;
+  state["logShowDebug"] = logShowDebug;
+  state["logFilterText"] = logFilterText;
+  state["logAutoScroll"] = logAutoScroll;
 
   std::ofstream file(filePath);
   if (file.is_open()) {
@@ -154,6 +168,15 @@ void DebugWindowState::LoadState(const std::string &filePath) {
                                   state.value("showLocations", false));
       stopAllAI = state.value("stopAllAI", false);
       defaultFontPath = state.value("defaultFontPath", "");
+      // `true` is the fallback rather than the member's value so a file written
+      // before filters existed shows everything instead of whatever a previous
+      // toggle left set.
+      logShowInfo = state.value("logShowInfo", true);
+      logShowWarning = state.value("logShowWarning", true);
+      logShowError = state.value("logShowError", true);
+      logShowDebug = state.value("logShowDebug", true);
+      logFilterText = state.value("logFilterText", std::string());
+      logAutoScroll = state.value("logAutoScroll", true);
 
       std::cout << "Debug window state loaded from: " << filePath << std::endl;
     } catch (const std::exception &e) {

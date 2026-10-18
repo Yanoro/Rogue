@@ -198,12 +198,15 @@ void Game::Draw() {
             const float centerAngle =
                 std::atan2(vision.cachedFacing.y, vision.cachedFacing.x) * RAD2DEG;
 
-            if (vision.angleDegrees >= 359.5f) {
+            // The cached angle, not the component's standing value: a full-circle
+            // survey samples 360 degrees once and restores the cone on the next
+            // frame, and this arc must describe the sweep that tinted the cells.
+            if (vision.cachedAngleDegrees >= 359.5f) {
               DrawCircleLines(static_cast<int>(centerX),
                               static_cast<int>(centerY), rangePx,
                               ColorAlpha(SKYBLUE, 0.45f));
             } else {
-              const float half = vision.angleDegrees * 0.5f;
+              const float half = vision.cachedAngleDegrees * 0.5f;
               DrawCircleSectorLines({centerX, centerY}, rangePx,
                                     centerAngle - half, centerAngle + half, 32,
                                     ColorAlpha(SKYBLUE, 0.45f));
@@ -225,8 +228,18 @@ void Game::Draw() {
     // the character never observed. The tinted members are drawn precisely for
     // that reason: the box says "this is the area", the tint says "this is what was
     // actually seen", and the gap between them is visible rather than implied.
+    //
+    // The character is the one selected in the Vision window's Memory tab -- the
+    // same selection whose record and dump that tab shows. Nothing selected, or a
+    // selected entity destroyed by a map reload, falls back to the player.
     if (debugWindowState->GetShowPlaceOverlay()) {
-      if (const SpatialMemory *memory = playerEntity.get<SpatialMemory>()) {
+      flecs::entity overlayEntity =
+          placeOverlayEntity != 0 ? ecs.entity(placeOverlayEntity)
+                                  : flecs::entity::null();
+      if (!overlayEntity.is_alive() || !overlayEntity.has<SpatialMemory>()) {
+        overlayEntity = playerEntity;
+      }
+      if (const SpatialMemory *memory = overlayEntity.get<SpatialMemory>()) {
         for (const KnownPlace &place : memory->places) {
           const Color placeColor = Memory::PlaceColor(place.id);
 

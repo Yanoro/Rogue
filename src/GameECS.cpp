@@ -245,6 +245,12 @@ flecs::entity Game::createNPC(const NPCData &data) {
 
   entity.add<CharacterTag>();
 
+  // The agent phase of docs/spatial-memory-design.md: an NPC perceives through
+  // the same `Vision` + `SpatialMemory` pair the player does. It is not told
+  // where anything is -- the map's authored place names arrive as seeds and stay
+  // inert until that ground is observed.
+  AttachPerception(entity);
+
   // Stamped before the brain is built, so the agent's prompt and every later
   // resolution see a complete and neutral sheet.
   if (auto registryRes = ecs.get<StatRegistryResource>()) {
@@ -348,6 +354,8 @@ flecs::entity Game::createNPC(const NPCData &data) {
   entity.set_name(name.c_str());
 
   auto brain = std::make_unique<AgentBrain>(entity, name, debugLog.get());
+  brain->SetMemorySalience(systemOneClassifier.get(),
+                           Settings().ai.memorySalience);
   brain->isStopped = debugWindowState ? debugWindowState->GetStopAllAI() : false;
   entity.set<AgentBrainWrapper>({std::move(brain)});
   return entity;
@@ -1111,6 +1119,51 @@ void Game::ECSInitActionSystems() {
 
 }
 
+// Gives one character eyes and a record (docs/spatial-memory-design.md section 8,
+// the agent phase).
+//
+// Both systems that consume these components are written per entity: the sampler
+// keeps its sweep inside the component, the writer keys off that entity's own
+// `lastVisionTick`, and derivation and consolidation are pure functions over one
+// `SpatialMemory`. Attaching the components is therefore the whole change the
+// player-only phase deferred -- there is no shared state to guard.
+//
+// The authored names arrive as seeds, not as knowledge: nothing resolves until
+// the ground under the anchor has been observed (place-derivation doc section 8).
+void Game::AttachPerception(flecs::entity entity) {
+  if (!entity.is_alive()) {
+    return;
+  }
+
+  entity.set<Vision>({});
+  // Empty on spawn: the Origin place is created by the first sample, which is
+  // what makes "I have no idea where I am" the honest starting state.
+  entity.set<SpatialMemory>({});
+
+  SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+  if (memory == nullptr || map == nullptr) {
+    return;
+  }
+
+  for (const PlaceSeed &authored : map->GetPlaceSeeds()) {
+    PlaceNameSeed seed;
+    seed.label = authored.label;
+    seed.anchor = authored.position;
+    seed.source = KnowledgeSource::Authored;
+    seed.createsPlace = true;
+    seed.radius = authored.radius;
+    memory->nameSeeds.push_back(std::move(seed));
+  }
+
+  if (debugLog) {
+    const std::string name = entity.name().c_str();
+    debugLog->LogInfo("Spatial memory: " +
+                      (name.empty() ? std::string("character") : name) + " got " +
+                      std::to_string(memory->nameSeeds.size()) +
+                      " name seed(s) from the map");
+  }
+}
+
 // Fills each `Vision`'s cache (docs/spatial-memory-design.md section 4.4).
 //
 // The sweep is rebuilt only when it can have changed: the origin tile, the facing
@@ -1128,10 +1181,20 @@ void Game::ECSInitVisionSystems() {
                    const GamePosition &origin) {
         const int nowTick = CurrentTaskTick(ecs);
 
+        // A pending [LOOK around] asks for one 360-degree sweep. The request is
+        // consumed here rather than by the action so line of sight has exactly one
+        // implementation. `angleDegrees` is left alone: after this sample the
+        // cached angle says 360, so the next frame sees the mismatch and restores
+        // the character's own cone.
+        const bool fullCircle = vision.fullCircleRequested;
+        const float sampleAngle =
+            fullCircle ? 360.0f : vision.angleDegrees;
+
         const float facingDot = facing.x * vision.cachedFacing.x +
                                 facing.y * vision.cachedFacing.y;
         const bool stale =
-            vision.lastVisible.empty() || !(origin == vision.cachedOrigin) ||
+            vision.fullCircleRequested || vision.lastVisible.empty() ||
+            !(origin == vision.cachedOrigin) ||
             vision.range != vision.cachedRange ||
             vision.angleDegrees != vision.cachedAngleDegrees ||
             vision.radarRadius != vision.cachedRadarRadius ||
@@ -1156,16 +1219,27 @@ void Game::ECSInitVisionSystems() {
           return;
         }
 
-        VisionQuery::VisibleCells(*map, origin, facing, vision.range,
-                                  vision.angleDegrees, vision.radarRadius,
-                                  opaque, vision.lastVisible);
+        VisionQuery::VisibleCells(*map, origin, facing, vision.range, sampleAngle,
+                                  vision.radarRadius, opaque, vision.lastVisible);
+
+        // A survey is one frame's answer; keep its own copy so the action that
+        // asked for it can report it even after the cone has been restored (the
+        // brain does not necessarily step the action on the very next frame).
+        if (fullCircle) {
+          vision.lastFullCircle = vision.lastVisible;
+          vision.lastFullCircleTick = nowTick;
+        }
 
         vision.cachedOrigin = origin;
         vision.cachedFacing = facing;
         vision.cachedRange = vision.range;
-        vision.cachedAngleDegrees = vision.angleDegrees;
+        // The angle the sweep actually used, not the component's standing value:
+        // they differ for a survey, and the next frame's mismatch is what puts the
+        // cone back.
+        vision.cachedAngleDegrees = sampleAngle;
         vision.cachedRadarRadius = vision.radarRadius;
         vision.lastSampleTick = nowTick;
+        vision.fullCircleRequested = false;
       });
 }
 
@@ -2433,6 +2507,24 @@ void Game::ECSInit() {
   });
 
   GlobalCommandRegistry::Register({
+    .format = "[LOOK $DIRECTION]",
+    .rule = "Turn on the spot and report what you can now see, or turn a full circle to look all around. Sight is a cone in front of you. Examples: [LOOK north], [LOOK east], [LOOK around].",
+    .pattern = std::regex(R"(\[LOOK\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string direction = match[1].str();
+      return [direction](flecs::entity) { return std::make_unique<LookAction>(direction); };
+    },
+    .help = {
+      .description = "Turn to face a direction without moving, and be told what is in sight that way. Sight is a cone in front of you, so turning is how you look along a road or across a clearing before deciding to walk -- at a junction, the only way to see the other arm. Use [LOOK around] for a full circle: it describes every compass direction at once and is what to use when you need to get your bearings.",
+      .examples = {"[LOOK north]", "[LOOK east]", "[LOOK around]"},
+      .usage = {"$DIRECTION: north, south, east, west, or a diagonal such as north-east. Or 'around' for a full circle."},
+      .notes = {"Standing still keeps your last facing; walking overrides it. A full circle leaves your facing where it was.",
+                "What you see is also remembered, so a direction you looked at appears in [PLACES] afterwards.",
+                "The report only describes what your own eyes reached: distance, darkness and anything that blocks sight still limit it."}
+    }
+  });
+
+  GlobalCommandRegistry::Register({
     .format = "[TALK_TO $TARGET]",
     .rule = "Start or continue a conversation with a character. Example: [TALK_TO Pietro].",
     .pattern = std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
@@ -3401,6 +3493,34 @@ void Game::ECSInit() {
 
   ecs.set<AIBackend>({std::move(ai)});
 
+  // Stage 5: the out-of-band digest, off unless the setting says otherwise. A
+  // character with no backend, or a missing prompt file, leaves the job
+  // unavailable and the feature is a no-op -- the engine's own record is already
+  // complete, so a missing model cannot change what a player sees.
+  if (Settings().ai.memoryDigest) {
+    GameSettings::ModelSection digestModel = Settings().model;
+    digestModel.hasMaxTokens = true;
+    digestModel.maxTokens = Settings().ai.memoryDigestMaxTokens;
+    memoryDigestAI = BuildAIBackend(digestModel, debugLog.get());
+    if (memoryDigestAI) {
+      memoryDigestAI->setReasoningEnabled(false);
+    }
+    memoryDigestJob = std::make_unique<MemoryDigestJob>();
+    memoryDigestJob->Configure(memoryDigestAI.get(),
+                               "data/prompts/memory_digest.txt",
+                               "memory_digest", debugLog.get());
+    memoryDigestGraceUntilSeconds =
+        GetTime() + static_cast<double>(
+                        std::max(0, Settings().ai.memoryDigestStartupGraceSeconds));
+    if (debugLog) {
+      const std::string reason = memoryDigestJob->UnavailableReason();
+      debugLog->LogInfo(reason.empty()
+                            ? "Memory digest: enabled"
+                            : "Memory digest: enabled but unavailable (" +
+                                  reason + ")");
+    }
+  }
+
   ECSInitPhysicsSystems();
   ECSInitLogicSystems();
   ECSInitRenderSystems();
@@ -3432,34 +3552,12 @@ void Game::ECSInit() {
   // it is ever missed.
   playerEntity.set<Facing>({});
   playerEntity.set<Acceleration>({0, 0});
-  // Stage 1 of docs/spatial-memory-design.md: the player is the only character
-  // that sees yet, and having the component is the opt-in. Its values come from
-  // the Vision defaults, and the Vision Debug window edits this component live.
-  playerEntity.set<Vision>({});
-  // Stage 2 of docs/spatial-memory-design.md: the record the vision sweep feeds.
-  // Empty on spawn -- the Origin place is created by the first sample, which is
-  // what makes "I have no idea where I am" the honest starting state.
-  playerEntity.set<SpatialMemory>({});
+  // Perception, exactly as an NPC gets it at spawn: the same components, the
+  // same empty record, the same authored names as inert seeds. Both characters
+  // then go through the same per-entity systems, and the Vision Debug window can
+  // read either.
+  AttachPerception(playerEntity);
 
-  // Authored names, as seeds (docs/place-derivation-design.md section 8): a label,
-  // a cell and a radius, owning nothing. The map no longer has rectangles to hand
-  // over -- `Location` is gone -- so these are the only thing it contributes.
-  if (SpatialMemory *memory = playerEntity.get_mut<SpatialMemory>()) {
-    for (const PlaceSeed &authored : map->GetPlaceSeeds()) {
-      PlaceNameSeed seed;
-      seed.label = authored.label;
-      seed.anchor = authored.position;
-      seed.source = KnowledgeSource::Authored;
-      seed.createsPlace = true;
-      seed.radius = authored.radius;
-      memory->nameSeeds.push_back(std::move(seed));
-    }
-    if (debugLog) {
-      debugLog->LogInfo("Spatial memory: " +
-                        std::to_string(memory->nameSeeds.size()) +
-                        " name seed(s) from the map");
-    }
-  }
   playerEntity.set<Hitbox>(
       {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT});
   // Tile-sized and art-driven for the same reasons an NPC is. The purple glyph

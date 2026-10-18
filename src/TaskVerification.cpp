@@ -160,13 +160,30 @@ void VerifyAgentTaskList(flecs::entity agent, TaskList &tasks, int nowTick) {
       continue;
     }
 
-    const flecs::entity target = ResolveTaskTarget(agent, *kind, goal.target);
-    if (!target.is_alive()) {
-      goal.facts = {HadObservation(previousFacts) ? kTargetGone : kTargetNotFound};
-    } else if (kind->check) {
-      goal.facts = kind->check(agent, target);
+    // A place in the agent's own memory is a first-class target: a place is not
+    // an entity, and "reach the village" must not depend on some building inside
+    // it happening to resolve as a subject. Only kinds that can be satisfied by
+    // *finding* something opt in (TaskKind::placeCheck); every other kind keeps
+    // the entity resolution below untouched.
+    const KnownPlace *place = nullptr;
+    if (kind->placeCheck) {
+      if (const SpatialMemory *memory = agent.get<SpatialMemory>()) {
+        place = PlaceQuery::ByLabel(*memory, goal.target);
+      }
+    }
+
+    if (place != nullptr) {
+      goal.facts = kind->placeCheck(agent, *place);
     } else {
-      goal.facts.clear();  // known kind whose predicate is not written yet
+      const flecs::entity target = ResolveTaskTarget(agent, *kind, goal.target);
+      if (!target.is_alive()) {
+        goal.facts = {HadObservation(previousFacts) ? kTargetGone
+                                                    : kTargetNotFound};
+      } else if (kind->check) {
+        goal.facts = kind->check(agent, target);
+      } else {
+        goal.facts.clear();  // known kind whose predicate is not written yet
+      }
     }
 
     // Progress, which is what staleness is measured against. Two things count,

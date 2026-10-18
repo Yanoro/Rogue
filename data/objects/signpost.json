@@ -1,0 +1,28 @@
+{
+  "name": "Signpost",
+  "description": "A weathered oak post at the fork. A single board, its paint still bright, points north up the track and reads: 'VILLAGE -- north gate, market on the square.'",
+  "components": [
+    "Interactable",
+    "ShowNameTag",
+    "Obstacle"
+  ],
+  "character": "!",
+  "characterColor": [
+    170,
+    126,
+    82,
+    255
+  ],
+  "backgroundColor": [
+    42,
+    32,
+    22,
+    255
+  ],
+  "nameTagColor": [
+    170,
+    126,
+    82,
+    255
+  ]
+}

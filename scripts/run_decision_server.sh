@@ -100,6 +100,11 @@ echo
 # installed anywhere, so the loader needs telling. A CUDA build additionally needs
 # libcudart/libcublas; those store paths are in the binary's RPATH, not here.
 export LD_LIBRARY_PATH="$BIN_DIR:${LD_LIBRARY_PATH:-}"
+if [[ "$LLAMA_BUILD_TREE" == "build-cuda" ]]; then
+  # libcuda.so.1 is the driver, not the stub the build linked against, and NixOS
+  # keeps it in the OpenGL driver tree rather than on the default loader path.
+  export LD_LIBRARY_PATH="/run/opengl-driver/lib:$LD_LIBRARY_PATH"
+fi
 
 # 127.0.0.1 only, which is llama-server's default and what we want: nothing but
 # this machine can reach it, so no API key is needed.

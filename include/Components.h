@@ -145,6 +145,28 @@ struct Vision {
   float cachedAngleDegrees = -1.0f;
   int cachedRadarRadius = -1;
   int lastSampleTick = -1;
+
+  // One-shot request for a full-circle sweep ([LOOK around]). The sampler
+  // consumes it and clears it; `angleDegrees` is never edited, so a survey cannot
+  // leave the character with permanent all-round vision. The sweep still uses the
+  // same range, radar and line of sight, and it is written to memory like any
+  // other sample because the writer consumes whatever the sampler produced.
+  //
+  // A request rather than a direct call into `VisibleCells` so the sampler stays
+  // the only place line of sight is run (docs/spatial-memory-design.md 4.4).
+  bool fullCircleRequested = false;
+
+  // The last full-circle sweep, kept separately from `lastVisible`.
+  //
+  // The 360-degree sample is one frame's answer: the next sample restores the
+  // character's cone and overwrites `lastVisible`. The action that asked for the
+  // survey is not necessarily updated on the survey frame -- the brain steps a
+  // running action every other frame at 60 Hz -- so a report built from
+  // `lastVisible` would describe the restored cone while claiming a full circle.
+  // These two fields make the survey self-contained; they are overwritten only by
+  // the next survey.
+  std::vector<GamePosition> lastFullCircle;
+  int lastFullCircleTick = -1;
 };
 
 // ---------------------------------------------------------------------------
@@ -269,6 +291,38 @@ struct SeenObject {
 // `category` only says which of the two it is. Deliberately no taxonomy: grouping
 // "mill" and "smeltery" into "workshop" is the renderer's interpretation, so a
 // genre pack can rename content without editing C++.
+// One line of a model-written digest of what a character remembers
+// (docs/spatial-memory-design.md section 6.2).
+//
+// The entry points at something already in the record -- a place, or a run by
+// position -- and its text is composed by the engine from that thing's own fields.
+// The model's contribution is *selection and grouping*: which items belong
+// together, and which are not worth remembering. It never writes a label or a
+// fact, because the guardrail in section 6.4 forbids it.
+struct MemoryDigestEntry {
+  std::string kind;  // "place" or "run"
+  int ref = -1;      // place id, or the index into `runs` the group started from
+  std::string text;  // engine-composed, from existing fields only
+};
+
+// The digest layer that sits beside the runs. Never authoritative: the runs and
+// cells below it are. Empty until the out-of-band pass has run, which is the
+// default state -- the feature is off unless a setting turns it on.
+struct MemoryDigest {
+  int tick = -1;
+  std::string model;
+  std::string error;
+  int candidates = 0;  // how many items the model was shown
+  // A cheap fingerprint of the record this digest was built from. A new digest is
+  // asked for when the fingerprint changes, so standing still costs nothing and
+  // new ground produces a new one at the next opportunity.
+  long long signature = 0;
+  // `discoveredCells` when this digest was composed. The next one is only asked
+  // for once enough *new* ground has been found since.
+  long long discoveredAtDigest = 0;
+  std::vector<MemoryDigestEntry> entries;
+};
+
 // A consolidated run of same-surface cells: a rectangle of one surface inside one
 // place (docs/spatial-memory-design.md section 6.1).
 //
@@ -385,6 +439,15 @@ struct SpatialMemory {
   std::vector<MemoryRun> runs;
   // Newest last, capped so the ledger cannot grow without bound.
   std::vector<ConsolidationRecord> consolidationLog;
+  // How many cells this character has ever discovered, monotonic. Used by the
+  // digest's substance floor: "cells seen since the last digest" has to mean newly
+  // *discovered* ground, because re-observing a cell refreshes its tick and would
+  // otherwise let standing still count as progress.
+  long long discoveredCells = 0;
+  // Written out of band by the model when the feature is on; read by nothing but
+  // the debug window and the dump. An empty digest means "the engine's record is
+  // the only account", which is the default and the fallback.
+  MemoryDigest digest;
 
   // The vision sample this record has already consumed, so the writer runs once
   // per sample rather than once per frame.

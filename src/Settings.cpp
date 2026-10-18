@@ -471,6 +471,20 @@ bool LoadGameSettings(const std::string &path) {
 
     const nlohmann::json &ai = Section(root, "ai");
     settings.ai.npcPromptFile = ai.value("npcPromptFile", settings.ai.npcPromptFile);
+    settings.ai.memoryDigest = ai.value("memoryDigest", settings.ai.memoryDigest);
+    settings.ai.memoryDigestMinAgeSeconds = ai.value(
+        "memoryDigestMinAgeSeconds", settings.ai.memoryDigestMinAgeSeconds);
+    settings.ai.memoryDigestCandidates = ai.value(
+        "memoryDigestCandidates", settings.ai.memoryDigestCandidates);
+    settings.ai.memoryDigestStartupGraceSeconds = ai.value(
+        "memoryDigestStartupGraceSeconds",
+        settings.ai.memoryDigestStartupGraceSeconds);
+    settings.ai.memoryDigestMinCells = ai.value(
+        "memoryDigestMinCells", settings.ai.memoryDigestMinCells);
+    settings.ai.memoryDigestMaxTokens = ai.value(
+        "memoryDigestMaxTokens", settings.ai.memoryDigestMaxTokens);
+    settings.ai.memorySalience =
+        ai.value("memorySalience", settings.ai.memorySalience);
     if (!settings.ai.npcPromptFile.empty()) {
       if (ReadTextFile(settings.ai.npcPromptFile, settings.ai.npcPromptTemplate)) {
         std::cout << "Settings: NPC prompt template loaded from "

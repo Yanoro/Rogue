@@ -1,7 +1,8 @@
 # Running a local System 1 model (Kev-4B)
 
-**Status:** working on this machine, CPU-only. Verified end to end.
-**Date:** 2026-10-16.
+**Status:** working on this machine, CPU and CUDA. CPU verified end to end; the
+CUDA build was added 2026-10-18.
+**Date:** 2026-10-16 (CPU); 2026-10-18 (CUDA).
 **Scope:** how to serve a local decision model and point AIRogue's System 1 client
 at it instead of hosted Jev. Companion to `docs/agent-attention-design.md` (what
 System 1 is for) and `SETTINGS.md` §`system1` (the config).
@@ -152,6 +153,30 @@ reconfigure is documented at the end of `scripts/build_llama_server.sh`. It was
 not forced through here because the CPU build answers the correctness question,
 and building CUDA toolchains on a 15 GiB box while another build is running is how
 you OOM the machine.
+
+### CUDA build (2026-10-18)
+
+A CUDA tree now exists at `.deps/llama.cpp/build-cuda` (RTX 3050, `sm_86`), and
+`scripts/run_decision_server.sh` prefers it over `build/`. `LLAMA_BUILD=build`
+forces the CPU tree.
+
+- **FlashAttention is off** (`-DGGML_CUDA_FA=OFF`): CUDA 12.8.93's `cicc`
+  segfaults on the FA MMA template instances with this host compiler. Decision
+  requests are short, so the fallback attention kernels are fine.
+- **Why the toolkit is merged:** nix's `cuda_nvcc` output has `nvcc` but not
+  `cuda_runtime.h` or cuBLAS, while CMake's `FindCUDAToolkit` expects one root.
+  Merge `cuda_nvcc`, `cuda_cudart`, `cuda_cccl` and `libcublas` into a temporary
+  tree and pass `-DCUDAToolkit_ROOT=<tree>`, `CUDACXX=<nvcc>` and
+  `-DCMAKE_CUDA_ARCHITECTURES=86-real`.
+- **Measured, warm:** 143-token probe **~0.25 s**; 663-token capability-list
+  route **~0.37–0.50 s**. The first request after a load takes **~4 s** while CUDA
+  warms up, and the model loads in ~15 s versus 70–115 s on CPU.
+- **Replayed the game's own calls:** the three CPU calls that took 40.9–41.8 s in
+  `logs/system1/` answer in **~0.37 s** each on the GPU.
+
+The RPATH of `libggml-cuda.so` points at the real store paths for
+`libcudart`/`libcublas` rather than the temporary merged tree, so it survives a
+reboot.
 
 ---
 

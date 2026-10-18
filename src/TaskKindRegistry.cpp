@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -9,8 +11,10 @@
 #include "EquipmentRuntime.hpp"
 #include "ItemRegistry.h"
 #include "Map.h"
+#include "PlaceQuery.hpp"
 #include "RecipeRegistry.h"
 #include "StringUtils.hpp"
+#include "VisionQuery.hpp"
 
 // The checking predicates (docs/task-system-design.md sections 7 and 8).
 //
@@ -243,13 +247,93 @@ std::vector<std::string> CheckCraft(flecs::entity agent, flecs::entity target) {
   return {"missing materials for " + firstKnown};
 }
 
+// reach: the agent has to be *at* something rather than do something to it. The
+// target may be an entity (a character, a building) or a remembered place; this
+// branch covers the entity, CheckReachPlace the place.
+//
+// The fact states a distance, never "done": section 6 says the engine reports and
+// the agent judges, and "am I close enough" is the judgement the agent is
+// actually making. One tile is the arrival radius the move verb already uses.
+std::vector<std::string> CheckReach(flecs::entity agent, flecs::entity target) {
+  if (!target.is_alive()) return {"target not found"};
+
+  const std::string label = SubjectLabel(target);
+  const GamePosition *here = agent.get<GamePosition>();
+  const GamePosition *there = target.get<GamePosition>();
+  if (here == nullptr || there == nullptr) {
+    return {label + " has no place to stand next to"};
+  }
+
+  const int dx = there->x - here->x;
+  const int dy = there->y - here->y;
+  const int distance = std::max(std::abs(dx), std::abs(dy));
+  if (distance <= 1) {
+    return {label + " is within reach"};
+  }
+  return {label + " is " + std::to_string(distance) + " tile(s) " +
+          PlaceQuery::CompassWord(dx, dy)};
+}
+
+// reach, place branch: the agent remembers a place by that name. "Arrived" means
+// standing on ground the place claims, which is the only definition that needs no
+// map-wide geometry -- the claimed cells are already the agent's own observation
+// (place-derivation doc section 9).
+std::vector<std::string> CheckReachPlace(flecs::entity agent,
+                                         const KnownPlace &place) {
+  const std::string label = PlaceQuery::DisplayName(place);
+  const GamePosition *here = agent.get<GamePosition>();
+  const SpatialMemory *memory = agent.get<SpatialMemory>();
+  if (here == nullptr || memory == nullptr) {
+    return {"you cannot tell where " + label + " is"};
+  }
+
+  const std::uint64_t hereKey = VisionQuery::CellKey(*here);
+  if (std::find(place.memberCells.begin(), place.memberCells.end(), hereKey) !=
+      place.memberCells.end()) {
+    return {"you are in " + label};
+  }
+
+  // The nearest claimed cell, preferring one the character has seen to be
+  // walkable. Deliberately *not* PlaceQuery::ApproachCell: that answers "where
+  // should I walk to", and for a linear place it returns the far end. A reach
+  // fact wants the closest part of the place, which is the distance the agent is
+  // judging.
+  const auto nearestClaimed = [&memory, here, &place](bool walkableOnly) {
+    GamePosition best = *here;
+    int bestDistance = -1;
+    for (const std::uint64_t key : place.memberCells) {
+      const auto cell = memory->cells.find(key);
+      if (cell == memory->cells.end()) continue;
+      if (walkableOnly && !cell->second.walkable) continue;
+      const GamePosition &pos = cell->second.pos;
+      const int distance =
+          std::max(std::abs(pos.x - here->x), std::abs(pos.y - here->y));
+      if (bestDistance < 0 || distance < bestDistance) {
+        bestDistance = distance;
+        best = pos;
+      }
+    }
+    return best;
+  };
+
+  GamePosition approach = nearestClaimed(true);
+  if (approach == *here) {
+    approach = nearestClaimed(false);
+  }
+  if (approach == *here) {
+    return {"you are in " + label};
+  }
+  return {"the nearest part of " + label + " is " +
+          PlaceQuery::DistancePhrase(*here, approach)};
+}
+
 }  // namespace
 
 void TaskKindRegistry::RegisterDefaults() {
-  // The four kinds the engine can check today, all backed by components that
-  // already exist (docs/task-system-design.md section 7). Each carries the
-  // subject filter that lets a place-name target resolve to a real thing, and the
-  // predicate that turns the resolved target into facts.
+  // The kinds the engine can check today, all backed by components that already
+  // exist (docs/task-system-design.md section 7). Each carries the subject filter
+  // that lets a place-name target resolve to a real thing, and the predicate that
+  // turns the resolved target into facts.
   Register({"harvest",
             "gather from an object that yields a resource when ripe or full",
             CheckHarvest, [](flecs::entity e) { return e.has<Harvestable>(); }});
@@ -260,6 +344,12 @@ void TaskKindRegistry::RegisterDefaults() {
             CheckEquip, [](flecs::entity e) { return e.has<Portable>(); }});
   Register({"craft", "turn materials into something else at a workstation",
             CheckCraft, [](flecs::entity e) { return e.has<Workstation>(); }});
+  // reach is the "finding" kind: the target may be a remembered place, which is
+  // not an entity, so it carries a place predicate as well as an entity one.
+  // [MOVE_TO] answers "how do I get there"; this answers "am I there".
+  Register({"reach",
+            "go to a place you remember, or to a character or thing you can name",
+            CheckReach, nullptr, CheckReachPlace});
 }
 
 void TaskKindRegistry::Register(TaskKind kind) {

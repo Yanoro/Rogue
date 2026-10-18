@@ -1,4 +1,6 @@
 #include "Game.h"
+
+#include "MemoryDigest.hpp"
 #include "AIChatWindow.h"
 #include "AgentContextWindow.h"
 #include "BlueprintExpansion.hpp"
@@ -625,6 +627,116 @@ void Game::Update() {
     speechQueue->Update();
   }
   ecs.progress();
+  UpdateMemoryDigest();
+}
+
+double Game::SecondsUntilNextDigest() const {
+  if (!memoryDigestJob) {
+    return -1.0;
+  }
+  const double now = GetTime();
+  const double minAge =
+      static_cast<double>(std::max(30, Settings().ai.memoryDigestMinAgeSeconds));
+  const double untilAge = lastDigestAttemptSeconds + minAge - now;
+  const double untilGrace = memoryDigestGraceUntilSeconds - now;
+  return std::max(0.0, std::max(untilAge, untilGrace));
+}
+
+long long Game::NewCellsSinceDigest() const {
+  if (!playerEntity.is_alive()) {
+    return 0;
+  }
+  const SpatialMemory *memory = playerEntity.get<SpatialMemory>();
+  if (memory == nullptr) {
+    return 0;
+  }
+  return memory->discoveredCells - memory->digest.discoveredAtDigest;
+}
+
+void Game::UpdateMemoryDigest() {
+  if (!memoryDigestJob || !memoryDigestJob->Available()) {
+    return;
+  }
+  if (!playerEntity.is_alive()) {
+    return;
+  }
+  SpatialMemory *memory = playerEntity.get_mut<SpatialMemory>();
+  if (memory == nullptr) {
+    return;
+  }
+
+  const int now = CurrentTaskTick(ecs);
+
+  // A finished request is composed against the list it was asked about, never
+  // against the record as it stands now.
+  if (std::optional<MemoryDigestJob::Result> result =
+          memoryDigestJob->TakeResult()) {
+    if (result->ok) {
+      memory->digest = MemoryDigestBuilder::Compose(
+          pendingDigestCandidates, result->groups, now, "model");
+      memory->digest.signature = pendingDigestSignature;
+      memory->digest.discoveredAtDigest = pendingDigestDiscovered;
+      if (debugLog) {
+        debugLog->LogInfo("Memory digest: composed " +
+                          std::to_string(memory->digest.entries.size()) +
+                          " entries from " +
+                          std::to_string(result->candidates) + " candidates");
+      }
+    } else {
+      memory->digest.tick = now;
+      memory->digest.error = result->error;
+      if (debugLog) {
+        debugLog->LogWarning("Memory digest failed: " + result->error);
+      }
+    }
+    pendingDigestCandidates.clear();
+  }
+
+  if (memoryDigestJob->Busy() || memory->runs.empty()) {
+    return;
+  }
+  // The trigger is *change*, and the age is only a rate limit. A digest that is
+  // rebuilt on a timer regardless of activity is both wasted calls while standing
+  // still and stale after a walk -- and "nothing new" is a legitimate answer.
+  if (memory->digest.tick >= 0 &&
+      MemoryDigestBuilder::Signature(*memory) == memory->digest.signature) {
+    return;
+  }
+  const double nowSeconds = GetTime();
+  // One source of truth for the time gates: the countdown the window shows and the
+  // gate the loop applies are the same function, so they cannot disagree.
+  if (SecondsUntilNextDigest() > 0.0) {
+    return;
+  }
+  // Substance, not just time, and measured as *new* ground: the floor counts
+  // cells discovered since the last digest, so standing still (which re-observes
+  // cells without discovering any) never reaches it.
+  if (NewCellsSinceDigest() <
+      static_cast<long long>(std::max(0, Settings().ai.memoryDigestMinCells))) {
+    return;
+  }
+
+  pendingDigestSignature = MemoryDigestBuilder::Signature(*memory);
+  pendingDigestDiscovered = memory->discoveredCells;
+  pendingDigestCandidates = MemoryDigestBuilder::BuildCandidates(
+      *memory, static_cast<std::size_t>(
+                   std::max(1, Settings().ai.memoryDigestCandidates)));
+  if (pendingDigestCandidates.empty()) {
+    return;
+  }
+  std::vector<std::string> lines;
+  lines.reserve(pendingDigestCandidates.size());
+  for (const MemoryDigestBuilder::Candidate &candidate : pendingDigestCandidates) {
+    lines.push_back(candidate.line);
+  }
+  lastDigestAttemptSeconds = nowSeconds;
+  std::string reason;
+  if (!memoryDigestJob->Request(lines, &reason)) {
+    pendingDigestCandidates.clear();
+    if (debugLog) {
+      debugLog->LogInfo("Memory digest not requested: " + reason);
+    }
+  }
 }
 
 void Game::handleInput() {

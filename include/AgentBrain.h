@@ -2,6 +2,10 @@
 
 #include "AI.h"
 #include "Components.h"
+#include "SystemOneRecorder.h"
+
+#include <atomic>
+#include <memory>
 #include "Map.h"
 #include "PathFinding.h"
 
@@ -44,7 +48,14 @@ CHARACTER CONTEXT:
 class AgentBrain {
 public:
   AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLog = nullptr);
+  ~AgentBrain();
   bool isStopped = false;
+
+  // Stage 5: the System 1 salience probe. A verdict is logged, never acted on:
+  // "logged verdicts before behaviour depends on them"
+  // (docs/spatial-memory-design.md section 6.2).
+  void SetMemorySalience(SystemOne::SystemOneClassifier *classifier,
+                         bool enabled);
 
   void ForceInterruptAndPush(std::unique_ptr<AgentAction> action);
 
@@ -83,6 +94,10 @@ private:
   // "no list behaves as before" invariant (docs/task-system-design.md section 2).
   std::string buildWakePrompt(bool firstWake);
 
+  // Asks the classifier how much the current situation matters to this character's
+  // goals, at most once a minute, and logs the previous answer on the main thread.
+  void ProbeMemorySalience();
+
   // Report what changed in the agent's task list since it was last observed.
   // Transitions, not states (section 11), so an unchanged list writes nothing.
   //
@@ -104,6 +119,19 @@ private:
   void writeTranscript(const std::string &text);
   std::string logFilePath;
   DebugLog *debugLog = nullptr;
+
+  SystemOne::SystemOneClassifier *salienceClassifier = nullptr;
+  bool salienceEnabled = false;
+  int lastSalienceProbeTick = -100000;
+  std::shared_ptr<std::atomic<float>> salienceScore =
+      std::make_shared<std::atomic<float>>(-1.0f);
+  std::shared_ptr<std::atomic<int>> salienceArrivals =
+      std::make_shared<std::atomic<int>>(0);
+  int salienceLogged = 0;
+  // The callback may outlive the brain when a world is torn down
+  // mid-request; it checks this before touching anything.
+  std::shared_ptr<std::atomic<bool>> alive =
+      std::make_shared<std::atomic<bool>>(true);
   // The task list as it was when transitions were last reported, so a change is
   // reported once and only when it happened. Invalid until the first observation,
   // which is reported as an initialisation rather than as a flood of additions.

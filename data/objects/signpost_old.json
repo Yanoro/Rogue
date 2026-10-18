@@ -1,0 +1,28 @@
+{
+  "name": "Old Signpost",
+  "description": "A rickety grey post leaning out of the verge. A split board points south down the track and reads: 'Quarry -- south, no ore left.' Someone has scratched beneath it: 'the village is the other way.'",
+  "components": [
+    "Interactable",
+    "ShowNameTag",
+    "Obstacle"
+  ],
+  "character": "!",
+  "characterColor": [
+    138,
+    134,
+    126,
+    255
+  ],
+  "backgroundColor": [
+    36,
+    34,
+    30,
+    255
+  ],
+  "nameTagColor": [
+    138,
+    134,
+    126,
+    255
+  ]
+}

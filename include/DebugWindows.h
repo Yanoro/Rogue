@@ -236,4 +236,13 @@ private:
   // Cached alongside the JSON: computing shapes per frame to print a count is the
   // same mistake as serializing per frame.
   int shapeCount = 0;
+
+  // Which character the Memory tab shows and dumps. `Vision` and `SpatialMemory`
+  // are per entity now (player and NPCs alike), so "the record" is no longer one
+  // thing; without a selector a failed NPC run cannot be read afterwards.
+  //
+  // Stored as an id rather than a handle: a map reload destroys every entity, and
+  // a stale handle is then a dangling reference where a stale id is merely dead.
+  // 0 means "nothing chosen yet", which resolves to the player.
+  flecs::entity_t selectedMemoryEntity = 0;
 };

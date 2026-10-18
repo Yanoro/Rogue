@@ -82,6 +82,7 @@ inline void RecordCell(SpatialMemory &memory, GamePosition pos,
     record.observedTick = tick;
     record.visitCount = 1;
     memory.cells.emplace(key, std::move(record));
+    ++memory.discoveredCells;
     return;
   }
 
@@ -1849,6 +1850,24 @@ inline std::string DumpJson(const SpatialMemory &memory, const std::string &name
     }
     out << "\n  ],\n";
   }
+
+  out << "  \"digest\": {\"tick\": " << memory.digest.tick
+      << ", \"model\": " << Quote(memory.digest.model)
+      << ", \"error\": " << Quote(memory.digest.error)
+      << ", \"candidates\": " << memory.digest.candidates
+      << ", \"signature\": " << memory.digest.signature
+      << ", \"entries\": [";
+  {
+    bool first = true;
+    for (const MemoryDigestEntry &entry : memory.digest.entries) {
+      out << (first ? "" : ", ");
+      out << "{\"kind\": " << Quote(entry.kind) << ", \"ref\": " << entry.ref
+          << ", \"text\": " << Quote(entry.text) << "}";
+      first = false;
+    }
+  }
+  out << "]},";
+  out << "\n";
 
   out << "  \"objects\": [";
   {

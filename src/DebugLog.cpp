@@ -1,12 +1,43 @@
 #include "DebugLog.h"
 
+#include <algorithm>
+
+namespace {
+
+// How far the log may grow while a viewer is reading without following the tail.
+// The floor keeps a small maxEntries setting from making retention meaningless,
+// the factor keeps a large configured capacity proportionally generous. At the
+// default 1000 this allows 50k entries of a few dozen bytes each -- a handful of
+// megabytes, and only while the Debug Log window is open with Auto-scroll off.
+constexpr size_t kRetentionFloor = 50000;
+constexpr size_t kRetentionFactor = 20;
+
+}  // namespace
+
 DebugLog::DebugLog(size_t maxEntries) : maxEntries(maxEntries) {}
+
+size_t DebugLog::RetentionLimit() const {
+  return std::max(maxEntries * kRetentionFactor, kRetentionFloor);
+}
+
+void DebugLog::SetRetainOldEntries(bool retain) {
+  if (retainOldEntries == retain) {
+    return;
+  }
+  retainOldEntries = retain;
+  if (!retain) {
+    while (entries.size() > maxEntries) {
+      entries.pop_front();
+    }
+  }
+}
 
 void DebugLog::Log(const std::string &message, LogLevel level) {
   std::string timestamp = GetCurrentTimestamp();
   entries.emplace_back(timestamp, level, message);
 
-  if (entries.size() > maxEntries) {
+  const size_t limit = retainOldEntries ? RetentionLimit() : maxEntries;
+  while (entries.size() > limit) {
     entries.pop_front();
   }
 }
@@ -35,7 +66,7 @@ std::string DebugLog::GetCurrentTimestamp() const {
   return oss.str();
 }
 
-std::string DebugLog::GetLevelString(LogLevel level) const {
+const char *DebugLog::GetLevelString(LogLevel level) const {
   switch (level) {
   case LogLevel::INFO:
     return "INFO";

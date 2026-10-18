@@ -6,6 +6,7 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
+#include "TaskKindRegistry.h"
 #include "TradeGrammar.hpp"
 #include "Trading.h"
 #include "flecs.h"
@@ -554,6 +555,93 @@ AgentBrain::AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLo
   logFilePath = "logs/" + TimeUtils::GetStartTimeString() + "-" + name + ".txt";
 }
 
+AgentBrain::~AgentBrain() {
+  // Ordered before member destruction: a callback that is already running reads
+  // this flag, and a false flag is its signal to touch nothing.
+  if (alive) {
+    alive->store(false);
+  }
+}
+
+void AgentBrain::SetMemorySalience(SystemOne::SystemOneClassifier *classifier,
+                                   bool enabled) {
+  salienceClassifier = classifier;
+  salienceEnabled = enabled;
+}
+
+void AgentBrain::ProbeMemorySalience() {
+  if (!salienceEnabled || salienceClassifier == nullptr || !entity.is_alive()) {
+    return;
+  }
+  const SpatialMemory *memory = entity.get<SpatialMemory>();
+  if (memory == nullptr) {
+    return;
+  }
+
+  // The previous verdict is logged here, on the main thread, because the
+  // classifier's callback is not the place to touch a log.
+  const int arrived = salienceArrivals->load();
+  if (arrived > salienceLogged) {
+    salienceLogged = arrived;
+    if (debugLog) {
+      debugLog->LogInfo("Memory salience: " +
+                        std::string(entity.name().c_str()) + " = " +
+                        std::to_string(salienceScore->load()));
+    }
+  }
+
+  const int now = CurrentTaskTick(entity.world());
+  if (now - lastSalienceProbeTick < 60 * 60) {
+    return;  // at most once a minute per character
+  }
+  lastSalienceProbeTick = now;
+
+  const std::string characterName = entity.name().c_str();
+
+  // The state is facts the engine already has: what this character remembers and
+  // what it is trying to do. No prompt history, because salience is about the
+  // situation, not the conversation.
+  std::string state = "Character: " + characterName + "\n";
+  if (const TaskList *list = entity.get<TaskList>()) {
+    state += RenderTaskDigest(*list, "", false);
+  }
+  state += "Places remembered:\n";
+  for (const KnownPlace &place : memory->places) {
+    state += "  - " + PlaceQuery::DisplayName(place) + "\n";
+  }
+  for (const MemoryDigestEntry &entry : memory->digest.entries) {
+    state += "  note: " + entry.text + "\n";
+  }
+
+  SystemOne::Option option;
+  option.id = "memory_salience";
+  option.type = SystemOne::OptionType::Score;
+  option.instructions =
+      "How relevant is this character's current situation to its goals?";
+
+  std::shared_ptr<std::atomic<float>> score = salienceScore;
+  std::shared_ptr<std::atomic<int>> arrivals = salienceArrivals;
+  std::shared_ptr<std::atomic<bool>> aliveFlag = alive;
+  salienceClassifier->Ask(
+      state, {option},
+      [score, arrivals, aliveFlag](const std::vector<SystemOne::Answer> &answers,
+                                   const SystemOne::CallTrace &) {
+        if (!aliveFlag->load()) {
+          return;
+        }
+        for (const SystemOne::Answer &answer : answers) {
+          if (answer.id == "memory_salience") {
+            score->store(answer.probability);
+            arrivals->fetch_add(1);
+          }
+        }
+      },
+      {},
+      SystemOne::Attribution{"memory_salience",
+                            characterName + ", memory salience"});
+}
+
+
 void AgentBrain::ForceInterruptAndPush(std::unique_ptr<AgentAction> action) {
   interruptCurrentAction();
   currentAction = std::move(action);
@@ -678,7 +766,25 @@ std::string AgentBrain::buildWakePrompt(bool firstWake) {
   const bool suggestRevision = taskRevisionSuggested;
   taskRevisionSuggested = false;
 
-  return RenderTaskDigest(*list, activity, suggestRevision) + question;
+  // The kind vocabulary goes out with the revision suggestion and nowhere else. A
+  // kind the engine does not know is not an error -- it degrades to "no facts"
+  // (section 7) -- but an agent that is never told the kinds cannot turn "find
+  // the village" into a task the engine can report on.
+  std::string kindHint;
+  if (suggestRevision) {
+    if (const TaskKindRegistryResource *kinds =
+            entity.world().get<TaskKindRegistryResource>()) {
+      if (kinds->registry != nullptr && kinds->registry->Count() > 0) {
+        kindHint = "Task kinds the engine can check (put one in the kind column):\n";
+        for (const TaskKind *kind : kinds->registry->GetAll()) {
+          kindHint += "  " + kind->id + " -- " + kind->description + "\n";
+        }
+        kindHint += "\n";
+      }
+    }
+  }
+
+  return RenderTaskDigest(*list, activity, suggestRevision, kindHint) + question;
 }
 
 void AgentBrain::logTaskTransitions() {
@@ -835,6 +941,9 @@ void AgentBrain::update(float deltaTime) {
     logTaskTransitions();
     auto ctx = entity.get<NPCContext>();
     const bool firstWake = !(ctx && ctx->history.size() > 1);
+    // Before the request is set, not after: this is the moment the agent is being
+    // woken, and the probe is meant to describe the situation it is waking into.
+    ProbeMemorySalience();
     entity.set<AIRequest>(
         {buildWakePrompt(firstWake), false, "", false});
     entity.set<AgentSleepTimer>({10});

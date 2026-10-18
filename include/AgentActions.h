@@ -3,6 +3,7 @@
 #include "Components.h"
 #include "Map.h"
 #include "PlaceQuery.hpp"
+#include "SightReport.hpp"
 #include "PathFinding.h"
 #include "Defaults.h"
 #include "EquipmentRuntime.hpp"
@@ -10,6 +11,7 @@
 #include "InteractionRegistry.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <flecs.h>
@@ -186,10 +188,36 @@ public:
           // observation rather than a coordinate the map handed over.
           if (!found) {
             if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
-              if (const KnownPlace *place =
-                      PlaceQuery::ByLabel(*memory, targetName)) {
-                targetPos =
-                    PlaceQuery::ApproachCell(*memory, *place, startPos);
+              // A label may name more than one place. A road cut at junctions is
+              // several stretches, and an agent naming them all "road" should get
+              // the one it can act on, not whichever happens to have the lowest
+              // id: choose the place whose approach cell is nearest. With the
+              // far-end rule for linear places, that is the stretch ahead.
+              const KnownPlace *best = nullptr;
+              GamePosition bestCell = {-1, -1};
+              int bestDistance = -1;
+              for (const KnownPlace &place : memory->places) {
+                bool matches = false;
+                for (const std::string &label : place.labels) {
+                  if (StringUtils::EqualsIgnoreCase(label, targetName)) {
+                    matches = true;
+                    break;
+                  }
+                }
+                if (!matches) continue;
+
+                const GamePosition cell =
+                    PlaceQuery::ApproachCell(*memory, place, startPos);
+                const int distance = std::max(std::abs(cell.x - startPos.x),
+                                              std::abs(cell.y - startPos.y));
+                if (best == nullptr || distance < bestDistance) {
+                  best = &place;
+                  bestCell = cell;
+                  bestDistance = distance;
+                }
+              }
+              if (best != nullptr) {
+                targetPos = bestCell;
                 found = true;
               }
             }
@@ -263,6 +291,210 @@ public:
         // interactions, and so InteractionTarget can point at it.
         flecs::entity targetEntity = flecs::entity::null();
       };
+
+      // Turns on the spot and reports what is now in sight.
+      //
+      // `Facing` drives the vision cone, and an NPC's facing is derived from its
+      // velocity -- so its cone is locked to its direction of travel. At a
+      // junction or at the end of a road that means it cannot look along the
+      // other arm without walking onto it, which is exactly where this verb
+      // matters (docs/agent-exploration-task.md gap 5).
+      //
+      // The action sets `Facing`, waits one frame for the sampler to take the new
+      // sweep (the sampler is registered after the action systems, and `Vision`'s
+      // cache is sampler-owned), then renders the sweep through SightReport. A
+      // turn below the resample threshold keeps the existing sweep -- it is still
+      // the sweep for this facing -- so that case answers immediately.
+      //
+      // `[LOOK around]` is the same verb with a one-shot full-circle sample: the
+      // sampler sweeps 360 degrees once and clears the request, so the character's
+      // own cone is never edited. It reports all eight sectors, which is what
+      // "where am I" actually asks. The cells, objects and places enter memory
+      // through the normal writer because they are just a sample like any other.
+      class LookAction : public AgentAction {
+      public:
+        explicit LookAction(std::string direction)
+            : direction(std::move(direction)) {}
+
+        std::string getActionName() const override { return "LOOK"; }
+
+        std::string getActionContext() const override { return direction; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          if (phase == Phase::Waiting) {
+            const Vision *vision = entity.get<Vision>();
+            const int sampleTick =
+                vision == nullptr
+                    ? requestedTick
+                    : (survey ? vision->lastFullCircleTick
+                              : vision->lastSampleTick);
+            if (sampleTick == requestedTick) {
+              if (++waitFrames > kMaxWaitFrames) {
+                // Safety net only: with a map and a Facing the sampler always
+                // runs. Better a failure the agent can react to than a silent
+                // claim that a circle happened when it did not.
+                if (survey) {
+                  if (Vision *mutableVision = entity.get_mut<Vision>()) {
+                    mutableVision->fullCircleRequested = false;
+                  }
+                }
+                response = "System: You cannot make out anything around you.\n";
+                return ActionStatus::Failed;
+              }
+              return ActionStatus::Doing;
+            }
+            return FinishTurn(entity);
+          }
+
+          Vision *vision = entity.get_mut<Vision>();
+          Facing *facing = entity.get_mut<Facing>();
+          if (vision == nullptr || facing == nullptr) {
+            response = "System: You have no sense of direction to turn.\n";
+            return ActionStatus::Failed;
+          }
+
+          if (IsAround(direction)) {
+            survey = true;
+            // One-shot: the sampler consumes this and clears it.
+            vision->fullCircleRequested = true;
+            requestedTick = vision->lastFullCircleTick;
+            waitFrames = 0;
+            phase = Phase::Waiting;
+            return ActionStatus::Doing;  // a full circle needs the sweep
+          }
+
+          int dx = 0;
+          int dy = 0;
+          if (!ParseDirection(direction, dx, dy)) {
+            response =
+                "System: '" + direction +
+                "' is not a direction. Use north, south, east, west, a diagonal "
+                "such as north-east, or around.\n";
+            return ActionStatus::Failed;
+          }
+
+          const raylib::Vector2 next =
+              raylib::Vector2(static_cast<float>(dx), static_cast<float>(dy))
+                  .Normalize();
+          // Before the assignment: this is the turn the sampler will see.
+          const float dot = facing->x * next.x + facing->y * next.y;
+          const bool eagerSweep = vision->fullCircleRequested;
+          *facing = Facing(next);
+          heading = DirectionWord(dx, dy);
+          requestedTick = vision->lastSampleTick;
+          waitFrames = 0;
+          phase = Phase::Waiting;
+
+          // A turn under the resample threshold leaves the sampler's sweep as the
+          // one that still describes this facing. A pending 360-degree request
+          // covers every direction, so it is also worth waiting for.
+          const bool resamples =
+              eagerSweep ||
+              (vision->angleDegrees < 359.5f &&
+               dot < std::cos(DEFAULT_VISION_FACING_RESAMPLE_DEGREES * DEG2RAD));
+          if (!resamples) {
+            return FinishTurn(entity);
+          }
+          return ActionStatus::Doing;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        std::string getFailureMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          if (survey) {
+            // The sweep may or may not have been consumed. Start the survey over
+            // on resume rather than leaving a request nothing will report.
+            if (Vision *vision = entity.get_mut<Vision>()) {
+              vision->fullCircleRequested = false;
+            }
+            phase = Phase::Turn;
+            requestedTick = -1;
+          }
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        enum class Phase { Turn, Waiting };
+
+        static constexpr int kMaxWaitFrames = 8;
+
+        ActionStatus FinishTurn(flecs::entity entity) {
+          const Vision *vision = entity.get<Vision>();
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          const Facing *facing = entity.get<Facing>();
+          if (vision == nullptr || memory == nullptr || here == nullptr) {
+            response = "System: You cannot make out anything around you.\n";
+            return ActionStatus::Failed;
+          }
+
+          const std::string facingWord =
+              facing != nullptr ? SightReport::FacingWord(*facing) : std::string();
+          // A directional look reads the cone's own sweep; a survey reads the
+          // copy the sampler kept for it, because the cone may already have been
+          // restored by the time this action is stepped again.
+          const std::vector<GamePosition> &visible =
+              survey ? vision->lastFullCircle : vision->lastVisible;
+          const int visibleTick =
+              survey ? vision->lastFullCircleTick : vision->lastSampleTick;
+          response = SightReport::Render(*memory, visible, *here, visibleTick,
+                                         facingWord, survey, heading);
+          return ActionStatus::Done;
+        }
+
+        // "around", "all", "360" and "everywhere" mean the full circle. Checked
+        // before ParseDirection so the direction parser stays about directions.
+        static bool IsAround(const std::string &raw) {
+          std::string text;
+          for (char c : raw) {
+            if (c == ' ' || c == '-' || c == '_') continue;
+            text += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+          }
+          return text == "around" || text == "all" || text == "allaround" ||
+                 text == "360" || text == "everywhere";
+        }
+
+        // "north-east", "northeast", "NE" and "ne" all mean the same thing; case,
+        // spaces, hyphens and underscores are ignored. Single letters are
+        // accepted because a model that has already understood the convention
+        // should not have its shorthand rejected.
+        static bool ParseDirection(const std::string &raw, int &dx, int &dy) {
+          std::string text;
+          for (char c : raw) {
+            if (c == ' ' || c == '-' || c == '_') continue;
+            text += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+          }
+          if (text == "n" || text == "north") { dx = 0; dy = -1; }
+          else if (text == "s" || text == "south") { dx = 0; dy = 1; }
+          else if (text == "e" || text == "east") { dx = 1; dy = 0; }
+          else if (text == "w" || text == "west") { dx = -1; dy = 0; }
+          else if (text == "ne" || text == "northeast") { dx = 1; dy = -1; }
+          else if (text == "se" || text == "southeast") { dx = 1; dy = 1; }
+          else if (text == "sw" || text == "southwest") { dx = -1; dy = 1; }
+          else if (text == "nw" || text == "northwest") { dx = -1; dy = -1; }
+          else return false;
+          return true;
+        }
+
+        static std::string DirectionWord(int dx, int dy) {
+          if (dy < 0) return dx == 0 ? "north" : (dx > 0 ? "north-east" : "north-west");
+          if (dy > 0) return dx == 0 ? "south" : (dx > 0 ? "south-east" : "south-west");
+          return dx > 0 ? "east" : "west";
+        }
+
+        std::string direction;
+        std::string response;
+        std::string heading;
+        bool survey = false;
+        Phase phase = Phase::Turn;
+        int requestedTick = -1;
+        int waitFrames = 0;
+      };
+
 
       enum class ConversationState {
         Talking,
@@ -426,8 +658,9 @@ private:
                         PlaceQuery::DistancePhrase(here, centre) + "\n";
           }
           response +=
-              "System: [MOVE_TO] accepts these names; [NAME_PLACE here <name>] "
-              "names the place you are in.\n";
+              "System: [MOVE_TO] accepts these names. An unnamed place can be "
+              "given one with [NAME_PLACE #<number> <name>], or with "
+              "[NAME_PLACE here <name>] for the place you are standing in.\n";
           return ActionStatus::Done;
         }
 

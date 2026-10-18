@@ -439,6 +439,12 @@ placement path (`docs/placement-design.md:33-80`), and shrinking the probe to a 
 make turn-one placement worse in exchange for realism nobody asked for at that moment. Keeping them
 separate also gives "look around" a real cost (a turn) instead of making it free and mandatory.
 
+`[LOOK]` — including its one-shot `[LOOK around]` full circle — stays on the passive side: it is a
+turn that asks the *vision system* for a sweep (360 degrees instead of the cone, for one sample),
+so it still pays the range/occlusion rules and writes to memory. `[SURROUNDINGS]` remains the
+vision-independent radius-10 scan. The two verbs answer different questions: what can I see now,
+and what can I reach.
+
 ### 4.6 What occlusion must never do
 
 Three hard rules, each of which would otherwise create a subtle bug:
@@ -516,6 +522,50 @@ alone exceeds the cap). The window shows the newest line; the dump carries the l
 invented.
 
 ### 6.2 Second pass: Jev salience, out-of-band LLM merge
+
+**Built, off by default** (`ai.memoryDigest`, `ai.memorySalience`). Two things differ from the sketch
+above, both in the direction of the guardrails:
+
+- **The model does not write words.** It is shown a numbered list of memory items and replies with
+  groups of numbers (`[[0,3],[1]]`). The engine composes each digest entry from the referenced items'
+  own fields — a place's label, a run's surface — so no label, fact or place name can be invented.
+  Selection, grouping and dropping are the model's whole contribution. `include/MemoryDigest.hpp`.
+- **The digest is a third layer**, beside cells and runs, and nothing reads it yet. Runs are rebuilt
+  every sample from cells, so a model-edited run list would be discarded on the next pass; a digest
+  that sits beside them cannot fight the engine. `SpatialMemory::digest` holds its tick, the model,
+  the error and the entries.
+- **Salience is logged, never acted on.** On wake, the System 1 classifier is asked one score question
+  with the character's task digest and remembered places as state; the verdict goes to the Debug Log
+  with its attribution. `AgentBrain::ProbeMemorySalience`, at most once a minute per character.
+- **The call is PromptRewriter's shape** (`include/MemoryDigestJob.h`): worker thread, one request in
+  flight, completion on the empty-token sentinel, a bounded wait, the raw reply logged before it is
+  parsed. A missing backend or prompt file leaves the job unavailable, and the feature a no-op — the
+  engine's record is already complete, so the game is identical without a model.
+- **Its own backend, reasoning off.** Measured on the default backend, a reasoning model spent the
+  whole completion budget inside `<think>` and never emitted the array. The digest therefore builds
+  its own `AI` instance (`ai.memoryDigestMaxTokens` caps it), toggles reasoning off, and parses any
+  `<think>` block that still arrives. The NPC backend is untouched, so no turn can be raced.
+- **The trigger is change, not a timer.** A fingerprint over cells, runs, place ids and labels
+  (`MemoryDigestBuilder::Signature`) is stamped into the digest; a new one is asked for only when the
+  fingerprint moves, and `ai.memoryDigestMinAgeSeconds` is a rate limit on top. Standing still costs
+  nothing; new ground, a new place or a name produces a new digest at the next opportunity.
+- **A startup grace, and a substance floor on *new* ground.** `ai.memoryDigestStartupGraceSeconds`
+  (default 60, wall-clock) holds the first request back. `ai.memoryDigestMinCells` (default 400)
+  counts cells **discovered since the last digest**, not cells remembered: a monotonic
+  `discoveredCells` counter is incremented only when a cell is first recorded, so re-observing the
+  same ground — which a standing character does every sample — is not progress. 400 is roughly one
+  vision sample's worth (a 90° cone at 22 tiles), so the floor means "you have seen somewhere new",
+  on the first digest and on every one after it. All timing settings
+  are seconds and the code measures `GetTime()`, not frames — a frame counter silently changes the
+  interval at every frame rate.
+- **A countdown in the Memory tab** (`Next digest in 1m 12s`) shows the later of the startup
+  grace and the rate limit, computed by `Game::SecondsUntilNextDigest` — the same function the
+  request loop gates on, so the timer cannot disagree with the behaviour. When the ground gate is
+  what holds it, the line says so (`needs 263 more newly seen cell(s)`), because no timer can
+  predict a walk.
+- **The window reports which gate is holding it** — off, unavailable (with the reason), in flight,
+  startup grace with seconds left, `N/400 cells discovered since the last digest`, or ready. An empty panel is never the
+  answer to "why is there no digest".
 
 Only after the first pass is trusted. Two different jobs, deliberately given to two different model classes
 — the same division `docs/agent-attention-design.md` §4 makes for the wake gate:
@@ -597,14 +647,19 @@ sketch: the dump writes the same string, and the worked examples in §12 use the
 serializer means the window, the file and the design document cannot disagree about what the format
 is, and the examples stop being illustrative and become the acceptance artifact.
 
-- Query: the window reads `playerEntity`'s `SpatialMemory` directly today. The per-character board —
-  `ecs.filter<SpatialMemory>()`, collect rows, sort, then draw, following `TaskBoardWindow` — arrives
-  with the agent phase, when more than one character has a memory.
-- **Place rectangles.** A toggle draws one box per place in the player's memory: the extent as an
-  outline, the cells the place actually claims tinted inside it, and a floating label (`#id surface`
-  for an unnamed inferred place, the label once one is given). The gap between outline and tint is
-  deliberate — the outline is a bounding box, so for an L-shaped cluster it covers ground the
-  character never observed, and the tint is what makes that visible instead of implied.
+- Query: the Memory tab lists every character carrying a `SpatialMemory` (player first) and selects
+  one, following the `TaskBoardWindow` pattern — `ecs.filter<SpatialMemory>()`, collect rows, sort,
+  then draw. The selector drives the counts, the JSON record, the dump **and the place rectangles**:
+  watching a different character while the boxes still described the player would be two sources of
+  truth.
+- **Place rectangles.** A toggle in the Memory tab draws one box per place in the **selected
+  character's** memory: the extent as an outline, the cells the place actually claims tinted inside
+  it, and a floating label (`#id surface` for an unnamed inferred place, the label once one is
+  given). The gap between outline and tint is deliberate — the outline is a bounding box, so for an
+  L-shaped cluster it covers ground the character never observed, and the tint is what makes that
+  visible instead of implied. `Game::placeOverlayEntity` carries the selection from the window to
+  `GameDraw`; nothing chosen (or a selected entity destroyed by a map reload) falls back to the
+  player.
 - **Colour swatches.** The Memory tab lists each place with the same colour its rectangle uses, its
   extent, whether it is authored or inferred, and its facts in raw vocabulary. Colours are a stable
   function of the place id, so the same place keeps its colour across runs.
@@ -690,7 +745,7 @@ the AI path; here the first three stages have no AI path at all, which is the po
 | **2. Memory** | `SpatialMemory` (§3.4), the memory writer consuming `Vision::lastVisible`, the `Origin` place, caps, idempotent writes, memory section in the Vision Debug window + dump. Place clustering is stage 3 | Walking fills cells with no duplicates; a revisit bumps `visitCount` rather than appending; the cap holds and evicts the least-visited first; cells and objects are zero on spawn; the dump reproduces the window |
 | **3. Places** (superseded — see `docs/place-derivation-design.md` for the rule that replaces it) | `Memory::DerivePlaces`: `Authored` match against `Location`, surface clustering with a radius, membership-based extent, facts in raw vocabulary | Walking into the mill adds "The Mill" with `authoringId` set; two touching surfaces yield two places; no authored place appears before its cells are seen; a place's extent never exceeds its member cells |
 | **4. Engine consolidation** ✅ | ranking, merge runs, drops at cap, event log — `Memory::Consolidate` | Counts in/out visible in the window and the dump; a drop never removes a place cell; raw cells still inspectable |
-| **5. Model consolidation** | Jev salience (goal digest in state) + out-of-band merge, behind a setting, stage 4 the default | Off by default; identical outputs when the backend is unavailable; logged verdicts before behaviour depends on them |
+| **5. Model consolidation** ✅ | digest job (`ai.memoryDigest`), salience probe (`ai.memorySalience`), both off by default | Off by default; page identical when the backend is unavailable; verdicts logged only |
 
 Stages 0–2 attach `Vision` and `SpatialMemory` to the player only. `Facing` goes on every character,
 so the agent phase is a matter of attaching the components, not of changing the systems.
@@ -774,9 +829,11 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
 Each example shows the record the engine holds and the text the agent receives. The same record
 renders differently as the agent learns — that is the payoff of "store numbers, render prose" (§3.4).
 
-**Status: none of the agent-facing text below exists yet.** The record in stage 2 is real and
-inspectable in the Vision Debug window and the dump; there is no digest renderer and no `[RECALL]`
-verb. These are the target the later stages aim at, and the acceptance reference for stage 3.
+**Status: the record is real and the first renderer exists.** `[LOOK]` now returns a prose report of
+the sweep it just took (`include/SightReport.hpp`), including the eight-sector `[LOOK around]`
+survey; the text is built only from `Vision::lastVisible` and the character's own memory. There is
+still no digest renderer and no `[RECALL]` verb, so the longer examples below remain the target for
+the later stages.
 
 Two of these are deliberately *revised*: an earlier draft had the engine write an `EXPLORATION` tip
 and a "your name disagrees" sentence. Both were engine-authored intentions and are removed under

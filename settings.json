@@ -2,7 +2,7 @@
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
 
   "map": {
-    "file": "./maps/Map.json",
+    "file": "./maps/Map_Village_Quest.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
@@ -14,14 +14,27 @@
     "endpoint": "http://localhost:11434/api/generate",
     "maxTokens": 1500,
     "provider": {
-      "order": ["deepinfra", "novita", "siliconflow", "parasail", "gmicloud"],
+      "order": [
+        "deepinfra",
+        "novita",
+        "siliconflow",
+        "parasail",
+        "gmicloud"
+      ],
       "allow_fallbacks": false,
       "require_parameters": true
     }
   },
 
   "ai": {
-    "npcPromptFile": ""
+    "npcPromptFile": "",
+    "memoryDigest": true,
+    "memoryDigestMinAgeSeconds": 120,
+    "memoryDigestCandidates": 24,
+    "memoryDigestStartupGraceSeconds": 60,
+    "memoryDigestMinCells": 400,
+    "memoryDigestMaxTokens": 1200,
+    "memorySalience": false
   },
 
   "vision": {
@@ -48,7 +61,14 @@
     "maxRecords": 500,
     "model": {
       "model": "~typesafe/jev-latest"
-    }
+    },
+    "profiles": [
+      {
+        "id": "kev",
+        "label": "Kev-4B (this machine)",
+        "preset": "local_kev"
+      }
+    ]
   },
 
   "window": {
@@ -70,8 +90,8 @@
 
   "player": {
     "name": "playerCharacter",
-    "startX": 48,
-    "startY": 20,
+    "startX": 12,
+    "startY": 48,
     "race": ""
   },
 

@@ -302,6 +302,34 @@ struct GameSettings {
     // compiled-in prompt"; Game::createNPC owns that fallback so this struct
     // does not need to know about AgentBrain.
     std::string npcPromptTemplate;
+
+    // --- Stage 5: model consolidation (docs/spatial-memory-design.md section 6.2)
+    //
+    // Off by default, and the whole feature is a no-op when the backend is
+    // unavailable: the engine already wrote everything the game needs, so a
+    // missing model changes nothing a player can observe.
+    bool memoryDigest = false;
+    // How stale a digest may be before a wake asks for a new one. Also the rate
+    // limit: one request in flight per character regardless.
+    int memoryDigestMinAgeSeconds = 120;
+    // How many candidate items the model is shown. A prompt that lists every run
+    // is the same problem the digest exists to solve.
+    int memoryDigestCandidates = 24;
+    // How long after a world loads before the first digest may be asked for. A
+    // digest taken at spawn summarises a handful of cells and says nothing useful;
+    // the grace is wall-clock seconds, not frames, so it means the same at any
+    // frame rate.
+    int memoryDigestStartupGraceSeconds = 60;
+    // How much ground must be remembered before a digest is worth asking for. One
+    // vision sample sees most of a cone, so this is the difference between "the
+    // spawn view" and "somewhere I have actually been".
+    int memoryDigestMinCells = 400;
+    // Output budget for the digest's own backend. The answer is a short array;
+    // the budget exists so a model that starts explaining itself is cut off
+    // cheaply rather than after a page of prose.
+    int memoryDigestMaxTokens = 1200;
+    // The System 1 salience probe at wake. Logged only; nothing acts on it yet.
+    bool memorySalience = false;
   } ai;
 
   struct WindowSection {
