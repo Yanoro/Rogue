@@ -1,6 +1,7 @@
 #include "Components.h"
 #include "Defaults.h"
 #include "SpatialMemory.hpp"
+#include "VisionQuery.hpp"
 #include "Game.h"
 #include "PathFinding.h"
 #include "DebugLog.h"
@@ -231,13 +232,23 @@ void Game::Draw() {
 
           for (const std::uint64_t key : place.memberCells) {
             const auto cell = memory->cells.find(key);
-            if (cell == memory->cells.end()) {
-              continue;  // evicted under the cap; the member entry is stale
-            }
-            const ScreenPosition at = map->GameCoordsToScreenCoords(
-                cell->second.pos.x, cell->second.pos.y);
+            const GamePosition pos =
+                cell == memory->cells.end() ? VisionQuery::CellFromKey(key)
+                                            : cell->second.pos;
+            const ScreenPosition at =
+                map->GameCoordsToScreenCoords(pos.x, pos.y);
+
+            // Tinted by the dominant aspect *at that cell*, not by place
+            // identity: the point of the field is that it varies, and a flat
+            // tint would hide exactly that. Fall back to the place colour for a
+            // place with no sources (a named area).
+            std::string aspect;
+            const float value = Memory::DominantAspectAt(place, pos, &aspect);
+            const Color tint = (value > 0.0f && !aspect.empty())
+                                   ? Memory::CategoryColor(aspect)
+                                   : placeColor;
             DrawRectangle(static_cast<int>(at.x), static_cast<int>(at.y), tileW,
-                          tileH, ColorAlpha(placeColor, 0.22f));
+                          tileH, ColorAlpha(tint, 0.18f + 0.22f * value));
           }
 
           const ScreenPosition origin =
@@ -249,10 +260,24 @@ void Game::Draw() {
 
           // Unnamed places show their id and surface, which is what the JSON
           // record calls them; a named one shows the name it was given.
-          const std::string label =
-              place.label.empty()
-                  ? "#" + std::to_string(place.id) + " " + place.attribute
-                  : place.label;
+          // Named places show their name; unnamed ones show the engine's own
+          // vocabulary -- kind, and the strongest quality it can see -- so a box
+          // can be matched to the JSON without hovering it.
+          std::string label;
+          if (!place.labels.empty()) {
+            label = place.labels.front();
+            if (place.labels.size() > 1) {
+              label += " (+" + std::to_string(place.labels.size() - 1) + ")";
+            }
+          } else {
+            label = "#" + std::to_string(place.id) + " " + place.primaryAspect;
+            if (!place.aspects.empty()) {
+              const PlaceAspect &strongest = place.aspects.front();
+              label += ", " + strongest.category + " " +
+                       std::to_string(static_cast<int>(strongest.peak * 100)) +
+                       "%";
+            }
+          }
           const int fontSize = 12;
           const int textWidth = MeasureText(label.c_str(), fontSize);
           float textX = origin.x + (box.width - textWidth) / 2.0f;
@@ -300,32 +325,25 @@ void Game::Draw() {
           });
     }
 
-    // Live preview of the location rectangle currently being dragged out (and
-    // of the one waiting to be named, so the user can see what they marked).
-    if (isDraggingLocation || pendingLocationWantsFocus || pendingLocationHasFocus) {
-      auto markedTiles = map->GetTilePositionsInRect(
-          pendingLocation.topLeft,
-          pendingLocation.bottomRight.x - pendingLocation.topLeft.x + 1,
-          pendingLocation.bottomRight.y - pendingLocation.topLeft.y + 1);
-
-      for (const auto &pos : markedTiles) {
-        ScreenPosition sPos = map->GameCoordsToScreenCoords(pos.x, pos.y);
-        DrawRectangle(sPos.x, sPos.y, tileW, tileH, Color{255, 255, 0, 90});
-        DrawRectangleLines(sPos.x, sPos.y, tileW, tileH, YELLOW);
-      }
-
-      ScreenPosition boxPos =
-          map->GameCoordsToScreenCoords(pendingLocation.topLeft.x,
-                                        pendingLocation.topLeft.y);
-      int boxWidth =
-          (pendingLocation.bottomRight.x - pendingLocation.topLeft.x + 1) * tileW;
-      int boxHeight =
-          (pendingLocation.bottomRight.y - pendingLocation.topLeft.y + 1) * tileH;
-      DrawRectangleLinesEx(Rectangle{static_cast<float>(boxPos.x),
-                                     static_cast<float>(boxPos.y),
-                                     static_cast<float>(boxWidth),
-                                     static_cast<float>(boxHeight)},
-                           3.0f, ORANGE);
+    // Place names, as stamps: one cell each, drawn while the naming prompt is
+    // open so the user can see which cell the name will point at. The radius is
+    // shown as a ring because that is what it is -- how far the name may spread
+    // if it has to make a place -- not a rectangle it claims.
+    if (pendingPlaceSeedWantsFocus || pendingPlaceSeedHasFocus) {
+      const ScreenPosition at = map->GameCoordsToScreenCoords(
+          pendingPlaceSeed.position.x, pendingPlaceSeed.position.y);
+      DrawRectangle(static_cast<int>(at.x), static_cast<int>(at.y), tileW, tileH,
+                    Color{255, 255, 0, 90});
+      DrawRectangleLines(static_cast<int>(at.x), static_cast<int>(at.y), tileW,
+                         tileH, YELLOW);
+      const float centreX = at.x + tileW * 0.5f;
+      const float centreY = at.y + tileH * 0.5f;
+      DrawCircleLines(static_cast<int>(centreX), static_cast<int>(centreY),
+                      static_cast<float>(pendingPlaceSeed.radius) * tileW,
+                      ORANGE);
+      DrawText(pendingPlaceSeed.label.empty() ? "(name this cell)"
+                                              : pendingPlaceSeed.label.c_str(),
+               static_cast<int>(at.x), static_cast<int>(at.y) - 16, 16, ORANGE);
     }
 
     // Blueprint placement preview: the design's real tiles and objects, drawn at
@@ -439,26 +457,24 @@ void Game::Draw() {
       }
     }
 
-    if (debugWindowState && debugWindowState->GetShowLocations()) {
-      const auto& locations = map->GetLocations();
-      Color locationColors[] = { RED, GREEN, BLUE, YELLOW, MAGENTA, ORANGE, PURPLE, PINK };
+    if (debugWindowState && debugWindowState->GetShowPlaceNames()) {
+      // Place names are seeds, so there is no rectangle to draw: a cross marks
+      // the cell they point at and a ring shows the radius they may spread to.
+      Color nameColors[] = {RED,  GREEN, BLUE,   YELLOW,
+                            MAGENTA, ORANGE, PURPLE, PINK};
       int colorIdx = 0;
-      for (const auto& loc : locations) {
-        ScreenPosition sPos = map->GameCoordsToScreenCoords(loc->pos.x, loc->pos.y);
-        int rectWidth = loc->width * tileW;
-        int rectHeight = loc->height * tileH;
-        Color col = locationColors[colorIdx % 8];
-        
-        // Draw the bounding box
-        DrawRectangleLines(sPos.x, sPos.y, rectWidth, rectHeight, col);
-        
-        // Draw the location name in the center
-        int fontSize = 20;
-        int textWidth = MeasureText(loc->name.c_str(), fontSize);
-        int textX = sPos.x + (rectWidth - textWidth) / 2;
-        int textY = sPos.y + (rectHeight - fontSize) / 2;
-        DrawText(loc->name.c_str(), textX, textY, fontSize, col);
-        
+      for (const PlaceSeed &seed : map->GetPlaceSeeds()) {
+        const ScreenPosition sPos =
+            map->GameCoordsToScreenCoords(seed.position.x, seed.position.y);
+        const Color col = nameColors[colorIdx % 8];
+        const float centreX = sPos.x + tileW * 0.5f;
+        const float centreY = sPos.y + tileH * 0.5f;
+        DrawCircleLines(static_cast<int>(centreX), static_cast<int>(centreY),
+                        static_cast<float>(seed.radius) * tileW, col);
+        DrawLineV({centreX - 6, centreY}, {centreX + 6, centreY}, col);
+        DrawLineV({centreX, centreY - 6}, {centreX, centreY + 6}, col);
+        DrawText(seed.label.c_str(), static_cast<int>(centreX) + 6,
+                 static_cast<int>(centreY) - 18, 18, col);
         colorIdx++;
       }
     }
@@ -492,7 +508,9 @@ void Game::Draw() {
     visionChatWindow->OnWorldFrameRendered();
   }
 
-  DrawFPS(10, 10);
+  // raylib's DrawFPS hard-codes its colour (LIME, switching to ORANGE/RED below
+  // 30/10 FPS), so draw the same text ourselves to keep the counter red.
+  DrawText(TextFormat("%2i FPS", GetFPS()), 10, 10, 20, RED);
 }
 
 

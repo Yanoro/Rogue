@@ -14,6 +14,8 @@
 #include "SpatialMemory.hpp"
 #include "MapReloader.h"
 #include "DrawAsciiDebug.h"
+#include "PlaceCategoriesJson.hpp"
+#include "PlaceCategoryRegistry.h"
 #include "EntityInfoWindow.h"
 #include "VisionChatWindow.h"
 #include "SystemOneWindow.h"
@@ -187,9 +189,9 @@ void DebugConsoleWindow::Draw() {
   }
   ImGui::SameLine();
 
-  bool showLocations = game->debugWindowState->GetShowLocations();
-  if (ImGui::Checkbox("Show Locations", &showLocations)) {
-    game->debugWindowState->SetShowLocations(showLocations);
+  bool showPlaceNames = game->debugWindowState->GetShowPlaceNames();
+  if (ImGui::Checkbox("Show Place Names", &showPlaceNames)) {
+    game->debugWindowState->SetShowPlaceNames(showPlaceNames);
   }
 
   bool showFont = game->fontSelectionWindowEntity.has<ActiveWindow>();
@@ -527,18 +529,32 @@ void TileInfoWindow::Draw() {
   }
 
   ImGui::Separator();
-  if (Location *location = map->GetLocation(pos)) {
-    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Location: %s",
-                       location->name.c_str());
-    if (!location->description.empty()) {
-      ImGui::TextWrapped("%s", location->description.c_str());
-    } else {
-      ImGui::TextDisabled("(no description)");
-    }
-    ImGui::Text("Area: (%d, %d), %d x %d tiles", location->pos.x,
-                location->pos.y, location->width, location->height);
+  if (PlaceSeed *seed = map->FindPlaceSeed(pos)) {
+    ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Place name: %s",
+                       seed->label.c_str());
+    ImGui::Text("Points at (%d, %d), radius %d", seed->position.x,
+                seed->position.y, seed->radius);
   } else {
-    ImGui::TextDisabled("Not inside any named location.");
+    ImGui::TextDisabled("No authored place name on this cell.");
+  }
+  // What the *player* remembers here, which is a different question from what the
+  // map says: a name the map carries may attach elsewhere, or not at all.
+  if (game->playerEntity.is_alive()) {
+    if (const SpatialMemory *memory = game->playerEntity.get<SpatialMemory>()) {
+      if (const KnownPlace *place = PlaceQuery::At(*memory, pos)) {
+        const std::string name = PlaceQuery::DisplayName(*place);
+        ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1.0f),
+                           "Player remembers: %s (#%d)", name.c_str(), place->id);
+        for (const PlaceAspect &aspect : place->aspects) {
+          ImGui::TextDisabled("  %s peak %d%% mean %d%%",
+                              aspect.category.c_str(),
+                              static_cast<int>(aspect.peak * 100.0f),
+                              static_cast<int>(aspect.mean * 100.0f));
+        }
+      } else {
+        ImGui::TextDisabled("Player remembers no place here.");
+      }
+    }
   }
 
   ImGui::Separator();
@@ -1378,6 +1394,63 @@ static void SortObjectTemplates(
       });
 }
 
+namespace {
+
+// The place-category seeds a palette entry carries, one line each, for the Map
+// Editor's hover tooltips (docs/place-derivation-design.md sections 3 and 4).
+//
+// Tiles and object templates spell this data the same way and are read by the
+// same parser, so the palette shows exactly what the world will load rather than
+// a second interpretation of the key. The note after each weight comes from the
+// taxonomy: `formsPlace` decides whether the seed can start a place of its own or
+// only colours one, and `minSeeds` is how many of them it takes. A bare weight
+// would leave the author guessing which of the two they are looking at, and an
+// id the taxonomy does not define is labelled because derivation ignores it.
+// The caller writes the heading (and the "seeds nothing" case), because a tile
+// row and an object template are not the same kind of thing to label.
+void AppendPlaceCategoryLines(std::string &out,
+                              const std::vector<SeedCategory> &categories,
+                              const PlaceCategoryRegistry *registry) {
+  for (const SeedCategory &category : categories) {
+    char weight[16];
+    std::snprintf(weight, sizeof(weight), "%.2f", category.weight);
+    out += "\n  ";
+    out += category.category;
+    out += " ";
+    out += weight;
+    const PlaceCategory *definition =
+        registry != nullptr ? registry->Get(category.category) : nullptr;
+    if (definition == nullptr) {
+      out += "  (unknown category: derivation ignores it)";
+    } else if (definition->formsPlace) {
+      out += "  (forms places, min " + std::to_string(definition->minSeeds) +
+             (definition->minSeeds == 1 ? " seed)" : " seeds)");
+    } else {
+      out += "  (quality: colours a place, never forms one)";
+    }
+  }
+}
+
+// Whether a template's "components" array lists PlaceCategories. ObjectFactory
+// runs a component setter only for components the array names, so category data
+// on a template that omits it is inert -- Game::ECSInit already warns about that
+// at startup, and the palette repeats it where an author is actually reading the
+// weights, because otherwise the tooltip would promise seeds that never exist.
+bool DeclaresPlaceCategories(const nlohmann::json &tmpl) {
+  if (!tmpl.contains("components") || !tmpl["components"].is_array()) {
+    return false;
+  }
+  for (const auto &component : tmpl["components"]) {
+    if (component.is_string() &&
+        component.get<std::string>() == "PlaceCategories") {
+      return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
 void MapEditorWindow::Draw() {
   // A deletion confirmed last frame is applied before anything else this frame.
   // It has to be here rather than where the button was pressed: this window has
@@ -1404,25 +1477,22 @@ void MapEditorWindow::Draw() {
   }
 
   ImGui::Separator();
-  ImGui::Text("Locations");
-  if (ImGui::Checkbox("Create Location##MapEditor", &game->createLocationMode)) {
-    if (!game->createLocationMode) {
-      game->isDraggingLocation = false;
-    }
-  }
+  ImGui::Text("Place names");
+  ImGui::Checkbox("Name a Place##MapEditor", &game->namePlaceSeedMode);
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Arm this, then press and drag on the map to mark the "
-                      "tiles of a new location. Releasing asks for a name.");
+    ImGui::SetTooltip("Arm this, then click one cell on the map. The window asks "
+                      "for a name and the radius the name may spread. A name is a "
+                      "seed: it points at ground, it does not claim a rectangle.");
   }
-  if (game->createLocationMode) {
+  if (game->namePlaceSeedMode) {
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f),
-                       "Drag on the map to mark the new location's tiles.");
+                       "Click a cell to name it.");
   }
 
-  ImGui::Checkbox("Remove Location##MapEditor", &game->removeLocationMode);
+  ImGui::Checkbox("Remove Place Name##MapEditor", &game->removePlaceSeedMode);
   if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip("Arm this, then click a location on the map to delete "
-                      "it. Removals are not written to the map file.");
+    ImGui::SetTooltip("Arm this, then click a named cell on the map to delete "
+                      "its name. Removals are not written to the map file.");
   }
 
   // Trash button: toggles the removal mode, which takes the object on a clicked
@@ -1453,9 +1523,9 @@ void MapEditorWindow::Draw() {
                       "map file records on save.");
   }
 
-  if (game->removeLocationMode) {
+  if (game->removePlaceSeedMode) {
     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
-                       "Click a location on the map to remove it.");
+                       "Click a named cell on the map to remove its name.");
   }
   if (game->removeObjectMode) {
     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
@@ -1463,12 +1533,12 @@ void MapEditorWindow::Draw() {
                        "or the tile when it holds no object.");
   }
 
-  if (!game->lastRemovedLocationName.empty()) {
-    ImGui::Text("Last removed location: %s",
-                game->lastRemovedLocationName.c_str());
+  if (!game->lastRemovedPlaceSeedLabel.empty()) {
+    ImGui::Text("Last removed place name: %s",
+                game->lastRemovedPlaceSeedLabel.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton("Clear##LastRemovedLocation")) {
-      game->lastRemovedLocationName.clear();
+    if (ImGui::SmallButton("Clear##LastRemovedPlaceName")) {
+      game->lastRemovedPlaceSeedLabel.clear();
     }
   }
   if (!game->lastRemovedObjectName.empty()) {
@@ -1499,7 +1569,7 @@ void MapEditorWindow::Draw() {
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip("Rewrite the current map file with the editor's tile "
-                      "layout, locations and placed objects.");
+                      "layout, place names and placed objects.");
   }
   if (!game->mapFilePath.empty()) {
     ImGui::TextDisabled("Target: %s", game->mapFilePath.c_str());
@@ -1714,16 +1784,27 @@ void MapEditorWindow::Draw() {
           ImGui::PopStyleVar();
         }
         if (ImGui::IsItemHovered()) {
+          std::string tooltip = definition->name;
           if (cellCount > 0) {
-            ImGui::SetTooltip("%s\non this map: %zu cell(s)%s",
-                              definition->name.c_str(), cellCount,
-                              definition->blocksTile ? "\nblocks movement" : "");
+            tooltip += "\non this map: " + std::to_string(cellCount) + " cell(s)";
           } else {
-            ImGui::SetTooltip(
-                "%s\nnot on this map yet -- painting a cell adds it%s",
-                definition->name.c_str(),
-                definition->blocksTile ? "\nblocks movement" : "");
+            tooltip += "\nnot on this map yet -- painting a cell adds it";
           }
+          if (definition->blocksTile) {
+            tooltip += "\nblocks movement";
+          }
+          // The definition's own categories. Painting a tile this map already has
+          // reuses that map tile (Game::PaintTile), whose categories a tileInfo
+          // override may have replaced, so this line describes the catalog row it
+          // is attached to -- like the name and the blocks-movement line above.
+          if (definition->placeCategories.empty()) {
+            tooltip += "\nno place categories: it seeds nothing";
+          } else {
+            tooltip += "\nplace categories:";
+            AppendPlaceCategoryLines(tooltip, definition->placeCategories,
+                                     &game->placeCategoryRegistry);
+          }
+          ImGui::SetTooltip("%s", tooltip.c_str());
         }
 
         // Permanent deletion. Nothing like the trash button above: that one edits
@@ -1870,7 +1951,25 @@ void MapEditorWindow::Draw() {
           ImGui::PopStyleVar();
         }
         if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("%s", pair.first.c_str());
+          std::string tooltip = pair.first;
+          // Same parser and same key as the component setter, so the weights shown
+          // are the ones an instance of this template would carry.
+          std::vector<SeedCategory> categories;
+          if (pair.second.contains("placeCategories")) {
+            categories = ParsePlaceCategories(pair.second["placeCategories"]);
+          }
+          if (categories.empty()) {
+            tooltip += "\nno place categories: it seeds nothing";
+          } else {
+            tooltip += "\nplace categories:";
+            AppendPlaceCategoryLines(tooltip, categories,
+                                     &game->placeCategoryRegistry);
+            if (!DeclaresPlaceCategories(pair.second)) {
+              tooltip += "\ninert: 'components' does not list PlaceCategories, "
+                         "so none of these reach the world";
+            }
+          }
+          ImGui::SetTooltip("%s", tooltip.c_str());
         }
 
         // The same permanent-deletion control as the tile palette, on the same
@@ -1915,81 +2014,76 @@ void MapEditorWindow::Draw() {
   // id stack it was opened in, which is not the same stack at this point.
   DrawDeleteConfirmation();
 
-  // The naming prompt only exists while a rectangle is waiting to be named.
-  if (game->pendingLocationWantsFocus || game->pendingLocationHasFocus) {
-    LocationNamingWindow(game).Draw();
+  // The naming prompt only exists while a cell is waiting to be named.
+  if (game->pendingPlaceSeedWantsFocus || game->pendingPlaceSeedHasFocus) {
+    PlaceSeedNamingWindow(game).Draw();
   }
 }
 
-LocationNamingWindow::LocationNamingWindow(Game* game) : game(game) {}
+PlaceSeedNamingWindow::PlaceSeedNamingWindow(Game* game) : game(game) {}
 
-void LocationNamingWindow::Draw() {
-  if (!game->pendingLocationWantsFocus && !game->pendingLocationHasFocus) {
+void PlaceSeedNamingWindow::Draw() {
+  if (!game->pendingPlaceSeedWantsFocus && !game->pendingPlaceSeedHasFocus) {
     return;
   }
 
-  ImGui::SetNextWindowSize(ImVec2(440, 240), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(420, 200), ImGuiCond_FirstUseEver);
   ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                           ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 
   bool show = true;
-  ImGui::Begin("New Location", &show, ImGuiWindowFlags_None);
+  ImGui::Begin("Name a Place", &show, ImGuiWindowFlags_None);
 
-  PendingLocation &pending = game->pendingLocation;
-  const int markedWidth = pending.bottomRight.x - pending.topLeft.x + 1;
-  const int markedHeight = pending.bottomRight.y - pending.topLeft.y + 1;
+  PendingPlaceSeed &pending = game->pendingPlaceSeed;
 
-  ImGui::Text("Marked area: %d x %d tiles at (%d, %d)", markedWidth,
-              markedHeight, pending.topLeft.x, pending.topLeft.y);
+  ImGui::Text("Cell: (%d, %d)", pending.position.x, pending.position.y);
+  ImGui::TextDisabled(
+      "A name points at ground; what it covers is decided by what has been seen.");
   ImGui::Separator();
 
-  if (game->pendingLocationWantsFocus) {
+  if (game->pendingPlaceSeedWantsFocus) {
     ImGui::SetKeyboardFocusHere();
-    game->pendingLocationWantsFocus = false;
-    game->pendingLocationHasFocus = true;
+    game->pendingPlaceSeedWantsFocus = false;
+    game->pendingPlaceSeedHasFocus = true;
   }
 
   ImGui::Text("Name");
   ImGui::SetNextItemWidth(-1.0f);
-  bool submitted = ImGui::InputText("##LocationName", &pending.name,
+  bool submitted = ImGui::InputText("##PlaceName", &pending.label,
                                     ImGuiInputTextFlags_EnterReturnsTrue);
 
-  ImGui::Text("Description (optional)");
+  ImGui::Text("Spread if it has to make a place");
   ImGui::SetNextItemWidth(-1.0f);
-  ImGui::InputText("##LocationDescription", &pending.description);
+  ImGui::SliderInt("##PlaceRadius", &pending.radius, 1, 12, "%d tiles");
 
-  const bool nameIsEmpty = pending.name.empty();
+  const bool labelIsEmpty = pending.label.empty();
 
-  // The button is always drawn; the Enter key is handled separately below so an
-  // Enter consumed by the text field is never read as a button activation.
-  const bool createClicked = ImGui::Button("Create Location");
+  const bool createClicked = ImGui::Button("Add Name");
   ImGui::SameLine();
   const bool cancel = ImGui::Button("Cancel");
 
-  const bool confirm = !nameIsEmpty && (createClicked || submitted);
+  const bool confirm = !labelIsEmpty && (createClicked || submitted);
 
-  if (nameIsEmpty) {
+  if (labelIsEmpty) {
     ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f),
                        "A name is required.");
   }
 
   if (confirm) {
-    game->map->AddLocation(pending.name, pending.description,
-                           pending.topLeft, markedWidth, markedHeight);
+    game->map->AddPlaceSeed(pending.label, pending.position, pending.radius);
     if (game->debugLog) {
-      game->debugLog->LogInfo("Map editor: created location '" + pending.name +
-                              "' (" + std::to_string(markedWidth) + "x" +
-                              std::to_string(markedHeight) + " tiles at " +
-                              std::to_string(pending.topLeft.x) + "," +
-                              std::to_string(pending.topLeft.y) +
-                              ") (in memory only)");
+      game->debugLog->LogInfo("Map editor: added place name '" + pending.label +
+                              "' at (" + std::to_string(pending.position.x) +
+                              "," + std::to_string(pending.position.y) +
+                              "), radius " + std::to_string(pending.radius) +
+                              " (in memory only)");
     }
 
-    game->pendingLocation = PendingLocation{};
-    game->pendingLocationHasFocus = false;
+    game->pendingPlaceSeed = PendingPlaceSeed{};
+    game->pendingPlaceSeedHasFocus = false;
   } else if (cancel || !show) {
-    game->pendingLocation = PendingLocation{};
-    game->pendingLocationHasFocus = false;
+    game->pendingPlaceSeed = PendingPlaceSeed{};
+    game->pendingPlaceSeedHasFocus = false;
   }
 
   ImGui::End();
@@ -2832,9 +2926,11 @@ void VisionDebugWindow::Draw() {
                              "attaches one at spawn.");
         } else {
           const int nowTick = CurrentTaskTick(game->ecs);
-          ImGui::Text("%d cells (cap %d)   %d objects (cap %d)   %d places",
+          ImGui::Text("%d cells (cap %d)   %d runs   %d objects (cap %d)   "
+                      "%d places",
                       static_cast<int>(memory->cells.size()),
                       DEFAULT_MEMORY_CELLS_MAX,
+                      static_cast<int>(memory->runs.size()),
                       static_cast<int>(memory->objects.size()),
                       DEFAULT_MEMORY_OBJECTS_MAX,
                       static_cast<int>(memory->places.size()) + 1);
@@ -2855,11 +2951,35 @@ void VisionDebugWindow::Draw() {
           if (ImGui::Checkbox("Include cells (full detail)", &includeCells)) {
             jsonDirty = true;
           }
+          // Off by default: the record is a few hundred kilobytes and ImGui lays
+          // out every character of it each frame, which is a frame-rate bug, not a
+          // detail. The counts and tables above stay live either way.
+          ImGui::Checkbox("Show JSON", &showJson);
           ImGui::TextDisabled(
               "%d shapes from %d cells; %d bytes. Shapes are an exact run-merge "
               "decomposition, so they claim no ground the agent never saw.",
               shapeCount, static_cast<int>(memory->cells.size()),
               static_cast<int>(jsonCache.size()));
+
+          // The consolidation ledger: the deliverable of stage 4. One line per
+          // pass, newest last, exactly the counts the pass moved.
+          if (memory->consolidationLog.empty()) {
+            ImGui::TextDisabled("No consolidation pass yet.");
+          } else {
+            const ConsolidationRecord &last = memory->consolidationLog.back();
+            ImGui::TextColored(
+                last.overBudget ? ImVec4(1.0f, 0.55f, 0.2f, 1.0f)
+                                : ImVec4(0.6f, 0.9f, 0.6f, 1.0f),
+                "Consolidation: %d -> %d cells, %d runs, dropped %d runs "
+                "(%d cells)%s",
+                last.cellsBefore, last.cellsAfter, last.runsOut,
+                last.droppedRuns, last.freedCells,
+                last.overBudget ? "  OVER BUDGET: place ground is exempt"
+                                : "");
+            ImGui::TextDisabled(
+                "Runs keep place ground whole: a drop only ever removes stray "
+                "detail.");
+          }
 
           // The same colours the map boxes use, so a rectangle can be identified
           // without hovering it. Facts are printed exactly as stored -- raw tile
@@ -2877,14 +2997,31 @@ void VisionDebugWindow::Draw() {
                                  ImGuiColorEditFlags_NoTooltip, ImVec2(12, 12));
               ImGui::PopID();
               ImGui::SameLine();
-              const std::string name =
-                  place.label.empty()
-                      ? "#" + std::to_string(place.id) + " " + place.attribute
-                      : place.label;
-              ImGui::Text("%s  %dx%d  %s", name.c_str(), place.width,
-                          place.height,
-                          place.origin == PlaceOrigin::Authored ? "(authored)"
-                                                                : "(inferred)");
+              std::string name;
+              if (!place.labels.empty()) {
+                name = place.labels.front();
+                for (std::size_t i = 1; i < place.labels.size(); ++i) {
+                  name += " / " + place.labels[i];
+                }
+              } else {
+                name = "#" + std::to_string(place.id) + " " +
+                       place.primaryAspect;
+              }
+              const char *kind = place.seedKind == SeedKind::Tile    ? "(tile)"
+                                 : place.seedKind == SeedKind::Named ? "(named)"
+                                                                     : "(object)";
+              ImGui::Text("%s  %dx%d  %zu seeds  %s", name.c_str(),
+                          place.width, place.height,
+                          place.memberSeeds.size(), kind);
+              // Peak and its location, because the mean alone cannot tell
+              // "strong at one edge" from "strong everywhere".
+              for (const PlaceAspect &aspect : place.aspects) {
+                ImGui::TextDisabled("    %s  peak %d%% at (%d,%d)  mean %d%%",
+                                    aspect.category.c_str(),
+                                    static_cast<int>(aspect.peak * 100),
+                                    aspect.peakPos.x, aspect.peakPos.y,
+                                    static_cast<int>(aspect.mean * 100));
+              }
               if (!place.facts.empty()) {
                 std::string facts;
                 for (const PlaceFact &fact : place.facts) {
@@ -2899,21 +3036,29 @@ void VisionDebugWindow::Draw() {
             ImGui::EndChild();
           }
 
-          // One serializer, two consumers: this text and the dumped file are the
-          // same string, so what you diff is what you inspected.
-          if (jsonDirty || memory->lastVisionTick != jsonCacheTick) {
-            const std::string name = game->playerEntity.has<DisplayName>()
-                                         ? game->playerEntity.get<DisplayName>()->name
-                                         : std::string("character");
-            jsonCache =
-                Memory::DumpJson(*memory, name, nowTick, includeCells);
-            shapeCount = static_cast<int>(Memory::ToShapes(*memory).size());
-            jsonCacheTick = memory->lastVisionTick;
-            jsonDirty = false;
+          // The record is only built when asked for, and only laid out when the
+          // toggle above is on. Building it every sample and laying out a few
+          // hundred kilobytes every frame is what turned a debug window into a
+          // frame-rate problem.
+          if (showJson) {
+            if (jsonDirty || jsonCache.empty()) {
+              const std::string name =
+                  game->playerEntity.has<DisplayName>()
+                      ? game->playerEntity.get<DisplayName>()->name
+                      : std::string("character");
+              jsonCache = Memory::DumpJson(*memory, name, nowTick, includeCells);
+              shapeCount = static_cast<int>(Memory::ToShapes(*memory).size());
+              jsonCacheTick = memory->lastVisionTick;
+              jsonDirty = false;
+            }
+            ImGui::InputTextMultiline("##recordjson", &jsonCache,
+                                      ImVec2(-1.0f, -1.0f),
+                                      ImGuiInputTextFlags_ReadOnly);
+          } else {
+            ImGui::TextDisabled(
+                "The record is %d bytes. Tick 'Show JSON' to build and show it.",
+                static_cast<int>(jsonCache.size()));
           }
-          ImGui::InputTextMultiline("##recordjson", &jsonCache,
-                                    ImVec2(-1.0f, -1.0f),
-                                    ImGuiInputTextFlags_ReadOnly);
         }
         ImGui::EndTabItem();
       }

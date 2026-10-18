@@ -1,9 +1,11 @@
 {
   "name": "Pulpit",
   "description": "A raised wooden pulpit for preaching.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " uu ",
@@ -37,5 +39,9 @@
     80,
     45,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 1.0,
+    "sacred": 0.8
+  }
 }

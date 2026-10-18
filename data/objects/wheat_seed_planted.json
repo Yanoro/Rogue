@@ -8,14 +8,41 @@
     "▓▓▓▓"
   ],
   "palette": {
-    ",": [110, 200, 110, 255],
-    "▓": [70, 45, 25, 255]
+    ",": [
+      110,
+      200,
+      110,
+      255
+    ],
+    "▓": [
+      70,
+      45,
+      25,
+      255
+    ]
   },
   "character": ";",
-  "characterColor": [139, 69, 19, 255],
-  "nameTagColor": [255, 223, 0, 255],
-  "components": ["ShowNameTag", "Evolvable"],
+  "characterColor": [
+    139,
+    69,
+    19,
+    255
+  ],
+  "nameTagColor": [
+    255,
+    223,
+    0,
+    255
+  ],
+  "components": [
+    "ShowNameTag",
+    "Evolvable",
+    "PlaceCategories"
+  ],
   "evolveTime": 10.0,
   "evolveTarget": "wheat_sprout",
-  "isActive": true
+  "isActive": true,
+  "placeCategories": {
+    "field": 0.5
+  }
 }

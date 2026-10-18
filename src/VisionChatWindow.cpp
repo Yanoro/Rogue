@@ -377,15 +377,26 @@ std::string VisionChatWindow::BuildGameStateSummary() const {
           << ".\n";
     }
 
-    const std::vector<std::string> locations =
-        game->map->GetAllLocationNames();
-    if (!locations.empty()) {
-      out << "- Mapped locations: ";
-      for (std::size_t i = 0; i < locations.size(); ++i) {
+    // The names the character has, not the map's: what a place is called is
+    // something you know, and you can be wrong about it.
+    std::vector<std::string> remembered;
+    if (game->playerEntity.is_alive()) {
+      if (const SpatialMemory *memory =
+              game->playerEntity.get<SpatialMemory>()) {
+        for (const KnownPlace &place : memory->places) {
+          if (!place.labels.empty()) {
+            remembered.push_back(place.labels.front());
+          }
+        }
+      }
+    }
+    if (!remembered.empty()) {
+      out << "- Places you remember: ";
+      for (std::size_t i = 0; i < remembered.size(); ++i) {
         if (i > 0) {
           out << ", ";
         }
-        out << locations[i];
+        out << remembered[i];
       }
       out << ".\n";
     }

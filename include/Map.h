@@ -78,15 +78,17 @@ public:
   int GetMapWidthPx() const { return GetWidth() * GetTileWidth();}
   int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
 
-  // Registers a new area location and returns a pointer to it. The pointer is
+  // Registers a place name at a cell and returns a pointer to it. The pointer is
   // owned by the map and stays valid as long as the map does.
-  Location *AddLocation(const std::string& name, const std::string& description,
-                        GamePosition topLeft, int width, int height);
+  PlaceSeed *AddPlaceSeed(const std::string &label, GamePosition pos,
+                          int radius = 3);
 
-  // Removes the location covering this tile and returns its name. Returns an
-  // empty string when no location covers the position. In-memory only: the map
-  // file is not touched by this.
-  std::string RemoveLocationAt(GamePosition pos);
+  // Removes the place seed pointing at this cell and returns its label. Empty
+  // when no seed points there. In-memory only: SaveToFile writes the change.
+  std::string RemovePlaceSeedAt(GamePosition pos);
+
+  // The seed pointing at a cell, for the editor's name stamp.
+  PlaceSeed *FindPlaceSeed(GamePosition pos);
 
   // Erases the tile on one cell and returns its name, or an empty string when
   // the position is out of bounds or the cell is already empty. In-memory only:
@@ -119,17 +121,11 @@ public:
   // injected DebugLog) when the file cannot be opened or written.
   bool SaveToFile(const std::string &path);
 
-  Location *GetLocation(GamePosition pos);
-  Location *GetLocation(const std::string& name);
-  std::vector<std::string> GetAllLocationNames(); 
-  const std::vector<std::unique_ptr<Location>>& GetLocations() const { return mapLocations; }
+  // Authored names, as seeds: a label, a cell and a radius. Nothing here claims
+  // ground; derivation decides what the name attaches to.
+  const std::vector<PlaceSeed> &GetPlaceSeeds() const { return placeSeeds; }
   const std::vector<std::unique_ptr<Tile>>& GetUniqueTiles() const { return uniqueTiles; }
   const std::vector<NPCData>& GetNPCs() const { return npcs; }
-
-  // Every in-bounds tile inside [topLeft, topLeft + size), row major. Used by
-  // the map editor to show exactly which tiles a dragged location covers.
-  std::vector<GamePosition> GetTilePositionsInRect(GamePosition topLeft, int width,
-                                                   int height) const;
 
   void addTileToMap(Tile *newTile, int x, int y);
   Tile *GetTile(int x, int y); 
@@ -180,7 +176,7 @@ private:
   // "tilePalette" -- or, for a map written before that key existed, from the
   // positional "tileInfo".
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
-  std::vector<std::unique_ptr<Location>> mapLocations; 
+  std::vector<PlaceSeed> placeSeeds;
   std::vector<NPCData> npcs;
 
   std::vector<Tile *> tileMap;

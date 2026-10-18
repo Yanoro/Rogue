@@ -1,9 +1,11 @@
 {
   "name": "Church Bench",
   "description": "A plain wooden bench for the congregation.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " hh ",
@@ -37,5 +39,8 @@
     80,
     45,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.4
+  }
 }

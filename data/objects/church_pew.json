@@ -1,9 +1,11 @@
 {
   "name": "Church Pew",
   "description": "A tall-backed pew for the congregation.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " pp ",
@@ -37,5 +39,8 @@
     80,
     45,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.8
+  }
 }

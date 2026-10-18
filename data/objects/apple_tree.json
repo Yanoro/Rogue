@@ -1,12 +1,14 @@
 {
   "name": "Apple Tree",
   "description": "A leafy tree that bears apples.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
     "Harvestable",
     "Obstacle",
     "BlocksVision",
-    "Trains"
+    "Trains",
+    "PlaceCategories"
   ],
   "amountRemaining": 5,
   "timer": 5.0,
@@ -23,12 +25,42 @@
     " ▐▌ "
   ],
   "palette": {
-    "▄": [34, 139, 34, 255],
-    "█": [34, 139, 34, 255],
-    "o": [200, 40, 40, 255],
-    "▓": [20, 90, 20, 255],
-    "▐": [120, 72, 40, 255],
-    "▌": [120, 72, 40, 255]
+    "▄": [
+      34,
+      139,
+      34,
+      255
+    ],
+    "█": [
+      34,
+      139,
+      34,
+      255
+    ],
+    "o": [
+      200,
+      40,
+      40,
+      255
+    ],
+    "▓": [
+      20,
+      90,
+      20,
+      255
+    ],
+    "▐": [
+      120,
+      72,
+      40,
+      255
+    ],
+    "▌": [
+      120,
+      72,
+      40,
+      255
+    ]
   },
   "character": "T",
   "characterColor": [
@@ -51,5 +83,8 @@
   ],
   "trains": {
     "farming": 3
+  },
+  "placeCategories": {
+    "orchard": 1.0
   }
 }

@@ -1,7 +1,20 @@
 {
   "name": "tilled soil",
   "character": "'",
-  "characterColor": [150, 100, 60, 255],
-  "backgroundColor": [56, 38, 24, 255],
-  "blocksTile": false
+  "characterColor": [
+    150,
+    100,
+    60,
+    255
+  ],
+  "backgroundColor": [
+    56,
+    38,
+    24,
+    255
+  ],
+  "blocksTile": false,
+  "placeCategories": {
+    "field": 0.4
+  }
 }

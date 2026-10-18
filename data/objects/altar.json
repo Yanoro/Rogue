@@ -1,9 +1,11 @@
 {
   "name": "Altar",
   "description": "A stone altar under a white cloth.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " BB ",
@@ -37,5 +39,9 @@
     150,
     150,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 1.0,
+    "sacred": 0.9
+  }
 }

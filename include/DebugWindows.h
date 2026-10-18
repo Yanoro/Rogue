@@ -162,10 +162,10 @@ private:
 };
 
 // Modal-ish prompt shown after a location rectangle is dragged out. Reads and
-// clears Game::pendingLocation, and only calls Map::AddLocation on confirm.
-class LocationNamingWindow : public Window {
+// clears Game::pendingPlaceSeed, and only calls Map::AddPlaceSeed on confirm.
+class PlaceSeedNamingWindow : public Window {
 public:
-  explicit LocationNamingWindow(Game* game);
+  explicit PlaceSeedNamingWindow(Game* game);
   void Draw() override;
 private:
   Game* game;
@@ -230,6 +230,9 @@ private:
   // default: shapes plus counts are the readable form, and the cells are there
   // for the times that is not enough. A view preference, so not persisted.
   bool includeCells = false;
+  // Off by default: the record is a few hundred kilobytes and ImGui lays out
+  // every character of it each frame.
+  bool showJson = false;
   // Cached alongside the JSON: computing shapes per frame to print a count is the
   // same mistake as serializing per frame.
   int shapeCount = 0;

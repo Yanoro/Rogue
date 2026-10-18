@@ -1,94 +1,76 @@
 {
-  "locations": [
+  "placeSeeds": [
     {
-      "description": "The central gathering place of the village.",
-      "hitboxHeight": 16,
-      "hitboxWidth": 16,
-      "name": "Town Plaza",
+      "label": "Town Plaza",
       "position": [
-        24,
-        24
-      ]
+        32,
+        32
+      ],
+      "radius": 8
     },
     {
-      "description": "A quiet place filled with old books and scrolls.",
-      "hitboxHeight": 10,
-      "hitboxWidth": 10,
-      "name": "Library",
-      "position": [
-        5,
-        5
-      ]
-    },
-    {
-      "description": "A cozy little home belonging to a farmer.",
-      "hitboxHeight": 8,
-      "hitboxWidth": 8,
-      "name": "Farmer's House",
-      "position": [
-        45,
-        10
-      ]
-    },
-    {
-      "description": "Carl's slightly messy residence.",
-      "hitboxHeight": 8,
-      "hitboxWidth": 8,
-      "name": "Carl's House",
+      "label": "Library",
       "position": [
         10,
-        45
-      ]
-    },
-    {
-      "description": "A small garden with some apple trees.",
-      "hitboxHeight": 8,
-      "hitboxWidth": 8,
-      "name": "Apple Tree Garden",
-      "position": [
-        30,
         10
-      ]
+      ],
+      "radius": 5
     },
     {
-      "description": "A large field of growing wheat.",
-      "hitboxHeight": 8,
-      "hitboxWidth": 8,
-      "name": "Wheat Farm",
+      "label": "Farmer's House",
       "position": [
-        45,
-        19
-      ]
+        49,
+        14
+      ],
+      "radius": 4
     },
     {
-      "description": "A dark mine filled with rich iron veins.",
-      "hitboxHeight": 10,
-      "hitboxWidth": 10,
-      "name": "Iron Mine",
+      "label": "Carl's House",
       "position": [
-        50,
-        50
-      ]
+        14,
+        49
+      ],
+      "radius": 4
     },
     {
-      "description": "",
-      "hitboxHeight": 2,
-      "hitboxWidth": 4,
-      "name": "test",
+      "label": "Apple Tree Garden",
       "position": [
-        26,
+        34,
+        14
+      ],
+      "radius": 4
+    },
+    {
+      "label": "Wheat Farm",
+      "position": [
+        49,
+        23
+      ],
+      "radius": 4
+    },
+    {
+      "label": "Iron Mine",
+      "position": [
+        55,
+        55
+      ],
+      "radius": 5
+    },
+    {
+      "label": "test",
+      "position": [
+        28,
+        5
+      ],
+      "radius": 2
+    },
+    {
+      "label": "Miller's House",
+      "position": [
+        48,
         4
-      ]
-    },
-    {
-      "description": "A snug stone house built around a grinding mill. Everything inside wears a coat of flour dust.",
-      "hitboxHeight": 5,
-      "hitboxWidth": 5,
-      "name": "Miller's House",
-      "position": [
-        46,
-        2
-      ]
+      ],
+      "radius": 2
     }
   ],
   "mapHeight": 64,

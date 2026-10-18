@@ -3,16 +3,14 @@
   "mapHeight": 20,
   "tileWidth": 32,
   "tileHeight": 32,
-  "locations": [
+  "placeSeeds": [
     {
-      "name": "Pietro's Farm",
-      "description": "Pietro's small farm: a fenced compound with a field of dark tilled soil on the west side, a packed-earth yard and storage Chest on the east, and a gate in the south fence leading out to the track. A small pond sits just north of the fence.",
+      "label": "Pietro's Farm",
       "position": [
-        3,
-        3
+        9,
+        9
       ],
-      "hitboxWidth": 13,
-      "hitboxHeight": 13
+      "radius": 6
     }
   ],
   "npcs": [

@@ -85,19 +85,64 @@ constexpr int DEFAULT_VISION_RESAMPLE_TICKS = 30;
 
 // Spatial memory caps (docs/spatial-memory-design.md section 5).
 //
-// The cell cap is a memory budget, not a simulation rule: a 40-tile walk observes
-// more than a thousand cells, so 2048 is roughly one long walk's worth of detail
-// held at once. Overflow evicts the least-visited and then the oldest, never a
-// cell belonging to a durable place.
-constexpr int DEFAULT_MEMORY_CELLS_MAX = 2048;
+// The cell cap is a memory budget, not a simulation rule. It has to hold a map
+// the game actually ships, or memory forgets ground the character just walked and
+// a long road breaks into fragments as its far end ages out: 4096 is one 64x64
+// map (the village and the place test map), which is the largest world there is
+// today. A map larger than this needs a spatial budget rather than a bigger
+// number -- that is an open question in the design doc. Overflow drops the cell
+// with the lowest age-discounted-by-visits score.
+constexpr int DEFAULT_MEMORY_CELLS_MAX = 4096;
 
-// Objects are far sparser than cells, so a much smaller bound suffices.
-constexpr int DEFAULT_MEMORY_OBJECTS_MAX = 256;
+// How many ticks of youth one revisit is worth when the cell cap has to drop
+// something. Eviction scores a cell as observedTick - visitCount * this and drops
+// the lowest, so a road crossed often outlives a corner glimpsed once at the same
+// age, while an older cell always loses to one observed now -- otherwise every new
+// cell is the cheapest thing in a full store and memory stops growing.
+constexpr int DEFAULT_MEMORY_VISIT_BONUS_TICKS = 60;
+
+// What belonging to a place is worth when runs are ordered for a drop. Place
+// ground is exempt from dropping, so this only decides listing order -- but it
+// keeps the ledger readable: the runs that matter sort to the top.
+constexpr long long DEFAULT_MEMORY_PLACE_RANK_BONUS = 6000;
+
+// How many consolidation events the ledger keeps. Enough to see a trend, small
+// enough that the dump stays a document rather than a log file.
+constexpr int DEFAULT_CONSOLIDATION_LOG_MAX = 32;
+
+// Objects are far sparser than cells, but a walled village is not sparse: the
+// village map's 453 structural objects are recorded too, and at 256 the budget was
+// consumed by walls, evicting the seeds places are made from. Structural objects
+// will get their own cheaper store when wall qualities land (section 3e); until
+// then this bound has to accommodate them.
+constexpr int DEFAULT_MEMORY_OBJECTS_MAX = 1024;
 
 // How many places one character may hold (docs/spatial-memory-design.md section
 // 3.3). Overflow drops the place with the fewest member cells, then the one seen
 // longest ago; the cells stay in memory and simply stop being placed.
 constexpr int DEFAULT_MEMORY_PLACES_MAX = 24;
+
+// How close (Chebyshev) two seeds must be to land in the same place. Global
+// rather than per category, because one region may hold many categories
+// (docs/place-derivation-design.md section 5.1): a market beside an orchard is one
+// place whose aspect fields overlap. This is the knob if a dense row chains a whole
+// district into one place.
+constexpr int DEFAULT_PLACE_LINK_RADIUS = 4;
+
+// How far a place a character names may spread when nothing covers the ground it
+// points at. Small on purpose: a name is not a claim to a district.
+constexpr int DEFAULT_PLACE_NAME_RADIUS = 3;
+
+// How many cells a place's aspect mean samples. The mean is a summary for a
+// reader; evaluating every cell against every source was the largest single cost
+// of the per-sample derivation pass.
+constexpr int DEFAULT_PLACE_MEAN_SAMPLES = 64;
+
+// How many tile cells per category contribute to one place's aspect field. A lake
+// or a field is hundreds of cells; every cell as a source would make the per-cell
+// evaluation the overlay does quadratic. The sample is evenly spaced and
+// deterministic, so the field keeps its shape.
+constexpr int DEFAULT_PLACE_TILE_SOURCES_MAX = 48;
 
 // How close (Chebyshev, in cells) a newly observed cell must be to an existing
 // cluster of the same surface to join it instead of starting a new place. This is

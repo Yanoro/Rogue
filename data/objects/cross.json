@@ -1,8 +1,10 @@
 {
   "name": "Cross",
   "description": "A plain wooden cross.",
-  "components": ["ShowNameTag", 
-    "Interactable"
+  "components": [
+    "ShowNameTag",
+    "Interactable",
+    "PlaceCategories"
   ],
   "art": [
     " ++ ",
@@ -36,5 +38,9 @@
     90,
     45,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.9,
+    "sacred": 0.9
+  }
 }

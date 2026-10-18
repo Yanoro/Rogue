@@ -1,10 +1,12 @@
 {
   "name": "Collection Box",
   "description": "A wooden box with a slot in the lid.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
     "Storage",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " xx ",
@@ -39,5 +41,8 @@
     45,
     255
   ],
-  "capacity": 20
+  "capacity": 20,
+  "placeCategories": {
+    "storage": 0.8
+  }
 }

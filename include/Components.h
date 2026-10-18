@@ -158,17 +158,94 @@ struct Vision {
 
 // Layer 1: one cell this character has actually observed. The truthful floor of
 // the whole feature -- everything else is an index over these.
+struct SeedCategory {
+  std::string category;
+  float weight = 1.0f;
+  // Defaulted so a vector of them can be compared: the writer skips an
+  // assignment when nothing changed, and "changed" has to be expressible.
+  bool operator==(const SeedCategory &) const = default;
+};
+
+// Object and Tile are seed clusters; Named is a place that exists because
+// something is called that, with no seeds of its own (section 8).
+enum class SeedKind { Object, Tile, Named };
+
+// Where a place or a name came from. Declared here rather than beside KnownPlace
+// because PlaceNameSeed needs it and is declared first.
+// Authored: written into the map. Observed: seen. Told: heard from someone.
+// Inferred: concluded from evidence.
+enum class KnowledgeSource { Authored, Observed, Told, Inferred };
+
+// A name looking for a place (docs/place-derivation-design.md section 8).
+//
+// The authored Location demotion lands here: a label and an anchor, owning no
+// geometry. It attaches to a place whose ground covers the anchor, or -- when it
+// is allowed to create one -- it makes a place of its own around the anchor, which
+// is how a named public square exists with nothing in it.
 struct MemoryCell {
   GamePosition pos;
   std::string surface;  // Tile::name at observation: "grass", "path", "tilled soil"
   bool walkable = true; // !Tile::blocksTile at observation
   int observedTick = 0;
   int visitCount = 1;   // a road walked twice outranks a corner seen once
+  // The tile's place categories, resolved from its definition at observation and
+  // refreshed when it is re-seen (a repainted tile changes what it is). Empty for
+  // common ground. docs/place-derivation-design.md section 3.3.
+  std::vector<SeedCategory> categories;
 };
 
 // Layer 1: something that was standing somewhere. The item type is the strongest
 // evidence in the format and it is already data: "mill", "anvil", "apple_tree"
 // say more about a place than any surface name does.
+// A seed: one category a thing belongs to, and how strongly.
+//
+// Weights are resolved at observation time -- template values plus whatever
+// instance state says at that moment -- because memory records what was seen, and
+// lastSeenTick is the only thing that ages it (docs/place-derivation-design.md
+// section 3.1).
+struct PlaceNameSeed {
+  std::string label;
+  GamePosition anchor;
+  KnowledgeSource source = KnowledgeSource::Authored;
+  bool createsPlace = false;
+  // How far a created place may spread from the anchor. Authored seeds take it
+  // from the Location's size as a hint; it is a radius, not a claim.
+  int radius = 3;
+};
+
+// One seed's contribution to a place's aspect field
+// (docs/place-derivation-design.md section 6.1).
+//
+// The field is evaluated at a point: a cell's value for a category is the maximum
+// over that category's sources of weight x decay(distance). Storing the sources
+// rather than a scalar is the whole point -- a market beside an orchard is an
+// orchard only near the trees.
+struct AspectSource {
+  std::string category;
+  GamePosition pos;
+  float weight = 1.0f;  // 0..1, resolved at observation
+  float radius = 4.0f;  // influence radius: the distance at which it decays to 0
+};
+
+// A summary of one aspect field, for display and ordering. `peak` is where the
+// field is strongest and `mean` is the area-weighted average over the place, so a
+// reader can tell "strong at one edge" from "strong everywhere".
+struct PlaceAspect {
+  std::string category;
+  float peak = 0.0f;    // 0..1
+  GamePosition peakPos;
+  float mean = 0.0f;    // 0..1
+};
+
+// What an object template declared for this instance, resolved at spawn.
+//
+// A component rather than a template lookup at observation time: the observer has
+// the entity, not the factory, and copying the small vector keeps derivation a
+// pure function over memory.
+struct PlaceCategories {
+  std::vector<SeedCategory> categories;
+};
+
 struct SeenObject {
   std::string templateId;  // ItemType::type; empty for a character or a loose drop
   std::string name;
@@ -177,6 +254,12 @@ struct SeenObject {
   int firstSeenTick = 0;
   int lastSeenTick = 0;
   int vanishedTick = -1;   // a later look at that cell found nothing there
+
+  // Seed data, resolved when the thing was seen (section 3.2). Never a template
+  // lookup at derivation time: the observer has the entity, the deriver does not.
+  bool portable = false;              // never seeds a place
+  bool structural = false;            // bounds a place, contributes qualities
+  std::vector<SeedCategory> categories;
 };
 
 // Layer 2: counts, never a verdict. "7 structures" is evidence; "village" is a
@@ -186,6 +269,45 @@ struct SeenObject {
 // `category` only says which of the two it is. Deliberately no taxonomy: grouping
 // "mill" and "smeltery" into "workshop" is the renderer's interpretation, so a
 // genre pack can rename content without editing C++.
+// A consolidated run of same-surface cells: a rectangle of one surface inside one
+// place (docs/spatial-memory-design.md section 6.1).
+//
+// It is an *index over* the cells, not a replacement for them: consolidation never
+// deletes anything by itself, and deleting the runs restores the raw record
+// exactly. Cells are dropped only when the cap forces it, and only runs that no
+// place depends on are ever dropped.
+struct MemoryRun {
+  std::string surface;
+  GamePosition origin;   // top-left of the rectangle
+  int width = 1;
+  int height = 1;
+  int placeId = -1;      // the place whose ground it is, -1 for stray ground
+  int firstSeenTick = 0;
+  int lastSeenTick = 0;
+  int visitCount = 0;    // the best-trodden cell in it: how well known, not how big
+  // Ordering for a drop: recency, plus what repeated visits are worth, plus a
+  // bonus for belonging to a place (which is exempt anyway, so it mostly matters
+  // to the listing). Recalculated every pass; never stored across sessions.
+  long long rank = 0;
+};
+
+// One consolidation event, kept so the ledger can be read without a debugger.
+struct ConsolidationRecord {
+  int tick = 0;
+  int cellsBefore = 0;
+  int cellsAfter = 0;
+  int runsOut = 0;
+  int droppedRuns = 0;
+  // Runs that were too big to drop whole and lost their top rows instead, so a
+  // single vast field cannot free ten times the room that was needed.
+  int partialDrops = 0;
+  int freedCells = 0;
+  // True when the cap could not be met without dropping place ground. The place
+  // cells are kept and the budget is reported as exceeded rather than silently
+  // broken (section 6.1's "a drop never removes a place cell").
+  bool overBudget = false;
+};
+
 struct PlaceFact {
   std::string category;  // "surface" or "object"
   std::string name;      // tile name, or object template id
@@ -200,7 +322,6 @@ struct PlaceFact {
 //   Inferred -- a cluster derived from observed cells (section 3.3).
 //   Authored -- overlaps a map Location.
 enum class PlaceOrigin { Origin, Inferred, Authored };
-enum class KnowledgeSource { Observed, Told, Inferred };
 
 struct KnownPlace {
   // Stable for the session, so a label can attach to a place while its extent is
@@ -213,15 +334,25 @@ struct KnownPlace {
   int width = 0;
   int height = 0;
   std::vector<PlaceFact> facts;    // the evidence its description is built from
-  std::string attribute;           // cluster key for Inferred: the seed surface
-  std::string label;               // EMPTY until something names it
-  std::string authoringId;         // the map's Location name, if any
+
+  // What it is like: a field per category, summarised. `primaryAspect` is the
+  // forming category with the highest peak -- display and sorting only, never an
+  // identity, because two places can both be a market.
+  std::string primaryAspect;
+  std::vector<PlaceAspect> aspects;         // summaries, sorted by peak descending
+  std::vector<AspectSource> aspectSources;  // the field itself
+  // Names are aliases for the region, not identities: a place can be "the Library"
+  // and "the old reading room" at once.
+  std::vector<std::string> labels;
+  SeedKind seedKind = SeedKind::Object;
+
   int firstSeenTick = 0;
   int lastSeenTick = 0;
   // The cells this place claims, as VisionQuery::CellKey values. Membership is
   // what makes the extent and the facts exact: the extent is their bounding box,
   // so a place never claims a cell it did not observe.
   std::vector<std::uint64_t> memberCells;
+  std::vector<flecs::entity_t> memberSeeds;  // object seeds; empty for terrain
 };
 
 // Layer 3: the only stored prose, and only when something authored it. Written by
@@ -246,6 +377,14 @@ struct SpatialMemory {
   std::unordered_map<flecs::entity_t, SeenObject> objects;
   std::vector<KnownPlace> places;
   std::vector<MemoryNote> notes;
+  // Names that may attach to derived places. Authored ones arrive at spawn; told
+  // ones will arrive through dialogue with the same shape.
+  std::vector<PlaceNameSeed> nameSeeds;
+  // The compressed view, rebuilt every sample. Empty until the first consolidation
+  // pass; never authoritative -- the cells are.
+  std::vector<MemoryRun> runs;
+  // Newest last, capped so the ledger cannot grow without bound.
+  std::vector<ConsolidationRecord> consolidationLog;
 
   // The vision sample this record has already consumed, so the writer runs once
   // per sample rather than once per frame.
@@ -326,6 +465,10 @@ struct Tile {
   // back to data/sprites/tile_<slugified name>.png and, failing that, to its
   // ASCII glyph, exactly like an object template. See SpritePaths.hpp.
   std::string sprite;
+  // What kinds of place this surface is part of ("road", "water", "field"). A
+  // property of the material, like blocksTile, so a genre pack declares it on the
+  // tile and no C++ knows that a path is a road.
+  std::vector<SeedCategory> placeCategories;
 };
 
 // What a tile *is*, independently of the map that uses it: the entry in
@@ -345,6 +488,7 @@ struct TileDef {
   std::string name;
   bool blocksTile = false;
   std::string sprite;
+  std::vector<SeedCategory> placeCategories;
   size_t hitboxSize = 0;
   // The file this definition came from, for reporting. Set by TileRegistry; a
   // duplicate-name warning names both files, which is what makes it fixable.
@@ -370,18 +514,16 @@ struct TileDef {
   bool hasHitboxSize = false;
 };
 
-struct Location {
-  std::string name;
-  std::string description;
-  GamePosition pos;
-  int width;
-  int height;
-
-  friend std::ostream &operator<<(std::ostream &os, const Location &loc) {
-    os << "Location(name: " << loc.name << ", pos: " << loc.pos
-       << ", size: " << loc.width << "x" << loc.height << ")";
-    return os;
-  }
+// A name the map carries into the world (docs/place-derivation-design.md section 8).
+//
+// Not geometry: a label, a cell to point at, and how far the named area may spread
+// if it has to make one. Derivation attaches it to the place covering that cell, or
+// -- when nothing does -- creates a place from observed ground. It used to be a
+// Location rectangle, which claimed cells; that class is gone.
+struct PlaceSeed {
+  std::string label;
+  GamePosition position;
+  int radius = 3;
 };
 
 enum class WindowType {
@@ -497,10 +639,6 @@ struct MOVE_TO_CHARACTER_ACTION {
 
 struct TALK_TO_ACTION {
   std::string name;
-};
-
-struct MOVE_TO_LOCATION_ACTION {
-  Location *location;
 };
 
 class AgentBrain;

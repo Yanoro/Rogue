@@ -8,8 +8,18 @@
     " || "
   ],
   "palette": {
-    "█": [230, 190, 90, 255],
-    "|": [180, 150, 80, 255]
+    "█": [
+      230,
+      190,
+      90,
+      255
+    ],
+    "|": [
+      180,
+      150,
+      80,
+      255
+    ]
   },
   "character": "W",
   "characterColor": [
@@ -30,11 +40,13 @@
     32,
     255
   ],
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
     "Harvestable",
     "Trains",
-    "Requires"
+    "Requires",
+    "PlaceCategories"
   ],
   "amountRemaining": 3,
   "timer": 5.0,
@@ -54,5 +66,8 @@
   ],
   "trains": {
     "farming": 2
+  },
+  "placeCategories": {
+    "field": 1.0
   }
 }

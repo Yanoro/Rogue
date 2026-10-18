@@ -464,7 +464,7 @@ list in place. Task `id`s are model-supplied but re-issued by the engine if dupl
 
 ### How the digest reaches the agent
 
-The existing prompt machinery substitutes placeholders at **spawn time only**: `%LOCATIONS%`,
+The existing prompt machinery substitutes placeholders at **spawn time only**:
 `%BACKGROUND%`, `%CHARACTERS%`, `%COMMANDS_LIST%` are all filled in `Game::createNPC` and stored once
 as the `system` turn (`src/GameECS.cpp:311-330`). Task state changes, so it cannot live there.
 

@@ -296,7 +296,7 @@ struct GameSettings {
   struct AISection {
     // Path to a text file holding the NPC system prompt template. Empty means the
     // compiled-in DEFAULT_NPC_PROMPT is used. The template keeps the same
-    // %COMMANDS_LIST%, %LOCATIONS%, %BACKGROUND% and %CHARACTERS% placeholders.
+    // %COMMANDS_LIST%, %BACKGROUND% and %CHARACTERS% placeholders.
     std::string npcPromptFile;
     // The template text itself, filled by LoadGameSettings. Empty means "use the
     // compiled-in prompt"; Game::createNPC owns that fallback so this struct
@@ -355,6 +355,10 @@ struct GameSettings {
     std::string skills = "data/skills";
     std::string items = "data/items";
     std::string races = "data/races";
+    // The place taxonomy (docs/place-derivation-design.md section 4): which
+    // categories form places, their seed thresholds, link radii and split rule.
+    // A file rather than a directory, because it is one vocabulary, not a catalog.
+    std::string places = "data/places.json";
     // The world's tile vocabulary. A map's own "tileInfo" is a set of overrides
     // on top of these; with no catalog, maps must declare every tile inline,
     // which is how they all worked before the catalog existed.

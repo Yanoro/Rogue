@@ -60,11 +60,12 @@ bool MapReloader::IsJsonMapFile(const std::filesystem::path &filePath) const {
     // positional "tileInfo" that key replaced (older files). Both are accepted so
     // every map in the repo still lists; Map::Map reads whichever is present.
     const bool hasTiles = j.contains("tilePalette") || j.contains("tileInfo");
+    // Place names are optional: a map with no authored names is a map whose place
+    // names all come from characters. Only the geometry is required.
     return j.contains("mapWidth") &&
            j.contains("mapHeight") &&
            j.contains("tileWidth") &&
            j.contains("tileHeight") &&
-           j.contains("locations") &&
            hasTiles &&
            j.contains("positions");
   } catch (...) {

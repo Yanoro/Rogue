@@ -6,6 +6,7 @@
 
 #include "AgentBrain.h"
 #include "Components.h"
+#include "PlaceQuery.hpp"
 #include "Defaults.h"
 #include "EquipmentRuntime.hpp"
 #include "Map.h"
@@ -105,31 +106,30 @@ flecs::entity ResolveTaskTarget(flecs::entity agent, const TaskKind &kind,
       });
   if (named.is_alive()) return named;
 
-  // 3. A location by name. A location is a rectangle, not an entity, so this only
-  //    means something when the kind can say which entity inside it the task is
-  //    about -- "reap the wheat at the mill field" names a place, and the kind
-  //    says a harvestable inside it is what was meant.
-  const MapResource *mapRes = agent.world().get<MapResource>();
-  Map *map = mapRes ? mapRes->map : nullptr;
-  if (map == nullptr || !kind.subjectFilter) return flecs::entity::null();
+  // 3. A place this agent remembers, by name. A place is not an entity either, so
+  //    this only means something when the kind can say which entity inside it the
+  //    task is about -- "reap the wheat at the mill field" names a place, and the
+  //    kind says a harvestable inside it is what was meant.
+  //
+  //    Memory, not the map: the agent can only resolve a name it has observed or
+  //    been told, which is the point of deleting the location list.
+  if (!kind.subjectFilter) return flecs::entity::null();
+  const SpatialMemory *memory = agent.get<SpatialMemory>();
+  if (memory == nullptr) return flecs::entity::null();
 
-  const Location *location = nullptr;
-  for (const std::unique_ptr<Location> &candidate : map->GetLocations()) {
-    if (StringUtils::EqualsIgnoreCase(candidate->name, target)) {
-      location = candidate.get();
-      break;
-    }
-  }
-  if (location == nullptr) return flecs::entity::null();
+  const KnownPlace *place = PlaceQuery::ByLabel(*memory, target);
+  if (place == nullptr) return flecs::entity::null();
 
   flecs::entity subject = flecs::entity::null();
   agent.world().filter<DisplayName, GamePosition>().each(
       [&](flecs::entity other, const DisplayName &, const GamePosition &pos) {
         if (subject.is_alive()) return;
         if (!kind.subjectFilter(other)) return;
-        if (pos.x < location->pos.x || pos.y < location->pos.y) return;
-        if (pos.x >= location->pos.x + location->width) return;
-        if (pos.y >= location->pos.y + location->height) return;
+        const std::uint64_t key = VisionQuery::CellKey(pos);
+        if (std::find(place->memberCells.begin(), place->memberCells.end(),
+                      key) == place->memberCells.end()) {
+          return;
+        }
         subject = other;
       });
   return subject;

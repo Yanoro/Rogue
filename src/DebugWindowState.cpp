@@ -31,7 +31,7 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showPlaceOverlay(false),
     cursorFacingEnabled(true),
     showVisionChatWindow(false),
-    showLocations(false),
+    showPlaceNames(false),
     stopAllAI(false),
     defaultFontPath("") {}
 
@@ -75,7 +75,7 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["cursorFacing"] = cursorFacingEnabled;
   state["systemOneProfile"] = systemOneProfile;
   state["visionChat"] = showVisionChatWindow;
-  state["showLocations"] = showLocations;
+  state["showPlaceNames"] = showPlaceNames;
   state["stopAllAI"] = stopAllAI;
   state["defaultFontPath"] = defaultFontPath;
 
@@ -150,7 +150,8 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       cursorFacingEnabled = state.value("cursorFacing", true);
       systemOneProfile = state.value("systemOneProfile", std::string());
       showVisionChatWindow = state.value("visionChat", false);
-      showLocations = state.value("showLocations", false);
+      showPlaceNames = state.value("showPlaceNames",
+                                  state.value("showLocations", false));
       stopAllAI = state.value("stopAllAI", false);
       defaultFontPath = state.value("defaultFontPath", "");
 

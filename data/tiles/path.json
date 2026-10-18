@@ -1,7 +1,20 @@
 {
   "name": "path",
   "character": ".",
-  "characterColor": [206, 192, 158, 255],
-  "backgroundColor": [66, 60, 48, 255],
-  "blocksTile": false
+  "characterColor": [
+    206,
+    192,
+    158,
+    255
+  ],
+  "backgroundColor": [
+    66,
+    60,
+    48,
+    255
+  ],
+  "blocksTile": false,
+  "placeCategories": {
+    "road": 1.0
+  }
 }

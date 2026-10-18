@@ -309,7 +309,7 @@ struct HarvestTrainer {
 // reason ItemIds is: what harvesting teaches is a property of the content, so a
 // map that happens to place no wheat must not make [GUIDE farming] forget that
 // harvesting wheat advances it. Whether one is standing nearby is a different
-// question, answered by [SURROUNDINGS] and [LOCATIONS].
+// question, answered by [SURROUNDINGS] and [PLACES].
 std::vector<HarvestTrainer> HarvestTrainers(flecs::world &world,
                                             const std::string &topic) {
   std::vector<HarvestTrainer> trainers;

@@ -32,6 +32,16 @@ inline std::uint64_t CellKey(GamePosition pos) {
          static_cast<std::uint64_t>(static_cast<std::uint32_t>(pos.y));
 }
 
+// The inverse of CellKey. Needed because a place's membership outlives the cell
+// detail store: the cell cap can evict a tile while the object standing on it is
+// still remembered, and the coordinate is in the key even then.
+inline GamePosition CellFromKey(std::uint64_t key) {
+  GamePosition pos;
+  pos.x = static_cast<int>(key >> 32);
+  pos.y = static_cast<int>(key & 0xFFFFFFFFu);
+  return pos;
+}
+
 // True when any cell *strictly between* `from` and `to` on the Bresenham line is
 // opaque. Both endpoints are excluded on purpose, and each exclusion is a rule:
 //

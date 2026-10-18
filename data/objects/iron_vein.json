@@ -1,15 +1,20 @@
 {
   "name": "Iron Vein",
   "description": "A rock face rich with iron.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
     "Harvestable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "amountRemaining": 10,
   "timer": 5.0,
   "drops": [
-    {"item": "iron_ore", "chance": 1.0}
+    {
+      "item": "iron_ore",
+      "chance": 1.0
+    }
   ],
   "hint": "The vein will not follow you home: work it where it stands, and take only what you can carry.",
   "art": [
@@ -19,14 +24,57 @@
     " ▀▀ "
   ],
   "palette": {
-    "░": [215, 215, 215, 255],
-    "█": [169, 169, 169, 255],
-    "▓": [110, 110, 110, 255],
-    "▄": [190, 190, 190, 255],
-    "▀": [110, 110, 110, 255]
+    "░": [
+      215,
+      215,
+      215,
+      255
+    ],
+    "█": [
+      169,
+      169,
+      169,
+      255
+    ],
+    "▓": [
+      110,
+      110,
+      110,
+      255
+    ],
+    "▄": [
+      190,
+      190,
+      190,
+      255
+    ],
+    "▀": [
+      110,
+      110,
+      110,
+      255
+    ]
   },
   "character": "V",
-  "characterColor": [169, 169, 169, 255],
-  "backgroundColor": [0, 0, 0, 0],
-  "nameTagColor": [169, 169, 169, 255]
+  "characterColor": [
+    169,
+    169,
+    169,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    169,
+    169,
+    169,
+    255
+  ],
+  "placeCategories": {
+    "mine": 1.0
+  }
 }

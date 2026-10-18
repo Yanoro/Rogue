@@ -1,4 +1,6 @@
 #include "ObjectFactory.h"
+
+#include "PlaceCategoriesJson.hpp"
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -158,6 +160,8 @@ void ObjectFactory::RegisterDefaultComponents() {
   RecordComponentInfo("Requires", {"requires"},
                       "using it needs certain equipment");
   RecordComponentInfo("Trains", {"trains"}, "using it teaches a skill");
+  RecordComponentInfo("PlaceCategories", {"placeCategories"},
+                      "it is part of a kind of place");
 
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
@@ -273,6 +277,25 @@ void ObjectFactory::RegisterDefaultComponents() {
   //
   // ItemType is readable here because ApplyTemplate stamps it before running the
   // component setters, which is what lets the warning name the template.
+  // {"orchard": 1.0, "poor": 0.4} -- category ids mapped to an intensity in 0..1.
+  // An unknown id is not refused here: the taxonomy is a separate file, so the seed
+  // carries an id the registry may not resolve, and derivation ignores it with a
+  // warning. Whether a category forms a place is the taxonomy's decision, not this
+  // setter's.
+  RegisterComponent<PlaceCategories>(
+      "PlaceCategories", [](flecs::entity obj, const nlohmann::json& tmpl) {
+        if (!tmpl.contains("placeCategories")) {
+          return;
+        }
+        // The same parser the tile definitions use, so the two file kinds cannot
+        // disagree about what the key means.
+        std::vector<SeedCategory> categories =
+            ParsePlaceCategories(tmpl["placeCategories"]);
+        if (!categories.empty()) {
+          obj.set<PlaceCategories>({std::move(categories)});
+        }
+      });
+
   RegisterComponent<Trains>("Trains", [this](flecs::entity obj, const nlohmann::json& tmpl) {
     if (!tmpl.contains("trains")) {
       return;

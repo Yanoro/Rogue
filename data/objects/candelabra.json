@@ -1,9 +1,11 @@
 {
   "name": "Candelabra",
   "description": "A brass candelabra holding three candles.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " DD ",
@@ -37,5 +39,8 @@
     175,
     60,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.5
+  }
 }

@@ -1,7 +1,6 @@
 #pragma once
 #include <functional>
 #include <mutex>
-#include <nlohmann/json.hpp>
 #include <stop_token>
 #include <string>
 #include <unordered_map>

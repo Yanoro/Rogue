@@ -4,7 +4,8 @@
   "components": [
     "Obstacle",
     "BlocksVision",
-    "Structural"
+    "Structural",
+    "PlaceCategories"
   ],
   "character": "#",
   "characterColor": [
@@ -24,5 +25,9 @@
     150,
     162,
     255
-  ]
+  ],
+  "placeCategories": {
+    "fancy": 0.7,
+    "old": 0.5
+  }
 }

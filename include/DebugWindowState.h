@@ -201,8 +201,8 @@ public:
   bool GetShowVisionChatWindow() const { return showVisionChatWindow; }
   void SetShowVisionChatWindow(bool value) { showVisionChatWindow = value; }
 
-  bool GetShowLocations() const { return showLocations; }
-  void SetShowLocations(bool value) { showLocations = value; }
+  bool GetShowPlaceNames() const { return showPlaceNames; }
+  void SetShowPlaceNames(bool value) { showPlaceNames = value; }
 
   std::string GetDefaultFontPath() const { return defaultFontPath; }
   void SetDefaultFontPath(const std::string& path) { defaultFontPath = path; }
@@ -262,7 +262,7 @@ private:
   bool cursorFacingEnabled = true;
   std::string systemOneProfile;
   bool showVisionChatWindow;
-  bool showLocations;
+  bool showPlaceNames;
   bool stopAllAI;
   std::string defaultFontPath;
   

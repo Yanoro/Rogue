@@ -12,6 +12,7 @@
 #   scripts/run_decision_server.sh models/Laya-Q8_0.gguf
 #   NGLAYERS=0 scripts/run_decision_server.sh           # CPU
 #   PORT=8081 scripts/run_decision_server.sh            # if 9931 is taken
+#   LLAMA_BUILD=build scripts/run_decision_server.sh    # force the CPU build tree
 #
 # Then, in another terminal:
 #   scripts/test_decision_server.sh                     # raw curl, no engine
@@ -45,7 +46,19 @@ CTX="${CTX:-2048}"
 THREADS="${THREADS:-$(nproc --all 2>/dev/null | awk '{print ($1>6)?6:$1}')}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN_DIR="${LLAMA_CPP_DIR:-$REPO_ROOT/.deps/llama.cpp}/build/bin"
+LLAMA_ROOT="${LLAMA_CPP_DIR:-$REPO_ROOT/.deps/llama.cpp}"
+# Prefer a CUDA build tree when one exists: CPU Kev takes ~41 s for a
+# capability-list route, which is too slow to use interactively. LLAMA_BUILD=build
+# forces the CPU tree when comparing the two.
+LLAMA_BUILD_TREE="${LLAMA_BUILD:-}"
+if [[ -z "$LLAMA_BUILD_TREE" ]]; then
+  if [[ -x "$LLAMA_ROOT/build-cuda/bin/llama-server" ]]; then
+    LLAMA_BUILD_TREE=build-cuda
+  else
+    LLAMA_BUILD_TREE=build
+  fi
+fi
+BIN_DIR="$LLAMA_ROOT/$LLAMA_BUILD_TREE/bin"
 cd "$REPO_ROOT"
 
 if [[ ! -x "$BIN_DIR/llama-server" ]]; then
@@ -55,7 +68,10 @@ no llama-server at $BIN_DIR/llama-server
 The llama-cpp package in this machine's nixpkgs predates the decision-model
 merge and has no /v1/systemone, so the server has to be built from upstream:
 
-  scripts/build_llama_server.sh
+  scripts/build_llama_server.sh      # CPU (always works)
+  build-cuda/bin/llama-server        # preferred automatically when present
+
+Set LLAMA_BUILD=build to force the CPU tree.
 EOF
   exit 1
 fi
@@ -81,7 +97,8 @@ echo "url:    http://127.0.0.1:$PORT/v1/systemone"
 echo
 
 # The binary links libllama/libggml from its own bin directory, and they are not
-# installed anywhere, so the loader needs telling.
+# installed anywhere, so the loader needs telling. A CUDA build additionally needs
+# libcudart/libcublas; those store paths are in the binary's RPATH, not here.
 export LD_LIBRARY_PATH="$BIN_DIR:${LD_LIBRARY_PATH:-}"
 
 # 127.0.0.1 only, which is llama-server's default and what we want: nothing but

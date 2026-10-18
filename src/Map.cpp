@@ -1,4 +1,6 @@
 #include "Map.h"
+
+#include "PlaceCategoriesJson.hpp"
 #include "Defaults.h"
 #include "Game.h"
 #include "ResourceManager.h"
@@ -134,6 +136,13 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
         resolved.sprite = tileInfo.value("sprite", std::string());
         overridden = true;
       }
+      // Place categories are content like the glyph: a map may override what a
+      // catalog tile is part of, which is how a hand-drawn path becomes a road on
+      // a map whose catalog entry says nothing.
+      if (tileInfo.contains("placeCategories")) {
+        resolved.placeCategories = ParsePlaceCategories(tileInfo["placeCategories"]);
+        overridden = true;
+      }
       // The hitbox is scaled to this map's tile size, so authoring it is always
       // a per-map decision and never inherited by accident.
       if (tileInfo.contains("hitboxWidth") || tileInfo.contains("hitboxHeight")) {
@@ -151,6 +160,7 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
 
       newTile->name = tileName;
       newTile->blocksTile = resolved.blocksTile;
+      newTile->placeCategories = resolved.placeCategories;
       newTile->ascii = newAscii;
       const size_t authoredHitbox = resolved.hasHitboxSize ? resolved.hitboxSize : 0;
       newTile->hitbox.width = tileInfo.value(
@@ -175,17 +185,34 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
     }
 
 
-    for (const auto &currLoc : json["locations"]) {
-      auto location = std::make_unique<Location>();
-      location->name = currLoc.value("name", "Unknown location name");
-      location->description =
-          currLoc.value("description", "Unknown location Description");
-      auto locPos = currLoc["position"];
-      location->pos = {locPos[0], locPos[1]};
-      location->width = currLoc.value("hitboxWidth", currLoc.value("width", width));
-      location->height = currLoc.value("hitboxHeight", currLoc.value("height", height));
-
-      mapLocations.push_back(std::move(location));
+    // Authored names are seeds, not areas: a label, a cell and a radius. A map
+    // written before this key existed carries "locations" rectangles instead;
+    // those are read once as seeds (centre point, radius from the rectangle) so a
+    // world does not lose its names when the class behind the old key is deleted.
+    if (json.contains("placeSeeds")) {
+      for (const auto &entry : json["placeSeeds"]) {
+        PlaceSeed seed;
+        seed.label = entry.value("label", "Unnamed place");
+        if (entry.contains("position") && entry["position"].size() == 2) {
+          seed.position = {entry["position"][0], entry["position"][1]};
+        }
+        seed.radius = std::clamp(entry.value("radius", 3), 1, 12);
+        placeSeeds.push_back(std::move(seed));
+      }
+    } else if (json.contains("locations")) {
+      for (const auto &entry : json["locations"]) {
+        PlaceSeed seed;
+        seed.label = entry.value("name", "Unnamed place");
+        const auto locPos = entry["position"];
+        const int locWidth =
+            entry.value("hitboxWidth", entry.value("width", 4));
+        const int locHeight =
+            entry.value("hitboxHeight", entry.value("height", 4));
+        seed.position = {locPos[0].get<int>() + locWidth / 2,
+                         locPos[1].get<int>() + locHeight / 2};
+        seed.radius = std::clamp(std::max(locWidth, locHeight) / 2, 2, 8);
+        placeSeeds.push_back(std::move(seed));
+      }
     }
 
     if (json.contains("npcs")) {
@@ -538,14 +565,12 @@ nlohmann::json Map::BuildMapJson() const {
   }
   mapJson["positions"] = std::move(positions);
 
-  mapJson["locations"] = nlohmann::json::array();
-  for (const auto &loc : mapLocations) {
-    mapJson["locations"].push_back({
-        {"name", loc->name},
-        {"description", loc->description},
-        {"position", {loc->pos.x, loc->pos.y}},
-        {"hitboxWidth", loc->width},
-        {"hitboxHeight", loc->height},
+  mapJson["placeSeeds"] = nlohmann::json::array();
+  for (const PlaceSeed &seed : placeSeeds) {
+    mapJson["placeSeeds"].push_back({
+        {"label", seed.label},
+        {"position", {seed.position.x, seed.position.y}},
+        {"radius", seed.radius},
     });
   }
 
@@ -678,8 +703,8 @@ bool Map::SaveToFile(const std::string &path) {
     if (debugLog) {
       debugLog->LogInfo("Map editor: wrote map to " + path + " (" +
                         std::to_string(width) + "x" + std::to_string(height) +
-                        " tiles, " + std::to_string(mapLocations.size()) +
-                        " locations, " +
+                        " tiles, " + std::to_string(placeSeeds.size()) +
+                        " place seeds, " +
                         std::to_string(mapJson["objects"].size()) + " objects)");
     }
     return true;
@@ -696,33 +721,34 @@ void Map::addTileToMap(Tile *newTile, int x, int y) {
   tileMap[x + (y * width)] = newTile;
 }
 
-Location *Map::AddLocation(const std::string &name,
-                           const std::string &description,
-                           GamePosition topLeft, int width, int height) {
-  auto location = std::make_unique<Location>();
-  location->name = name;
-  location->description = description;
-  location->pos = topLeft;
-  location->width = width;
-  location->height = height;
-
-  mapLocations.push_back(std::move(location));
-  return mapLocations.back().get();
+PlaceSeed *Map::AddPlaceSeed(const std::string &label, GamePosition pos,
+                              int radius) {
+  PlaceSeed seed;
+  seed.label = label;
+  seed.position = pos;
+  seed.radius = std::clamp(radius, 1, 12);
+  placeSeeds.push_back(std::move(seed));
+  return &placeSeeds.back();
 }
 
-std::string Map::RemoveLocationAt(GamePosition pos) {
-  for (auto it = mapLocations.begin(); it != mapLocations.end(); ++it) {
-    const Location &loc = **it;
-    // Same bounds test GetLocation uses, so removal hits exactly what a lookup
-    // at this position would return.
-    if (pos.x >= loc.pos.x && pos.x <= loc.pos.x + loc.width &&
-        pos.y >= loc.pos.y && loc.height + loc.pos.y >= pos.y) {
-      std::string removedName = loc.name;
-      mapLocations.erase(it);
-      return removedName;
+std::string Map::RemovePlaceSeedAt(GamePosition pos) {
+  for (auto it = placeSeeds.begin(); it != placeSeeds.end(); ++it) {
+    if (it->position.x == pos.x && it->position.y == pos.y) {
+      const std::string label = it->label;
+      placeSeeds.erase(it);
+      return label;
     }
   }
   return "";
+}
+
+PlaceSeed *Map::FindPlaceSeed(GamePosition pos) {
+  for (PlaceSeed &seed : placeSeeds) {
+    if (seed.position.x == pos.x && seed.position.y == pos.y) {
+      return &seed;
+    }
+  }
+  return nullptr;
 }
 
 std::string Map::RemoveTileAt(GamePosition pos) {
@@ -744,46 +770,6 @@ std::string Map::RemoveTileAt(GamePosition pos) {
   return removedName;
 }
 
-std::vector<GamePosition> Map::GetTilePositionsInRect(GamePosition topLeft,
-                                                      int rectWidth,
-                                                      int rectHeight) const {
-  std::vector<GamePosition> tiles;
-  for (int x = topLeft.x; x < topLeft.x + rectWidth; ++x) {
-    for (int y = topLeft.y; y < topLeft.y + rectHeight; ++y) {
-      if (IsInBounds(static_cast<float>(x), static_cast<float>(y))) {
-        tiles.push_back({x, y});
-      }
-    }
-  }
-  return tiles;
-}
-
-Location *Map::GetLocation(GamePosition pos) {
-  for (const auto &currLoc : mapLocations) {
-    if (pos.x >= currLoc->pos.x && pos.x <= currLoc->pos.x + currLoc->width &&
-        pos.y >= currLoc->pos.y && currLoc->height + currLoc->pos.y >= pos.y) {
-      return currLoc.get();
-    }
-  }
-  return nullptr;
-}
-
-Location *Map::GetLocation(const std::string& name) {
-  for (const auto &currLoc : mapLocations) {
-    if (currLoc->name == name) {
-      return currLoc.get();
-    }
-  }
-  return nullptr;
-}
-
-std::vector<std::string> Map::GetAllLocationNames() {
-  std::vector<std::string> locations;
-  for (const auto &currLoc : mapLocations) {
-    locations.push_back(currLoc.get()->name);
-  }
-  return locations;
-}
 
 Tile *Map::GetTile(int x, int y) {
   if (!IsInBounds(x, y)) {
@@ -851,6 +837,7 @@ Tile *Map::CreateTile(const std::string &name) {
 
   newTile->name = definition->name;
   newTile->blocksTile = definition->blocksTile;
+  newTile->placeCategories = definition->placeCategories;
   newTile->ascii = newAscii;
   newTile->hitbox.width = definition->hasHitboxSize ? definition->hitboxSize : tileWidth;
   newTile->hitbox.height =

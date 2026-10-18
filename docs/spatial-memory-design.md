@@ -25,15 +25,17 @@ Nothing that outlives a single probe.
 | surface | what the agent gets | where |
 |---|---|---|
 | `[SURROUNDINGS]` | entities within radius 10 with offsets, plus "You are at <location> (x,y)" | `include/AgentActions.h:678-745`, action at `:778` |
-| `[LOCATIONS]` | every mapped location name, in every agent's prompt from spawn | `include/AgentActions.h:385` |
-| `%LOCATIONS%` | the same global list, baked into the system turn at spawn | `src/GameECS.cpp:302` |
+| `[LOCATIONS]` | *was* every mapped location name, in every agent's prompt from spawn | deleted; `[PLACES]` reads memory instead (`docs/place-derivation-design.md` §10) |
+| `%LOCATIONS%` | *was* the same global list, baked into the system turn at spawn | deleted; no prompt carries place names any more |
 | tile radar | a glyph grid at a small radius, legend keyed by `tile->ascii->ch` | `include/AgentActions.h:621`, `:642` |
 
 Three defects follow, and they are what this feature exists to fix:
 
-1. **Omniscience.** Every agent is born knowing every location name (`%LOCATIONS%`) and can resolve
-   any entity name anywhere in the world (`[MOVE_TO]` scans all `DisplayName` entities,
-   `include/AgentActions.h:159-166`). The village has no strangers in it, only informed ones.
+1. **Omniscience.** *(fixed for places)* Every agent used to be born knowing every location name
+   (`%LOCATIONS%`, `[LOCATIONS]`); both are gone, and a name now resolves only against places the
+   character has observed (`PlaceQuery::ByLabel`). Entity names are still global — `[MOVE_TO]` scans
+   every `DisplayName` in the world (`include/AgentActions.h`) — so the village still has no
+   strangers in the object-naming sense, only in the place-naming one.
 2. **No compression.** Anything learned is appended to `NPCContext::history` as prose and never
    pruned. An agent that walks around accumulates transcript, not knowledge: unbounded, unordered,
    unqueryable, and competing with its goal for context.
@@ -248,7 +250,7 @@ struct SpatialMemory {
 ```
 
 **The lifetimes are the point.** Layer 1 is a bounded store — the cap is a memory budget, not a
-simulation rule — and evicts by (visitCount, then age). Layer 2 is durable: a place is never evicted
+simulation rule — and evicts by (age, with repeated visits buying life). Layer 2 is durable: a place is never evicted
 while it is still visited, so detail decays into structure rather than into nothing. Layer 3 costs
 nothing and is written only by consent.
 
@@ -356,7 +358,7 @@ Starting values, all in `include/Defaults.h` (the file already owns
 | `DEFAULT_VISION_RANGE` | `22` | ≈380 cells in a 90° cone |
 | `DEFAULT_VISION_ANGLE_DEGREES` | `90` | half-angle 45° |
 | `DEFAULT_VISION_RADAR_RADIUS` | `2` | 13 cells, ≈ the placement reach |
-| `DEFAULT_MEMORY_CELLS_MAX` | `2048` | a 40-tile walk observes more than a thousand cells |
+| `DEFAULT_MEMORY_CELLS_MAX` | `4096` | one 64x64 map; smaller can forget ground the character just walked |
 | `DEFAULT_MEMORY_OBJECTS_MAX` | `256` | |
 | `DEFAULT_MEMORY_PLACES_MAX` | `24` | |
 | `DEFAULT_MEMORY_PLACE_CLUSTER_RADIUS` | `3` | cells this close join one cluster |
@@ -461,8 +463,11 @@ know a place called that; you know: …"). That is the same mechanism as §3.2, 
   (`include/TaskList.hpp:711`) as `12s / 3m / 1h`. Not a calendar date: the sim has no calendar, and
   a second time vocabulary would eventually disagree with the first.
 - **Caps.** `cells` capped at `DEFAULT_MEMORY_CELLS_MAX`, `objects` at `DEFAULT_MEMORY_OBJECTS_MAX`,
-  `places` at `DEFAULT_MEMORY_PLACES_MAX`. Cell overflow drops the lowest-value cells first —
-  lowest `visitCount`, then oldest `observedTick` — never a cell inside a durable place (§6.1). This
+  `places` at `DEFAULT_MEMORY_PLACES_MAX`. Cell overflow drops the lowest-value cells first, where
+  value is `observedTick - visitCount * DEFAULT_MEMORY_VISIT_BONUS_TICKS` — age discounted by use, so a
+  revisit buys youth but never makes an old cell look newer than what is being looked at now. Ranking by `visitCount` first was a bug: in a full, well-walked store every new
+  cell has the lowest count and is erased on the sample that recorded it, so memory stops growing —
+  never a cell inside a durable place (§6.1). This
   is the first agent component whose size is unbounded *in the world* rather than in a list —
   `DEFAULT_TASK_LIST_MAX` bounds intentions, not geography — so the cap is design, not housekeeping.
 - **Place merge before create.** A newly observed run of cells joins an existing cluster with the
@@ -477,22 +482,38 @@ The goal is compression with provenance, in two steps that can be judged separat
 
 ### 6.1 First pass: the engine throttle (no model)
 
-Pure, deterministic, and the default for the whole phase. It answers one question: *which cells earn
-their slot?*
+**Built.** `Memory::Consolidate(memory, tick)`, called once per vision sample after places are
+derived (`src/GameECS.cpp`, the `SpatialMemoryPlaces` system).
 
-Ranking inputs available without a model:
+**Runs shadow the cells.** A run is a rectangle of one surface inside one place
+(`MemoryRun`), so `placeId` is always answerable without inspecting cells. Building runs deletes
+nothing; the cells remain the truth, and dropping the runs restores the raw record exactly. Cells are
+only ever lost when the cap forces it.
 
-- **recency** — `observedTick` versus now;
-- **revisit count** — a path walked every day is more relevant than a corner seen once;
-- **place membership** — a cell inside a `KnownPlace` outranks a stray cell (this is what keeps a
-  field coherent while its surroundings fade);
-- **surface interest** — optional and data-driven: an NPC may declare the surfaces it cares about
-  (a farmer: grass, tilled soil; a fisherman: water, shore), which is a relevance prior requiring no
-  inference at all. The player declares none, so its memory is pure recency and revisits.
+**Ranking inputs, as built:**
 
-Output: merged runs of same-surface cells, oldest and lowest-ranked dropped at the cap. **No prose is
-generated, no label is written, no fact is invented.** This pass is judgeable on its own: the
-window shows cells in, entries out, and the delta.
+- **recency** — `lastSeenTick`;
+- **revisit count** — the best-trodden cell in the run, not the sum: a big field should not outrank a
+  road merely by having more cells;
+- **place membership** — ground a place claims is **exempt from dropping entirely**, so the budget
+  cannot break a place to meet a number. The place bonus only orders the listing.
+- **surface interest** — deferred. There is no character template for an NPC to declare interests on
+  yet (NPCs come from the map's `npcs` array, the player from settings), and inventing a component
+  with one consumer and no content would be worse than waiting.
+
+The sign matters and is the same as the per-cell score: `rank = lastSeenTick − visits ×
+DEFAULT_MEMORY_VISIT_BONUS_TICKS`. Higher is better. Written with a plus, the pass drops the ground
+the character is standing on.
+
+**Drops are proportional.** Whole runs go, worst rank first, except when a run is larger than the
+excess — then only its top rows go and it stays in the index, one rectangle shorter. Without that, a
+single vast field freed 4080 cells to make room for 404 in the acceptance test.
+
+**The ledger.** `ConsolidationRecord` keeps tick, cells before/after, runs out, runs dropped, partial
+drops, cells freed, and an `overBudget` flag for the one case the rule cannot satisfy (place ground
+alone exceeds the cap). The window shows the newest line; the dump carries the last
+`DEFAULT_CONSOLIDATION_LOG_MAX` of them. No prose is generated, no label is written, no fact is
+invented.
 
 ### 6.2 Second pass: Jev salience, out-of-band LLM merge
 
@@ -668,7 +689,7 @@ the AI path; here the first three stages have no AI path at all, which is the po
 | **1. Vision** | `Vision` component (angle, range, radar), `VisibleCells` + Bresenham LOS in `include/VisionQuery.hpp`, overlay | Cells appear/disappear as you turn; an object carrying `BlocksVision` casts a gap behind it (a tree, the mill); the radar fills the close ring; toggle off costs nothing; tiles never block |
 | **2. Memory** | `SpatialMemory` (§3.4), the memory writer consuming `Vision::lastVisible`, the `Origin` place, caps, idempotent writes, memory section in the Vision Debug window + dump. Place clustering is stage 3 | Walking fills cells with no duplicates; a revisit bumps `visitCount` rather than appending; the cap holds and evicts the least-visited first; cells and objects are zero on spawn; the dump reproduces the window |
 | **3. Places** (superseded — see `docs/place-derivation-design.md` for the rule that replaces it) | `Memory::DerivePlaces`: `Authored` match against `Location`, surface clustering with a radius, membership-based extent, facts in raw vocabulary | Walking into the mill adds "The Mill" with `authoringId` set; two touching surfaces yield two places; no authored place appears before its cells are seen; a place's extent never exceeds its member cells |
-| **4. Engine consolidation** | ranking, merge runs, drops at cap, event log | Counts in/out visible; a drop never removes a place cell; raw cells still inspectable |
+| **4. Engine consolidation** ✅ | ranking, merge runs, drops at cap, event log — `Memory::Consolidate` | Counts in/out visible in the window and the dump; a drop never removes a place cell; raw cells still inspectable |
 | **5. Model consolidation** | Jev salience (goal digest in state) + out-of-band merge, behind a setting, stage 4 the default | Off by default; identical outputs when the backend is unavailable; logged verdicts before behaviour depends on them |
 
 Stages 0–2 attach `Vision` and `SpatialMemory` to the player only. `Facing` goes on every character,
@@ -728,9 +749,9 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
 - `include/SpatialMemory.hpp` — `EnsureOrigin`, `ObserveCells`, `ObserveObjects`,
   `EnforceCellCap`, `ToShapes`, `DumpJson`
 - `src/GameECS.cpp` — `ECSInitMemorySystems:1213`, `DumpSpatialMemory:1238`,
-  `%LOCATIONS% :302`, tile layer `:370`, steer system `:898`, player setup `:3148`,
+  tile layer `:370`, steer system `:898`, player setup `:3148`,
   player `Velocity` `:3155`, player `CharacterTag` `:3171`
-- `include/AgentActions.h` — `[MOVE_TO]` resolution `:159-184`, `[LOCATIONS] :385`,
+- `include/AgentActions.h` — `[MOVE_TO]` resolution, `[PLACES]` / `[NAME_PLACE]`,
   `GetSurroundingsRadar :621`, glyph legend key `:642`, `?` as off-map `:650`,
   `GetSurroundingsList :678`, "You are at" `:745`, `SurroundingsAction :778`
 - `include/Defaults.h` — `DEFAULT_SURROUNDINGS_RADIUS:41`, `DEFAULT_PLACEMENT_MAX_DISTANCE:45`,
@@ -850,7 +871,7 @@ Engine:
     "anchor": {"x":28,"y":44}, "facts": [], "lastSeenTick": 0 } ]
 ```
 
-Agent, after `[LOCATIONS]`:
+Agent, after `[PLACES]`:
 
 ```
 PLACES YOU KNOW

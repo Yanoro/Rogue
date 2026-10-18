@@ -311,20 +311,6 @@ void Game::Init() {
 }
 
 void Game::UpdateGUI() {
-  // Finish a location drag even when the button comes up over a window, so the
-  // drag can never be left dangling.
-  if (isDraggingLocation && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
-    isDraggingLocation = false;
-    pendingLocation.topLeft = {std::min(locationDragStart.x, locationDragEnd.x),
-                               std::min(locationDragStart.y, locationDragEnd.y)};
-    pendingLocation.bottomRight = {std::max(locationDragStart.x, locationDragEnd.x),
-                                   std::max(locationDragStart.y, locationDragEnd.y)};
-    pendingLocation.name = "New Location";
-    pendingLocation.description = "";
-    pendingLocationWantsFocus = true;
-    pendingLocationHasFocus = false;
-  }
-
   // The blueprint ghost follows the mouse continuously, not only on click, so the
   // preview has to be re-anchored every frame. Deliberately outside the
   // button-pressed branch below: a ghost that only moved when you clicked would
@@ -340,28 +326,27 @@ void Game::UpdateGUI() {
     GamePosition gPos =
         map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
 
-    // Location drawing takes priority over whatever tile or object is selected:
-    // while the mode is armed a left drag marks tiles instead of placing them.
-    // The naming prompt blocks new drags so two rectangles cannot stack up.
-    if (createLocationMode && !pendingLocationWantsFocus &&
-        !pendingLocationHasFocus) {
-      isDraggingLocation = true;
-      locationDragStart = gPos;
-      locationDragEnd = gPos;
-      // Keep the marked rectangle around so the render pass can preview it.
-      pendingLocation.topLeft = gPos;
-      pendingLocation.bottomRight = gPos;
+    // A place name is a stamp on one cell, not a rectangle: the name says
+    // something about the ground, and the ground's extent is the derivation's
+    // business. The naming prompt blocks new stamps so two cannot stack up.
+    if (namePlaceSeedMode && !pendingPlaceSeedWantsFocus &&
+        !pendingPlaceSeedHasFocus) {
+      pendingPlaceSeed.position = gPos;
+      pendingPlaceSeed.radius = DEFAULT_PLACE_NAME_RADIUS;
+      pendingPlaceSeed.label = "";
+      pendingPlaceSeedWantsFocus = true;
+      pendingPlaceSeedHasFocus = false;
       return;
     }
 
-    // Removal mode is checked before the tile/object selection branch, so a
-    // click that hits a location deletes it instead of placing anything.
-    if (removeLocationMode) {
-      std::string removedName = map->RemoveLocationAt(gPos);
-      if (!removedName.empty()) {
-        lastRemovedLocationName = removedName;
+    // Removal is checked before the tile/object selection branch, so a click that
+    // hits a name removes it instead of placing anything.
+    if (removePlaceSeedMode) {
+      std::string removedLabel = map->RemovePlaceSeedAt(gPos);
+      if (!removedLabel.empty()) {
+        lastRemovedPlaceSeedLabel = removedLabel;
         if (debugLog) {
-          debugLog->LogInfo("Map editor: removed location '" + removedName +
+          debugLog->LogInfo("Map editor: removed place name '" + removedLabel +
                             "' at (" + std::to_string(gPos.x) + "," +
                             std::to_string(gPos.y) +
                             ") (not saved to the map file)");
@@ -623,24 +608,6 @@ void Game::UpdateGUI() {
         });
   }
 
-  // Track the drag past the press so the marked grid follows the mouse. The
-  // pending rectangle is kept normalised (top-left / bottom-right) so the
-  // preview and the naming prompt can read it directly.
-  if (isDraggingLocation) {
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-      Vector2 dragWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
-      locationDragEnd =
-          map->ScreenCoordsToGameCoords(dragWorldPos.x, dragWorldPos.y);
-      pendingLocation.topLeft = {std::min(locationDragStart.x, locationDragEnd.x),
-                                 std::min(locationDragStart.y, locationDragEnd.y)};
-      pendingLocation.bottomRight = {std::max(locationDragStart.x, locationDragEnd.x),
-                                     std::max(locationDragStart.y, locationDragEnd.y)};
-    } else {
-      // The button is already up but the release branch above did not see it
-      // — drop the drag rather than leaving it dangling.
-      isDraggingLocation = false;
-    }
-  }
 }
 
 void Game::Update() {

@@ -1,8 +1,10 @@
 {
   "name": "Censer",
   "description": "An iron censer, swung on a chain.",
-  "components": ["ShowNameTag", 
-    "Interactable"
+  "components": [
+    "ShowNameTag",
+    "Interactable",
+    "PlaceCategories"
   ],
   "art": [
     " ee ",
@@ -36,5 +38,9 @@
     110,
     120,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.6,
+    "sacred": 0.7
+  }
 }

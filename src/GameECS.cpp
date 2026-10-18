@@ -305,17 +305,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
-  std::string locations = "";
   std::string characterNames = "";
-  Map *currMap = entity.world().get<MapResource>()->map;
-
-  for (const auto &currName : currMap->GetAllLocationNames()) {
-    locations += currName + ", ";
-  }
-
-  if (locations.length() >= 2) {
-    locations.erase(locations.length() - 2);
-  }
 
   if (characterNames.length() >= 2) {
     characterNames.erase(characterNames.length() - 2);
@@ -327,20 +317,22 @@ flecs::entity Game::createNPC(const NPCData &data) {
   // supplies the blank line that follows the list.
   std::string commandsList = GlobalCommandRegistry::BuildVisibleCommandList();
 
-  std::regex re1("%LOCATIONS%");
   std::regex re2("%BACKGROUND%");
   std::regex re3("%CHARACTERS%");
   std::regex re4("%COMMANDS_LIST%");
 
   // The template is the compiled-in DEFAULT_NPC_PROMPT unless settings.ai
-  // supplied a file. Either way the same four placeholders are substituted, so an
-  // authored prompt cannot silently lose the live command list or location list.
+  // supplied a file. Either way the same placeholders are substituted, so an
+  // authored prompt cannot silently lose the live command list.
+  //
+  // There is no place list here any more: a character must ask [PLACES] and can
+  // be wrong. Handing every agent the map's names at spawn was the known gap in
+  // docs/place-derivation-design.md section 10.
   const std::string &promptTemplate = Settings().ai.npcPromptTemplate.empty()
                                           ? DEFAULT_NPC_PROMPT
                                           : Settings().ai.npcPromptTemplate;
 
-  std::string startingPrompt =
-      std::regex_replace(promptTemplate, re1, locations);
+  std::string startingPrompt = promptTemplate;
   startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
   startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
   startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
@@ -877,42 +869,6 @@ void SendNewPrompt(flecs::entity entity, std::string prompt) {
 }
 
 void Game::ECSInitActionSystems() {
-  ecs.observer<MOVE_TO_LOCATION_ACTION>()
-      .event(flecs::OnSet)
-      .each([this](flecs::entity entity, MOVE_TO_LOCATION_ACTION &action) {
-        const GamePosition *pGamePos = entity.get<GamePosition>();
-        if (!pGamePos)
-          return;
-        const GamePosition gamePos = *pGamePos;
-
-        std::string response;
-        Location *loc = action.location;
-        if (loc == nullptr) {
-          entity.remove<MOVE_TO_LOCATION_ACTION>();
-          response = "System: You tried to move to an unknown location.";
-          SendNewPrompt(entity, response);
-          return;
-        }
-        const GamePosition target = loc->pos;
-
-        entity.set<MOVE_THROUGH_PATH_ACTION>(
-            {AStar(map.get(), gamePos, target)});
-
-        ecs.observer<GamePosition>()
-            .with(entity)
-            .event(flecs::OnUpdate)
-            .each([entity, target](flecs::iter &it, size_t,
-                                   const GamePosition &pos) {
-              if (!(target == pos))
-                return;
-              std::string response =
-                  "System: You have arrived at your destination, what's next?";
-              SendNewPrompt(entity, response);
-              it.system().destruct();
-            });
-        entity.remove<MOVE_TO_LOCATION_ACTION>();
-      });
-
   // Steer system through a path
   ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, Hitbox,
              MOVE_THROUGH_PATH_ACTION>()
@@ -1235,7 +1191,6 @@ void Game::ECSInitMemorySystems() {
         Memory::EnsureOrigin(memory, origin, tick);
         Memory::ObserveCells(memory, *map, vision.lastVisible, tick);
         Memory::ObserveObjects(memory, ecs, vision.lastVisible, entity, tick);
-        Memory::EnforceCellCap(memory);
         Memory::EnforceObjectCap(memory);
         memory.lastVisionTick = tick;
       });
@@ -1248,10 +1203,38 @@ void Game::ECSInitMemorySystems() {
   // re-read, without re-observing anything.
   ecs.system<SpatialMemory, const Vision>("SpatialMemoryPlaces")
       .each([this](flecs::entity, SpatialMemory &memory, const Vision &vision) {
-        if (!map || vision.lastSampleTick < 0) {
+        if (vision.lastSampleTick < 0) {
           return;
         }
-        Memory::DerivePlaces(memory, *map, vision.lastSampleTick);
+        // Once per sample, not once per frame: derivation and consolidation are
+        // both more expensive than a frame's worth of work, and neither has
+        // anything new to say until the sweep runs again.
+        if (memory.lastPlaceTick >= vision.lastSampleTick) {
+          return;
+        }
+        const PlaceCategoryRegistryResource *resource =
+            ecs.get<PlaceCategoryRegistryResource>();
+        if (resource == nullptr || resource->registry == nullptr) {
+          return;  // no taxonomy: places cannot form
+        }
+        const auto started = std::chrono::steady_clock::now();
+        Memory::DerivePlaces(memory, *resource->registry, vision.lastSampleTick);
+        // Consolidation runs after derivation because a run is grouped by place:
+        // it needs this sample's membership, not last sample's.
+        Memory::Consolidate(memory, vision.lastSampleTick);
+        // Reported only when it can be felt. This is the number to quote when a
+        // frame-rate question turns into a guess: 16 ms is one frame at 60 Hz.
+        const double elapsed = std::chrono::duration<double, std::milli>(
+                                   std::chrono::steady_clock::now() - started)
+                                   .count();
+        if (elapsed > 8.0 && debugLog) {
+          debugLog->LogWarning("Spatial memory: sample pass took " +
+                               std::to_string(elapsed) + " ms (" +
+                               std::to_string(memory.cells.size()) + " cells, " +
+                               std::to_string(memory.places.size()) +
+                               " places, " + std::to_string(memory.runs.size()) +
+                               " runs)");
+        }
       });
 }
 
@@ -2259,6 +2242,52 @@ void Game::ECSInit() {
   raceRegistry.LoadRaces(settings.content.races);
   ecs.set<RaceRegistryResource>({&raceRegistry});
 
+  // The place vocabulary. Loaded before LoadMap for the same reason the tile
+  // catalog is: nothing in a map's content may depend on it being absent, and a
+  // missing file must be a warning rather than a crash (places simply never form).
+  placeCategoryRegistry.SetDebugLog(debugLog.get());
+  placeCategoryRegistry.Load(settings.content.places);
+  ecs.set<PlaceCategoryRegistryResource>({&placeCategoryRegistry});
+
+  // The vocabulary and the templates load independently, so a template naming a
+  // category the taxonomy does not define would be silent. Reported once, here,
+  // with both names in the message.
+  for (const auto &[templateKey, tmpl] : objectFactory.GetTemplates()) {
+    if (!tmpl.contains("placeCategories") ||
+        !tmpl["placeCategories"].is_object()) {
+      continue;
+    }
+    for (auto it = tmpl["placeCategories"].begin();
+         it != tmpl["placeCategories"].end(); ++it) {
+      if (!placeCategoryRegistry.IsKnown(it.key()) && debugLog) {
+        debugLog->LogWarning("Object template '" + templateKey +
+                             "' uses unknown place category '" + it.key() +
+                             "'.");
+      }
+    }
+
+    // ApplyTemplate runs a setter only when the template's "components" array
+    // names it, so a placeCategories key without "PlaceCategories" in that array
+    // is silently inert -- the component is never attached and the seed never
+    // exists. Reported here because it is the one mistake the data cannot catch
+    // on its own.
+    bool declared = false;
+    if (tmpl.contains("components") && tmpl["components"].is_array()) {
+      for (const auto &component : tmpl["components"]) {
+        if (component.is_string() &&
+            component.get<std::string>() == "PlaceCategories") {
+          declared = true;
+          break;
+        }
+      }
+    }
+    if (!declared && debugLog) {
+      debugLog->LogWarning("Object template '" + templateKey +
+                           "' has placeCategories but does not declare the "
+                           "'PlaceCategories' component; it will seed nothing.");
+    }
+  }
+
   // The task shapes the engine knows how to check. Engine-defined rather than
   // loaded from JSON, because a check is C++ (docs/task-system-design.md section
   // 7): this is the place a genre adds one, in code. Seeded before LoadMap so
@@ -2387,16 +2416,16 @@ void Game::ECSInit() {
 
   GlobalCommandRegistry::Register({
     .format = "[MOVE_TO $TARGET]",
-    .rule = "Pathfind automatically to a character, location or an object. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
+    .rule = "Pathfind automatically to a character, an object, or a place you remember. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
     .pattern = std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
       return [targetName](flecs::entity) { return std::make_unique<MoveToEntityAction>(targetName); };
     },
     .help = {
-      .description = "Walk to a named character, object or mapped location, pathfinding around whatever is in the way. This is how you get within reach of something: arriving next to an object is what makes its interactions available, and arriving next to a character is the step before talking to them.",
+      .description = "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is how you get within reach of something: arriving next to an object is what makes its interactions available, and arriving next to a character is the step before talking to them.",
       .examples = {"[MOVE_TO Pietro]", "[MOVE_TO Mill]"},
-      .usage = {"$TARGET: the exact name as printed by [SURROUNDINGS] or [LOCATIONS]. Matching ignores case."},
+      .usage = {"$TARGET: the exact name as printed by [SURROUNDINGS] or [PLACES]. Matching ignores case."},
       .notes = {"Arriving at an object lists the interactions it offers and remembers it as your interaction target.",
                 "Directions such as \"east\" and bare coordinates are not valid targets.",
                 "If the name matches nothing you are told so and nothing moves."}
@@ -2435,17 +2464,39 @@ void Game::ECSInit() {
   });
 
   GlobalCommandRegistry::Register({
-    .format = "[LOCATIONS]",
-    .rule = "List all known mapped locations. Example: [LOCATIONS].",
-    .pattern = std::regex(R"(\[LOCATIONS\])", std::regex_constants::icase),
+    .format = "[PLACES]",
+    .rule = "List the places you remember, nearest first, with what you think each is like. Example: [PLACES].",
+    .pattern = std::regex(R"(\[PLACES\])", std::regex_constants::icase),
     .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
-      return [](flecs::entity) { return std::make_unique<LocationsAction>(); };
+      return [](flecs::entity) { return std::make_unique<PlacesAction>(); };
     },
     .help = {
-      .description = "List every mapped, named place you can travel to. Useful for planning a longer trip before committing to the walk.",
-      .examples = {"[LOCATIONS]"},
+      .description = "List the places you have seen and what you remember about them: their names if you have any, their aspects, and how far away they are. This is your own memory, not a map -- two characters can remember the same ground differently, and a name you were told may not match what you see.",
+      .examples = {"[PLACES]"},
       .usage = {"Takes no arguments."},
-      .notes = {"These are the place names [MOVE_TO] accepts, matched case-insensitively."}
+      .notes = {"These are the place names [MOVE_TO] accepts, matched case-insensitively.",
+                "A place you have never observed is not on this list, however well known it is to others.",
+                "What a place is like is evaluated where you stand: a market beside an orchard is more orchard at one end."}
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    .format = "[NAME_PLACE here $NAME] or [NAME_PLACE #$ID $NAME]",
+    .rule = "Give a place a name. Naming the spot you stand on, or a place by its number from [PLACES]. Example: [NAME_PLACE here Market Square].",
+    .pattern = std::regex(R"(\[NAME_PLACE\s+(here|#?\d+)\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string target = match[1].str();
+      std::string label = match[2].str();
+      return [target, label](flecs::entity) {
+        return std::make_unique<NamePlaceAction>(target, label);
+      };
+    },
+    .help = {
+      .description = "Give a place a name you chose. Naming where you stand puts the name on the place covering you, or makes a small place if nothing does. A place keeps every name it is given, so two people can call the same ground different things.",
+      .examples = {"[NAME_PLACE here Market Square]", "[NAME_PLACE #4 the old mill]"},
+      .usage = {"$NAME: 1-48 characters, no brackets. The name is yours; the engine never invents one."},
+      .notes = {"Names are how other characters can be told about a place, and what [MOVE_TO] matches on.",
+                "Naming ground you have not observed still records the name, but no place appears until you have seen the ground."}
     }
   });
 
@@ -3389,6 +3440,26 @@ void Game::ECSInit() {
   // Empty on spawn -- the Origin place is created by the first sample, which is
   // what makes "I have no idea where I am" the honest starting state.
   playerEntity.set<SpatialMemory>({});
+
+  // Authored names, as seeds (docs/place-derivation-design.md section 8): a label,
+  // a cell and a radius, owning nothing. The map no longer has rectangles to hand
+  // over -- `Location` is gone -- so these are the only thing it contributes.
+  if (SpatialMemory *memory = playerEntity.get_mut<SpatialMemory>()) {
+    for (const PlaceSeed &authored : map->GetPlaceSeeds()) {
+      PlaceNameSeed seed;
+      seed.label = authored.label;
+      seed.anchor = authored.position;
+      seed.source = KnowledgeSource::Authored;
+      seed.createsPlace = true;
+      seed.radius = authored.radius;
+      memory->nameSeeds.push_back(std::move(seed));
+    }
+    if (debugLog) {
+      debugLog->LogInfo("Spatial memory: " +
+                        std::to_string(memory->nameSeeds.size()) +
+                        " name seed(s) from the map");
+    }
+  }
   playerEntity.set<Hitbox>(
       {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT});
   // Tile-sized and art-driven for the same reasons an NPC is. The purple glyph

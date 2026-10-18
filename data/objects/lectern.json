@@ -1,9 +1,11 @@
 {
   "name": "Lectern",
   "description": "A wooden lectern holding an open book.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "art": [
     " ll ",
@@ -37,5 +39,8 @@
     80,
     45,
     255
-  ]
+  ],
+  "placeCategories": {
+    "religious": 0.7
+  }
 }

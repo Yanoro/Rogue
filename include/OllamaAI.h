@@ -1,6 +1,8 @@
 #pragma once
 #include "AI.h"
 
+#include <nlohmann/json.hpp>
+
 class OllamaAI : public AI {
 private:
   std::string modelName;

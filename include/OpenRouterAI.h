@@ -1,5 +1,8 @@
 #pragma once
 #include "AI.h"
+
+#include <nlohmann/json.hpp>
+
 #include <atomic>
 
 class OpenRouterAI : public AI {

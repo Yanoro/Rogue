@@ -1,0 +1,20 @@
+{
+  "_readme": "Place categories (docs/place-derivation-design.md section 4). 'formsPlace: true' makes a category a kind: seeds of it cluster into places. 'formsPlace: false' makes it a quality: seeds of it only describe the place they are inside. minSeeds is how many seeds a place needs; radius is both the link distance and how far a place's extent may reach from its seeds.",
+
+  "orchard":      { "formsPlace": true, "minSeeds": 1, "radius": 4 },
+  "field":        { "formsPlace": true, "minSeeds": 4, "radius": 5 },
+  "mine":         { "formsPlace": true, "minSeeds": 2, "radius": 4 },
+  "workshop":     { "formsPlace": true, "minSeeds": 2, "radius": 4 },
+  "storage":      { "formsPlace": true, "minSeeds": 1, "radius": 3 },
+  "religious":    { "formsPlace": true, "minSeeds": 2, "radius": 5 },
+  "road":         { "formsPlace": true, "minSeeds": 2, "radius": 2, "split": "junctions", "linksAcross": false },
+  "water":        { "formsPlace": true, "minSeeds": 4, "linksAcross": false },
+  "market":       { "formsPlace": true, "minSeeds": 3, "radius": 5 },
+
+  "poor":         { "formsPlace": false },
+  "fancy":        { "formsPlace": false },
+  "dirty":        { "formsPlace": false },
+  "shady":        { "formsPlace": false },
+  "old":          { "formsPlace": false },
+  "sacred":       { "formsPlace": false }
+}

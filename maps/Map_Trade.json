@@ -1,14 +1,12 @@
 {
-  "locations": [
+  "placeSeeds": [
     {
-      "description": "A small trading post where two roads meet. A single long counter stands in the open square.",
-      "hitboxHeight": 10,
-      "hitboxWidth": 10,
-      "name": "Crossroads Market",
+      "label": "Crossroads Market",
       "position": [
-        3,
-        3
-      ]
+        8,
+        8
+      ],
+      "radius": 5
     }
   ],
   "mapHeight": 16,

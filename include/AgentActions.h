@@ -2,6 +2,7 @@
 
 #include "Components.h"
 #include "Map.h"
+#include "PlaceQuery.hpp"
 #include "PathFinding.h"
 #include "Defaults.h"
 #include "EquipmentRuntime.hpp"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <flecs.h>
 #include <map>
 #include <set>
@@ -179,14 +181,16 @@ public:
               }
           });
 
+          // Not an entity: try the places this character remembers. A place only
+          // resolves if it has been observed, which is what makes a name an
+          // observation rather than a coordinate the map handed over.
           if (!found) {
-            if (map) {
-              for (const auto& loc : map->GetLocations()) {
-                if (StringUtils::EqualsIgnoreCase(loc->name, targetName)) {
-                  targetPos = loc->pos;
-                  found = true;
-                  break;
-                }
+            if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
+              if (const KnownPlace *place =
+                      PlaceQuery::ByLabel(*memory, targetName)) {
+                targetPos =
+                    PlaceQuery::ApproachCell(*memory, *place, startPos);
+                found = true;
               }
             }
           }
@@ -373,36 +377,61 @@ public:
 private:
   std::string response;
 };
-      class LocationsAction : public AgentAction {
+      // What this character remembers as a place. Not the map's list: places are
+      // observed, so two characters can disagree, and an agent can be wrong
+      // (docs/place-derivation-design.md section 10).
+      class PlacesAction : public AgentAction {
       public:
-        std::string getActionName() const override { return "LOCATIONS"; }
+        std::string getActionName() const override { return "PLACES"; }
 
         ActionStatus update(float, flecs::entity entity) override {
-          std::string locationsList;
-          Map* currMap = entity.world().get<MapResource>()->map;
-          
-          if (currMap) {
-            auto names = currMap->GetAllLocationNames();
-            for (const auto& name : names) {
-              locationsList += name + ", ";
-            }
-            if (locationsList.length() >= 2) {
-              locationsList.erase(locationsList.length() - 2);
-            }
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition here =
+              entity.has<GamePosition>() ? *entity.get<GamePosition>()
+                                         : GamePosition{0, 0};
+          if (memory == nullptr || memory->places.empty()) {
+            response = "System: You do not remember any places yet.\n";
+            return ActionStatus::Done;
           }
 
-          if (locationsList.empty()) {
-            response = "System: There are no mapped locations available.\n";
-          } else {
-            response = "System: The following locations are available to move to: " + locationsList + "\n";
+          std::vector<const KnownPlace *> sorted;
+          sorted.reserve(memory->places.size());
+          for (const KnownPlace &place : memory->places) {
+            sorted.push_back(&place);
           }
+          std::sort(sorted.begin(), sorted.end(),
+                    [&here](const KnownPlace *a, const KnownPlace *b) {
+                      const auto distance = [&here](const KnownPlace *place) {
+                        const GamePosition centre{
+                            place->anchor.x + place->width / 2,
+                            place->anchor.y + place->height / 2};
+                        return std::max(std::abs(centre.x - here.x),
+                                        std::abs(centre.y - here.y));
+                      };
+                      return distance(a) < distance(b);
+                    });
 
+          response = "System: Places you remember (" +
+                     std::to_string(sorted.size()) + "):\n";
+          for (const KnownPlace *place : sorted) {
+            const GamePosition centre{place->anchor.x + place->width / 2,
+                                      place->anchor.y + place->height / 2};
+            response += "  #" + std::to_string(place->id) + " " +
+                        PlaceQuery::DisplayName(*place);
+            const std::string aspects = PlaceQuery::AspectsPhrase(*place, 3);
+            if (!aspects.empty()) {
+              response += " -- " + aspects;
+            }
+            response += " -- " +
+                        PlaceQuery::DistancePhrase(here, centre) + "\n";
+          }
+          response +=
+              "System: [MOVE_TO] accepts these names; [NAME_PLACE here <name>] "
+              "names the place you are in.\n";
           return ActionStatus::Done;
         }
 
-        std::string getSuccessMessage() override {
-          return response;
-        }
+        std::string getSuccessMessage() override { return response; }
 
         ActionStatus handleInterruption(flecs::entity) override {
           return ActionStatus::Interrupted;
@@ -411,6 +440,131 @@ private:
         void resume(flecs::entity) override {}
 
       private:
+        std::string response;
+      };
+
+      // Names a place -- or makes one, when nothing covers the ground.
+      //
+      // The engine never invents a name, but it does record one the character
+      // chose. Adding rather than replacing is deliberate: a place can be "the
+      // Library" and "the old reading room" at once.
+      class NamePlaceAction : public AgentAction {
+      public:
+        NamePlaceAction(std::string target, std::string label)
+            : target(std::move(target)), label(std::move(label)) {}
+
+        std::string getActionName() const override { return "NAME_PLACE"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          if (memory == nullptr) {
+            response = "System: You cannot name places right now.\n";
+            return ActionStatus::Failed;
+          }
+
+          const std::string trimmed = StringUtils::Trim(label);
+          if (trimmed.empty() || trimmed.size() > 48 ||
+              trimmed.find('[') != std::string::npos ||
+              trimmed.find(']') != std::string::npos) {
+            response = "System: A place name must be 1-48 characters with no brackets.\n";
+            return ActionStatus::Failed;
+          }
+
+          const bool here = StringUtils::EqualsIgnoreCase(target, "here");
+          const GamePosition position = entity.has<GamePosition>()
+                                            ? *entity.get<GamePosition>()
+                                            : GamePosition{0, 0};
+
+          KnownPlace *place = nullptr;
+          if (here) {
+            for (KnownPlace &candidate : memory->places) {
+              const std::uint64_t key = VisionQuery::CellKey(position);
+              if (std::find(candidate.memberCells.begin(),
+                            candidate.memberCells.end(),
+                            key) != candidate.memberCells.end()) {
+                place = &candidate;
+                break;
+              }
+            }
+          } else {
+            // The registry pattern accepts "#4"; the id is the digits.
+            const std::string digits =
+                target.empty() ? target : target.substr(target[0] == '#' ? 1 : 0);
+            const int id = std::atoi(digits.c_str());
+            for (KnownPlace &candidate : memory->places) {
+              if (candidate.id == id) {
+                place = &candidate;
+                break;
+              }
+            }
+            if (place == nullptr) {
+              response =
+                  "System: You do not remember a place #" + digits + ".\n";
+              return ActionStatus::Failed;
+            }
+          }
+
+          if (place != nullptr) {
+            for (const std::string &existing : place->labels) {
+              if (StringUtils::EqualsIgnoreCase(existing, trimmed)) {
+                response = "System: That place is already called that.\n";
+                return ActionStatus::Done;
+              }
+            }
+            place->labels.push_back(trimmed);
+
+            // A label added straight to the place would vanish if the place were
+            // rebuilt under a new id, so the name is also recorded as a seed
+            // pointing at its centre. Seeds survive derivation; labels ride on
+            // identity. Adding is idempotent because of the label check above.
+            const bool known = std::any_of(
+                memory->nameSeeds.begin(), memory->nameSeeds.end(),
+                [&trimmed](const PlaceNameSeed &seed) {
+                  return StringUtils::EqualsIgnoreCase(seed.label, trimmed);
+                });
+            if (!known) {
+              PlaceNameSeed seed;
+              seed.label = trimmed;
+              seed.anchor = {place->anchor.x + place->width / 2,
+                             place->anchor.y + place->height / 2};
+              seed.source = KnowledgeSource::Observed;
+              seed.createsPlace = false;
+              memory->nameSeeds.push_back(std::move(seed));
+            }
+            response = "System: You call this place " + trimmed + ".\n";
+            return ActionStatus::Done;
+          }
+
+          if (!here) {
+            response = "System: You cannot name a place you do not remember.\n";
+            return ActionStatus::Failed;
+          }
+
+          // Nothing covers this ground, so the name makes a place of it. The next
+          // derivation pass sees the seed and grows the extent from what has been
+          // observed around it.
+          PlaceNameSeed seed;
+          seed.label = trimmed;
+          seed.anchor = position;
+          seed.source = KnowledgeSource::Observed;
+          seed.createsPlace = true;
+          seed.radius = DEFAULT_PLACE_NAME_RADIUS;
+          memory->nameSeeds.push_back(std::move(seed));
+          response = "System: You name this spot " + trimmed + ".\n";
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string target;
+        std::string label;
         std::string response;
       };
 
@@ -749,17 +903,19 @@ private:
         };
 
         std::string result = "System: You are at ";
-        if (Location *location = map ? map->GetLocation(currentPos) : nullptr) {
-          result += location->name;
-        } else {
-          result += "an unnamed spot";
+        std::string placeName;
+        if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
+          if (const KnownPlace *place = PlaceQuery::At(*memory, currentPos)) {
+            placeName = PlaceQuery::DisplayName(*place);
+          }
         }
+        result += placeName.empty() ? "an unnamed spot" : placeName;
         result += " (" + std::to_string(currentPos.x) + "," + std::to_string(currentPos.y) + ").\n";
 
         if (objects.empty() && items.empty() && characters.empty()) {
           result += "System: Nothing within " + std::to_string(radius) +
-                    " tiles to move to or interact with. Use [LOCATIONS] for named places you "
-                    "can travel to.\n";
+                    " tiles to move to or interact with. Use [PLACES] for the "
+                    "places you remember.\n";
           return result;
         }
 

@@ -12,6 +12,7 @@
 #include "AsciiArtFonts.hpp"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
+#include "PlaceCategoryRegistry.h"
 #include "Defaults.h"
 #include "MapReloader.h"
 #include "AgentBrain.h"
@@ -44,13 +45,12 @@ struct EditorSelection {
   std::string name;
 };
 
-// A rectangle the user has dragged out in the map editor that is waiting to be
-// named before it becomes a Location. Only alive while pendingLocation is true.
-struct PendingLocation {
-  GamePosition topLeft{0, 0};
-  GamePosition bottomRight{0, 0};
-  std::string name;
-  std::string description;
+// A cell the user clicked in the map editor, waiting for a name before it becomes
+// a place seed. Only alive while pendingPlaceSeedWantsFocus is true.
+struct PendingPlaceSeed {
+  GamePosition position{0, 0};
+  int radius = 3;
+  std::string label;
 };
 
 // One cell of a blueprint's preview or placement: which cell it lands on, what
@@ -186,6 +186,7 @@ private:
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;
   TaskKindRegistry taskKindRegistry;
+  PlaceCategoryRegistry placeCategoryRegistry;
 
   // Sprite textures for the whole process, keyed by path and cached including
   // failures (see ResourceManager). Declared before `ecs` on purpose: members are
@@ -206,18 +207,15 @@ private:
 
   // Location drawing (map editor). Armed from the Map Editor window, then a
   // left-button drag marks the tiles and the release opens the naming prompt.
-  bool createLocationMode = false;
-  bool isDraggingLocation = false;
-  GamePosition locationDragStart{0, 0};
-  GamePosition locationDragEnd{0, 0};
-  PendingLocation pendingLocation;
-  bool pendingLocationWantsFocus = false;
-  bool pendingLocationHasFocus = false;
+  bool namePlaceSeedMode = false;
+  PendingPlaceSeed pendingPlaceSeed;
+  bool pendingPlaceSeedWantsFocus = false;
+  bool pendingPlaceSeedHasFocus = false;
 
   // Location removal (map editor). Armed from the Map Editor window, then a
   // left click deletes the location under the cursor. In-memory only.
-  bool removeLocationMode = false;
-  std::string lastRemovedLocationName;
+  bool removePlaceSeedMode = false;
+  std::string lastRemovedPlaceSeedLabel;
 
   // Object and tile removal, the "trash" mode (map editor). Armed from the Map
   // Editor window, then a left click deletes the authored object on that tile,
@@ -396,7 +394,7 @@ private:
   friend class BlueprintWindow;
   friend class DesignerChatWindow;
   friend class TileDesignerWindow;
-  friend class LocationNamingWindow;
+  friend class PlaceSeedNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
   friend class TaskBoardWindow;

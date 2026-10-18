@@ -1,10 +1,12 @@
 {
   "name": "Chest",
   "description": "A sturdy chest for storing items.",
-  "components": ["ShowNameTag", 
+  "components": [
+    "ShowNameTag",
     "Interactable",
     "Storage",
-    "Obstacle"
+    "Obstacle",
+    "PlaceCategories"
   ],
   "capacity": 20,
   "art": [
@@ -14,12 +16,45 @@
     "----"
   ],
   "palette": {
-    "-": [139, 69, 19, 255],
-    "|": [110, 55, 15, 255],
-    "+": [218, 165, 32, 255]
+    "-": [
+      139,
+      69,
+      19,
+      255
+    ],
+    "|": [
+      110,
+      55,
+      15,
+      255
+    ],
+    "+": [
+      218,
+      165,
+      32,
+      255
+    ]
   },
   "character": "C",
-  "characterColor": [139, 69, 19, 255],
-  "backgroundColor": [0, 0, 0, 0],
-  "nameTagColor": [205, 133, 63, 255]
+  "characterColor": [
+    139,
+    69,
+    19,
+    255
+  ],
+  "backgroundColor": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "nameTagColor": [
+    205,
+    133,
+    63,
+    255
+  ],
+  "placeCategories": {
+    "storage": 1.0
+  }
 }

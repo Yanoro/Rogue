@@ -1,0 +1,34 @@
+{
+  "name": "Market Stall",
+  "description": "A rickety trestle under a patched awning, and whatever is for sale today.",
+  "components": [
+    "Obstacle",
+    "Interactable",
+    "ShowNameTag",
+    "PlaceCategories"
+  ],
+  "character": "S",
+  "characterColor": [
+    214,
+    168,
+    96,
+    255
+  ],
+  "backgroundColor": [
+    58,
+    44,
+    30,
+    255
+  ],
+  "nameTagColor": [
+    214,
+    168,
+    96,
+    255
+  ],
+  "placeCategories": {
+    "market": 0.9,
+    "poor": 0.7,
+    "dirty": 0.6
+  }
+}

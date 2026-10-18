@@ -33,7 +33,7 @@ AVAILABLE COMMANDS:
 %COMMANDS_LIST%
 
 VARIABLES & RULES:
-- $TARGET can be a location or an object. Available locations: %LOCATIONS%
+- $TARGET can be a character, an object, or a place you remember. Use [PLACES] to see the places you know; a place you have not seen is not on that list.
 - $COMMAND must be chosen from the available commands list.
 
 CHARACTER CONTEXT:

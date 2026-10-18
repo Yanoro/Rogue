@@ -1,7 +1,20 @@
 {
   "name": "water",
   "character": "~",
-  "characterColor": [96, 156, 232, 255],
-  "backgroundColor": [18, 38, 78, 255],
-  "blocksTile": true
+  "characterColor": [
+    96,
+    156,
+    232,
+    255
+  ],
+  "backgroundColor": [
+    18,
+    38,
+    78,
+    255
+  ],
+  "blocksTile": true,
+  "placeCategories": {
+    "water": 1.0
+  }
 }

@@ -3,16 +3,14 @@
   "mapHeight": 16,
   "tileWidth": 32,
   "tileHeight": 32,
-  "locations": [
+  "placeSeeds": [
     {
-      "name": "Miller's House",
-      "description": "A small stone house that smells of flour and warm bread. A mill, an oven and a storage chest fill its single room.",
+      "label": "Miller's House",
       "position": [
-        0,
-        0
+        7,
+        7
       ],
-      "hitboxWidth": 15,
-      "hitboxHeight": 15
+      "radius": 7
     }
   ],
   "npcs": [

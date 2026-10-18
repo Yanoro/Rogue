@@ -1,5 +1,7 @@
 #include "TileRegistry.h"
 
+#include "PlaceCategoriesJson.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -25,6 +27,7 @@ namespace {
 constexpr const char* kKnownTileKeys[] = {
     "name",        "character",     "characterColor", "backgroundColor",
     "blocksTile",  "sprite",        "hitboxSize",     "description",
+    "placeCategories",
 };
 
 bool IsKnownTileKey(const std::string& key) {
@@ -156,6 +159,9 @@ bool ParseTileDef(const nlohmann::json& j, const std::string& sourcePath,
   try {
     out.blocksTile = j.value("blocksTile", false);
     out.sprite = j.value("sprite", std::string());
+    if (j.contains("placeCategories")) {
+      out.placeCategories = ParsePlaceCategories(j["placeCategories"]);
+    }
 
     if (j.contains("hitboxSize")) {
       if (!j["hitboxSize"].is_number_integer()) {

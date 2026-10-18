@@ -11,6 +11,7 @@
 #include <vector>
 
 #include <flecs.h>
+#include <nlohmann/json.hpp>
 
 #include "raylib-cpp.hpp"
 
