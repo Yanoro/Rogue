@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace PlaceQuery {
 
@@ -172,6 +174,55 @@ inline GamePosition ApproachCell(const SpatialMemory &memory,
     }
   }
   return best;
+}
+
+// One row of the place list, as `[PLACES]` sorts and prints it.
+//
+// `SortedPlaces` is the one ordering and `FormatPlaceLine` the one line format,
+// so the plain place list and the navigation summary cannot disagree about a
+// name, an aspect score or a distance. The sort key is the Chebyshev distance to
+// the place's centre, which is what the list has always used: a large place's
+// edge can be closer than a small place's centre, and changing that would move
+// the rows the agent already learned to expect.
+struct PlaceLine {
+  const KnownPlace *place = nullptr;
+  GamePosition centre{0, 0};
+  int distance = 0;
+};
+
+inline std::vector<PlaceLine> SortedPlaces(const SpatialMemory &memory,
+                                           GamePosition here) {
+  std::vector<PlaceLine> lines;
+  lines.reserve(memory.places.size());
+  for (const KnownPlace &place : memory.places) {
+    PlaceLine line;
+    line.place = &place;
+    line.centre = {place.anchor.x + place.width / 2,
+                   place.anchor.y + place.height / 2};
+    line.distance = std::max(std::abs(line.centre.x - here.x),
+                             std::abs(line.centre.y - here.y));
+    lines.push_back(line);
+  }
+  // Stable, so two places the same distance away keep the id order the memory
+  // already stores; an unstable sort made the list depend on initial capacity.
+  std::stable_sort(lines.begin(), lines.end(),
+                   [](const PlaceLine &a, const PlaceLine &b) {
+                     return a.distance < b.distance;
+                   });
+  return lines;
+}
+
+// "#12 Village -- market 100% -- 4 tiles north-east", without the leading
+// indent. Callers that print a list add their own indentation.
+inline std::string FormatPlaceLine(const PlaceLine &line, GamePosition here) {
+  const KnownPlace &place = *line.place;
+  std::string out = "#" + std::to_string(place.id) + " " + DisplayName(place);
+  const std::string aspects = AspectsPhrase(place, 3);
+  if (!aspects.empty()) {
+    out += " -- " + aspects;
+  }
+  out += " -- " + DistancePhrase(here, line.centre);
+  return out;
 }
 
 }  // namespace PlaceQuery

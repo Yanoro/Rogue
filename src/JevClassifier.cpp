@@ -555,7 +555,7 @@ void JevClassifier::Ask(const std::string &state,
         record.promptTokens = trace.promptTokens;
         record.outputTokens = trace.outputTokens;
         record.error = trace.error;
-        record.advisory = true;
+        record.advisory = attribution.advisory;
         record.harness = attribution.harness;
         for (const Answer &answer : answers) {
           record.answers[answer.id] = answer;

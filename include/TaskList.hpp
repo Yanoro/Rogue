@@ -492,7 +492,8 @@ inline std::string FormatTaskFacts(const std::vector<std::string> &facts) {
   return joined;
 }
 
-// The digest the agent is woken with (section 9).
+// The digest the agent is shown on its first wake and whenever it asks with
+// [TASKS] (section 9).
 //
 // Four properties this rendering has to keep, all of them load-bearing:
 //   * life goals are separated and labelled read-only, so the agent is never
@@ -500,7 +501,7 @@ inline std::string FormatTaskFacts(const std::vector<std::string> &facts) {
 //   * the agent's tier is shown exactly as the agent set it, with a violation
 //     annotated rather than corrected (section 6.1) -- so this only ever prints
 //     ruleWarning, it never recomputes a tier;
-//   * the `serves` edge is re-read every turn;
+//   * the `serves` edge is re-read on every render;
 //   * it is capped: short tasks render to DEFAULT_TASK_DIGEST_MAX, highest tier
 //     first, and the count of what was left out is stated, so a hidden task is
 //     never mistaken for a removed one.
@@ -510,15 +511,12 @@ inline std::string FormatTaskFacts(const std::vector<std::string> &facts) {
 //
 // `currentActivity` is what the agent is actually doing, as opposed to what it
 // says it intends (section 8); it is empty when nothing is running and the line
-// is then omitted. `suggestRevision` adds the two-line reminder of the verb,
-// which is how the agent learns [SET_TASKS] exists at all -- the verb is hidden
-// from the advertised command list. `kindHint` is the engine's vocabulary of task
-// kinds, rendered by the caller because the registry is a world resource this
-// header must not depend on; it is shown only alongside the reminder, since an
-// agent that is not revising its plan has no use for it.
+// is then omitted. `kindHint` is the engine's vocabulary of task kinds, rendered
+// by the caller because the registry is a world resource this header must not
+// depend on; [TASKS] supplies it, so the vocabulary is still taught on demand
+// even though the wake path no longer carries a per-turn reminder.
 inline std::string RenderTaskDigest(const TaskList &list,
                                     const std::string &currentActivity,
-                                    bool suggestRevision,
                                     const std::string &kindHint = std::string()) {
   std::string out;
 
@@ -609,20 +607,10 @@ inline std::string RenderTaskDigest(const TaskList &list,
     out += "\n\n";
   }
 
-  if (suggestRevision) {
-    // Kept to two lines on purpose: this is a reminder, not a specification. The
-    // verb is hidden from AVAILABLE COMMANDS, so this is where the agent finds
-    // out it exists.
-    out +=
-        "If your plan has changed, replace the list below the life goals with:\n"
-        "  [SET_TASKS id | description | horizon | kind | target | parent | "
-        "tier; ...]\n"
-        "  (separate entries with ';'; parent is the id it serves, or -1)\n\n";
-    // The kinds the engine can actually check. Without this the kind column is a
-    // guessing game, and a "find the village" intention has no way to become a
-    // task the engine can report on.
-    out += kindHint;
-  }
+  // The kinds the engine can actually check. Appended whenever the caller
+  // supplies it: [TASKS] is where the vocabulary is taught now, and it arrives
+  // without the revision reminder the wake digest used to carry.
+  out += kindHint;
 
   return out;
 }

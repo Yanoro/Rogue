@@ -376,6 +376,58 @@ bool LoadGameSettings(const std::string &path) {
         system1.value("routeRequests", settings.system1.routeRequests);
     settings.system1.minConfidence =
         system1.value("minConfidence", settings.system1.minConfidence);
+
+    // Navigation by System 1 (docs/navigation-subagent-design.md §12). Clamped
+    // rather than trusted: a zero candidate cap or a negative budget is a config
+    // mistake that would otherwise show up as a navigation that cannot decide.
+    {
+      const nlohmann::json &navigation = Section(system1, "navigation");
+      GameSettings::SystemOneNavigationSection &nav =
+          settings.system1.navigation;
+      nav.enabled = navigation.value("enabled", nav.enabled);
+      nav.maxCandidates = navigation.value("maxCandidates", nav.maxCandidates);
+      nav.maxDecisions = navigation.value("maxDecisions", nav.maxDecisions);
+      nav.maxSurveys = navigation.value("maxSurveys", nav.maxSurveys);
+      nav.maxSeconds = navigation.value("maxSeconds", nav.maxSeconds);
+      nav.legTimeoutSeconds =
+          navigation.value("legTimeoutSeconds", nav.legTimeoutSeconds);
+      nav.minProbability =
+          navigation.value("minProbability", nav.minProbability);
+      nav.minMargin = navigation.value("minMargin", nav.minMargin);
+      if (nav.maxCandidates < 1) {
+        std::cerr << "Settings: system1.navigation.maxCandidates must be at "
+                     "least 1; using 1."
+                  << std::endl;
+        nav.maxCandidates = 1;
+      }
+      if (nav.maxDecisions < 1) {
+        std::cerr << "Settings: system1.navigation.maxDecisions must be at least "
+                     "1; using 1."
+                  << std::endl;
+        nav.maxDecisions = 1;
+      }
+      if (nav.maxSurveys < 0) {
+        std::cerr << "Settings: system1.navigation.maxSurveys cannot be "
+                     "negative; using 0."
+                  << std::endl;
+        nav.maxSurveys = 0;
+      }
+      if (nav.maxSeconds <= 0.0f) {
+        std::cerr << "Settings: system1.navigation.maxSeconds must be positive; "
+                     "using the default."
+                  << std::endl;
+        nav.maxSeconds = DEFAULT_NAVIGATION_MAX_SECONDS;
+      }
+      if (nav.legTimeoutSeconds <= 0.0f) {
+        std::cerr << "Settings: system1.navigation.legTimeoutSeconds must be "
+                     "positive; using the default."
+                  << std::endl;
+        nav.legTimeoutSeconds = DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS;
+      }
+      nav.minProbability = std::clamp(nav.minProbability, 0.0f, 1.0f);
+      nav.minMargin = std::clamp(nav.minMargin, 0.0f, 1.0f);
+    }
+
     if (system1.contains("model")) {
       const nlohmann::json &system1Model = system1["model"];
       GameSettings::ModelSection &target = settings.system1.model;

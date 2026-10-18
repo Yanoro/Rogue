@@ -35,11 +35,6 @@ constexpr float DEFAULT_MINIMUM_WAYPOINT_DISTANCE= 24.0f;
 constexpr float DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS = 10.0f;
 constexpr int DEFAULT_OBJECT_SEARCH_RADIUS = 10;
 
-// How many tiles in each direction [SURROUNDINGS] reports on. The placement
-// hint deliberately keeps a smaller radius of its own: its grid is meant to show
-// only the ground a single [PLACE] can reach, not everything in sight.
-constexpr int DEFAULT_SURROUNDINGS_RADIUS = 10;
-
 // How far from the actor [PLACE] may set an item down, in tiles. A template's
 // "placement" block may override this per item; see docs/placement-design.md.
 constexpr int DEFAULT_PLACEMENT_MAX_DISTANCE = 1;
@@ -64,11 +59,10 @@ constexpr float DEFAULT_FACING_MARKER_TILE_FRACTION = 0.6f;
 // later without a code change.
 //
 // The cone is 90 degrees at 22 tiles and the radar 2 tiles: about 390 cells in
-// total, comparable to the radius-10 square [SURROUNDINGS] already scans. The
-// cone is not cheaper than a disc, it is differently shaped -- it reaches further
-// ahead and nothing behind. These are starting guesses, chosen from looking at
-// the overlay; the Vision Debug window edits them live precisely because they
-// are guesses.
+// total, roughly the size of a radius-10 square. The cone is not cheaper than a
+// disc, it is differently shaped -- it reaches further ahead and nothing behind.
+// These are starting guesses, chosen from looking at the overlay; the Vision
+// Debug window edits them live precisely because they are guesses.
 constexpr float DEFAULT_VISION_RANGE = 22.0f;
 constexpr float DEFAULT_VISION_ANGLE_DEGREES = 90.0f;
 constexpr int DEFAULT_VISION_RADAR_RADIUS = 2;
@@ -182,6 +176,40 @@ constexpr int DEFAULT_TASK_MAX_CRITICAL = 1;
 // result is only shown to the agent when it wakes, and the debug windows sample
 // the same fields live in between.
 constexpr int DEFAULT_TASK_VERIFY_INTERVAL_TICKS = 60;
+
+// ---------------------------------------------------------------------------
+// Navigation by System 1 (docs/navigation-subagent-design.md).
+//
+// Stage 1 is one decision and one leg: these bound how many candidates the state
+// shows and when a choice is confident enough to act on. They become settings
+// under `system1.navigation` when the loop and the survey recovery land; keeping
+// them here until then means there is one home for the numbers.
+// ---------------------------------------------------------------------------
+// One line per remembered place in the request. A decision model's input budget
+// is short, and a candidate list longer than this turns a choice into a reading
+// comprehension task.
+constexpr int DEFAULT_NAVIGATION_MAX_CANDIDATES = 8;
+// Places listed in the completion summary, in the same form [PLACES] prints.
+// Enough to orient the main model, not a second full listing.
+constexpr int DEFAULT_NAVIGATION_NEARBY_PLACES = 5;
+// Answer::probabilities[choice] below this is "not sure enough to walk".
+constexpr float DEFAULT_NAVIGATION_MIN_PROBABILITY = 0.5f;
+// The margin over the runner-up. A 0.51/0.49 split is a coin flip even though the
+// winner clears the probability floor.
+constexpr float DEFAULT_NAVIGATION_MIN_MARGIN = 0.15f;
+// How many System 1 decisions one navigation episode may spend. Each leg is a
+// decision, and an unsure answer spends an extra one on the re-ask after the
+// survey; this is the ceiling on the model calls, not on the walking.
+constexpr int DEFAULT_NAVIGATION_MAX_DECISIONS = 8;
+// Survey recoveries per episode. One per unsure decision is enforced separately;
+// this stops an episode that keeps getting stuck from alternating ask/survey.
+constexpr int DEFAULT_NAVIGATION_MAX_SURVEYS = 2;
+// Wall-clock ceiling for the whole episode, including decision latency and
+// walking. Long enough for the village trip, short enough to hand back.
+constexpr float DEFAULT_NAVIGATION_MAX_SECONDS = 120.0f;
+// One leg may not monopolise the episode. MoveToEntityAction has no timeout of
+// its own; a navigation leg that cannot finish should hand back, not hang.
+constexpr float DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS = 30.0f;
 
 constexpr int DEFAULT_INPUT_MOVEMENT = 10;
 constexpr float DEFAULT_INPUT_ZOOM = 1.0f;

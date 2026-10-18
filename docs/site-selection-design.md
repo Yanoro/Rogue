@@ -35,9 +35,9 @@ This document specifies the whole pipeline. The organizing claim is in §2.
 ## 2. The organizing claim: placement is a ranking problem, not a generation problem
 
 An agent cannot be asked to invent a good site. It cannot see terrain (§1 of the gap above is not the
-only reason: terrain is invisible to `[SURROUNDINGS]`, see §11), it cannot compute whether a footprint
-fits, and a coordinate it invents is a coordinate the engine must second-guess. Aesthetics invented by
-a model is the same failure with better vocabulary.
+only reason: terrain is not a named entity an agent can query, see §11), it cannot compute whether a
+footprint fits, and a coordinate it invents is a coordinate the engine must second-guess. Aesthetics
+invented by a model is the same failure with better vocabulary.
 
 But the engine *can* enumerate every legal site, and it can score them. That turns placement into:
 

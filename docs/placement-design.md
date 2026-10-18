@@ -6,6 +6,10 @@ document. It analyses why an agent cannot find a tile to place on and lays out t
 with their trade-offs. It does not pick one unilaterally — the recommendation at the end is staged,
 and the open questions are real.
 
+> **Update:** the `[SURROUNDINGS]` command has since been removed. The placement radar this document
+> proposed (`GetSurroundingsRadar`) remains, returned by the `Place` interaction. References below to
+> `[SURROUNDINGS]`, `GetSurroundingsList` and `SurroundingsAction` are historical.
+
 ## Symptom
 
 Pietro the farmer spawns in the middle of his tilled field, holds 12 Wheat Seeds, and cannot plant.
@@ -100,10 +104,10 @@ Derived from `.agents/design/two-tier-agents.md` and the existing components, no
   `policy.surface` match, occupancy. Anything that *advertises* a coordinate must run that same code,
   or the advertisement and the execution drift. This is the design note's "the gate and the
   predicate are one component viewed from two ends" (§8).
-- **Radius must be small for a tile view.** `DEFAULT_SURROUNDINGS_RADIUS = 10`
-  (`include/Defaults.h:41`) is fine for an entity list and ruinous for a grid: radius 10 is 441
-  cells. A tile view wants the item's `Placeable::maxDistance` (default 1, `include/Defaults.h:45`),
-  which is why `GetSurroundingsRadar` takes its own radius.
+- **Radius must be small for a tile view.** The old surroundings scan used radius 10
+  (`include/Defaults.h`, since removed): fine for an entity list and ruinous for a grid, because
+  radius 10 is 441 cells. A tile view wants the item's `Placeable::maxDistance` (default 1,
+  `include/Defaults.h:45`), which is why `GetSurroundingsRadar` takes its own radius.
 - **The engine owns facts; the agent owns intentions.** Inventories, terrain and legality are engine
   state. The direction doc's constraint 1 and §6 of the two-tier note both push coordinates out of
   model output and into engine-authored options.
@@ -355,9 +359,10 @@ Staged, because the cheap fixes are not wasted work under the strategic one:
    or make the "Place" interaction self-describing enough that `[EXAMINE_ITEM]` → `[PLACE $ITEM]`
    is discoverable. Make the hint's own example match the no-coordinate form that actually returns
    the radar, because today the example performs a blind placement.
-3. **Soon — S1b, a flat surface list on `[SURROUNDINGS]`.** Small radius, name-per-entry, no glyph
-   grid and no counting. This answers "what is the ground" generally, which the probe answers only
-   for the held item. Skip S1a; the grid is the least reliable rendering of the three.
+3. **Soon — S1b, a flat surface list on `[SURROUNDINGS]` (moot: that command has been removed).**
+   Small radius, name-per-entry, no glyph grid and no counting. This answers "what is the ground"
+   generally, which the probe answers only for the held item. Skip S1a; the grid is the least
+   reliable rendering of the three.
 4. **When the task layer lands — S7, with S3 as its placement primitive.** Coordinate typing by the
    model should end when the enumerator can offer a legal tile directly.
 
@@ -380,8 +385,9 @@ targeting is also added to `[MOVE_TO]`, so the DSL has one convention.
 
 ## References
 
-- `include/AgentActions.h` — `GetSurroundingsRadar:397`, `GetSurroundingsList:454`,
-  `SurroundingsAction:554`, `PlaceAtAction:900`, validation `:1043-1101`, rejection text `:1074-1097`
+- `include/AgentActions.h` — historical: `GetSurroundingsList` and `SurroundingsAction` (both
+  removed); `GetSurroundingsRadar`, `PlaceAtAction`, validation `:1043-1101`, rejection text
+  `:1074-1097`
 - `src/GameECS.cpp` — command registration `:1953-2087`, `[PLACE]` hidden `:2019-2029`,
   `Placeable` hint `:2140-2165`
 - `include/GlobalCommandRegistry.h:17`, `src/GameECS.cpp:275`, `include/AgentActions.h:67` —

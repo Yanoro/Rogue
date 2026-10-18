@@ -103,7 +103,7 @@ Going field by field through the definitions, most of it falls on one side witho
 
 | field | today lives in | belongs to | why |
 |---|---|---|---|
-| `name` | tiles, objects, races | **data** | the join key *and* the legend value in `[SURROUNDINGS]` |
+| `name` | tiles, objects, races | **data** | the join key *and* the legend value in the placement radar |
 | `description` | objects | **data** | the LLM reads it; it is meaning, not pixels |
 | `components`, `capacity` | objects | **data** | behaviour (`Interactable`, `Obstacle`, `Storage`, `Workstation`) |
 | `blocksTile`, `hitboxSize` | tiles | **data** | collision, walkability, placement validation |
@@ -132,16 +132,16 @@ result += std::string(1, pair.first) + " = " + pair.second + "\n";
 ```
 
 So the glyph is a **symbol table key** with a correctness invariant. `extract_sheet.py` states it
-outright: *"Characters are deliberately unique because [SURROUNDINGS] prints a glyph grid and a
-collision makes that grid unreadable."*
+outright: *"Characters are deliberately unique because the placement radar prints a glyph grid and
+a collision makes that grid unreadable."*
 
 Two concrete consequences:
 
 - **An art pack that changed `character` would change agent behaviour.** Not rendering — reasoning.
   Two art packs over one data pack would produce different agent transcripts from the same seed.
   That contradicts the split's whole point.
-- **An art pack that collided two glyphs would corrupt `[SURROUNDINGS]`** into an ambiguous grid,
-  which is a gameplay bug caused by a reskin.
+- **An art pack that collided two glyphs would corrupt the placement radar's grid** into something
+  ambiguous, which is a gameplay bug caused by a reskin.
 
 The multi-line `art` grid and `palette` are different: nothing reads them for prompts. Confirmed —
 their only consumers are the world renderer (`GameECS.cpp:405`), the storage window
@@ -180,7 +180,7 @@ single most important existing property this whole design leans on:
 - `Sprite` only exists as a component when the image loaded (`Components.h:119-135`), so "no sprite"
   is not a special case in the renderer.
 - The `character` glyph is in the **data** pack (§2.1), so a mixed pack always has a legible
-  fallback and a working `[SURROUNDINGS]` regardless of which art pack is loaded.
+  fallback and a working placement radar regardless of which art pack is loaded.
 
 So recombination is **safe but visibly partial** — half sprites, half glyphs. Which is exactly the
 problem the generation pipeline solves, and it reframes what the pipeline is for:
@@ -975,7 +975,7 @@ texture cache invalidated  ->  next frame draws the sprite
 
 The glyph is not a placeholder to be tolerated; it is a legitimate rendering, and it comes from the
 data pack so it is present regardless of art coverage. An agent that builds a confessional and gets a
-readable `[SURROUNDINGS]` glyph immediately, with art arriving a minute later, is a coherent
+readable placement-radar glyph immediately, with art arriving a minute later, is a coherent
 experience. The game never blocks on the image model.
 
 **The one concrete blocker**, documented in `include/ResourceManager.h`: missing paths are memoised so
@@ -1111,7 +1111,7 @@ Deliberately not resolved here.
 ## 14. What not to do
 
 - **Do not let an art pack change `character`.** It is the LLM's symbol table, not a sprite (§2.1).
-  Changing it changes agent reasoning; colliding it corrupts `[SURROUNDINGS]`.
+  Changing it changes agent reasoning; colliding it corrupts the placement radar.
 - **Do not let an art pack gate the data pack's vocabulary.** Swapping art must never change what can
   be built (§3.2).
 - **Do not let the bulk art pipeline write data definitions.** §4.2 — and note that `gen_tile.py

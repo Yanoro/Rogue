@@ -6,7 +6,6 @@
 #include "Map.h"
 #include "PathFinding.h"
 #include "StringUtils.hpp"
-#include "TaskKindRegistry.h"
 #include "TradeGrammar.hpp"
 #include "Trading.h"
 #include "flecs.h"
@@ -603,7 +602,7 @@ void AgentBrain::ProbeMemorySalience() {
   // situation, not the conversation.
   std::string state = "Character: " + characterName + "\n";
   if (const TaskList *list = entity.get<TaskList>()) {
-    state += RenderTaskDigest(*list, "", false);
+    state += RenderTaskDigest(*list, "");
   }
   state += "Places remembered:\n";
   for (const KnownPlace &place : memory->places) {
@@ -738,6 +737,15 @@ std::string AgentBrain::buildWakePrompt(bool firstWake) {
             "your first command?\n"
           : "System: What is your next command?\n";
 
+  // The digest is shown once, at spawn, so the agent starts with its life goals
+  // and any authored long-term frame. Re-sending it on every wake was the token
+  // cost this avoids; [TASKS] is how the agent asks for it afterwards. The
+  // command list is already in the system prompt, so the digest does not need to
+  // teach [SET_TASKS] here any more.
+  if (!firstWake) {
+    return question;
+  }
+
   const TaskList *list = entity.get<TaskList>();
   if (list == nullptr) {
     // No declared intention: byte-for-byte the prompt this agent received before
@@ -745,46 +753,7 @@ std::string AgentBrain::buildWakePrompt(bool firstWake) {
     return question;
   }
 
-  // What the agent is *actually* doing, which is what section 8 wants printed
-  // next to what it says it intends. In practice this is empty: the brain only
-  // asks when it has nothing running, so at this moment the agent is idle and the
-  // line is omitted rather than claiming an activity it does not have. The
-  // divergence that line exists to expose is observable live in the debug window
-  // (section 11), where it is not sampled at this one instant.
-  std::string activity;
-  if (currentAction) {
-    activity = currentAction->getActionName();
-    const std::string context = currentAction->getActionContext();
-    if (!context.empty()) {
-      activity += " " + context;
-    }
-  }
-
-  // Offer the verb at most once per plan change, never on every wake: rewriting
-  // the list is agent output tokens, and the cost that matters is the frequency,
-  // not the authorship (section 8).
-  const bool suggestRevision = taskRevisionSuggested;
-  taskRevisionSuggested = false;
-
-  // The kind vocabulary goes out with the revision suggestion and nowhere else. A
-  // kind the engine does not know is not an error -- it degrades to "no facts"
-  // (section 7) -- but an agent that is never told the kinds cannot turn "find
-  // the village" into a task the engine can report on.
-  std::string kindHint;
-  if (suggestRevision) {
-    if (const TaskKindRegistryResource *kinds =
-            entity.world().get<TaskKindRegistryResource>()) {
-      if (kinds->registry != nullptr && kinds->registry->Count() > 0) {
-        kindHint = "Task kinds the engine can check (put one in the kind column):\n";
-        for (const TaskKind *kind : kinds->registry->GetAll()) {
-          kindHint += "  " + kind->id + " -- " + kind->description + "\n";
-        }
-        kindHint += "\n";
-      }
-    }
-  }
-
-  return RenderTaskDigest(*list, activity, suggestRevision, kindHint) + question;
+  return RenderTaskDigest(*list, "") + question;
 }
 
 void AgentBrain::logTaskTransitions() {
@@ -879,10 +848,6 @@ void AgentBrain::executeActionQueue(float deltaTime) {
   switch (currentAction->update(deltaTime, entity)) {
   case (ActionStatus::Done): {
     appendContext("user", currentAction->getSuccessMessage());
-    // An action finishing is one of the events that may have changed the plan
-    // (section 8). A revision is not invited when the action *was* a revision:
-    // asking the agent to rewrite the list it just wrote is pure noise.
-    taskRevisionSuggested = currentAction->getActionName() != "SET_TASKS";
     currentAction.reset();
     break;
   }
@@ -891,7 +856,6 @@ void AgentBrain::executeActionQueue(float deltaTime) {
   }
   case (ActionStatus::Failed): {
     appendContext("user", currentAction->getFailureMessage());
-    taskRevisionSuggested = true;
     currentAction.reset();
     break;
   }
@@ -936,8 +900,8 @@ void AgentBrain::update(float deltaTime) {
   if (request == nullptr) {
     awaitingRetry = false;
     // Report anything that changed since the agent was last consulted, then ask
-    // it again. Both happen here because this is the one moment the list is
-    // about to be shown to the model.
+    // it again. The transitions go to the transcript; the agent itself is no
+    // longer sent the digest on every wake -- it can ask with [TASKS].
     logTaskTransitions();
     auto ctx = entity.get<NPCContext>();
     const bool firstWake = !(ctx && ctx->history.size() > 1);

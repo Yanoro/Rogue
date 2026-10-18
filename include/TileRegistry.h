@@ -127,7 +127,7 @@ public:
   //
   // A *duplicate glyph* is not an error, only a warning. Glyph collisions are
   // parked by the owner on purpose -- the existing catalog already shares '#', '.',
-  // '\'' and others (see the [SURROUNDINGS] note in
+  // '\'' and others (see the glyph-legend note in
   // .agents/tile-designer-handover.md) -- so this reports them without refusing.
   //
   // `sourcePath` is recorded on the definition so a later duplicate-name warning

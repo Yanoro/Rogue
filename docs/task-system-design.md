@@ -376,7 +376,9 @@ every turn. It is revised when something changed the plan:
 - the agent explicitly chose to re-plan.
 
 Between these, the list stands unchanged. This is the honest fix for "the agent spends reasoning time
-on its goals" — the cost was never the authorship, it was doing it every single turn.
+on its goals" — the cost was never the authorship, it was doing it every single turn. The wake prompt
+does not re-send the list every turn either: the digest is shown on the first wake only, and `[TASKS]`
+reads it on demand (§9), so frequency is bounded on the input side as well.
 
 ### Facts
 
@@ -432,12 +434,13 @@ visible.
 
 ### The `[SET_TASKS]` verb
 
-A hidden `GlobalCommand`, registered in `Game::ECSInit` **before** the `LoadMap` call so it lands in
+A visible `GlobalCommand`, registered in `Game::ECSInit` **before** the `LoadMap` call so it lands in
 every NPC's prompt. The block runs from `GlobalCommandRegistry::Clear()` at `src/GameECS.cpp:2078`,
 with the 19 existing registrations from `:2080`; `LoadMap` is called at `src/GameECS.cpp:2307`. That
 ordering is required — an NPC's prompt is built at spawn time from the registry, so a verb registered
-after the spawn is missing from that NPC forever. Hidden, so it does not clutter the advertised
-command list, exactly like the trade verbs and `[GENERIC_INTERACT]`.
+after the spawn is missing from that NPC forever. It is advertised like the other visible verbs now
+that the per-turn digest no longer teaches it; the task-kind vocabulary it accepts is listed by
+`[TASKS]`.
 
 ```
 [SET_TASKS
@@ -468,16 +471,29 @@ The existing prompt machinery substitutes placeholders at **spawn time only**:
 `%BACKGROUND%`, `%CHARACTERS%`, `%COMMANDS_LIST%` are all filled in `Game::createNPC` and stored once
 as the `system` turn (`src/GameECS.cpp:311-330`). Task state changes, so it cannot live there.
 
-The digest therefore goes into `AIRequest.prompt` when the agent wakes, replacing today's bare
-`"System: What is your next command?"` (`src/AgentBrain.cpp:760-763`). This keeps `NPCContext` lean:
-task churn never becomes permanent history, and the agent cannot mistake a stale list of its own past
-tasks for current state.
+The digest therefore goes into `AIRequest.prompt` only on the agent's **first wake**, and is not
+repeated afterwards (`AgentBrain::buildWakePrompt`, `src/AgentBrain.cpp`). Re-sending the whole list
+on every turn was a large, constant token cost for state that changes rarely; every later wake carries
+only the question, and the agent asks for the list with the visible `[TASKS]` verb when it wants it.
+The same renderer is used on demand by `TasksAction` (`include/AgentActions.h`), and that reply also
+lists the task kinds the engine can check. This keeps `NPCContext` lean: task churn never becomes
+permanent history, and the agent cannot mistake a stale list of its own past tasks for current state.
+
+### The `[TASKS]` query
+
+`[TASKS]` is a visible, read-only verb that renders the digest on demand: life goals, long-term
+goals, short tasks with engine facts and rule warnings, and the task-kind vocabulary. It is the only
+place the kinds are taught now, so the kind column of `[SET_TASKS]` is not a guessing game. Its output
+is the agent's own list; no agent can read another's (§10). Like every query verb it costs one model
+turn, but only when the agent actually needs the list.
 
 A per-turn `%TASKS%` placeholder in the configurable prompt template is a deliberate non-goal — it
 would require re-rendering the `system` turn, which changes the template contract documented at
 `src/GameECS.cpp:318-320`.
 
 ### Digest format
+
+Shown on the first wake and by `[TASKS]`; the latter appends the task-kind list.
 
 ```
 YOUR LIFE GOALS  (fixed -- these are who you are, not something to rewrite)
@@ -631,9 +647,9 @@ Each stage is useful on its own and breaks nothing (§2).
 1. **State only.** `GoalHorizon`, `TaskPriority`, `AgentGoal`, `TaskList` in `Components.h` with
    reflection. No consumer, no behaviour change.
 2. **Authoring.** `NPCData::terminalGoals` and the map-JSON read/write path; `TaskKindRegistry`
-   resource; the `[SET_TASKS]` hidden verb and tolerant parser; registration before `LoadMap`.
-3. **Reading.** Digest renderer; injection into `AIRequest.prompt`; task transitions into the
-   transcript; revision restricted to the events in §8.
+   resource; the `[SET_TASKS]` verb and tolerant parser; registration before `LoadMap`.
+3. **Reading.** Digest renderer; injection into `AIRequest.prompt` on the first wake, with `[TASKS]`
+   for on-demand reads; task transitions into the transcript; revision restricted to the events in §8.
 4. **Seeing.** Debug window (NPC section + village board). **At this point the feature has already
    delivered its original goal.**
 5. **Checking.** Facts for the four known kinds; target resolution and re-resolution; staleness flags;

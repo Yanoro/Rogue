@@ -220,9 +220,9 @@ Landed, in the order of "Suggested first cut":
    for two characters over `Map_Village_Quest` — the second record grew, the first was untouched.
 2. **`reach` task kind.** `CheckReach` + `CheckReachPlace` (`src/TaskKindRegistry.cpp:257`), with a
    new `TaskKind::placeCheck` for targets that are places rather than entities
-   (`src/TaskVerification.cpp:166`). The digest now prints the engine's kind vocabulary alongside the
-   `[SET_TASKS]` reminder (`src/AgentBrain.cpp:773`), so "find the village" can become a task the
-   engine reports on.
+   (`src/TaskVerification.cpp:166`). The `[TASKS]` query prints the engine's kind vocabulary
+   (`TasksAction`, `include/AgentActions.h`), so "find the village" can become a task the engine
+   reports on.
 3. **Vision window selector.** The Memory tab lists every entity carrying `SpatialMemory` (player
    first), selects one, and draws and dumps *that* record (`src/DebugWindows.cpp:3063`).
 4. **Road following.** `PlaceQuery::ApproachCell` targets the far end of a linear place instead of

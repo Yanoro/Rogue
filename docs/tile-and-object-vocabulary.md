@@ -33,7 +33,7 @@ The two are different systems, not two names for one record:
 | per cell | exactly one ground tile | zero or more objects |
 | identity to agents | a surface name, normally no `DisplayName` | an entity with `DisplayName`, components, interactions |
 | blocking | `TileDef::blocksTile` says whether the **ground** is passable | `Obstacle` blocks movement |
-| seen by `[SURROUNDINGS]` | terrain is invisible to the entity filter (the radar is the tile view) | yes, as an object with a name |
+| visible to agents as | a surface name, normally no `DisplayName`; the placement radar is the tile view | an entity with `DisplayName`, components, interactions |
 | behaviour | none beyond blocking | whatever components the template composes |
 
 A wall is therefore not "a tile with `blocksTile: true`". It is an object with `Obstacle`, and the
@@ -61,9 +61,8 @@ tile nor an object. It does not turn the cell into a "door tile".
   and placement ask `Map::IsBlocked`, which combines a blocking ground tile with any object carrying
   `Obstacle` and `blocksMovement`. `Tile::blocksTile` alone is not the whole answer.
 - **Structure is still an object.** Walls, fences and cliff faces carry a `Structural` tag so the
-  name-tag renderer and `[SURROUNDINGS]` list do not emit one line per cell; the radar, vision and
-  rendering still show them. `ShowNameTag` is opt-in for objects that should be labelled; characters
-  always show their name.
+  name-tag renderer omits them; the radar, vision and rendering still show them. `ShowNameTag` is
+  opt-in for objects that should be labelled; characters always show their name.
 - **"Invisible wall" is not a tile failure mode.** A tile with no glyph and no sprite is an
   invisible patch of ground.
 
@@ -85,9 +84,9 @@ The data migration landed on 2026-10-17:
   own base ground. The palette indices were kept, so no map layout shifted.
 - **Engine support:** `Map::IsBlocked` now combines a blocking ground tile with objects whose
   `Obstacle::blocksMovement` is true; movement, pathfinding, wall repulsion and placement use it.
-  `Structural` objects are omitted from `[SURROUNDINGS]` and draw no name tag, while still rendering
-  and appearing in the radar/vision. `ShowNameTag` is opt-in; the existing object templates carry it,
-  the new structural templates do not.
+  `Structural` objects draw no name tag, while still rendering and appearing in the radar/vision.
+  `ShowNameTag` is opt-in; the existing object templates carry it, the new structural templates do
+  not.
 - **`--gaps` after the migration:** 10 ground tiles, 48 objects, **0 undefined blueprint references**.
 
 What remains is deliberately not a tile/object confusion:

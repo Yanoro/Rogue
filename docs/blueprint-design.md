@@ -207,9 +207,9 @@ world already has:
 | tile | `paint`, `fill{paint}` | a `TileDef` name resolved through the catalog. The **ground**, and only the ground. |
 | object | `place`, `fill{place}` | an `ObjectFactory` template id. Something **standing on** the ground — including walls and doors. |
 
-They differ in cost and visibility: terrain is free to paint and invisible to `[SURROUNDINGS]`, an
-object consumes a real item and gets a `DisplayName`. `carve` writes neither — it marks the cell as
-an opening, which both renderers draw as a hole.
+They differ in cost and visibility: terrain is free to paint and is not a named entity an agent can
+target, an object consumes a real item and gets a `DisplayName`. `carve` writes neither — it marks the
+cell as an opening, which both renderers draw as a hole.
 
 ---
 

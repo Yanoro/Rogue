@@ -886,8 +886,8 @@ struct BlocksVision {};
 
 // Part of the world's fabric rather than a prop: a wall, a fence, a cliff face.
 // It still renders and still blocks movement, but it is not something an agent
-// walks up to and uses, so it is omitted from the [SURROUNDINGS] list. The
-// radar and vision still show it -- this hides prose, not the world.
+// walks up to and uses, so it draws no name tag. The radar and vision still show
+// it -- this hides prose, not the world.
 //
 // A tag, not a kind: a Structural object is still an object, and the thing that
 // makes it solid is Obstacle. It exists so converting wall tiles to wall objects
@@ -1034,6 +1034,29 @@ class TaskKindRegistry;
 // resource-component pattern as BlueprintRegistryResource.
 struct TaskKindRegistryResource {
   TaskKindRegistry* registry;
+};
+
+namespace SystemOne {
+class SystemOneClassifier;
+}
+
+// The live System 1 provider, published to the world so an action can ask it
+// without capturing `Game` (docs/navigation-subagent-design.md).
+//
+// A shared_ptr, not a raw pointer: a runtime profile swap drops `Game`'s
+// reference while a navigation action may still be waiting on an answer, and the
+// provider's destructor is what cancels/waits for its own in-flight request. The
+// action copies this before asking, so the provider outlives the swap.
+struct SystemOneClassifierResource {
+  std::shared_ptr<SystemOne::SystemOneClassifier> classifier;
+};
+
+class DebugLog;
+// The run's debug log, for actions that want one tuning line without holding a
+// Game pointer. Borrowed: Game owns the log for the whole run. Null is supported
+// and simply means the action does not trace.
+struct DebugLogResource {
+  DebugLog *log = nullptr;
 };
 
 class ItemRegistry;

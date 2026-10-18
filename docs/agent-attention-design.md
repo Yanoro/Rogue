@@ -142,6 +142,13 @@ two jobs here, and they are deliberately separate:
 
 Both are advisory. Neither writes agent-chosen state, and neither blocks an agent.
 
+A third job is designed but not built: **navigation** — the main model states a goal, System 1
+chooses the next place to walk to from the places the character actually remembers, and the engine
+walks there through the existing move path. It is deliberately *not* advisory (the choice moves the
+character) and it is the first call site that delegates a loop rather than asking one question. It
+implements this document's §5 yielding contract, so a wake can suspend a walk, let the agent read a
+sign or greet someone, and resume the episode. See `docs/navigation-subagent-design.md`.
+
 ### 4.1 Decision in one line
 
 For the gate, not *"does this event outrank the active task?"* but **"is this event worth waking the

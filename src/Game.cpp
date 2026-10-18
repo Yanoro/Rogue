@@ -137,6 +137,14 @@ void Game::Init() {
     }
   }
 
+  // Published to the world for [NAVIGATE] (docs/navigation-subagent-design.md).
+  // Set even when null, so the resource's presence means "the game has a System 1
+  // slot" while its value says whether anything can be asked.
+  ecs.set<SystemOneClassifierResource>({systemOneClassifier});
+  // The same log the debug window shows, for the one-line navigation trace that
+  // makes a tuning run readable without opening the System 1 window.
+  ecs.set<DebugLogResource>({debugLog.get()});
+
   // Opened here rather than where speech is set up: raylib's audio device is
   // process-wide, everything that might play anything needs it to exist first, and
   // this is the first point where there is a debug log to complain to.
@@ -2722,6 +2730,10 @@ std::string Game::SwitchSystemOneProfile(const std::string &id) {
   // The swap. Assigning drops the last reference to the previous provider, whose
   // destructor cancels anything it had in flight -- deliberate, see Game.h.
   systemOneClassifier = classifier;
+  // Keep the world's copy in step. Navigation actions take a shared_ptr from this
+  // resource before asking, so an action already holding the old provider keeps it
+  // alive until its request completes.
+  ecs.set<SystemOneClassifierResource>({classifier});
   activeSystemOneProfile = profile->id;
   if (debugWindowState) {
     debugWindowState->SetSystemOneProfile(activeSystemOneProfile);

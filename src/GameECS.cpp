@@ -2499,7 +2499,7 @@ void Game::ECSInit() {
     .help = {
       .description = "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is how you get within reach of something: arriving next to an object is what makes its interactions available, and arriving next to a character is the step before talking to them.",
       .examples = {"[MOVE_TO Pietro]", "[MOVE_TO Mill]"},
-      .usage = {"$TARGET: the exact name as printed by [SURROUNDINGS] or [PLACES]. Matching ignores case."},
+      .usage = {"$TARGET: the exact name as printed by [PLACES] or [CHARACTERS], or the name of something you can see with [LOOK]. Matching ignores case."},
       .notes = {"Arriving at an object lists the interactions it offers and remembers it as your interaction target.",
                 "Directions such as \"east\" and bare coordinates are not valid targets.",
                 "If the name matches nothing you are told so and nothing moves."}
@@ -2525,6 +2525,29 @@ void Game::ECSInit() {
   });
 
   GlobalCommandRegistry::Register({
+    .format = "[NAVIGATE $GOAL]",
+    .rule = "Travel toward a distant goal you cannot locate yet, letting a small decision model pick each next remembered place. Use it for a search such as finding a village; for a short trip to a place you can name or see nearby, use [MOVE_TO] instead. Example: [NAVIGATE find a village with a market].",
+    .pattern = std::regex(R"(\[NAVIGATE\s+(.+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string goal = match[1].str();
+      return [goal](flecs::entity) { return std::make_unique<NavigateAction>(goal); };
+    },
+    .help = {
+      .description = "Use this for high-level travel: when you know what you are looking for but not where it is or which direction to take -- finding a village, following a signpost's rumour to a distant place, or looking for somewhere quiet to sleep when nothing you remember obviously matches. A small decision model picks the most likely next place from the places you remember, walks one leg, and decides again on arrival. It is not for short or already-known trips: to go to a place you can name, can see, or already have in mind, use [MOVE_TO], which goes there directly without a decision-model call. It stops when it judges that it has arrived, when no remembered place looks suitable, when it cannot decide even after looking around, or when it reaches its budget, and then tells you where you are and what places are nearby. The decision model only chooses from your own memory, so it can be wrong.",
+      .examples = {"[NAVIGATE find a village with a market]",
+                   "[NAVIGATE the village the signpost mentioned; it said north]",
+                   "[NAVIGATE somewhere quiet to sleep]"},
+      .usage = {"$GOAL: a short phrase describing the distant or uncertain goal you are searching for, e.g. a village with a market or the village a signpost mentioned. Do not name a place you already know; use [MOVE_TO] for that. What you learned from a sign or a person can be part of it."},
+      .notes = {"Use [MOVE_TO] for a short trip to a place you can name or see, or any destination you already have in mind. [NAVIGATE] is for the search when the destination is not yet known; every leg costs a decision, so a short trip is cheaper with [MOVE_TO].",
+                "Only places you have observed are candidates; nothing is revealed that you have not seen.",
+                "The goal is the only hint the decision model gets. It does not read your conversation or the map.",
+                "A place can be unnamed; the model chooses it by the number you saw in [PLACES].",
+                "When it is unsure it turns a full circle once to look for a better lead, then stops rather than guessing.",
+                "It stops without arriving if no place looks suitable, if it runs out of decisions or time, or if it would be going back and forth."}
+    }
+  });
+
+  GlobalCommandRegistry::Register({
     .format = "[TALK_TO $TARGET]",
     .rule = "Start or continue a conversation with a character. Example: [TALK_TO Pietro].",
     .pattern = std::regex(R"(\[TALK_TO\s+(.+?)\s*\])", std::regex_constants::icase),
@@ -2535,7 +2558,7 @@ void Game::ECSInit() {
     .help = {
       .description = "Begin or continue a conversation with another character. Conversation is where person-to-person exchanges happen, so most social plans start here.",
       .examples = {"[TALK_TO Pietro]"},
-      .usage = {"$TARGET: the exact name of a character, as printed by [CHARACTERS] or [SURROUNDINGS]."},
+      .usage = {"$TARGET: the exact name of a character, as printed by [CHARACTERS] or seen with [LOOK]."},
       .notes = {"Trade verbs such as [OFFER] and [ACCEPT] only work while a conversation is active."}
     }
   });
@@ -2593,22 +2616,6 @@ void Game::ECSInit() {
   });
 
   GlobalCommandRegistry::Register({
-    .format = "[SURROUNDINGS]",
-    .rule = "List what is close enough to interact with: nearby objects, items on the ground and characters, each with the exact name to use with [MOVE_TO] and its offset from you. Example: [SURROUNDINGS].",
-    .pattern = std::regex(R"(\[SURROUNDINGS\])", std::regex_constants::icase),
-    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
-      return [](flecs::entity) { return std::make_unique<SurroundingsAction>(); };
-    },
-    .help = {
-      .description = "Report what is close enough to reach: nearby objects, items lying on the ground and characters, each with the exact name to use and its offset from you. Run this when you know what you want to do but not what is within reach.",
-      .examples = {"[SURROUNDINGS]"},
-      .usage = {"Takes no arguments."},
-      .notes = {"Offsets are relative to you, with +X East and +Y South -- the same convention [PLACE] uses.",
-                "Copy names exactly as shown: they are the strings [MOVE_TO] matches on."}
-    }
-  });
-
-  GlobalCommandRegistry::Register({
     .format = "[INVENTORY]",
     .rule = "List the items you are currently carrying. Example: [INVENTORY].",
     .pattern = std::regex(R"(\[INVENTORY\])", std::regex_constants::icase),
@@ -2620,6 +2627,23 @@ void Game::ECSInit() {
       .examples = {"[INVENTORY]"},
       .usage = {"Takes no arguments."},
       .notes = {"Use [EXAMINE_ITEM $ITEM_NAME] on a listed name to see what that item can do."}
+    }
+  });
+
+  GlobalCommandRegistry::Register({
+    .format = "[TASKS]",
+    .rule = "Show your own task list: your fixed life goals, your long-term goals, your short tasks with any facts the engine has observed, and the task kinds the engine can check. Example: [TASKS].",
+    .pattern = std::regex(R"(\[TASKS\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch&) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      return [](flecs::entity) { return std::make_unique<TasksAction>(); };
+    },
+    .help = {
+      .description = "Show your own task list. It prints the life goals you were born with (read-only), the long-term goals you authored, and the short tasks you are working through, with any facts the engine has observed and any rule warnings. It also lists the task kinds the engine can check, which is what the kind column of [SET_TASKS] accepts.",
+      .examples = {"[TASKS]"},
+      .usage = {"Takes no arguments."},
+      .notes = {"The list is yours alone; no other character can read it.",
+                "Use [SET_TASKS ...] to replace the part below your life goals.",
+                "The engine may annotate a task with observed facts or a rule warning; it never changes the tier you set."}
     }
   });
 
@@ -2724,6 +2748,37 @@ void Game::ECSInit() {
       .examples = {"[EQUIPMENT]"},
       .usage = {"Takes no arguments."},
       .notes = {"A worn item is still carried; [INVENTORY] marks it rather than hiding it."}
+    }
+  });
+
+  // The agent's own task list, replaced wholesale (docs/task-system-
+  // design.md section 9). Visible: the per-turn digest that used to teach the
+  // verb is gone, so it is advertised in the spawn prompt like the other verbs.
+  // The kind vocabulary is taught by [TASKS]. Kept with the visible verbs, and
+  // before [GENERIC_INTERACT], whose "[A-Z_]+..." pattern would otherwise
+  // swallow it.
+  GlobalCommandRegistry::Register({
+    .format = "[SET_TASKS $ENTRIES]",
+    .rule = "Replace your task list (your life goals are fixed and are not part of it). "
+    "One entry per line, entries separated by ';': "
+    "id | description | horizon | kind | target | parent | tier, where horizon is "
+    "longterm or short and tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND. "
+    "The task kinds the engine can check are listed by [TASKS].",
+    .pattern = std::regex(R"(\[SET_TASKS\b([\s\S]*?)\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
+      std::string payload = match.size() > 1 ? match[1].str() : "";
+      return [payload](flecs::entity) { return std::make_unique<SetTasksAction>(payload); };
+    },
+    .help = {
+      .description = "Replace your own task list wholesale. Use it to record what you are working towards and how it breaks down, so your intentions survive across turns. The list you send replaces everything below your fixed terminal goals, which are left untouched.",
+      .examples = {"[SET_TASKS 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]",
+                   "[SET_TASKS 2 | build standing through relationships | longterm | | | 1 | ; 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]"},
+      .usage = {"$ENTRIES: one entry per line separated by ';', each written as id | description | horizon | kind | target | parent | tier.",
+                "horizon is longterm or short; tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND.",
+                "Omitted parent, kind and target fields are left blank between pipes."},
+      .notes = {"Parsing is tolerant: a malformed line is skipped with a warning and the rest of the list still applies.",
+                "A list that cannot be read at all leaves your previous list exactly as it was.",
+                "Terminal goals cannot be set this way; a terminal row is ignored with a warning."}
     }
   });
 
@@ -2841,37 +2896,6 @@ void Game::ECSInit() {
       .examples = {"[DECLINE]"},
       .usage = {"Takes no arguments."},
       .notes = {"Only works while an offer is pending; used outside a conversation it replies that you are not talking to anyone."}
-    }
-  });
-
-  // Hidden: the agent's own task list, replaced wholesale (docs/task-system-
-  // design.md section 9). Hidden so it does not clutter the advertised command
-  // list, exactly like the trade verbs, and registered here -- before
-  // [GENERIC_INTERACT] -- because that catch-all matches "[A-Z_]+..." and would
-  // otherwise swallow it. The digest injected at wake time is what tells the
-  // agent the verb exists.
-  GlobalCommandRegistry::Register({
-    .format = "[SET_TASKS $ENTRIES]",
-    .rule = "Replace your task list (your life goals are fixed and are not part of it). "
-    "One entry per line, entries separated by ';': "
-    "id | description | horizon | kind | target | parent | tier, where horizon is "
-    "longterm or short and tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND.",
-    .pattern = std::regex(R"(\[SET_TASKS\b([\s\S]*?)\])", std::regex_constants::icase),
-    .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
-      std::string payload = match.size() > 1 ? match[1].str() : "";
-      return [payload](flecs::entity) { return std::make_unique<SetTasksAction>(payload); };
-    },
-    .hidden = true,
-    .help = {
-      .description = "Replace your own task list wholesale. Use it to record what you are working towards and how it breaks down, so your intentions survive across turns. The list you send replaces everything below your fixed terminal goals, which are left untouched.",
-      .examples = {"[SET_TASKS 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]",
-                   "[SET_TASKS 2 | build standing through relationships | longterm | | | 1 | ; 3 | reap the wheat at the mill field | short | harvest | mill field | 2 | HIGH]"},
-      .usage = {"$ENTRIES: one entry per line separated by ';', each written as id | description | horizon | kind | target | parent | tier.",
-                "horizon is longterm or short; tier is CRITICAL, HIGH, NORMAL, LOW or BACKGROUND.",
-                "Omitted parent, kind and target fields are left blank between pipes."},
-      .notes = {"Parsing is tolerant: a malformed line is skipped with a warning and the rest of the list still applies.",
-                "A list that cannot be read at all leaves your previous list exactly as it was.",
-                "Terminal goals cannot be set this way; a terminal row is ignored with a warning."}
     }
   });
 

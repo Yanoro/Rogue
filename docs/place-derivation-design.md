@@ -347,7 +347,7 @@ Removed by this design: `parentId`, `kind` (now `primaryAspect`), `qualities` (n
 
 **Done (3f).** `Location` is gone: the class, its loader and writer, the editor's rectangle tool, the
 `locations` key in map JSON, `[LOCATIONS]`, the location branch of `[MOVE_TO]`, `%LOCATIONS%`, the
-map lookup behind the `[SURROUNDINGS]` "You are at" branch, and the TaskVerification lookup.
+map lookup behind the former `[SURROUNDINGS]` "You are at" branch, and the TaskVerification lookup.
 
 What replaced each:
 
@@ -358,7 +358,7 @@ What replaced each:
 | `[LOCATIONS]` (the map's names) | `[PLACES]` (what this character remembers, nearest first) |
 | `%LOCATIONS%` in the system prompt | nothing; a character must ask, and can be wrong |
 | `[MOVE_TO] <location name>` | `[MOVE_TO] <place name>`, resolved against memory |
-| `[SURROUNDINGS]` "You are at <location>" | "You are at <place>", from memory |
+| former `[SURROUNDINGS]` "You are at <location>" | "You are at <place>", from memory |
 | Editor inspection of a rectangle | the seed on the cell, and what the player remembers there |
 
 The naming verb is `[NAME_PLACE here <name>]` or `[NAME_PLACE #<id> <name>]`. It **adds** a name

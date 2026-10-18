@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Components.h"
+#include "DebugLog.h"
 #include "Map.h"
+#include "NavigationPlan.hpp"
 #include "PlaceQuery.hpp"
+#include "Settings.h"
 #include "SightReport.hpp"
 #include "PathFinding.h"
 #include "Defaults.h"
@@ -12,17 +15,24 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <flecs.h>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <set>
+#include <sstream>
+#include <stop_token>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 #include "StringUtils.hpp"
 #include "GlobalCommandRegistry.h"
 #include "GuideBuilder.h"
+#include "TaskKindRegistry.h"
 #include "TaskList.hpp"
 
 // Comma-separated list of names, for the "pick one of these" index and failure
@@ -495,6 +505,681 @@ public:
         int waitFrames = 0;
       };
 
+      // A movement leg whose target is a place id, not a name.
+      //
+      // [MOVE_TO] resolves names, and an inferred place may have none; navigation
+      // needs to walk to the stretch System 1 chose even when the character has
+      // never named it. Same path/arrival discipline as MoveToEntityAction, minus
+      // the name lookup and the interaction listing -- a place is ground, not an
+      // object.
+      class MoveToPlaceAction : public AgentAction {
+      public:
+        explicit MoveToPlaceAction(int placeId) : placeId(placeId) {}
+
+        std::string getActionName() const override { return "MOVE_TO_PLACE"; }
+
+        std::string getActionContext() const override { return placeName; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          const MapResource *mapRes = entity.world().get<MapResource>();
+          if (memory == nullptr || here == nullptr || mapRes == nullptr ||
+              mapRes->map == nullptr) {
+            failureReason = "you cannot find your way right now";
+            return ActionStatus::Failed;
+          }
+
+          const KnownPlace *place = PlaceQuery::ById(*memory, placeId);
+          if (place == nullptr) {
+            failureReason = "that place is no longer in your memory";
+            return ActionStatus::Failed;
+          }
+          placeName = PlaceQuery::DisplayName(*place);
+
+          // The target is fixed when the leg begins, not recomputed every frame.
+          // For a linear place (a road) ApproachCell returns the far end from the
+          // character's current cell, and that far end flips to the other end at
+          // the midpoint; recomputing it while walking would turn the character
+          // around there. One leg means one destination.
+          if (!targetSet) {
+            target = PlaceQuery::ApproachCell(*memory, *place, *here);
+            targetSet = true;
+          }
+
+          if (*here == target || Map::AreNeighbours(*here, target)) {
+            entity.remove<MOVE_THROUGH_PATH_ACTION>();
+            return ActionStatus::Done;
+          }
+
+          if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
+            const std::vector<GamePosition> path =
+                AStar(mapRes->map, *here, target);
+            if (path.empty()) {
+              entity.remove<MOVE_THROUGH_PATH_ACTION>();
+              failureReason =
+                  "there is no way to reach " + placeName + " from here";
+              return ActionStatus::Failed;
+            }
+            entity.set<MOVE_THROUGH_PATH_ACTION>({path});
+          }
+          return ActionStatus::Doing;
+        }
+
+        std::string getSuccessMessage() override {
+          return "System: You have arrived at " + placeName + ".\n";
+        }
+
+        std::string getFailureMessage() override {
+          return "System: You could not walk there: " + failureReason + ".\n";
+        }
+
+        // Without the "System:" wrapper, for a caller that folds it into its own
+        // summary. Navigation does, so the summary reads as one message.
+        const std::string &getFailureReason() const { return failureReason; }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          entity.remove<MOVE_THROUGH_PATH_ACTION>();
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        int placeId;
+        std::string placeName;
+        std::string failureReason;
+        GamePosition target{-1, -1};
+        bool targetSet = false;
+      };
+
+      // System 1 navigation: ask which remembered place is the best next step,
+      // walk there, and decide again on arrival (stage 2 of
+      // docs/navigation-subagent-design.md).
+      //
+      // The main model states a goal once. The action asks the decision model,
+      // walks one leg, and re-asks with the updated memory; it stops on `arrived`,
+      // `none`, a budget, no progress, or a survey that failed to settle the
+      // choice, and reports once. Interruption preserves the episode so a wake
+      // can read a sign or greet someone and then resume.
+      //
+      // Two things are deliberately not here:
+      //   * the candidate set is built by NavigationPlan from the character's own
+      //     SpatialMemory, never from the map;
+      //   * the answer is resolved by place id, so a hallucinated name cannot
+      //     move the character.
+      class NavigateAction : public AgentAction {
+      public:
+        explicit NavigateAction(std::string goal)
+            : goal(SanitiseGoal(std::move(goal))) {}
+
+        ~NavigateAction() override { AbandonPending(); }
+
+        std::string getActionName() const override { return "NAVIGATE"; }
+
+        std::string getActionContext() const override {
+          return legs > 0
+                     ? goal + " (leg " + std::to_string(legs + 1) + ")"
+                     : goal;
+        }
+
+        ActionStatus update(float deltaTime, flecs::entity entity) override {
+          const GameSettings::SystemOneNavigationSection &nav =
+              Settings().system1.navigation;
+          if (!nav.enabled) {
+            return Finish(entity, "navigation is turned off in the settings");
+          }
+          if (!started) {
+            started = true;
+            startedAt = Clock::now();
+          }
+          if (SecondsSince(startedAt) > nav.maxSeconds) {
+            return Finish(entity, "you reached the time limit without arriving");
+          }
+
+          switch (phase) {
+            case Phase::Idle:
+              return StartDecision(entity, nav);
+            case Phase::Asking:
+              return PollAnswer(entity, nav);
+            case Phase::Surveying:
+              return UpdateSurvey(entity, nav);
+            case Phase::Moving:
+              return UpdateLeg(deltaTime, entity, nav);
+          }
+          return Finish(entity, "your sense of direction failed");
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        std::string getFailureMessage() override {
+          return response.empty() ? "System: Navigation failed.\n" : response;
+        }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          Trace(entity, std::string("interrupted while ") + PhaseName(phase) +
+                            " (legs=" + std::to_string(legs) + ", decisions=" +
+                            std::to_string(decisions) + "); episode kept");
+          AbandonPending();
+          if (leg) {
+            leg->handleInterruption(entity);
+            leg.reset();
+          }
+          // The episode survives: goal, visited set, budgets, leg counter and a
+          // survey already in flight all stay. An interrupted ask starts over,
+          // because its answer was cancelled; a moving leg is recreated on
+          // resume (the character may have been moved by the wake action).
+          if (phase == Phase::Asking) phase = Phase::Idle;
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity entity) override {
+          Trace(entity, std::string("resumed in ") + PhaseName(phase));
+        }
+
+      private:
+        using Clock = std::chrono::steady_clock;
+
+        enum class Phase { Idle, Asking, Surveying, Moving };
+
+        // The callback may run on the provider's worker thread. It must not
+        // capture `this`; this struct is the whole handoff. `abandoned` is the
+        // action telling a late callback to drop its answer.
+        struct Pending {
+          std::mutex mutex;
+          bool ready = false;
+          bool abandoned = false;
+          std::vector<SystemOne::Answer> answers;
+          SystemOne::CallTrace trace;
+        };
+
+        // About eight action updates: the sampler runs every frame and the brain
+        // steps a running action every other frame, so a survey that has not
+        // landed by then is not going to.
+        static constexpr int kMaxSurveyWaitUpdates = 10;
+
+        static std::string SanitiseGoal(std::string text) {
+          // The goal goes into a prompt and into messages. One line, no control
+          // characters, no brackets that could look like a command, capped so a
+          // model cannot turn the state into an essay.
+          std::string cleaned;
+          cleaned.reserve(text.size());
+          bool lastSpace = false;
+          for (char c : text) {
+            const unsigned char uc = static_cast<unsigned char>(c);
+            if (c == '[' || c == ']' || std::iscntrl(uc) != 0) {
+              c = ' ';
+            }
+            if (c == ' ') {
+              if (lastSpace || cleaned.empty()) continue;
+              lastSpace = true;
+            } else {
+              lastSpace = false;
+            }
+            cleaned += c;
+          }
+          while (!cleaned.empty() && cleaned.back() == ' ') cleaned.pop_back();
+          constexpr std::size_t kMaxGoalLength = 200;
+          if (cleaned.size() > kMaxGoalLength) {
+            cleaned.resize(kMaxGoalLength);
+            // Do not leave half a UTF-8 sequence behind: the state is serialized
+            // as JSON, and an invalid sequence would make the provider's dump
+            // throw rather than return a bad decision.
+            while (!cleaned.empty() &&
+                   (static_cast<unsigned char>(cleaned.back()) & 0xC0) == 0x80) {
+              cleaned.pop_back();
+            }
+            if (!cleaned.empty()) {
+              const unsigned char lead =
+                  static_cast<unsigned char>(cleaned.back());
+              if ((lead & 0x80) != 0 && (lead & 0xE0) == 0xC0) {
+                cleaned.pop_back();
+              } else if ((lead & 0xF0) == 0xE0) {
+                cleaned.pop_back();
+              } else if ((lead & 0xF8) == 0xF0) {
+                cleaned.pop_back();
+              }
+            }
+            while (!cleaned.empty() && cleaned.back() == ' ') cleaned.pop_back();
+          }
+          return cleaned;
+        }
+
+        static std::string AgentName(flecs::entity entity) {
+          if (const DisplayName *name = entity.get<DisplayName>()) {
+            if (!name->name.empty()) return name->name;
+          }
+          const std::string named = entity.name().c_str();
+          return named.empty() ? std::string("character") : named;
+        }
+
+        static int Chebyshev(const GamePosition &a, const GamePosition &b) {
+          return std::max(std::abs(a.x - b.x), std::abs(a.y - b.y));
+        }
+
+        static double SecondsSince(const Clock::time_point &when) {
+          return std::chrono::duration<double>(Clock::now() - when).count();
+        }
+
+        static std::string FormatScore(float value) {
+          if (value < 0.0f) return "n/a";
+          std::ostringstream out;
+          out.setf(std::ios::fixed);
+          out.precision(2);
+          out << value;
+          return out.str();
+        }
+
+        static const char *KindName(NavigationPlan::ChoiceOutcome::Kind kind) {
+          using Kind = NavigationPlan::ChoiceOutcome::Kind;
+          switch (kind) {
+            case Kind::Place: return "place";
+            case Kind::Arrived: return "arrived";
+            case Kind::None: return "none";
+            case Kind::Unsure: return "unsure";
+            case Kind::Invalid: return "invalid";
+          }
+          return "?";
+        }
+
+        static const char *PhaseName(Phase phase) {
+          switch (phase) {
+            case Phase::Idle: return "idle";
+            case Phase::Asking: return "asking";
+            case Phase::Surveying: return "surveying";
+            case Phase::Moving: return "moving";
+          }
+          return "?";
+        }
+
+        // One line per navigation event, in the debug log. Stage 3 tunes from
+        // these plus the System 1 records; the recorder has the full payload, this
+        // has the sequence in order, which is what a run needs when the question
+        // is "did it look, choose, walk, and why did it stop".
+        void Trace(flecs::entity entity, const std::string &text) {
+          const DebugLogResource *resource =
+              entity.world().get<DebugLogResource>();
+          if (resource == nullptr || resource->log == nullptr) return;
+          resource->log->LogInfo("[navigation] " + AgentName(entity) + " " +
+                                 text);
+        }
+
+        void AbandonPending() {
+          stopSource.request_stop();
+          if (pending) {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            pending->abandoned = true;
+          }
+          pending.reset();
+        }
+
+        // Build the summary and stop. Any live leg is cancelled first: an episode
+        // that ends on the clock must not leave the character walking.
+        ActionStatus Finish(flecs::entity entity, const std::string &reason) {
+          Trace(entity, "finished: " + reason + " (legs=" + std::to_string(legs) +
+                            ", decisions=" + std::to_string(decisions) +
+                            ", surveys=" + std::to_string(surveysUsed) + ")");
+          if (leg) {
+            leg->handleInterruption(entity);
+            leg.reset();
+          }
+          if (phase == Phase::Surveying) {
+            // Do not leave a sweep requested by an episode that just ended.
+            if (Vision *vision = entity.get_mut<Vision>()) {
+              vision->fullCircleRequested = false;
+            }
+          }
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory != nullptr && here != nullptr) {
+            response = NavigationPlan::BuildSummary(reason, route, *memory,
+                                                    *here, legs);
+          } else {
+            response = "System: You stopped: " + reason + ".\n";
+          }
+          return ActionStatus::Done;
+        }
+
+        bool CanSurvey(flecs::entity entity,
+                       const GameSettings::SystemOneNavigationSection &nav) {
+          return !surveyedThisDecision && surveysUsed < nav.maxSurveys &&
+                 entity.get<Vision>() != nullptr;
+        }
+
+        ActionStatus StartSurvey(flecs::entity entity) {
+          Vision *vision = entity.get_mut<Vision>();
+          if (vision == nullptr) {
+            return Finish(entity, "you cannot look around");
+          }
+          vision->fullCircleRequested = true;
+          surveyRequestedTick = vision->lastFullCircleTick;
+          surveyWaitUpdates = 0;
+          surveyedThisDecision = true;
+          ++surveysUsed;
+          Trace(entity, "step " + std::to_string(legs) +
+                            ": unsure, full-circle survey #" +
+                            std::to_string(surveysUsed));
+          phase = Phase::Surveying;
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus UpdateSurvey(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &) {
+          Vision *vision = entity.get_mut<Vision>();
+          if (vision == nullptr) {
+            return Finish(entity, "you cannot look around");
+          }
+          if (vision->lastFullCircleTick != surveyRequestedTick) {
+            // The sweep happened. The writer and deriver ran in the same frame,
+            // and the action is stepped a frame later, so the next candidate
+            // build sees the new places.
+            afterSurvey = true;
+            Trace(entity, "full circle complete; re-asking");
+            phase = Phase::Idle;
+            return ActionStatus::Doing;
+          }
+          if (++surveyWaitUpdates > kMaxSurveyWaitUpdates) {
+            vision->fullCircleRequested = false;
+            Trace(entity, "full circle did not complete");
+            return Finish(entity, "you could not look around");
+          }
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus StartDecision(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            response = "System: You have no memory of where you are.\n";
+            return ActionStatus::Failed;
+          }
+
+          if (decisions >= nav.maxDecisions) {
+            return Finish(entity,
+                          "you reached the decision limit without arriving");
+          }
+
+          // The start of the route is recorded before the decision: the summary
+          // must say where the leg began, not only where it ended.
+          if (route.empty()) {
+            route.push_back(NavigationPlan::StartPlaceName(*memory, *here));
+          }
+          // The re-ask after a survey is part of the same decision: it must not
+          // open the door to a second survey for that decision.
+          if (!afterSurvey) {
+            surveyedThisDecision = false;
+          }
+          afterSurvey = false;
+
+          candidates = NavigationPlan::BuildCandidates(
+              *memory, *here, nav.maxCandidates, visitedPlaceIds);
+          candidates.erase(
+              std::remove_if(
+                  candidates.begin(), candidates.end(),
+                  [this](const NavigationPlan::Candidate &candidate) {
+                    return unreachablePlaceIds.count(candidate.placeId) != 0;
+                  }),
+              candidates.end());
+
+          if (candidates.empty()) {
+            if (CanSurvey(entity, nav)) return StartSurvey(entity);
+            return Finish(entity,
+                          "you do not remember any place that could lead there");
+          }
+
+          const SystemOneClassifierResource *resource =
+              entity.world().get<SystemOneClassifierResource>();
+          if (resource == nullptr || resource->classifier == nullptr ||
+              !resource->classifier->Available()) {
+            return Finish(entity, "System 1 is not available");
+          }
+          classifier = resource->classifier;
+
+          const Facing *facing = entity.get<Facing>();
+          const std::string state = NavigationPlan::BuildState(
+              *memory, *here, facing != nullptr ? *facing : Facing{},
+              AgentName(entity), goal, legs, visitedNames, candidates);
+          const SystemOne::Option question =
+              NavigationPlan::BuildQuestion(*memory, *here, candidates);
+
+          pending = std::make_shared<Pending>();
+          stopSource = std::stop_source();
+          ++decisions;
+          Trace(entity, "step " + std::to_string(legs) + ": asking (" +
+                            std::to_string(candidates.size()) +
+                            " candidates, decision " +
+                            std::to_string(decisions) + ", floor " +
+                            FormatScore(nav.minProbability) + "/" +
+                            FormatScore(nav.minMargin) + ") for: " + goal);
+
+          SystemOne::Attribution attribution;
+          attribution.scenario = "navigation";
+          attribution.summary = AgentName(entity) + ", step " +
+                                std::to_string(legs) + " toward: " + goal;
+          attribution.advisory = false;
+
+          std::shared_ptr<Pending> shared = pending;
+          classifier->Ask(
+              state, {question},
+              [shared](const std::vector<SystemOne::Answer> &answers,
+                       const SystemOne::CallTrace &trace) {
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                if (shared->abandoned) return;
+                shared->answers = answers;
+                shared->trace = trace;
+                shared->ready = true;
+              },
+              stopSource.get_token(), attribution);
+
+          phase = Phase::Asking;
+          return ActionStatus::Doing;
+        }
+
+        // An uncertain answer: one survey for this decision if the budget allows,
+        // otherwise hand back with a reason that says whether a survey was tried.
+        ActionStatus StopUnsure(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav,
+            const std::string &withoutSurvey) {
+          if (CanSurvey(entity, nav)) {
+            return StartSurvey(entity);
+          }
+          return Finish(entity,
+                        surveyedThisDecision
+                            ? "you turned a full circle and still could not choose"
+                            : withoutSurvey);
+        }
+
+        ActionStatus PollAnswer(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          if (!pending) {
+            phase = Phase::Idle;
+            return ActionStatus::Doing;
+          }
+
+          std::vector<SystemOne::Answer> answers;
+          SystemOne::CallTrace trace;
+          {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            if (!pending->ready) return ActionStatus::Doing;
+            answers = pending->answers;
+            trace = pending->trace;
+            pending->ready = false;
+          }
+
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            response = "System: You have no memory of where you are.\n";
+            return ActionStatus::Failed;
+          }
+
+          if (!trace.Ok()) {
+            return Finish(entity, "System 1 did not answer");
+          }
+
+          const SystemOne::Answer *answer = nullptr;
+          for (const SystemOne::Answer &candidate : answers) {
+            if (candidate.id == "next") {
+              answer = &candidate;
+              break;
+            }
+          }
+          if (answer == nullptr) {
+            return Finish(entity, "the decision could not be read");
+          }
+
+          const NavigationPlan::ChoiceOutcome outcome =
+              NavigationPlan::InterpretChoice(*answer, candidates,
+                                              nav.minProbability,
+                                              nav.minMargin);
+
+          Trace(entity,
+                "step " + std::to_string(legs) + ": choice '" + answer->choice +
+                    "' " + KindName(outcome.kind) + " p=" +
+                    FormatScore(outcome.probability) + " margin=" +
+                    FormatScore(outcome.margin) +
+                    (surveyedThisDecision ? " (after survey)" : ""));
+
+          switch (outcome.kind) {
+            case NavigationPlan::ChoiceOutcome::Kind::Arrived:
+              return Finish(entity, "you judged that you had arrived");
+            case NavigationPlan::ChoiceOutcome::Kind::None:
+              return StopUnsure(entity, nav,
+                                "none of the remembered places looked suitable");
+            case NavigationPlan::ChoiceOutcome::Kind::Unsure:
+              return StopUnsure(entity, nav,
+                                "you could not tell which way looked better");
+            case NavigationPlan::ChoiceOutcome::Kind::Invalid:
+              return Finish(entity, "the decision could not be read");
+            case NavigationPlan::ChoiceOutcome::Kind::Place:
+              break;
+          }
+
+          const auto chosen = std::find_if(
+              candidates.begin(), candidates.end(),
+              [&outcome](const NavigationPlan::Candidate &candidate) {
+                return candidate.placeId == outcome.placeId;
+              });
+          if (chosen == candidates.end()) {
+            return Finish(entity, "the decision named a place you do not know");
+          }
+
+          // The two no-progress rules from the design: the same place twice in a
+          // row, or a one-tile approach while the character has not moved since
+          // the previous choice.
+          if (outcome.placeId == lastChosenPlaceId) {
+            return Finish(entity, "you would have been going back and forth");
+          }
+          if (lastChosenPlaceId != 0 && chosen->distance <= 1 &&
+              Chebyshev(*here, positionAtLastChoice) <= 1) {
+            return Finish(entity, "you would have been going back and forth");
+          }
+
+          lastChosenPlaceId = outcome.placeId;
+          positionAtLastChoice = *here;
+
+          const KnownPlace *place = PlaceQuery::ById(*memory, outcome.placeId);
+          legName = place != nullptr ? PlaceQuery::DisplayName(*place)
+                                     : chosen->description;
+          legPlaceId = outcome.placeId;
+          leg = std::make_unique<MoveToPlaceAction>(outcome.placeId);
+          legStartedAt = Clock::now();
+          phase = Phase::Moving;
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus HandleLegFailure(flecs::entity entity,
+                                      const std::string &reason) {
+          if (unreachablePlaceIds.count(legPlaceId) != 0) {
+            return Finish(entity, reason);
+          }
+          unreachablePlaceIds.insert(legPlaceId);
+          // One retry: the place is filtered from the next candidate list, so
+          // this cannot loop on the same target.
+          phase = Phase::Idle;
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus UpdateLeg(
+            float deltaTime, flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            response = "System: You have no memory of where you are.\n";
+            return ActionStatus::Failed;
+          }
+
+          if (!leg) {
+            // Resumed after a wake, or the first update after the decision.
+            leg = std::make_unique<MoveToPlaceAction>(legPlaceId);
+            legStartedAt = Clock::now();
+          }
+
+          if (SecondsSince(legStartedAt) > nav.legTimeoutSeconds) {
+            leg->handleInterruption(entity);
+            leg.reset();
+            return HandleLegFailure(
+                entity, "you could not reach " + legName + " in time");
+          }
+
+          const ActionStatus status = leg->update(deltaTime, entity);
+          if (status == ActionStatus::Doing) return ActionStatus::Doing;
+
+          if (status == ActionStatus::Done) {
+            ++legs;
+            visitedPlaceIds.insert(legPlaceId);
+            visitedNames.push_back(legName);
+            route.push_back(legName);
+            Trace(entity, "leg " + std::to_string(legs) + ": arrived at " +
+                              legName);
+            leg.reset();
+            // The next decision. The episode ends only through the stop
+            // conditions, never because one leg completed.
+            phase = Phase::Idle;
+            return ActionStatus::Doing;
+          }
+
+          const std::string reason = leg->getFailureReason();
+          Trace(entity, "leg " + std::to_string(legs + 1) + ": failed (" +
+                            reason + ") for " + legName);
+          leg.reset();
+          return HandleLegFailure(entity, reason);
+        }
+
+        std::string goal;
+        std::string response;
+        Phase phase = Phase::Idle;
+        std::shared_ptr<SystemOne::SystemOneClassifier> classifier;
+        std::shared_ptr<Pending> pending;
+        std::stop_source stopSource;
+        std::vector<NavigationPlan::Candidate> candidates;
+        std::vector<std::string> route;
+        std::vector<std::string> visitedNames;
+        std::unique_ptr<MoveToPlaceAction> leg;
+        std::string legName;
+        int legPlaceId = 0;
+        int legs = 0;
+        int decisions = 0;
+        int surveysUsed = 0;
+        int surveyWaitUpdates = 0;
+        int surveyRequestedTick = -1;
+        int lastChosenPlaceId = 0;
+        GamePosition positionAtLastChoice{0, 0};
+        bool surveyedThisDecision = false;
+        bool afterSurvey = false;
+        bool started = false;
+        Clock::time_point startedAt;
+        Clock::time_point legStartedAt;
+        std::unordered_set<int> visitedPlaceIds;
+        std::unordered_set<int> unreachablePlaceIds;
+      };
+
 
       enum class ConversationState {
         Talking,
@@ -626,36 +1311,13 @@ private:
             return ActionStatus::Done;
           }
 
-          std::vector<const KnownPlace *> sorted;
-          sorted.reserve(memory->places.size());
-          for (const KnownPlace &place : memory->places) {
-            sorted.push_back(&place);
-          }
-          std::sort(sorted.begin(), sorted.end(),
-                    [&here](const KnownPlace *a, const KnownPlace *b) {
-                      const auto distance = [&here](const KnownPlace *place) {
-                        const GamePosition centre{
-                            place->anchor.x + place->width / 2,
-                            place->anchor.y + place->height / 2};
-                        return std::max(std::abs(centre.x - here.x),
-                                        std::abs(centre.y - here.y));
-                      };
-                      return distance(a) < distance(b);
-                    });
+          const std::vector<PlaceQuery::PlaceLine> sorted =
+              PlaceQuery::SortedPlaces(*memory, here);
 
           response = "System: Places you remember (" +
                      std::to_string(sorted.size()) + "):\n";
-          for (const KnownPlace *place : sorted) {
-            const GamePosition centre{place->anchor.x + place->width / 2,
-                                      place->anchor.y + place->height / 2};
-            response += "  #" + std::to_string(place->id) + " " +
-                        PlaceQuery::DisplayName(*place);
-            const std::string aspects = PlaceQuery::AspectsPhrase(*place, 3);
-            if (!aspects.empty()) {
-              response += " -- " + aspects;
-            }
-            response += " -- " +
-                        PlaceQuery::DistancePhrase(here, centre) + "\n";
+          for (const PlaceQuery::PlaceLine &line : sorted) {
+            response += "  " + PlaceQuery::FormatPlaceLine(line, here) + "\n";
           }
           response +=
               "System: [MOVE_TO] accepts these names. An unnamed place can be "
@@ -921,10 +1583,10 @@ private:
       // resolves that one verb case-insensitively and prints the long form
       // registered next to it.
       //
-      // Hidden commands stay queryable but are never listed: the trade verbs and
-      // [SET_TASKS] are taught in context, so they are kept out of the discovery
-      // list while still being explainable to an agent that already knows the
-      // word.
+      // Hidden commands stay queryable but are never listed: the trade verbs are
+      // taught in context, so they are kept out of the discovery list while still
+      // being explainable to an agent that already knows the word. [SET_TASKS] is
+      // visible now that the wake digest no longer teaches it.
       //
       // Registered before the [GENERIC_INTERACT] catch-all, which matches
       // "[A-Z_]+" and would otherwise swallow the verb.
@@ -1001,10 +1663,10 @@ private:
 
       // Glyph grid of the tiles around the agent. Kept for the placement hint,
       // where [PLACE] consumes relative coordinates and a picture of the ground
-      // is exactly what the model needs. Agents asking what is around them want
-      // GetSurroundingsList instead: a grid renders one character per tile, so it
-      // cannot show an item lying on the agent's own tile, drops anything without
-      // a DrawAscii, and gives no coordinates to anchor offsets on.
+      // is exactly what the model needs. It is not a general awareness command:
+      // a grid renders one character per tile, so it cannot show an item lying on
+      // the agent's own tile, drops anything without a DrawAscii, and gives no
+      // coordinates to anchor offsets on.
       inline std::string GetSurroundingsRadar(flecs::entity entity, int radius) {
         const GamePosition currentPos = *entity.get<GamePosition>();
         Map *map = entity.world().get<MapResource>()->map;
@@ -1051,152 +1713,12 @@ private:
           grid += "\n";
         }
 
-        std::string result = "System: Surroundings (" + std::to_string(radius*2+1) + "x" + std::to_string(radius*2+1) + " grid):\n```\n" + grid + "```\nLegend:\n";
+        std::string result = "System: Placement radar (" + std::to_string(radius*2+1) + "x" + std::to_string(radius*2+1) + " grid):\n```\n" + grid + "```\nLegend:\n";
         for (const auto& pair : legend) {
            result += std::string(1, pair.first) + " = " + pair.second + "\n";
         }
         return result;
       }
-
-      // What is close enough to walk to and interact with, as exact names plus
-      // relative offsets. Names are the DisplayName verbatim, because that is the
-      // string [MOVE_TO] matches on; offsets are relative to the agent, +X East
-      // and +Y South, matching the convention [PLACE] uses.
-      inline std::string GetSurroundingsList(flecs::entity entity, int radius = DEFAULT_SURROUNDINGS_RADIUS) {
-        const GamePosition currentPos = *entity.get<GamePosition>();
-        Map *map = nullptr;
-        if (auto *mapRes = entity.world().get<MapResource>()) {
-          map = mapRes->map;
-        }
-
-        struct Nearby {
-          std::string name;
-          int dx;
-          int dy;
-          int distance;
-        };
-        std::vector<Nearby> objects;
-        std::vector<Nearby> items;
-        std::vector<Nearby> characters;
-
-        // One pass over every named thing, keeping whatever falls inside the
-        // radius. Chebyshev distance, so the four diagonal neighbours count as
-        // one tile away rather than two.
-        entity.world().filter<GamePosition, DisplayName>().each(
-            [&](flecs::entity other, const GamePosition &pos, const DisplayName &displayName) {
-              if (other == entity || displayName.name.empty()) {
-                return;
-              }
-              const int dx = pos.x - currentPos.x;
-              const int dy = pos.y - currentPos.y;
-              const int distanceX = dx < 0 ? -dx : dx;
-              const int distanceY = dy < 0 ? -dy : dy;
-              const int distance = distanceX > distanceY ? distanceX : distanceY;
-              if (distance > radius) {
-                return;
-              }
-              // Walls, fences and cliff faces are part of the world's fabric,
-              // not things to walk up to. The radar and vision still show them;
-              // this list is the actionable view, so one line per wall cell
-              // would drown everything else.
-              if (other.has<Structural>()) {
-                return;
-              }
-              const Nearby found{displayName.name, dx, dy, distance};
-              if (other.has<CharacterTag>()) {
-                characters.push_back(found);
-              } else if (other.has<Portable>()) {
-                items.push_back(found);
-              } else {
-                objects.push_back(found);
-              }
-            });
-
-        const auto closestFirst = [](const Nearby &a, const Nearby &b) {
-          if (a.distance != b.distance) return a.distance < b.distance;
-          if (a.dy != b.dy) return a.dy < b.dy;
-          if (a.dx != b.dx) return a.dx < b.dx;
-          return a.name < b.name;
-        };
-        std::sort(objects.begin(), objects.end(), closestFirst);
-        std::sort(items.begin(), items.end(), closestFirst);
-        std::sort(characters.begin(), characters.end(), closestFirst);
-
-        const auto describe = [](const Nearby &found) {
-          std::string line = "- " + found.name + " at (" + std::to_string(found.dx) + "," +
-                             std::to_string(found.dy) + ")";
-          if (found.distance == 0) {
-            line += ", on your tile";
-          } else if (found.distance == 1) {
-            line += ", 1 tile away";
-          } else {
-            line += ", " + std::to_string(found.distance) + " tiles away";
-          }
-          return line;
-        };
-
-        std::string result = "System: You are at ";
-        std::string placeName;
-        if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
-          if (const KnownPlace *place = PlaceQuery::At(*memory, currentPos)) {
-            placeName = PlaceQuery::DisplayName(*place);
-          }
-        }
-        result += placeName.empty() ? "an unnamed spot" : placeName;
-        result += " (" + std::to_string(currentPos.x) + "," + std::to_string(currentPos.y) + ").\n";
-
-        if (objects.empty() && items.empty() && characters.empty()) {
-          result += "System: Nothing within " + std::to_string(radius) +
-                    " tiles to move to or interact with. Use [PLACES] for the "
-                    "places you remember.\n";
-          return result;
-        }
-
-        result += "Nearby within " + std::to_string(radius) +
-                  " tiles (offsets from you: +X East, +Y South):\n";
-        const auto appendSection = [&](const std::string &title, const std::vector<Nearby> &list) {
-          if (list.empty()) {
-            return;
-          }
-          result += title + ":\n";
-          for (const auto &found : list) {
-            result += describe(found) + "\n";
-          }
-        };
-        appendSection("Objects", objects);
-        appendSection("Items on the ground", items);
-        appendSection("Characters", characters);
-        result += "System: Use a name exactly as written with [MOVE_TO $NAME] to walk to it. "
-                  "Directions such as \"east\" and bare coordinates are not valid targets.\n";
-        return result;
-      }
-
-      class SurroundingsAction : public AgentAction {
-      public:
-        std::string getActionName() const override { return "SURROUNDINGS"; }
-
-        ActionStatus update(float, flecs::entity entity) override {
-          if (isFirstUpdate) {
-            isFirstUpdate = false;
-            successMsg = GetSurroundingsList(entity);
-          }
-          return ActionStatus::Done;
-        }
-
-        std::string getSuccessMessage() override {
-          return successMsg;
-        }
-        
-        ActionStatus handleInterruption(flecs::entity) override {
-          return ActionStatus::Interrupted;
-        }
-        
-        void resume(flecs::entity) override {}
-
-      private:
-        bool isFirstUpdate = true;
-        std::string successMsg;
-      };
 
       class InventoryAction : public AgentAction {
       public:
@@ -1244,6 +1766,58 @@ private:
           return ActionStatus::Interrupted;
         }
         
+        void resume(flecs::entity) override {}
+
+      private:
+        std::string response;
+      };
+
+      // The agent's own task list, on demand (docs/task-system-design.md section
+      // 9). The wake prompt carries the digest only on the first wake, so this is
+      // how the agent asks for its current list afterwards. It is also where the
+      // task-kind vocabulary is taught now that [SET_TASKS] is advertised without
+      // explaining its kind column.
+      class TasksAction : public AgentAction {
+      public:
+        std::string getActionName() const override { return "TASKS"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          // The kinds the engine can actually check. Built here rather than
+          // baked into the digest text because the registry is live world state,
+          // and because this is the one place the vocabulary is taught now.
+          std::string kindHint;
+          if (const TaskKindRegistryResource *kinds =
+                  entity.world().get<TaskKindRegistryResource>()) {
+            if (kinds->registry != nullptr && kinds->registry->Count() > 0) {
+              kindHint =
+                  "Task kinds the engine can check (put one in the kind column):\n";
+              for (const TaskKind *kind : kinds->registry->GetAll()) {
+                kindHint += "  " + kind->id + " -- " + kind->description + "\n";
+              }
+            }
+          }
+
+          const TaskList *list = entity.get<TaskList>();
+          if (list == nullptr || list->goals.empty()) {
+            // An empty list still teaches the vocabulary: an agent that has not
+            // authored a task yet is exactly who needs to know what a kind is.
+            response = "System: Your task list is empty.\n";
+            if (!kindHint.empty()) {
+              response += "\n" + kindHint;
+            }
+            return ActionStatus::Done;
+          }
+
+          response = RenderTaskDigest(*list, "", kindHint);
+          return ActionStatus::Done;
+        }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
         void resume(flecs::entity) override {}
 
       private:

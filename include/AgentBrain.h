@@ -88,10 +88,12 @@ public:
   void logNote(const std::string &text);
 
 private:
-  // The prompt the agent is woken with. When the agent has a TaskList this is
-  // the task digest followed by the question; when it has none it is exactly the
-  // string this agent received before the task system existed, which is the
-  // "no list behaves as before" invariant (docs/task-system-design.md section 2).
+  // The prompt the agent is woken with. The task digest is prepended only on the
+  // first wake, so a freshly spawned agent starts with its life goals; every
+  // later wake is the bare question, and the agent asks for the list with [TASKS]
+  // when it wants it. An agent with no TaskList gets exactly the string this
+  // agent received before the task system existed (docs/task-system-design.md
+  // section 2).
   std::string buildWakePrompt(bool firstWake);
 
   // Asks the classifier how much the current situation matters to this character's
@@ -137,11 +139,6 @@ private:
   // which is reported as an initialisation rather than as a flood of additions.
   TaskList taskSnapshot;
   bool taskSnapshotValid = false;
-  // Whether the next digest should invite a revision. Set when the plan may have
-  // changed -- an action completed or failed -- and cleared once offered, so the
-  // agent is not nudged to rewrite its list on every single turn (section 8).
-  // Starts true: a freshly spawned agent has life goals and no plan yet.
-  bool taskRevisionSuggested = true;
   // Set while waiting out the backoff before retrying an empty response, so the
   // same failure is not re-logged and re-scheduled on every frame.
   bool awaitingRetry = false;

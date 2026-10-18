@@ -223,6 +223,26 @@ struct GameSettings {
     float minConfidence = 0.0f;
   };
 
+  // How the navigation sub-agent spends System 1 calls and time
+  // (docs/navigation-subagent-design.md §12). These are properties of the game's
+  // use of the model, not of the endpoint, so they live here rather than on a
+  // profile: swapping Jev for Kev must not silently change what a navigation is
+  // allowed to do.
+  struct SystemOneNavigationSection {
+    // The only switch. [NAVIGATE] reports that it is off rather than silently
+    // falling back to something else.
+    bool enabled = true;
+    // One line per candidate; see DEFAULT_NAVIGATION_MAX_CANDIDATES.
+    int maxCandidates = DEFAULT_NAVIGATION_MAX_CANDIDATES;
+    int maxDecisions = DEFAULT_NAVIGATION_MAX_DECISIONS;
+    int maxSurveys = DEFAULT_NAVIGATION_MAX_SURVEYS;
+    float maxSeconds = DEFAULT_NAVIGATION_MAX_SECONDS;
+    float legTimeoutSeconds = DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS;
+    // Calibration for *this* task, not a copy of the profile's confidence knob.
+    float minProbability = DEFAULT_NAVIGATION_MIN_PROBABILITY;
+    float minMargin = DEFAULT_NAVIGATION_MIN_MARGIN;
+  };
+
   struct SystemOneSection {
     // False shares the NPC backend, which is the least surprising default for an
     // unconfigured run. True reads `model` below instead.
@@ -284,6 +304,8 @@ struct GameSettings {
     // working untouched, and `profiles` adds choices beside it. A profile may reuse
     // the id "default" to override it.
     std::vector<SystemOneProfileSection> profiles;
+    // Navigation knobs; independent of which profile is active.
+    SystemOneNavigationSection navigation;
     // Which profile starts active, unless the persisted choice from a previous run
     // or `--system1-profile` says otherwise. Empty means "default".
     std::string activeProfile;

@@ -24,7 +24,7 @@ Nothing that outlives a single probe.
 
 | surface | what the agent gets | where |
 |---|---|---|
-| `[SURROUNDINGS]` | entities within radius 10 with offsets, plus "You are at <location> (x,y)" | `include/AgentActions.h:678-745`, action at `:778` |
+| `[SURROUNDINGS]` | *was* entities within radius 10 with offsets, plus "You are at <location> (x,y)" | **removed**; use `[LOOK]`, `[PLACES]` and `[CHARACTERS]` |
 | `[LOCATIONS]` | *was* every mapped location name, in every agent's prompt from spawn | deleted; `[PLACES]` reads memory instead (`docs/place-derivation-design.md` §10) |
 | `%LOCATIONS%` | *was* the same global list, baked into the system turn at spawn | deleted; no prompt carries place names any more |
 | tile radar | a glyph grid at a small radius, legend keyed by `tile->ascii->ch` | `include/AgentActions.h:621`, `:642` |
@@ -53,9 +53,11 @@ Three defects follow, and they are what this feature exists to fix:
 2. **A place can be authored or inferred.** Authored places inherit the map's geometry. Inferred
    places are clusters over the agent's own cells — which is how a place the map never knew about
    (a fishing spot, a second field) can exist at all.
-3. **Acquisition is a vision cone plus a small radar, sampled passively; the active probe is
-   unchanged.** `[SURROUNDINGS]` keeps its radius and its reliability. The cone decides what enters
-   memory, not what is legal or what can be drawn.
+3. **Acquisition is a vision cone plus a small radar, sampled passively; the active probe has since
+   been removed.** `[LOOK]` (including `[LOOK around]`) asks the vision system for a sweep, so it
+   pays the same range/occlusion rules and writes to memory. `[PLACES]` reads memory and
+   `[CHARACTERS]` lists characters. The cone decides what enters memory, not what is legal or what
+   can be drawn.
 4. **Consolidation lands in two steps: an engine-only throttle first, a model-backed pass second.**
    The first version must be judgeable without knowing whether the model or the indexing was wrong.
 5. **This phase changes no agent prompt and gates no player action.** The player's memory is
@@ -351,7 +353,7 @@ struct Vision {
 ```
 
 Starting values, all in `include/Defaults.h` (the file already owns
-`DEFAULT_SURROUNDINGS_RADIUS` at `:41` and `DEFAULT_PLACEMENT_MAX_DISTANCE` at `:45`):
+`DEFAULT_PLACEMENT_MAX_DISTANCE` at `:45`):
 
 | constant | initial | note |
 |---|---|---|
@@ -425,25 +427,22 @@ leave sand laid over an already-remembered floor recorded as floor forever, whic
 paragraph exists to prevent. Marking the contradiction (`[!]` in a digest) and the repair loop proper
 belong with perception (§9).
 
-### 4.5 Passive sampling and the active probe stay separate
+### 4.5 Passive sampling, plus an on-demand vision sweep
 
-| | passive (`Vision` system) | active (`[SURROUNDINGS]`) |
+| | passive (`Vision` system) | active query (`[LOOK]`) |
 |---|---|---|
 | when | on tile/facing change | when the agent asks |
-| shape | 90° cone at 22 + radar at 2 | full radius 10, entities with offsets |
-| purpose | fill memory | discover what is interactable *now* |
-| gated by vision | — | **no** |
+| shape | 90° cone at 22 + radar at 2 | one sweep of the same vision cone (360° for `[LOOK around]`) |
+| purpose | fill memory | see what is in sight now |
+| gated by vision | — | **yes** |
 
-The active probe is deliberately **not** narrowed. Discovery is already the weakest link in the
-placement path (`docs/placement-design.md:33-80`), and shrinking the probe to a 2-tile radar would
-make turn-one placement worse in exchange for realism nobody asked for at that moment. Keeping them
-separate also gives "look around" a real cost (a turn) instead of making it free and mandatory.
-
-`[LOOK]` — including its one-shot `[LOOK around]` full circle — stays on the passive side: it is a
-turn that asks the *vision system* for a sweep (360 degrees instead of the cone, for one sample),
-so it still pays the range/occlusion rules and writes to memory. `[SURROUNDINGS]` remains the
-vision-independent radius-10 scan. The two verbs answer different questions: what can I see now,
-and what can I reach.
+The old active probe, `[SURROUNDINGS]`, was a vision-independent radius-10 entity scan. It has since
+been removed: it duplicated what `[LOOK]` reports, encouraged agents to ask it every turn, and did
+not show the ground the placement path needs. `[LOOK]` — including its one-shot `[LOOK around]` full
+circle — stays on the passive side: it is a turn that asks the *vision system* for a sweep, so it
+pays the range/occlusion rules and writes to memory. `[PLACES]` reads what memory already holds;
+`[CHARACTERS]` lists characters. The placement hint still uses the small glyph radar
+(`GetSurroundingsRadar`), because `[PLACE]` needs coordinates rather than a prose list.
 
 ### 4.6 What occlusion must never do
 
@@ -807,10 +806,8 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
   tile layer `:370`, steer system `:898`, player setup `:3148`,
   player `Velocity` `:3155`, player `CharacterTag` `:3171`
 - `include/AgentActions.h` — `[MOVE_TO]` resolution, `[PLACES]` / `[NAME_PLACE]`,
-  `GetSurroundingsRadar :621`, glyph legend key `:642`, `?` as off-map `:650`,
-  `GetSurroundingsList :678`, "You are at" `:745`, `SurroundingsAction :778`
-- `include/Defaults.h` — `DEFAULT_SURROUNDINGS_RADIUS:41`, `DEFAULT_PLACEMENT_MAX_DISTANCE:45`,
-  vision block `:72`
+  `GetSurroundingsRadar`, glyph legend key, `?` as off-map
+- `include/Defaults.h` — `DEFAULT_PLACEMENT_MAX_DISTANCE:45`, vision block `:72`
 - `include/TaskList.hpp` — `RenderTaskDigest:516`, `FormatTaskAge:711`
 - `include/PromptRewriter.hpp` — out-of-band call shape (worker thread, sentinel, main-thread collect)
 - `include/SystemOneRecorder.h:194` — `SystemOneClassifier`

@@ -119,7 +119,7 @@ question, which is why it needs no engine-side notion of a goal.
 | 7 | Hints live in **two places**: a recipe's `"hint"`, or an object template's `"hint"` | a raw material has no recipe, so it needs somewhere else to explain itself |
 | 8 | Items are rendered as **content ids** (`iron_ingot`) | matches `FormatRecipe` and the exact token `[CRAFT ...]` needs |
 | 9 | A raw material names its **source object type, not its location** | "from Iron Vein", never *where* the vein is |
-| 10 | **No locations, no coordinates, no directions** anywhere | the model reasons about placement via `[PLACES]` / `[SURROUNDINGS]` |
+| 10 | **No locations, no coordinates, no directions** anywhere | the model reasons about placement via `[PLACES]` / `[LOOK]` |
 | 11 | **Read-only and stateless** | no XP, no unlock, no component, nothing saved |
 | 12 | Output is **facts, not a route** | no "you should now do X"; the decision stays with the agent |
 | 13 | **Agents only** for now | the player path is a separate code path by standing decision, and is not adapted here |

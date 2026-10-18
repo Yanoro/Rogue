@@ -178,7 +178,8 @@ struct CallTrace {
 // free-form because the set of call sites grows, but both are stable once a site
 // ships: the window groups by `scenario` and the log is grepped by it.
 struct Attribution {
-  // Which job this was: "attention_gate", "site_preference", "task_validator".
+  // Which job this was: "attention_gate", "site_preference", "task_validator",
+  // "navigation".
   std::string scenario;
   // One line for the list: "Pietro, event: Margarethe nearby".
   std::string summary;
@@ -186,6 +187,13 @@ struct Attribution {
   // out of the log file that the game's real traffic is judged from; see
   // SystemOneRecord::harness.
   bool harness = false;
+  // False when the verdict changed behaviour rather than merely advising. The
+  // default is the honest one for a call site that does not say: the gate and the
+  // validator are advisory, and a new call site that forgets to say otherwise
+  // shows up as advisory until its own record says not. Navigation is the first
+  // non-advisory site -- its choice moves the character -- so it sets this false
+  // rather than relying on the default.
+  bool advisory = true;
 };
 
 // The provider interface. Mirrors `AI`: an async callback rather than a blocking
