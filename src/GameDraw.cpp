@@ -232,13 +232,19 @@ void Game::Draw() {
     // The character is the one selected in the Vision window's Memory tab -- the
     // same selection whose record and dump that tab shows. Nothing selected, or a
     // selected entity destroyed by a map reload, falls back to the player.
-    if (debugWindowState->GetShowPlaceOverlay()) {
-      flecs::entity overlayEntity =
-          placeOverlayEntity != 0 ? ecs.entity(placeOverlayEntity)
-                                  : flecs::entity::null();
-      if (!overlayEntity.is_alive() || !overlayEntity.has<SpatialMemory>()) {
-        overlayEntity = playerEntity;
-      }
+    //
+    // The selection alone does not draw: the box is ticked per character
+    // (Game::placeOverlayCharacters), and only a character whose own box is ticked
+    // is drawn. Without that gate the single flag used to follow the selector to
+    // every character, which made a per-character checkbox behave like a global.
+    flecs::entity overlayEntity =
+        placeOverlayEntity != 0 ? ecs.entity(placeOverlayEntity)
+                                : flecs::entity::null();
+    if (!overlayEntity.is_alive() || !overlayEntity.has<SpatialMemory>()) {
+      overlayEntity = playerEntity;
+    }
+    if (overlayEntity.is_alive() &&
+        placeOverlayCharacters.count(overlayEntity.id()) != 0) {
       if (const SpatialMemory *memory = overlayEntity.get<SpatialMemory>()) {
         for (const KnownPlace &place : memory->places) {
           const Color placeColor = Memory::PlaceColor(place.id);

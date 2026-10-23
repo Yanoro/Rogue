@@ -28,7 +28,6 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showVisionDebugWindow(false),
     showFacingMarkers(false),
     showVisionOverlay(false),
-    showPlaceOverlay(false),
     cursorFacingEnabled(true),
     showVisionChatWindow(false),
     showPlaceNames(false),
@@ -77,7 +76,6 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["visionDebug"] = showVisionDebugWindow;
   state["facingMarkers"] = showFacingMarkers;
   state["visionOverlay"] = showVisionOverlay;
-  state["placeOverlay"] = showPlaceOverlay;
   state["cursorFacing"] = cursorFacingEnabled;
   state["systemOneProfile"] = systemOneProfile;
   state["visionChat"] = showVisionChatWindow;
@@ -160,7 +158,6 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       showVisionDebugWindow = state.value("visionDebug", false);
       showFacingMarkers = state.value("facingMarkers", false);
       showVisionOverlay = state.value("visionOverlay", false);
-      showPlaceOverlay = state.value("placeOverlay", false);
       cursorFacingEnabled = state.value("cursorFacing", true);
       systemOneProfile = state.value("systemOneProfile", std::string());
       showVisionChatWindow = state.value("visionChat", false);

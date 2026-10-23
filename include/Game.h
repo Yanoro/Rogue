@@ -6,6 +6,7 @@
 #include <flecs.h>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "Components.h"
@@ -212,13 +213,25 @@ private:
   flecs::entity playerEntity;
 
   // Which character the Vision debug window's place overlay draws. 0 means
-  // "nothing chosen yet", which resolves to the player, so the overlay keeps
-  // doing what it always did until the Memory tab is used. The window writes it
+  // "nothing chosen yet", which resolves to the player. The window writes it
   // when its selector resolves (it is a friend); GameDraw reads it. An id rather
   // than a handle for the same reason the window stores an id: a map reload
   // destroys every entity, and a stale handle would dangle where a stale id is
   // merely dead.
   flecs::entity_t placeOverlayEntity = 0;
+
+  // Characters whose "Draw this character's places" box is ticked, by entity id.
+  //
+  // Per character rather than one flag for the whole run: the box is labelled
+  // "this character's places", so ticking it while one character is selected must
+  // not silently turn the overlay on for every character the selector is moved to
+  // afterwards. GameDraw draws only when the selected character is in here.
+  //
+  // Session state, deliberately not persisted: an id only means something inside
+  // one process. Writing ids to debug_windows_state.json would attach a
+  // character's choice to whichever entity happens to reuse the id after a map or
+  // build change, which is a worse failure than starting every run unticked.
+  std::unordered_set<flecs::entity_t> placeOverlayCharacters;
 
   flecs::entity selectedTile;
   bool hasClicked = false;
@@ -538,6 +551,10 @@ private:
   // stats and skills. Like OpenStorageWindow it gets its own carrier entity, so
   // several can be open at once and reopening one already on screen is a no-op.
   void OpenCharacterStatusWindow(flecs::entity character);
+
+  // Opens the per-character navigation debug window. It reads the last
+  // NavigationDebugState snapshot, so it remains readable after the action ends.
+  void OpenNavigationDebugWindow(flecs::entity character);
 
   void ECSInit();
   void ECSInitRenderSystems();

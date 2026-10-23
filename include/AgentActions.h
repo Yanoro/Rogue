@@ -1,12 +1,15 @@
 #pragma once
 
+#include "AI.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "Map.h"
 #include "NavigationPlan.hpp"
+#include "NavigationStrategist.hpp"
 #include "PlaceQuery.hpp"
 #include "Settings.h"
 #include "SightReport.hpp"
+#include "TaskList.hpp"
 #include "PathFinding.h"
 #include "Defaults.h"
 #include "EquipmentRuntime.hpp"
@@ -18,6 +21,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <flecs.h>
 #include <map>
 #include <memory>
@@ -33,7 +37,6 @@
 #include "GlobalCommandRegistry.h"
 #include "GuideBuilder.h"
 #include "TaskKindRegistry.h"
-#include "TaskList.hpp"
 
 // Comma-separated list of names, for the "pick one of these" index and failure
 // messages the guide commands answer with.
@@ -184,64 +187,98 @@ public:
           flecs::entity resolvedTarget = flecs::entity::null();
           bool found = false;
 
-          entity.world().filter<DisplayName, GamePosition>().each(
-            [&](flecs::entity other, const DisplayName &name, const GamePosition &pos) {
-              if (StringUtils::EqualsIgnoreCase(name.name, targetName)) {
-                targetPos = pos;
-                resolvedTarget = other;
-                found = true;
-              }
-          });
-
-          // Not an entity: try the places this character remembers. A place only
-          // resolves if it has been observed, which is what makes a name an
-          // observation rather than a coordinate the map handed over.
-          if (!found) {
-            if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
-              // A label may name more than one place. A road cut at junctions is
-              // several stretches, and an agent naming them all "road" should get
-              // the one it can act on, not whichever happens to have the lowest
-              // id: choose the place whose approach cell is nearest. With the
-              // far-end rule for linear places, that is the stretch ahead.
-              const KnownPlace *best = nullptr;
-              GamePosition bestCell = {-1, -1};
-              int bestDistance = -1;
-              for (const KnownPlace &place : memory->places) {
-                bool matches = false;
-                for (const std::string &label : place.labels) {
-                  if (StringUtils::EqualsIgnoreCase(label, targetName)) {
-                    matches = true;
-                    break;
-                  }
-                }
-                if (!matches) continue;
-
-                const GamePosition cell =
-                    PlaceQuery::ApproachCell(*memory, place, startPos);
-                const int distance = std::max(std::abs(cell.x - startPos.x),
-                                              std::abs(cell.y - startPos.y));
-                if (best == nullptr || distance < bestDistance) {
-                  best = &place;
-                  bestCell = cell;
-                  bestDistance = distance;
-                }
-              }
-              if (best != nullptr) {
-                targetPos = bestCell;
+          // A place's target cell is fixed when the move starts. The old code
+          // re-resolved the named place and recomputed ApproachCell from the
+          // moving character every frame; for a linear place the far end flips
+          // at the midpoint, so the character turned around and walked back to
+          // the same tile. A character or object can move, so an entity target
+          // is still followed; a place's cell is one decision.
+          if (targetFixed) {
+            if (targetIsPlace) {
+              targetPos = fixedPlaceTarget;
+              found = true;
+            } else if (targetEntity.is_alive()) {
+              if (const GamePosition *pos = targetEntity.get<GamePosition>()) {
+                targetPos = *pos;
                 found = true;
               }
             }
           }
 
-          // A location is not an entity, so this stays null for those.
-          targetEntity = resolvedTarget;
+          if (!targetFixed) {
+            entity.world().filter<DisplayName, GamePosition>().each(
+              [&](flecs::entity other, const DisplayName &name, const GamePosition &pos) {
+                if (StringUtils::EqualsIgnoreCase(name.name, targetName)) {
+                  targetPos = pos;
+                  resolvedTarget = other;
+                  found = true;
+                }
+            });
+
+            // Not an entity: try the places this character remembers. A place only
+            // resolves if it has been observed, which is what makes a name an
+            // observation rather than a coordinate the map handed over.
+            if (!found) {
+              if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
+                // A label may name more than one place. A road cut at junctions is
+                // several stretches, and an agent naming them all "road" should get
+                // the one it can act on, not whichever happens to have the lowest
+                // id: choose the place whose approach cell is nearest. With the
+                // far-end rule for linear places, that is the stretch ahead.
+                const KnownPlace *best = nullptr;
+                GamePosition bestCell = {-1, -1};
+                int bestDistance = -1;
+                for (const KnownPlace &place : memory->places) {
+                  bool matches = false;
+                  for (const std::string &label : place.labels) {
+                    if (StringUtils::EqualsIgnoreCase(label, targetName)) {
+                      matches = true;
+                      break;
+                    }
+                  }
+                  if (!matches) continue;
+
+                  const GamePosition cell =
+                      PlaceQuery::ApproachCell(*memory, place, startPos);
+                  const int distance = std::max(std::abs(cell.x - startPos.x),
+                                                std::abs(cell.y - startPos.y));
+                  if (best == nullptr || distance < bestDistance) {
+                    best = &place;
+                    bestCell = cell;
+                    bestDistance = distance;
+                  }
+                }
+                if (best != nullptr) {
+                  targetPos = bestCell;
+                  found = true;
+                }
+              }
+            }
+
+            // A location is not an entity, so this stays null for those.
+            targetEntity = resolvedTarget;
+
+            if (found) {
+              targetFixed = true;
+              targetIsPlace = !resolvedTarget.is_alive();
+              if (targetIsPlace) {
+                fixedPlaceTarget = targetPos;
+              }
+            }
+          }  // !targetFixed
 
           if (!found) {
             entity.remove<MOVE_THROUGH_PATH_ACTION>();
             return ActionStatus::Failed;
           }
 
-          if (startPos == targetPos || Map::AreNeighbours(startPos, targetPos)) {
+          // A place is arrived at by standing on its target cell; an object or
+          // character is used from next to it. Copying the interaction shortcut
+          // to a place stops the character one tile short of the road.
+          const bool arrived =
+              startPos == targetPos ||
+              (!targetIsPlace && Map::AreNeighbours(startPos, targetPos));
+          if (arrived) {
             entity.remove<MOVE_THROUGH_PATH_ACTION>();
             // Objects expose their verbs through InteractionTarget so a
             // follow-up [STORE] / [HARVEST] resolves against this target.
@@ -262,6 +299,9 @@ public:
         }
 
         std::string getSuccessMessage() override {
+          if (targetIsPlace) {
+            return "System: You have arrived at " + targetName + ".\n";
+          }
           std::string message =
               "System: You have arrived next to " + targetName + ".\n";
 
@@ -284,7 +324,12 @@ public:
         }
 
         std::string getFailureMessage() override {
-          return "System: Could not find character or location " + targetName + " to move to. What's next?\n";
+          return "System: No character or remembered place named '" + targetName +
+                 "' could be moved to. If it is a remembered place: use [PLACES] "
+                 "to find it, give it a name with [NAME_PLACE #<number> <name>], "
+                 "then [MOVE_TO <name>]. A [PLACES] number on its own (such as #2) "
+                 "is not a target. If you are trying to reach a goal you cannot "
+                 "name yet, use [NAVIGATE <goal>] instead. What's next?\n";
         }
 
         ActionStatus handleInterruption(flecs::entity entity) override {
@@ -300,6 +345,10 @@ public:
         // Resolved while pathing so the arrival message can list this object's
         // interactions, and so InteractionTarget can point at it.
         flecs::entity targetEntity = flecs::entity::null();
+        // A place target is fixed at the first update; an entity is followed.
+        bool targetFixed = false;
+        bool targetIsPlace = false;
+        GamePosition fixedPlaceTarget{-1, -1};
       };
 
       // Turns on the spot and reports what is now in sight.
@@ -505,60 +554,42 @@ public:
         int waitFrames = 0;
       };
 
-      // A movement leg whose target is a place id, not a name.
-      //
-      // [MOVE_TO] resolves names, and an inferred place may have none; navigation
-      // needs to walk to the stretch System 1 chose even when the character has
-      // never named it. Same path/arrival discipline as MoveToEntityAction, minus
-      // the name lookup and the interaction listing -- a place is ground, not an
-      // object.
-      class MoveToPlaceAction : public AgentAction {
+      // A movement leg whose target is a cell: a local compass run or the edge of
+      // a remembered place. The target is fixed at decision time, so a place that
+      // grows or a far end that flips cannot turn the character around mid-leg.
+      // No name lookup and no interaction listing -- the target is ground.
+      class MoveToCellAction : public AgentAction {
       public:
-        explicit MoveToPlaceAction(int placeId) : placeId(placeId) {}
+        MoveToCellAction(GamePosition target, std::string label)
+            : target(target), label(std::move(label)) {}
 
-        std::string getActionName() const override { return "MOVE_TO_PLACE"; }
+        std::string getActionName() const override { return "MOVE_TO_CELL"; }
 
-        std::string getActionContext() const override { return placeName; }
+        std::string getActionContext() const override { return label; }
 
         ActionStatus update(float, flecs::entity entity) override {
-          const SpatialMemory *memory = entity.get<SpatialMemory>();
           const GamePosition *here = entity.get<GamePosition>();
           const MapResource *mapRes = entity.world().get<MapResource>();
-          if (memory == nullptr || here == nullptr || mapRes == nullptr ||
-              mapRes->map == nullptr) {
+          if (here == nullptr || mapRes == nullptr || mapRes->map == nullptr) {
             failureReason = "you cannot find your way right now";
             return ActionStatus::Failed;
           }
 
-          const KnownPlace *place = PlaceQuery::ById(*memory, placeId);
-          if (place == nullptr) {
-            failureReason = "that place is no longer in your memory";
-            return ActionStatus::Failed;
-          }
-          placeName = PlaceQuery::DisplayName(*place);
-
-          // The target is fixed when the leg begins, not recomputed every frame.
-          // For a linear place (a road) ApproachCell returns the far end from the
-          // character's current cell, and that far end flips to the other end at
-          // the midpoint; recomputing it while walking would turn the character
-          // around there. One leg means one destination.
-          if (!targetSet) {
-            target = PlaceQuery::ApproachCell(*memory, *place, *here);
-            targetSet = true;
-          }
-
-          if (*here == target || Map::AreNeighbours(*here, target)) {
+          // A cell target is reached only by standing on it. Adjacency is
+          // enough for an interaction with an object, not for entering a place:
+          // stopping one tile short leaves the character in the orchard beside
+          // the road, and the compass keeps offering the same 1-tile step. The
+          // old MoveToEntityAction shortcut is deliberately not copied here.
+          if (*here == target) {
             entity.remove<MOVE_THROUGH_PATH_ACTION>();
             return ActionStatus::Done;
           }
 
           if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
-            const std::vector<GamePosition> path =
-                AStar(mapRes->map, *here, target);
+            path = AStar(mapRes->map, *here, target);
             if (path.empty()) {
               entity.remove<MOVE_THROUGH_PATH_ACTION>();
-              failureReason =
-                  "there is no way to reach " + placeName + " from here";
+              failureReason = "there is no way to reach " + label + " from here";
               return ActionStatus::Failed;
             }
             entity.set<MOVE_THROUGH_PATH_ACTION>({path});
@@ -566,8 +597,13 @@ public:
           return ActionStatus::Doing;
         }
 
+        // The cells of the path this leg actually walked, for the caller's
+        // "already walked" compass marker. Empty before the path is set or when
+        // the target was already underfoot.
+        const std::vector<GamePosition> &getPath() const { return path; }
+
         std::string getSuccessMessage() override {
-          return "System: You have arrived at " + placeName + ".\n";
+          return "System: You have arrived at " + label + ".\n";
         }
 
         std::string getFailureMessage() override {
@@ -586,34 +622,48 @@ public:
         void resume(flecs::entity) override {}
 
       private:
-        int placeId;
-        std::string placeName;
+        GamePosition target;
+        std::string label;
         std::string failureReason;
-        GamePosition target{-1, -1};
-        bool targetSet = false;
+        std::vector<GamePosition> path;
       };
 
-      // System 1 navigation: ask which remembered place is the best next step,
-      // walk there, and decide again on arrival (stage 2 of
-      // docs/navigation-subagent-design.md).
+      // LLM strategist + System 1 pilot navigation (docs/llm-s1-navigation-design.md).
       //
-      // The main model states a goal once. The action asks the decision model,
-      // walks one leg, and re-asks with the updated memory; it stops on `arrived`,
-      // `none`, a budget, no progress, or a survey that failed to settle the
-      // choice, and reports once. Interruption preserves the episode so a wake
-      // can read a sign or greet someone and then resume.
+      // The main model states a goal once. A standard-LLM strategist (the main AI
+      // backend, separate navigation context) writes a strategy and 1-3 yes/no
+      // monitors from the observed grid/graph; the S1 pilot chooses the next local
+      // move and answers the monitors in the same Ask. A monitor trigger, an
+      // unsure/none pilot, or the strategy step limit hands back to the strategist
+      // before the next leg starts. If the strategist is unavailable or over its
+      // budget, the S1-only navigation (docs/navigation-subagent-design.md) runs.
+      //
+      // A move is either a local compass direction within the place the character
+      // is standing in ("here:north"), or a remembered place ("p12"). The compass
+      // is what makes the place underfoot actionable: without it, entering a road
+      // only produces a new list of other places.
+      //
+      // The action stops on `arrived`, `none`, a resource guard (wall clock or a
+      // stuck leg), a survey that failed to settle the choice, or a strategist
+      // give-up, and reports once. Repeating a target is no longer a stop: it is
+      // a soft signal in the S1/strategist context.
+      // Interruption preserves the episode so a wake can read a sign or greet
+      // someone and then resume.
       //
       // Two things are deliberately not here:
-      //   * the candidate set is built by NavigationPlan from the character's own
-      //     SpatialMemory, never from the map;
-      //   * the answer is resolved by place id, so a hallucinated name cannot
+      //   * the move set and the strategist observation are built from the
+      //     character's own SpatialMemory, never from the map;
+      //   * the answer is resolved to a target cell, so a hallucinated name cannot
       //     move the character.
       class NavigateAction : public AgentAction {
       public:
         explicit NavigateAction(std::string goal)
             : goal(SanitiseGoal(std::move(goal))) {}
 
-        ~NavigateAction() override { AbandonPending(); }
+        ~NavigateAction() override {
+          AbandonPending();
+          AbandonStrategist();
+        }
 
         std::string getActionName() const override { return "NAVIGATE"; }
 
@@ -632,12 +682,22 @@ public:
           if (!started) {
             started = true;
             startedAt = Clock::now();
+            PublishNavigationDebug(entity, true);
           }
           if (SecondsSince(startedAt) > nav.maxSeconds) {
             return Finish(entity, "you reached the time limit without arriving");
           }
 
+          const GameSettings::NavigationStrategistSection &strategist =
+              Settings().navigation.strategist;
+          if (strategist.enabled && !strategyStarted && !strategistFallback) {
+            strategyStarted = true;
+            return StartStrategize(entity, "episode start");
+          }
+
           switch (phase) {
+            case Phase::Strategizing:
+              return PollStrategist(entity, nav);
             case Phase::Idle:
               return StartDecision(entity, nav);
             case Phase::Asking:
@@ -661,6 +721,15 @@ public:
                             " (legs=" + std::to_string(legs) + ", decisions=" +
                             std::to_string(decisions) + "); episode kept");
           AbandonPending();
+          AbandonStrategist();
+          if (currentStrategistThoughtIndex >= 0 &&
+              currentStrategistThoughtIndex <
+                  static_cast<int>(debugStrategistThoughts.size()) &&
+              !debugStrategistThoughts[currentStrategistThoughtIndex].complete) {
+            UpdateCurrentStrategistThought(
+                std::string(), true, true,
+                "navigation ended before the strategist replied");
+          }
           if (leg) {
             leg->handleInterruption(entity);
             leg.reset();
@@ -669,18 +738,22 @@ public:
           // survey already in flight all stay. An interrupted ask starts over,
           // because its answer was cancelled; a moving leg is recreated on
           // resume (the character may have been moved by the wake action).
-          if (phase == Phase::Asking) phase = Phase::Idle;
+          if (phase == Phase::Asking || phase == Phase::Strategizing) {
+            phase = Phase::Idle;
+          }
+          PublishNavigationDebug(entity, false);
           return ActionStatus::Interrupted;
         }
 
         void resume(flecs::entity entity) override {
           Trace(entity, std::string("resumed in ") + PhaseName(phase));
+          PublishNavigationDebug(entity, true);
         }
 
       private:
         using Clock = std::chrono::steady_clock;
 
-        enum class Phase { Idle, Asking, Surveying, Moving };
+        enum class Phase { Strategizing, Idle, Asking, Surveying, Moving };
 
         // The callback may run on the provider's worker thread. It must not
         // capture `this`; this struct is the whole handoff. `abandoned` is the
@@ -691,6 +764,17 @@ public:
           bool abandoned = false;
           std::vector<SystemOne::Answer> answers;
           SystemOne::CallTrace trace;
+        };
+
+        // The strategist is a standard-LLM stream on the main AI backend. Its
+        // callback runs on the provider's worker thread and must not capture
+        // `this`; this struct is the whole handoff.
+        struct StrategistPending {
+          std::mutex mutex;
+          bool ready = false;
+          bool abandoned = false;
+          bool failed = false;
+          std::string response;
         };
 
         // About eight action updates: the sampler runs every frame and the brain
@@ -773,7 +857,7 @@ public:
         static const char *KindName(NavigationPlan::ChoiceOutcome::Kind kind) {
           using Kind = NavigationPlan::ChoiceOutcome::Kind;
           switch (kind) {
-            case Kind::Place: return "place";
+            case Kind::Candidate: return "move";
             case Kind::Arrived: return "arrived";
             case Kind::None: return "none";
             case Kind::Unsure: return "unsure";
@@ -784,6 +868,7 @@ public:
 
         static const char *PhaseName(Phase phase) {
           switch (phase) {
+            case Phase::Strategizing: return "strategizing";
             case Phase::Idle: return "idle";
             case Phase::Asking: return "asking";
             case Phase::Surveying: return "surveying";
@@ -813,12 +898,415 @@ public:
           pending.reset();
         }
 
+        void AbandonStrategist() {
+          strategistStop.request_stop();
+          if (strategistPending) {
+            std::lock_guard<std::mutex> lock(strategistPending->mutex);
+            strategistPending->abandoned = true;
+          }
+          strategistPending.reset();
+        }
+
+        // Snapshot for the NPC Menu's navigation window. Called at decision
+        // points, not every frame: the observation/brief can be a few kilobytes
+        // and the UI only needs the latest state.
+        void PublishNavigationDebug(flecs::entity entity, bool active) {
+          if (!entity.is_alive()) return;
+          NavigationDebugState state;
+          state.active = active;
+          state.goal = goal;
+          state.phase = PhaseName(phase);
+          state.strategy = strategy.strategy;
+          state.subtask = strategy.subtask;
+          state.strategyVersion = strategy.version;
+          state.strategiesUsed = strategiesUsed;
+          state.handoffs = handoffs;
+          state.decisions = decisions;
+          state.legs = legs;
+          state.surveysUsed = surveysUsed;
+          state.strategyReady = strategyReady;
+          state.strategistFallback = strategistFallback;
+          state.lastHandoff = lastHandoffReason;
+          state.repetition = repetitionNote;
+          state.strategistObservation = debugStrategistObservation;
+          state.strategistBrief = debugStrategistBrief;
+          state.strategistResponse = debugStrategistResponse;
+          state.strategistError = debugStrategistError;
+          state.pilotState = debugPilotState;
+          state.route = JoinDebugList(route);
+          state.visited = JoinDebugList(visitedNames);
+          state.lastSummary = lastSummary;
+          state.lastS1Raw = debugS1Raw;
+          state.lastS1Error = debugS1Error;
+
+          for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
+            NavigationDebugMonitor entry;
+            entry.id = monitor.id;
+            entry.question = monitor.question;
+            entry.handoffWhen = monitor.handoffOnYes ? "yes" : "no";
+            entry.minConfidence = monitor.minConfidence;
+            state.monitors.push_back(std::move(entry));
+          }
+          for (const NavigationPlan::Candidate &candidate : candidates) {
+            NavigationDebugCandidate entry;
+            entry.key = candidate.key;
+            entry.label = candidate.label;
+            entry.description = candidate.description;
+            entry.distance = candidate.distance;
+            state.candidates.push_back(std::move(entry));
+          }
+          state.s1Responses.assign(debugS1Responses.begin(),
+                                   debugS1Responses.end());
+          state.strategistThoughts = debugStrategistThoughts;
+          entity.set<NavigationDebugState>(std::move(state));
+        }
+
+        void UpdateCurrentStrategistThought(const std::string &thought,
+                                             bool complete, bool failed,
+                                             const std::string &error) {
+          if (currentStrategistThoughtIndex < 0 ||
+              currentStrategistThoughtIndex >=
+                  static_cast<int>(debugStrategistThoughts.size())) {
+            return;
+          }
+          NavigationDebugStrategistThought &record =
+              debugStrategistThoughts[currentStrategistThoughtIndex];
+          if (!thought.empty()) record.thought = thought;
+          if (complete) record.complete = true;
+          if (failed) {
+            record.complete = true;
+            record.failed = true;
+            record.error = error;
+          }
+        }
+
+        void PushS1Debug(NavigationDebugS1Response response) {
+          debugS1Responses.push_back(std::move(response));
+          while (debugS1Responses.size() > 8) {
+            debugS1Responses.pop_front();
+          }
+        }
+
+        static std::string JoinDebugList(const std::vector<std::string> &items) {
+          std::string out;
+          for (std::size_t i = 0; i < items.size(); ++i) {
+            if (i > 0) out += " -> ";
+            out += items[i];
+          }
+          return out;
+        }
+
+        // Ask the standard-LLM strategist for a strategy + monitors, or for a
+        // re-plan after a handoff. The call runs on the main AI backend with its
+        // own contextId; the S1 pilot is not involved in this call.
+        ActionStatus StartStrategize(flecs::entity entity,
+                                     const std::string &reason) {
+          const GameSettings::NavigationStrategistSection &cfg =
+              Settings().navigation.strategist;
+          if (!cfg.enabled) {
+            return FallbackStrategist(entity, "strategist disabled");
+          }
+          if (strategiesUsed >= cfg.maxStrategies) {
+            return FallbackStrategist(entity, "strategy budget exhausted");
+          }
+          if (reason.rfind("retry", 0) != 0) {
+            strategistRetries = 0;
+          }
+          AbandonStrategist();
+
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            return Finish(entity, "you have no memory of where you are");
+          }
+
+          const AIBackend *backend = entity.world().get<AIBackend>();
+          if (backend == nullptr || backend->ptr == nullptr) {
+            return FallbackStrategist(entity, "no standard AI backend");
+          }
+
+          const GameSettings::SystemOneNavigationSection &nav =
+              Settings().system1.navigation;
+          const std::vector<NavigationPlan::Candidate> candidates =
+              NavigationPlan::BuildCandidates(
+                  *memory, *here, nav.maxCandidates, nav.maxDirections,
+                  nav.compassRadius, walkedCells);
+          const Facing *facing = entity.get<Facing>();
+
+          nlohmann::json observation =
+              NavigationStrategist::BuildObservation(
+                  *memory, *here, facing != nullptr ? *facing : Facing{},
+                  candidates, routePlaceIds, route, visitedPlaceIds,
+                  walkedCells, walkedCells,
+                  cfg.observation.localGridRadius,
+                  cfg.observation.maxGraphNodes,
+                  cfg.observation.maxGraphEdges);
+          if (!repetitionNote.empty()) {
+            observation["repetition"] = repetitionNote;
+          }
+
+          std::string taskDigest;
+          if (const TaskList *tasks = entity.get<TaskList>()) {
+            taskDigest = RenderTaskDigest(*tasks, "");
+          }
+
+          const std::string system =
+              NavigationStrategist::BuildStrategistSystemPrompt();
+          const std::string user =
+              NavigationStrategist::BuildStrategistUserPrompt(
+                  goal, taskDigest, observation,
+                  strategyReady ? &strategy : nullptr, reason, strategiesUsed,
+                  cfg.maxStrategies);
+
+          if (reason == "episode start") {
+            lastHandoffReason.clear();
+          } else if (reason.rfind("retry", 0) != 0) {
+            lastHandoffReason = reason;
+          }
+          debugStrategistObservation = observation.dump(2);
+          debugStrategistBrief = user;
+
+          std::vector<ChatMessage> history;
+          history.push_back({"system", system});
+          history.push_back({"user", user});
+
+          ++strategiesUsed;
+          NavigationDebugStrategistThought thoughtRecord;
+          thoughtRecord.index = strategiesUsed;
+          thoughtRecord.reason = reason;
+          for (const NavigationPlan::Candidate &candidate : candidates) {
+            NavigationDebugCandidate entry;
+            entry.key = candidate.key;
+            entry.label = candidate.label;
+            entry.description = candidate.description;
+            entry.distance = candidate.distance;
+            thoughtRecord.candidates.push_back(std::move(entry));
+          }
+          thoughtRecord.graphJson = observation["graph"].dump();
+          debugStrategistThoughts.push_back(std::move(thoughtRecord));
+          currentStrategistThoughtIndex =
+              static_cast<int>(debugStrategistThoughts.size()) - 1;
+          if (reason != "episode start" &&
+              reason.rfind("retry", 0) != 0) {
+            ++handoffs;
+          }
+          strategistStartedAt = Clock::now();
+          strategistStop = std::stop_source();
+          auto pendingStrategist = std::make_shared<StrategistPending>();
+          strategistPending = pendingStrategist;
+          phase = Phase::Strategizing;
+
+          PublishNavigationDebug(entity, true);
+
+          const std::string contextId =
+              "navstrat-" + std::to_string(entity.id());
+          AI *aiPtr = backend->ptr.get();
+          aiPtr->resetContext(contextId);
+          const bool started = aiPtr->generateStream(
+              contextId, history,
+              [pendingStrategist](const std::string &token) {
+                std::lock_guard<std::mutex> lock(pendingStrategist->mutex);
+                if (pendingStrategist->abandoned) return;
+                if (token.empty()) {
+                  pendingStrategist->ready = true;
+                  return;
+                }
+                pendingStrategist->response += token;
+              },
+              strategistStop.get_token());
+
+          if (!started) {
+            std::lock_guard<std::mutex> lock(pendingStrategist->mutex);
+            pendingStrategist->failed = true;
+            pendingStrategist->ready = true;
+          }
+          Trace(entity, "strategist start (" + reason + "), strategy " +
+                            std::to_string(strategiesUsed) + "/" +
+                            std::to_string(cfg.maxStrategies) + ", model " +
+                            aiPtr->getModelName());
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus PollStrategist(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &) {
+          const GameSettings::NavigationStrategistSection &cfg =
+              Settings().navigation.strategist;
+          if (!strategistPending) {
+            phase = Phase::Idle;
+            return ActionStatus::Doing;
+          }
+
+          std::string response;
+          std::string partial;
+          bool ready = false;
+          bool failed = false;
+          bool timedOut = false;
+          {
+            std::lock_guard<std::mutex> lock(strategistPending->mutex);
+            if (!strategistPending->ready) {
+              if (SecondsSince(strategistStartedAt) > cfg.timeoutSeconds) {
+                strategistPending->abandoned = true;
+                strategistPending.reset();
+                strategistStop.request_stop();
+                timedOut = true;
+              } else {
+                partial = strategistPending->response;
+              }
+            } else {
+              ready = true;
+              response = strategistPending->response;
+              failed = strategistPending->failed;
+            }
+          }
+          if (timedOut) {
+            return FallbackStrategist(entity, "strategist timed out");
+          }
+          if (!ready) {
+            // Live thought while the standard LLM is still streaming. The
+            // provider may deliver this in chunks; an unclosed <think> is
+            // shown as far as it has arrived.
+            UpdateCurrentStrategistThought(
+                NavigationStrategist::ExtractThinking(partial), false, false,
+                std::string());
+            PublishNavigationDebug(entity, true);
+            return ActionStatus::Doing;
+          }
+          strategistPending.reset();
+
+          if (failed) {
+            debugStrategistError = "transport failure";
+            UpdateCurrentStrategistThought(
+                NavigationStrategist::ExtractThinking(response), true, true,
+                debugStrategistError);
+            PublishNavigationDebug(entity, true);
+            if (strategistRetries < 1 && strategiesUsed < cfg.maxStrategies) {
+              ++strategistRetries;
+              return StartStrategize(entity, "retry after transport failure");
+            }
+            return FallbackStrategist(entity, "strategist call failed");
+          }
+
+          NavigationStrategist::Plan plan;
+          std::string error;
+          if (!NavigationStrategist::ParsePlan(response, plan, error)) {
+            Trace(entity, "strategist reply rejected: " + error);
+            debugStrategistResponse = response;
+            debugStrategistError = error;
+            UpdateCurrentStrategistThought(
+                NavigationStrategist::ExtractThinking(response), true, true,
+                error);
+            PublishNavigationDebug(entity, true);
+            if (strategistRetries < 1 && strategiesUsed < cfg.maxStrategies) {
+              ++strategistRetries;
+              return StartStrategize(entity, "retry after invalid reply");
+            }
+            return FallbackStrategist(entity,
+                                      "the strategist reply was invalid");
+          }
+
+          UpdateCurrentStrategistThought(
+              NavigationStrategist::ExtractThinking(response), true, false,
+              std::string());
+          debugStrategistResponse = response;
+          // A give-up is not a strategy: keep the last accepted plan for the
+          // summary, so the main model still sees what was tried. Keep the
+          // previous error too: if a failed re-plan preceded the give-up, the
+          // summary should say why the strategist had been unavailable.
+          if (plan.giveUp) {
+            return Finish(entity, "the strategist gave up" +
+                                      (plan.giveUpReason.empty()
+                                           ? std::string()
+                                           : ": " + plan.giveUpReason));
+          }
+          debugStrategistError.clear();
+          strategy = std::move(plan);
+          if (cfg.maxMonitors > 0 &&
+              strategy.monitors.size() >
+                  static_cast<std::size_t>(cfg.maxMonitors)) {
+            strategy.monitors.resize(
+                static_cast<std::size_t>(cfg.maxMonitors));
+          }
+          strategy.version = ++strategyVersion;
+          strategyReady = true;
+          strategistFallback = false;
+          strategistRetries = 0;
+          phase = Phase::Idle;
+          if (currentStrategistThoughtIndex >= 0 &&
+              currentStrategistThoughtIndex <
+                  static_cast<int>(debugStrategistThoughts.size())) {
+            NavigationDebugStrategistThought &record =
+                debugStrategistThoughts[currentStrategistThoughtIndex];
+            record.strategy = strategy.strategy;
+            record.subtask = strategy.subtask;
+            record.monitors.clear();
+            for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
+              NavigationDebugMonitor entry;
+              entry.id = monitor.id;
+              entry.question = monitor.question;
+              entry.handoffWhen = monitor.handoffOnYes ? "yes" : "no";
+              entry.minConfidence = monitor.minConfidence;
+              record.monitors.push_back(std::move(entry));
+            }
+          }
+          Trace(entity, "strategist plan v" + std::to_string(strategy.version) +
+                            " for '" + strategy.subtask + "': " +
+                            NavigationStrategist::BuildPlanSummary(strategy));
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus FallbackStrategist(flecs::entity entity,
+                                        const std::string &reason) {
+          const GameSettings::NavigationStrategistSection &cfg =
+              Settings().navigation.strategist;
+          Trace(entity, "strategist fallback: " + reason);
+          debugStrategistError = reason;
+          if (currentStrategistThoughtIndex >= 0 &&
+              currentStrategistThoughtIndex <
+                  static_cast<int>(debugStrategistThoughts.size()) &&
+              !debugStrategistThoughts[currentStrategistThoughtIndex].complete) {
+            UpdateCurrentStrategistThought(std::string(), true, true, reason);
+          }
+          if (!cfg.fallbackToS1) {
+            return Finish(entity, "navigation strategist unavailable: " + reason);
+          }
+          strategistFallback = true;
+          // Keep the last accepted strategy for continuity. Its monitors caused
+          // the handoff that failed, so they are dropped; the strategist is asked
+          // again on the next pilot uncertainty/no-move instead of the engine
+          // silently abandoning the navigation.
+          if (strategy.version > 0 && !strategy.strategy.empty()) {
+            strategy.monitors.clear();
+            strategyReady = true;
+          } else {
+            strategyReady = false;
+          }
+          phase = Phase::Idle;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
         // Build the summary and stop. Any live leg is cancelled first: an episode
         // that ends on the clock must not leave the character walking.
-        ActionStatus Finish(flecs::entity entity, const std::string &reason) {
+        ActionStatus Finish(flecs::entity entity, const std::string &reason,
+                            bool arrived = false) {
           Trace(entity, "finished: " + reason + " (legs=" + std::to_string(legs) +
                             ", decisions=" + std::to_string(decisions) +
-                            ", surveys=" + std::to_string(surveysUsed) + ")");
+                            ", surveys=" + std::to_string(surveysUsed) +
+                            ", strategies=" + std::to_string(strategiesUsed) +
+                            ", handoffs=" + std::to_string(handoffs) + ")");
+          AbandonPending();
+          AbandonStrategist();
+          if (currentStrategistThoughtIndex >= 0 &&
+              currentStrategistThoughtIndex <
+                  static_cast<int>(debugStrategistThoughts.size()) &&
+              !debugStrategistThoughts[currentStrategistThoughtIndex].complete) {
+            UpdateCurrentStrategistThought(
+                std::string(), true, true,
+                "navigation ended before the strategist replied");
+          }
           if (leg) {
             leg->handleInterruption(entity);
             leg.reset();
@@ -829,14 +1317,46 @@ public:
               vision->fullCircleRequested = false;
             }
           }
+          phase = Phase::Idle;
           const SpatialMemory *memory = entity.get<SpatialMemory>();
           const GamePosition *here = entity.get<GamePosition>();
           if (memory != nullptr && here != nullptr) {
             response = NavigationPlan::BuildSummary(reason, route, *memory,
-                                                    *here, legs);
+                                                    *here, legs, arrived);
           } else {
             response = "System: You stopped: " + reason + ".\n";
           }
+          if (strategy.version > 0 && !strategy.strategy.empty()) {
+            response += "Navigation: " + std::to_string(strategiesUsed) +
+                        " plans, " + std::to_string(handoffs) + " handoffs";
+            if (!lastHandoffReason.empty()) {
+              response += "; the last handoff: " + lastHandoffReason;
+            }
+            response += "; the last plan: " + strategy.strategy;
+            if (!strategy.subtask.empty()) {
+              response += " (subtask: " + strategy.subtask + ")";
+            }
+            response += ".\n";
+          }
+          if (strategistFallback) {
+            response += "Navigation: the strategist was unavailable";
+            response += " (" +
+                        (debugStrategistError.empty()
+                             ? std::string("no reason recorded")
+                             : debugStrategistError) +
+                        ").";
+            if (strategy.version > 0 && !strategy.strategy.empty()) {
+              response +=
+                  " The last accepted strategy was kept (monitors dropped); the "
+                  "S1 pilot continued.";
+            } else {
+              response +=
+                  " No strategy was available; the S1 pilot ran alone.";
+            }
+            response += "\n";
+          }
+          lastSummary = response;
+          PublishNavigationDebug(entity, false);
           return ActionStatus::Done;
         }
 
@@ -860,6 +1380,7 @@ public:
                             ": unsure, full-circle survey #" +
                             std::to_string(surveysUsed));
           phase = Phase::Surveying;
+          PublishNavigationDebug(entity, true);
           return ActionStatus::Doing;
         }
 
@@ -877,6 +1398,7 @@ public:
             afterSurvey = true;
             Trace(entity, "full circle complete; re-asking");
             phase = Phase::Idle;
+            PublishNavigationDebug(entity, true);
             return ActionStatus::Doing;
           }
           if (++surveyWaitUpdates > kMaxSurveyWaitUpdates) {
@@ -897,10 +1419,8 @@ public:
             return ActionStatus::Failed;
           }
 
-          if (decisions >= nav.maxDecisions) {
-            return Finish(entity,
-                          "you reached the decision limit without arriving");
-          }
+          const GameSettings::NavigationStrategistSection &strategist =
+              Settings().navigation.strategist;
 
           // The start of the route is recorded before the decision: the summary
           // must say where the leg began, not only where it ended.
@@ -915,17 +1435,29 @@ public:
           afterSurvey = false;
 
           candidates = NavigationPlan::BuildCandidates(
-              *memory, *here, nav.maxCandidates, visitedPlaceIds);
+              *memory, *here, nav.maxCandidates, nav.maxDirections,
+              nav.compassRadius, walkedCells);
           candidates.erase(
               std::remove_if(
                   candidates.begin(), candidates.end(),
                   [this](const NavigationPlan::Candidate &candidate) {
-                    return unreachablePlaceIds.count(candidate.placeId) != 0;
+                    return unreachableTargets.count(
+                               VisionQuery::CellKey(candidate.target)) != 0;
                   }),
               candidates.end());
 
           if (candidates.empty()) {
             if (CanSurvey(entity, nav)) return StartSurvey(entity);
+            if (strategist.enabled) {
+              if (strategiesUsed < strategist.maxStrategies) {
+                return StartStrategize(
+                    entity, "the pilot has no remembered place to try");
+              }
+              return Finish(entity,
+                            "the strategist call budget was exhausted after the "
+                            "pilot ran out of remembered moves; the last "
+                            "strategy and route are below");
+            }
             return Finish(entity,
                           "you do not remember any place that could lead there");
           }
@@ -939,19 +1471,48 @@ public:
           classifier = resource->classifier;
 
           const Facing *facing = entity.get<Facing>();
-          const std::string state = NavigationPlan::BuildState(
-              *memory, *here, facing != nullptr ? *facing : Facing{},
-              AgentName(entity), goal, legs, visitedNames, candidates);
-          const SystemOne::Option question =
-              NavigationPlan::BuildQuestion(*memory, *here, candidates);
+          const Facing facingValue = facing != nullptr ? *facing : Facing{};
+          std::string state;
+          if (strategyReady) {
+            state += "STRATEGY: " + strategy.strategy + "\n";
+            state += "SUBTASK: " + strategy.subtask + "\n\n";
+          }
+          state += NavigationPlan::BuildState(
+              *memory, *here, facingValue, AgentName(entity), goal, legs,
+              visitedNames, candidates);
+          if (strategyReady) {
+            state += "\n";
+            state += NavigationStrategist::BuildPilotObservation(
+                *memory, *here, facingValue, candidates, route, visitedPlaceIds,
+                walkedCells, strategist.observation.localGridRadius);
+          }
+          if (!repetitionNote.empty()) {
+            state += "\nREPETITION: " + repetitionNote + "\n";
+          }
 
+          std::vector<SystemOne::Option> questions;
+          questions.push_back(
+              NavigationPlan::BuildQuestion(*memory, *here, candidates));
+          if (strategyReady && strategist.enabled) {
+            std::vector<SystemOne::Option> monitors =
+                NavigationStrategist::BuildMonitorQuestions(
+                    strategy, strategist.maxMonitors);
+            for (SystemOne::Option &monitor : monitors) {
+              questions.push_back(std::move(monitor));
+            }
+          }
+
+          debugPilotState = state;
           pending = std::make_shared<Pending>();
           stopSource = std::stop_source();
           ++decisions;
           Trace(entity, "step " + std::to_string(legs) + ": asking (" +
                             std::to_string(candidates.size()) +
-                            " candidates, decision " +
-                            std::to_string(decisions) + ", floor " +
+                            " actions, decision " +
+                            std::to_string(decisions) + ", strategy v" +
+                            std::to_string(strategyReady ? strategy.version : 0) +
+                            ", monitors " +
+                            std::to_string(questions.size() - 1) + ", floor " +
                             FormatScore(nav.minProbability) + "/" +
                             FormatScore(nav.minMargin) + ") for: " + goal);
 
@@ -963,7 +1524,7 @@ public:
 
           std::shared_ptr<Pending> shared = pending;
           classifier->Ask(
-              state, {question},
+              state, questions,
               [shared](const std::vector<SystemOne::Answer> &answers,
                        const SystemOne::CallTrace &trace) {
                 std::lock_guard<std::mutex> lock(shared->mutex);
@@ -975,6 +1536,7 @@ public:
               stopSource.get_token(), attribution);
 
           phase = Phase::Asking;
+          PublishNavigationDebug(entity, true);
           return ActionStatus::Doing;
         }
 
@@ -986,6 +1548,18 @@ public:
             const std::string &withoutSurvey) {
           if (CanSurvey(entity, nav)) {
             return StartSurvey(entity);
+          }
+          const GameSettings::NavigationStrategistSection &strategist =
+              Settings().navigation.strategist;
+          if (strategist.enabled) {
+            if (strategiesUsed < strategist.maxStrategies) {
+              return StartStrategize(
+                  entity, "the pilot could not choose: " + withoutSurvey);
+            }
+            return Finish(entity,
+                          "the strategist call budget was exhausted after the "
+                          "pilot could not choose; the last strategy and route "
+                          "are below");
           }
           return Finish(entity,
                         surveyedThisDecision
@@ -1019,6 +1593,17 @@ public:
           }
 
           if (!trace.Ok()) {
+            NavigationDebugS1Response debug;
+            debug.decision = decisions;
+            debug.ok = false;
+            debug.error = trace.error;
+            debug.latencyMs = trace.latencyMs;
+            debug.promptTokens = trace.promptTokens;
+            debug.outputTokens = trace.outputTokens;
+            debugS1Raw = trace.responseText;
+            debugS1Error = trace.error;
+            PushS1Debug(std::move(debug));
+            PublishNavigationDebug(entity, true);
             return Finish(entity, "System 1 did not answer");
           }
 
@@ -1030,6 +1615,17 @@ public:
             }
           }
           if (answer == nullptr) {
+            NavigationDebugS1Response debug;
+            debug.decision = decisions;
+            debug.ok = false;
+            debug.error = "no next answer";
+            debug.latencyMs = trace.latencyMs;
+            debug.promptTokens = trace.promptTokens;
+            debug.outputTokens = trace.outputTokens;
+            debugS1Raw = trace.responseText;
+            debugS1Error = debug.error;
+            PushS1Debug(std::move(debug));
+            PublishNavigationDebug(entity, true);
             return Finish(entity, "the decision could not be read");
           }
 
@@ -1038,6 +1634,50 @@ public:
                                               nav.minProbability,
                                               nav.minMargin);
 
+          // The strategist's monitors are evaluated before the local leg. A
+          // trigger/unknown/low-confidence answer hands control back before the
+          // character moves, so the strategist re-plans from the same decision
+          // point.
+          const GameSettings::NavigationStrategistSection &strategist =
+              Settings().navigation.strategist;
+          NavigationStrategist::Handoff handoff;
+          std::vector<NavigationStrategist::MonitorReport> monitorReports;
+          if (strategyReady && strategist.enabled &&
+              !strategy.monitors.empty()) {
+            monitorReports = NavigationStrategist::ReportMonitors(
+                strategy, answers, strategist.monitorMinConfidence,
+                strategist.maxMonitors);
+            handoff = NavigationStrategist::EvaluateMonitors(
+                strategy, answers, strategist.monitorMinConfidence,
+                strategist.maxMonitors);
+          }
+
+          NavigationDebugS1Response debug;
+          debug.decision = decisions;
+          debug.choice = answer->choice;
+          debug.outcome = KindName(outcome.kind);
+          debug.probability = outcome.probability;
+          debug.margin = outcome.margin;
+          debug.ok = true;
+          debug.latencyMs = trace.latencyMs;
+          debug.promptTokens = trace.promptTokens;
+          debug.outputTokens = trace.outputTokens;
+          debug.handoff = handoff.triggered ? handoff.reason : std::string();
+          for (const NavigationStrategist::MonitorReport &report :
+               monitorReports) {
+            NavigationDebugMonitorAnswer entry;
+            entry.id = report.id;
+            entry.probability = report.probability;
+            entry.confidence = report.confidence;
+            entry.triggered = report.triggered;
+            entry.answered = report.answered;
+            debug.monitors.push_back(std::move(entry));
+          }
+          debugS1Raw = trace.responseText;
+          debugS1Error = trace.error;
+          PushS1Debug(std::move(debug));
+          PublishNavigationDebug(entity, true);
+
           Trace(entity,
                 "step " + std::to_string(legs) + ": choice '" + answer->choice +
                     "' " + KindName(outcome.kind) + " p=" +
@@ -1045,9 +1685,14 @@ public:
                     FormatScore(outcome.margin) +
                     (surveyedThisDecision ? " (after survey)" : ""));
 
+          if (handoff.triggered) {
+            Trace(entity, "monitor handoff: " + handoff.reason);
+            return StartStrategize(entity, handoff.reason);
+          }
+
           switch (outcome.kind) {
             case NavigationPlan::ChoiceOutcome::Kind::Arrived:
-              return Finish(entity, "you judged that you had arrived");
+              return Finish(entity, "you judged that you had arrived", true);
             case NavigationPlan::ChoiceOutcome::Kind::None:
               return StopUnsure(entity, nav,
                                 "none of the remembered places looked suitable");
@@ -1056,51 +1701,61 @@ public:
                                 "you could not tell which way looked better");
             case NavigationPlan::ChoiceOutcome::Kind::Invalid:
               return Finish(entity, "the decision could not be read");
-            case NavigationPlan::ChoiceOutcome::Kind::Place:
+            case NavigationPlan::ChoiceOutcome::Kind::Candidate:
               break;
           }
 
-          const auto chosen = std::find_if(
-              candidates.begin(), candidates.end(),
-              [&outcome](const NavigationPlan::Candidate &candidate) {
-                return candidate.placeId == outcome.placeId;
-              });
-          if (chosen == candidates.end()) {
-            return Finish(entity, "the decision named a place you do not know");
+          if (outcome.candidateIndex >= candidates.size()) {
+            return Finish(entity, "the decision named a move you do not have");
+          }
+          const NavigationPlan::Candidate &chosen =
+              candidates[outcome.candidateIndex];
+
+          // No progress is about the target cell, not about the direction name:
+          // Repeating a target is allowed now that a strategist sees the route.
+          // Instead of stopping, record the repetition for the next S1 state and
+          // for the strategist's observation; the model decides what it means.
+          repetitionNote.clear();
+          const int movedSinceLastChoice =
+              Chebyshev(*here, positionAtLastChoice);
+          if (lastChoiceTargetSet && chosen.target == lastChoiceTarget &&
+              movedSinceLastChoice == 0) {
+            repetitionNote =
+                "the last choice was " + chosen.label + " (" + chosen.key +
+                ") and the character has not moved since; the same target is "
+                "still offered.";
           }
 
-          // The two no-progress rules from the design: the same place twice in a
-          // row, or a one-tile approach while the character has not moved since
-          // the previous choice.
-          if (outcome.placeId == lastChosenPlaceId) {
-            return Finish(entity, "you would have been going back and forth");
-          }
-          if (lastChosenPlaceId != 0 && chosen->distance <= 1 &&
-              Chebyshev(*here, positionAtLastChoice) <= 1) {
-            return Finish(entity, "you would have been going back and forth");
-          }
-
-          lastChosenPlaceId = outcome.placeId;
+          // The "already walked" marker is recorded from the leg's actual path
+          // and endpoints on arrival, not from the choice: a failed or
+          // interrupted leg did not walk it. The marker is a cell, so it
+          // survives place ids being re-derived as the memory grows. The cell
+          // the decision is made from counts as walked even when A*'s path
+          // starts at the next cell.
+          walkedCells.insert(VisionQuery::CellKey(*here));
+          lastChoiceTarget = chosen.target;
+          lastChoiceTargetSet = true;
           positionAtLastChoice = *here;
 
-          const KnownPlace *place = PlaceQuery::ById(*memory, outcome.placeId);
-          legName = place != nullptr ? PlaceQuery::DisplayName(*place)
-                                     : chosen->description;
-          legPlaceId = outcome.placeId;
-          leg = std::make_unique<MoveToPlaceAction>(outcome.placeId);
+          legName = chosen.label;
+          legPlaceId = chosen.placeId;
+          legTarget = chosen.target;
+          leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
+          PublishNavigationDebug(entity, true);
           return ActionStatus::Doing;
         }
 
         ActionStatus HandleLegFailure(flecs::entity entity,
                                       const std::string &reason) {
-          if (unreachablePlaceIds.count(legPlaceId) != 0) {
+          if (unreachableTargets.count(VisionQuery::CellKey(legTarget)) != 0) {
             return Finish(entity, reason);
           }
-          unreachablePlaceIds.insert(legPlaceId);
-          // One retry: the place is filtered from the next candidate list, so
-          // this cannot loop on the same target.
+          unreachableTargets.insert(VisionQuery::CellKey(legTarget));
+          // One retry: this target is filtered from the next action list, so
+          // this cannot loop on the same cell. A different direction with the
+          // same name is a different target and is still offered.
           phase = Phase::Idle;
           return ActionStatus::Doing;
         }
@@ -1117,7 +1772,7 @@ public:
 
           if (!leg) {
             // Resumed after a wake, or the first update after the decision.
-            leg = std::make_unique<MoveToPlaceAction>(legPlaceId);
+            leg = std::make_unique<MoveToCellAction>(legTarget, legName);
             legStartedAt = Clock::now();
           }
 
@@ -1133,11 +1788,24 @@ public:
 
           if (status == ActionStatus::Done) {
             ++legs;
-            visitedPlaceIds.insert(legPlaceId);
-            visitedNames.push_back(legName);
+            for (const GamePosition &cell : leg->getPath()) {
+              walkedCells.insert(VisionQuery::CellKey(cell));
+            }
+            walkedCells.insert(VisionQuery::CellKey(legTarget));
+            // The state's Visited list is places, not legs: following one road
+            // for five legs should not fill the prompt with the same place five
+            // times. The summary's Route still records every leg.
+            if (visitedPlaceIds.insert(legPlaceId).second) {
+              visitedNames.push_back(legName);
+            }
             route.push_back(legName);
+            if (routePlaceIds.empty() ||
+                routePlaceIds.back() != legPlaceId) {
+              routePlaceIds.push_back(legPlaceId);
+            }
             Trace(entity, "leg " + std::to_string(legs) + ": arrived at " +
                               legName);
+            PublishNavigationDebug(entity, true);
             leg.reset();
             // The next decision. The episode ends only through the stop
             // conditions, never because one leg completed.
@@ -1160,16 +1828,43 @@ public:
         std::stop_source stopSource;
         std::vector<NavigationPlan::Candidate> candidates;
         std::vector<std::string> route;
+        std::vector<int> routePlaceIds;
         std::vector<std::string> visitedNames;
-        std::unique_ptr<MoveToPlaceAction> leg;
+        NavigationStrategist::Plan strategy;
+        std::shared_ptr<StrategistPending> strategistPending;
+        std::stop_source strategistStop;
+        Clock::time_point strategistStartedAt;
+        int strategiesUsed = 0;
+        int handoffs = 0;
+        int strategyVersion = 0;
+        int strategistRetries = 0;
+        bool strategyReady = false;
+        bool strategistFallback = false;
+        bool strategyStarted = false;
+        std::deque<NavigationDebugS1Response> debugS1Responses;
+        std::vector<NavigationDebugStrategistThought> debugStrategistThoughts;
+        int currentStrategistThoughtIndex = -1;
+        std::string debugPilotState;
+        std::string debugStrategistObservation;
+        std::string debugStrategistBrief;
+        std::string debugStrategistResponse;
+        std::string debugStrategistError;
+        std::string debugS1Raw;
+        std::string debugS1Error;
+        std::string lastHandoffReason;
+        std::string repetitionNote;
+        std::string lastSummary;
+        std::unique_ptr<MoveToCellAction> leg;
         std::string legName;
+        GamePosition legTarget{-1, -1};
         int legPlaceId = 0;
         int legs = 0;
         int decisions = 0;
         int surveysUsed = 0;
         int surveyWaitUpdates = 0;
         int surveyRequestedTick = -1;
-        int lastChosenPlaceId = 0;
+        GamePosition lastChoiceTarget{0, 0};
+        bool lastChoiceTargetSet = false;
         GamePosition positionAtLastChoice{0, 0};
         bool surveyedThisDecision = false;
         bool afterSurvey = false;
@@ -1177,7 +1872,8 @@ public:
         Clock::time_point startedAt;
         Clock::time_point legStartedAt;
         std::unordered_set<int> visitedPlaceIds;
-        std::unordered_set<int> unreachablePlaceIds;
+        std::unordered_set<std::uint64_t> walkedCells;
+        std::unordered_set<std::uint64_t> unreachableTargets;
       };
 
 

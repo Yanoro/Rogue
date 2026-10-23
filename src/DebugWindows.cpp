@@ -958,6 +958,34 @@ void MapReloadWindow::Draw() {
 
   ImGui::Separator();
 
+  // Writes the running map into settings.json rather than touching the world.
+  // Kept apart from the list on purpose: a click in the list reloads the map on
+  // screen, while this changes which map the *next* run starts on.
+  const std::string &currentMap = game->mapFilePath;
+  ImGui::TextWrapped("Current: %s",
+                     currentMap.empty() ? "(no map loaded)" : currentMap.c_str());
+  ImGui::BeginDisabled(currentMap.empty());
+  if (ImGui::Button("Make current map default")) {
+    lastDefaultMapMessage.clear();
+    const bool written = SaveStartupMapToSettingsFile(
+        SettingsFilePath(), currentMap, lastDefaultMapMessage);
+    if (game->debugLog) {
+      if (written) {
+        game->debugLog->LogInfo(lastDefaultMapMessage);
+      } else {
+        game->debugLog->LogError(lastDefaultMapMessage);
+      }
+    }
+  }
+  ImGui::EndDisabled();
+  ImGui::TextDisabled("Writes map.file in %s, used on the next launch.",
+                      SettingsFilePath().c_str());
+  if (!lastDefaultMapMessage.empty()) {
+    ImGui::TextWrapped("%s", lastDefaultMapMessage.c_str());
+  }
+
+  ImGui::Separator();
+
   const auto &mapList = game->mapReloader->GetMapList();
   if (mapList.empty()) {
     ImGui::TextDisabled("No maps found in: %s", game->mapReloader->GetDirectory().c_str());
@@ -2511,7 +2539,7 @@ void NPCMenuWindow::Draw() {
   if (!show)
     return;
 
-  ImGui::SetNextWindowSize(ImVec2(840, 460), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(960, 460), ImGuiCond_FirstUseEver);
   if (ImGui::Begin("NPC Menu", &show, ImGuiWindowFlags_None)) {
     static ImGuiTextFilter filter;
     filter.Draw("Filter", 180.0f);
@@ -2521,6 +2549,7 @@ void NPCMenuWindow::Draw() {
     // Applied after the iteration so we do not mutate the ECS while querying it.
     flecs::entity contextToToggle = flecs::entity::null();
     flecs::entity inventoryToOpen = flecs::entity::null();
+    flecs::entity navigationToOpen = flecs::entity::null();
 
     // Which row's task list is expanded below the table. Held statically because
     // the window itself is rebuilt on every toggle while the selection is about
@@ -2539,7 +2568,7 @@ void NPCMenuWindow::Draw() {
                             (hasTaskDetail ? ImGui::GetStyle().ItemSpacing.y
                                            : 0.0f));
 
-    if (ImGui::BeginTable("NPCMenuTable", 8,
+    if (ImGui::BeginTable("NPCMenuTable", 9,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Resizable |
                               ImGuiTableFlags_ScrollY |
@@ -2559,10 +2588,13 @@ void NPCMenuWindow::Draw() {
                               130.0f);
       ImGui::TableSetupColumn("Inventory",
                               ImGuiTableColumnFlags_WidthFixed, 90.0f);
+      ImGui::TableSetupColumn("Navigation",
+                              ImGuiTableColumnFlags_WidthFixed, 100.0f);
       ImGui::TableHeadersRow();
 
       game->ecs.filter<AgentBrainWrapper>().each(
-          [&contextToToggle, &inventoryToOpen, &taskRowToSelect, &selectedForTasks,
+          [&contextToToggle, &inventoryToOpen, &navigationToOpen,
+           &taskRowToSelect, &selectedForTasks,
            this](flecs::entity npc, AgentBrainWrapper &wrapper) {
             if (!npc.is_alive()) {
               return;
@@ -2671,6 +2703,23 @@ void NPCMenuWindow::Draw() {
             if (ImGui::Button(inventoryLabel.c_str())) {
               inventoryToOpen = npc;
             }
+
+            ImGui::TableNextColumn();
+            std::string navigationLabel = "Open##navigation" + idStr;
+            if (ImGui::Button(navigationLabel.c_str())) {
+              navigationToOpen = npc;
+            }
+            if (ImGui::IsItemHovered()) {
+              if (npc.has<NavigationDebugState>()) {
+                ImGui::SetTooltip(
+                    "Open the last navigation snapshot: strategist plan and "
+                    "observation, pilot state, candidates and S1 answers.");
+              } else {
+                ImGui::SetTooltip(
+                    "No navigation has run yet; the view opens empty and fills "
+                    "on the next [NAVIGATE].");
+              }
+            }
           });
 
       ImGui::EndTable();
@@ -2717,6 +2766,12 @@ void NPCMenuWindow::Draw() {
     // context-menu option uses.
     if (inventoryToOpen.is_alive()) {
       game->OpenStorageWindow(inventoryToOpen);
+    }
+
+    // One carrier per character, so several navigation views can be open while
+    // the NPC table itself stays a single window.
+    if (navigationToOpen.is_alive()) {
+      game->OpenNavigationDebugWindow(navigationToOpen);
     }
   }
   ImGui::End();
@@ -2986,9 +3041,9 @@ void VisionDebugWindow::Draw() {
 
         ImGui::Separator();
 
-        // The cone parameters are edited on the character that actually has a
-        // `Vision`, so what is tuned is what will be sampled. Only the player has
-        // one in this stage, and having the component is what makes it eligible.
+        // The field parameters are edited on the player, so what is tuned is what
+        // will be sampled for the player. NPCs receive the same values from the
+        // `perception` settings when AttachPerception runs at spawn.
         if (Vision *vision = game->playerEntity.get_mut<Vision>()) {
           float range = vision->range;
           if (ImGui::SliderFloat("Range (tiles)", &range, 1.0f, 40.0f, "%.0f")) {
@@ -3004,9 +3059,9 @@ void VisionDebugWindow::Draw() {
             vision->radarRadius = radar;
           }
           ImGui::TextDisabled(
-              "Radar = the small all-round ring, so a character walking into a "
-              "room does not miss the barrel beside the door. The cone reaches "
-              "further and sees nothing behind.");
+              "Radar = the all-round near ring. At 360 degrees the field is already "
+              "all-round; below 360 the cone reaches further ahead and sees nothing "
+              "behind. The default is 360 to isolate navigation from perception.");
 
           ImGui::Separator();
           ImGui::Text("Visible cells: %d",
@@ -3122,15 +3177,23 @@ void VisionDebugWindow::Draw() {
             ImGui::EndCombo();
           }
 
-          bool drawPlaces = game->debugWindowState->GetShowPlaceOverlay();
+          // Per character, not one flag for the run: the box says "this
+          // character's places", so switching the selector must show the newly
+          // selected character's own state rather than carry the tick across.
+          bool drawPlaces =
+              game->placeOverlayCharacters.count(selectedMemoryEntity) != 0;
           if (ImGui::Checkbox("Draw this character's places", &drawPlaces)) {
-            game->debugWindowState->SetShowPlaceOverlay(drawPlaces);
+            if (drawPlaces) {
+              game->placeOverlayCharacters.insert(selectedMemoryEntity);
+            } else {
+              game->placeOverlayCharacters.erase(selectedMemoryEntity);
+            }
           }
           ImGui::TextDisabled(
               "One box per place in the selected character's memory, with its "
-              "observed cells tinted inside it. The box is the extent, so a gap "
-              "between the outline and the tint is ground the place does not "
-              "actually claim.");
+              "observed cells tinted inside it. Ticked per character for this "
+              "session. The box is the extent, so a gap between the outline and "
+              "the tint is ground the place does not actually claim.");
         } else {
           // Nothing to draw, so the overlay is told to fall back rather than
           // keeping a selection the selector can no longer show.

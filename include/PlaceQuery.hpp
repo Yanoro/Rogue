@@ -108,43 +108,37 @@ inline std::string AspectsPhrase(const KnownPlace &place, std::size_t count) {
   return out;
 }
 
-// A cell of a place worth walking to.
-//
-// For an area (a room, a market square) that is the nearest walkable member cell:
-// the centre would do for a room but not for a ring-shaped place, and an extent is
-// not guaranteed to be convex.
-//
-// For a **linear** place it is the *farthest* walkable member cell instead. A
-// road is travelled along, not entered, and its nearest cell is usually the one
-// under the character's feet -- so "nearest" makes [MOVE_TO the road] a no-op and
-// the agent can never follow it. `linear` is the same shape test the brief in
-// docs/agent-exploration-task.md names: a long bounding box with few claimed
-// cells in it (a road, a wall of water), as opposed to a filled area.
-inline GamePosition ApproachCell(const SpatialMemory &memory,
-                                 const KnownPlace &place,
-                                 GamePosition from) {
+// Whether a place is a line rather than an area: a long bounding box with few
+// claimed cells in it (a road, a wall of water), or a thin ribbon whose box is
+// nearly all claimed. A filled square fails both. Used by ApproachCell and by
+// navigation's mode vocabulary (follow vs cross).
+inline bool IsLinearPlace(const KnownPlace &place) {
   const int longSide = std::max(place.width, place.height);
   const int shortSide = std::max(1, std::min(place.width, place.height));
   const long long area =
       static_cast<long long>(std::max(1, place.width)) *
       static_cast<long long>(std::max(1, place.height));
-  // Two shapes of "a line rather than an area": a thin ribbon (a road running
-  // north-south or east-west, whose bounding box is nearly all claimed cells) and
-  // a sparse diagonal (whose box is mostly unclaimed). A filled square fails
-  // both.
   const bool thin = longSide >= 3 * shortSide;
   const bool sparse =
       static_cast<long long>(place.memberCells.size()) * 2 < area;
-  const bool linear = longSide >= 8 && (thin || sparse);
+  return longSide >= 8 && (thin || sparse);
+}
 
+// One walkable member cell, nearest or farthest from `from`. Empty ground, an
+// occupied cell and a non-walkable cell are not targets; `from` is returned when
+// there is nothing to walk to (the caller treats that as "no move").
+//
+// A member cell with something standing on it is not a place to walk to. The
+// cell's `walkable` flag describes the ground only, so a stall on packed earth
+// reads as walkable and A* would refuse the goal -- which, for an action that
+// re-aims every frame, is a character that never arrives. Characters are not
+// obstacles (they move), so they are not skipped.
+inline GamePosition WalkableMemberCell(const SpatialMemory &memory,
+                                       const KnownPlace &place,
+                                       GamePosition from, bool farthest) {
   GamePosition best = from;
   int bestDistance = -1;
 
-  // A member cell with something standing on it is not a place to walk to. The
-  // cell's `walkable` flag describes the ground only, so a stall on packed earth
-  // reads as walkable and A* would refuse the goal -- which, for an action that
-  // re-aims every frame, is a character that never arrives. Characters are not
-  // obstacles (they move), so they are not skipped.
   std::unordered_set<std::uint64_t> occupied;
   for (const auto &[id, object] : memory.objects) {
     if (object.vanishedTick >= 0 || object.character || object.portable) {
@@ -164,16 +158,39 @@ inline GamePosition ApproachCell(const SpatialMemory &memory,
     const GamePosition pos = cell->second.pos;
     const int distance =
         std::max(std::abs(pos.x - from.x), std::abs(pos.y - from.y));
-    // Nearest for an area, farthest for a line. Both are "the first one" until
-    // bestDistance has been set, which is why it starts at -1.
-    const bool better = linear ? (distance > bestDistance)
-                               : (bestDistance < 0 || distance < bestDistance);
+    const bool better = farthest
+                            ? (distance > bestDistance)
+                            : (bestDistance < 0 || distance < bestDistance);
     if (better) {
       bestDistance = distance;
       best = pos;
     }
   }
   return best;
+}
+
+inline GamePosition NearestWalkableCell(const SpatialMemory &memory,
+                                        const KnownPlace &place,
+                                        GamePosition from) {
+  return WalkableMemberCell(memory, place, from, false);
+}
+
+// A cell of a place worth walking to for the direct [MOVE_TO] verb.
+//
+// For an area (a room, a market square) that is the nearest walkable member cell:
+// the centre would do for a room but not for a ring-shaped place, and an extent is
+// not guaranteed to be convex.
+//
+// For a **linear** place it is the *farthest* walkable member cell instead. A
+// road is travelled along, not entered, and its nearest cell is usually the one
+// under the character's feet -- so "nearest" makes [MOVE_TO the road] a no-op and
+// the agent can never follow it. Navigation instead walks to the nearest cell
+// (NearestWalkableCell) and then offers the local compass once inside; this
+// heuristic remains the default for the direct [MOVE_TO] verb.
+inline GamePosition ApproachCell(const SpatialMemory &memory,
+                                 const KnownPlace &place,
+                                 GamePosition from) {
+  return WalkableMemberCell(memory, place, from, IsLinearPlace(place));
 }
 
 // One row of the place list, as `[PLACES]` sorts and prints it.

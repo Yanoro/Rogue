@@ -53,11 +53,11 @@ Three defects follow, and they are what this feature exists to fix:
 2. **A place can be authored or inferred.** Authored places inherit the map's geometry. Inferred
    places are clusters over the agent's own cells — which is how a place the map never knew about
    (a fishing spot, a second field) can exist at all.
-3. **Acquisition is a vision cone plus a small radar, sampled passively; the active probe has since
-   been removed.** `[LOOK]` (including `[LOOK around]`) asks the vision system for a sweep, so it
-   pays the same range/occlusion rules and writes to memory. `[PLACES]` reads memory and
-   `[CHARACTERS]` lists characters. The cone decides what enters memory, not what is legal or what
-   can be drawn.
+3. **Acquisition is a vision field (all-round 360° by default; a forward cone is a setting) plus a
+   small radar, sampled passively; the active probe has since been removed.** `[LOOK]` (including
+   `[LOOK around]`) asks the vision system for a sweep, so it pays the same range/occlusion rules and
+   writes to memory. `[PLACES]` reads memory and `[CHARACTERS]` lists characters. The field decides
+   what enters memory, not what is legal or what can be drawn.
 4. **Consolidation lands in two steps: an engine-only throttle first, a model-backed pass second.**
    The first version must be judgeable without knowing whether the model or the indexing was wrong.
 5. **This phase changes no agent prompt and gates no player action.** The player's memory is
@@ -357,17 +357,20 @@ Starting values, all in `include/Defaults.h` (the file already owns
 
 | constant | initial | note |
 |---|---|---|
-| `DEFAULT_VISION_RANGE` | `22` | ≈380 cells in a 90° cone |
-| `DEFAULT_VISION_ANGLE_DEGREES` | `90` | half-angle 45° |
-| `DEFAULT_VISION_RADAR_RADIUS` | `2` | 13 cells, ≈ the placement reach |
+| `DEFAULT_VISION_RANGE` | `22` | ≈1,500 cells in the default 360° field; ≈380 in the 90° cone variant |
+| `DEFAULT_VISION_ANGLE_DEGREES` | `360` | all-round by default; 90 gives the half-angle 45° cone |
+| `DEFAULT_VISION_RADAR_RADIUS` | `2` | 13 cells, ≈ the placement reach; redundant at 360° |
 | `DEFAULT_MEMORY_CELLS_MAX` | `4096` | one 64x64 map; smaller can forget ground the character just walked |
 | `DEFAULT_MEMORY_OBJECTS_MAX` | `256` | |
 | `DEFAULT_MEMORY_PLACES_MAX` | `24` | |
 | `DEFAULT_MEMORY_PLACE_CLUSTER_RADIUS` | `3` | cells this close join one cluster |
 
-The sum is ≈390 cells, comparable to the radius-10 square the probe already scans — **the cone is
-not cheaper, it is differently shaped.** That is the point: it reaches further ahead and nothing
-behind.
+**2026-10-21:** the default field is now 360° at 22 tiles (≈1,500 cells) so navigation can be
+evaluated without the forward cone as a second variable. The forward-cone variant (90° + the 2-tile
+radar, ≈390 cells) remains available through the `perception` settings. The acquisition function below
+is the same for both: the cone decides coverage, not what is legal or known. In cone mode the sum is
+≈390 cells, comparable to the radius-10 square the probe already scans — **the cone is not cheaper,
+it is differently shaped.** That is the point: it reaches further ahead and nothing behind.
 
 The radar's justification is not only convenience. A cone tested against *cell centres* is lumpy at
 1–3 tiles, where a 90° cone spans very few cells; below ~4 tiles the radar is the more accurate
@@ -659,6 +662,11 @@ is, and the examples stop being illustrative and become the acceptance artifact.
   visible instead of implied. `Game::placeOverlayEntity` carries the selection from the window to
   `GameDraw`; nothing chosen (or a selected entity destroyed by a map reload) falls back to the
   player.
+  The toggle itself is **per character**, in `Game::placeOverlayCharacters`: ticking it for one
+  character and then selecting another shows that other character's own state, unticked by default.
+  One flag for the whole run made the box labelled "this character's places" behave like a global
+  switch. The set is session state and is not persisted, because an entity id means nothing in the
+  next process; a fresh run starts with every character unticked.
 - **Colour swatches.** The Memory tab lists each place with the same colour its rectangle uses, its
   extent, whether it is authored or inferred, and its facts in raw vocabulary. Colours are a stable
   function of the place id, so the same place keeps its colour across runs.

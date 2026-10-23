@@ -55,6 +55,10 @@ public:
   void Draw() override;
 private:
   Game* game;
+  // Result of the last "Make current map default" press, shown under the button.
+  // A member rather than a local so the outcome stays visible after the click
+  // and survives ImGui's frame-to-frame widget state.
+  std::string lastDefaultMapMessage;
 };
 
 class DrawAsciiDebugWindow : public Window {

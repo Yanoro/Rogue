@@ -232,15 +232,46 @@ struct GameSettings {
     // The only switch. [NAVIGATE] reports that it is off rather than silently
     // falling back to something else.
     bool enabled = true;
-    // One line per candidate; see DEFAULT_NAVIGATION_MAX_CANDIDATES.
+    // One line per action (local compass move or distant place); see
+    // DEFAULT_NAVIGATION_MAX_CANDIDATES.
     int maxCandidates = DEFAULT_NAVIGATION_MAX_CANDIDATES;
-    int maxDecisions = DEFAULT_NAVIGATION_MAX_DECISIONS;
+    // Local compass moves before the distant place list; see
+    // DEFAULT_NAVIGATION_MAX_DIRECTIONS.
+    int maxDirections = DEFAULT_NAVIGATION_MAX_DIRECTIONS;
+    // How far a sector looks for the first place; see
+    // DEFAULT_NAVIGATION_COMPASS_RADIUS.
+    int compassRadius = DEFAULT_NAVIGATION_COMPASS_RADIUS;
     int maxSurveys = DEFAULT_NAVIGATION_MAX_SURVEYS;
     float maxSeconds = DEFAULT_NAVIGATION_MAX_SECONDS;
     float legTimeoutSeconds = DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS;
     // Calibration for *this* task, not a copy of the profile's confidence knob.
     float minProbability = DEFAULT_NAVIGATION_MIN_PROBABILITY;
     float minMargin = DEFAULT_NAVIGATION_MIN_MARGIN;
+  };
+
+  // The strategist's observation is the local grid + the minimal observed graph
+  // (docs/llm-s1-navigation-design.md section 8).
+  struct NavigationObservationSection {
+    int localGridRadius = DEFAULT_NAVIGATION_OBSERVATION_GRID_RADIUS;
+    int maxGraphNodes = DEFAULT_NAVIGATION_MAX_GRAPH_NODES;
+    int maxGraphEdges = DEFAULT_NAVIGATION_MAX_GRAPH_EDGES;
+    int maxTokens = DEFAULT_NAVIGATION_OBSERVATION_MAX_TOKENS;
+  };
+
+  // The standard-LLM strategist sits above the System 1 pilot. It is a separate
+  // call/context on the main AI backend; the S1 remains the local executor.
+  struct NavigationStrategistSection {
+    bool enabled = DEFAULT_NAVIGATION_STRATEGIST_ENABLED;
+    bool fallbackToS1 = DEFAULT_NAVIGATION_STRATEGIST_FALLBACK;
+    int maxStrategies = DEFAULT_NAVIGATION_MAX_STRATEGIES;
+    int maxMonitors = DEFAULT_NAVIGATION_MAX_MONITORS;
+    float monitorMinConfidence = DEFAULT_NAVIGATION_MONITOR_MIN_CONFIDENCE;
+    float timeoutSeconds = DEFAULT_NAVIGATION_STRATEGIST_TIMEOUT_SECONDS;
+    NavigationObservationSection observation;
+  };
+
+  struct NavigationSection {
+    NavigationStrategistSection strategist;
   };
 
   struct SystemOneSection {
@@ -315,6 +346,9 @@ struct GameSettings {
     std::string cliProfile;
   } system1;
 
+  // LLM strategist + System 1 pilot (docs/llm-s1-navigation-design.md).
+  NavigationSection navigation;
+
   struct AISection {
     // Path to a text file holding the NPC system prompt template. Empty means the
     // compiled-in DEFAULT_NPC_PROMPT is used. The template keeps the same
@@ -380,6 +414,18 @@ struct GameSettings {
     // value is used as the starting zoom directly.
     float cameraZoom = 0.0f;
   } render;
+
+  // Acquisition field for every character's Vision. Named `perception` rather
+  // than `vision` because `vision` is already the independent Vision Chat AI
+  // backend. The default is all-round (360 degrees) so navigation can be
+  // evaluated without the forward cone as a second, independent variable. Set
+  // angleDegrees to 90 for the forward-cone variant; radarRadius is the
+  // all-round near ring in either mode.
+  struct PerceptionSection {
+    float range = DEFAULT_VISION_RANGE;
+    float angleDegrees = DEFAULT_VISION_ANGLE_DEGREES;
+    int radarRadius = DEFAULT_VISION_RADAR_RADIUS;
+  } perception;
 
   struct PlayerSection {
     std::string name = DEFAULT_PLAYER_ENTITY_NAME;
@@ -542,6 +588,30 @@ const GameSettings &Settings();
 // returns false after reporting on stderr, so a bad settings file is a visible
 // "started with defaults" rather than a crash.
 bool LoadGameSettings(const std::string &path);
+
+// The file LoadGameSettings was given, remembered so a window can write a setting
+// back to the file this run actually read (`--settings other.json` included).
+// "settings.json" until the first load.
+const std::string &SettingsFilePath();
+
+// Writes `mapPath` as `map.file` in the settings file at `path`, which is what
+// makes the map on screen the map the next run starts on.
+//
+// The write changes that one value and nothing else. settings.json is
+// hand-authored and hand-grouped (see SETTINGS.md), so the key is edited in place
+// rather than parsed and dumped -- a dump would reflow the whole file and lose
+// the blank lines and comments-by-arrangement that make it readable. Only a file
+// that does not yet contain a `map.file` string is rewritten through nlohmann,
+// because adding a key to arbitrary layout is not something a value substitution
+// can do; that path is reported in `message`.
+//
+// Never throws. Returns true when the file now names `mapPath`; `message` always
+// describes the outcome, and on success warns when settings.local.json sets
+// `map.file` itself, since that layer is merged on top and would win at the next
+// startup.
+bool SaveStartupMapToSettingsFile(const std::string &path,
+                                  const std::string &mapPath,
+                                  std::string &message);
 
 // The command `art.generation.command` falls back to when it is empty but
 // generation is enabled: `tools/gen_tile_art.py --from-worklist {worklist}`, run

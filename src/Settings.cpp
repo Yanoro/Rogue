@@ -122,8 +122,22 @@ GameSettings &MutableSettings() {
 
 const GameSettings &Settings() { return MutableSettings(); }
 
+namespace {
+// The settings file this run was started with. Read through SettingsFilePath().
+std::string &SettingsFilePathStorage() {
+  static std::string path = "settings.json";
+  return path;
+}
+}  // namespace
+
+const std::string &SettingsFilePath() { return SettingsFilePathStorage(); }
+
 bool LoadGameSettings(const std::string &path) {
   GameSettings &settings = MutableSettings();
+  // Remembered before the parse rather than after it, because a writer needs the
+  // path even when this load failed: a missing or malformed file is exactly when
+  // the person is most likely to fix the setting from a window.
+  SettingsFilePathStorage() = path;
   // Reset first, so calling this twice (a future "reload settings" window) does
   // not leave values from the previous read behind.
   settings = GameSettings{};
@@ -386,7 +400,8 @@ bool LoadGameSettings(const std::string &path) {
           settings.system1.navigation;
       nav.enabled = navigation.value("enabled", nav.enabled);
       nav.maxCandidates = navigation.value("maxCandidates", nav.maxCandidates);
-      nav.maxDecisions = navigation.value("maxDecisions", nav.maxDecisions);
+      nav.maxDirections = navigation.value("maxDirections", nav.maxDirections);
+      nav.compassRadius = navigation.value("compassRadius", nav.compassRadius);
       nav.maxSurveys = navigation.value("maxSurveys", nav.maxSurveys);
       nav.maxSeconds = navigation.value("maxSeconds", nav.maxSeconds);
       nav.legTimeoutSeconds =
@@ -400,11 +415,17 @@ bool LoadGameSettings(const std::string &path) {
                   << std::endl;
         nav.maxCandidates = 1;
       }
-      if (nav.maxDecisions < 1) {
-        std::cerr << "Settings: system1.navigation.maxDecisions must be at least "
-                     "1; using 1."
+      if (nav.maxDirections < 0) {
+        std::cerr << "Settings: system1.navigation.maxDirections cannot be "
+                     "negative; using 0."
                   << std::endl;
-        nav.maxDecisions = 1;
+        nav.maxDirections = 0;
+      }
+      if (nav.compassRadius < 1) {
+        std::cerr << "Settings: system1.navigation.compassRadius must be at "
+                     "least 1; using 1."
+                  << std::endl;
+        nav.compassRadius = 1;
       }
       if (nav.maxSurveys < 0) {
         std::cerr << "Settings: system1.navigation.maxSurveys cannot be "
@@ -567,6 +588,31 @@ bool LoadGameSettings(const std::string &path) {
     settings.render.cameraZoom =
         render.value("cameraZoom", settings.render.cameraZoom);
 
+    const nlohmann::json &perception = Section(root, "perception");
+    settings.perception.range =
+        perception.value("range", settings.perception.range);
+    settings.perception.angleDegrees =
+        perception.value("angleDegrees", settings.perception.angleDegrees);
+    settings.perception.radarRadius =
+        perception.value("radarRadius", settings.perception.radarRadius);
+    if (settings.perception.range < 1.0f || settings.perception.range > 40.0f) {
+      std::cerr << "Settings: perception.range must be 1..40; using "
+                << DEFAULT_VISION_RANGE << "." << std::endl;
+      settings.perception.range = DEFAULT_VISION_RANGE;
+    }
+    if (settings.perception.angleDegrees < 10.0f ||
+        settings.perception.angleDegrees > 360.0f) {
+      std::cerr << "Settings: perception.angleDegrees must be 10..360; using "
+                << DEFAULT_VISION_ANGLE_DEGREES << "." << std::endl;
+      settings.perception.angleDegrees = DEFAULT_VISION_ANGLE_DEGREES;
+    }
+    if (settings.perception.radarRadius < 0 ||
+        settings.perception.radarRadius > 10) {
+      std::cerr << "Settings: perception.radarRadius must be 0..10; using "
+                << DEFAULT_VISION_RADAR_RADIUS << "." << std::endl;
+      settings.perception.radarRadius = DEFAULT_VISION_RADAR_RADIUS;
+    }
+
     const nlohmann::json &player = Section(root, "player");
     settings.player.name = player.value("name", settings.player.name);
     settings.player.startX = player.value("startX", settings.player.startX);
@@ -650,6 +696,67 @@ bool LoadGameSettings(const std::string &path) {
     settings.debug.restServer = debug.value("restServer", settings.debug.restServer);
     settings.debug.logMaxEntries =
         debug.value("logMaxEntries", settings.debug.logMaxEntries);
+
+    // LLM strategist + S1 pilot (docs/llm-s1-navigation-design.md). The strategist
+    // uses the main AI backend, so there is no provider/model here; these are the
+    // bounds on the outer navigation layer.
+    {
+      const nlohmann::json &navigationRoot = Section(root, "navigation");
+      const nlohmann::json &strategist = Section(navigationRoot, "strategist");
+      auto &s = settings.navigation.strategist;
+      s.enabled = strategist.value("enabled", s.enabled);
+      s.fallbackToS1 = strategist.value("fallbackToS1", s.fallbackToS1);
+      s.maxStrategies = strategist.value("maxStrategies", s.maxStrategies);
+      s.maxMonitors = strategist.value("maxMonitors", s.maxMonitors);
+      s.monitorMinConfidence =
+          strategist.value("monitorMinConfidence", s.monitorMinConfidence);
+      s.timeoutSeconds = strategist.value("timeoutSeconds", s.timeoutSeconds);
+      const nlohmann::json &observation = Section(strategist, "observation");
+      s.observation.localGridRadius =
+          observation.value("localGridRadius", s.observation.localGridRadius);
+      s.observation.maxGraphNodes =
+          observation.value("maxGraphNodes", s.observation.maxGraphNodes);
+      s.observation.maxGraphEdges =
+          observation.value("maxGraphEdges", s.observation.maxGraphEdges);
+      s.observation.maxTokens =
+          observation.value("maxTokens", s.observation.maxTokens);
+
+      if (s.maxStrategies < 1) {
+        std::cerr << "Settings: navigation.strategist.maxStrategies must be at "
+                     "least 1; using 1."
+                  << std::endl;
+        s.maxStrategies = 1;
+      }
+      if (s.maxMonitors < 0) {
+        std::cerr << "Settings: navigation.strategist.maxMonitors cannot be "
+                     "negative; using 0."
+                  << std::endl;
+        s.maxMonitors = 0;
+      }
+      s.monitorMinConfidence =
+          std::clamp(s.monitorMinConfidence, 0.0f, 1.0f);
+      if (s.timeoutSeconds <= 0.0f) {
+        std::cerr << "Settings: navigation.strategist.timeoutSeconds must be "
+                     "positive; using 30."
+                  << std::endl;
+        s.timeoutSeconds = 30.0f;
+      }
+      if (s.observation.localGridRadius < 1) {
+        std::cerr << "Settings: navigation.strategist.observation.localGridRadius "
+                     "must be at least 1; using 1."
+                  << std::endl;
+        s.observation.localGridRadius = 1;
+      }
+      if (s.observation.maxGraphNodes < 0) {
+        s.observation.maxGraphNodes = 0;
+      }
+      if (s.observation.maxGraphEdges < 0) {
+        s.observation.maxGraphEdges = 0;
+      }
+      if (s.observation.maxTokens < 0) {
+        s.observation.maxTokens = 0;
+      }
+    }
   } catch (const std::exception &e) {
     std::cerr << "Settings: a value in " << path
               << " has the wrong type: " << e.what()
@@ -694,4 +801,247 @@ bool LoadGameSettings(const std::string &path) {
   }
 
   return ok;
+}
+
+//
+// Startup-map writer, used by the Map Reload window's "Make current map default".
+//
+// It edits `map.file` in the settings file and nothing else. The one-value
+// substitution below exists because settings.json is hand-authored: it has a
+// _readme, blank lines between sections and an order chosen for reading, all of
+// which a parse-and-dump would throw away. The parse path is kept only for the
+// case a substitution cannot express -- adding a key that is not there yet.
+//
+
+namespace {
+
+bool IsJsonSpace(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+// One past the closing quote of the JSON string that opens at `quote`, or npos
+// when the string is unterminated.
+std::size_t SkipJsonString(const std::string &text, std::size_t quote) {
+  for (std::size_t i = quote + 1; i < text.size(); ++i) {
+    if (text[i] == '\\') {
+      ++i;  // Whatever is escaped cannot be the closing quote.
+      continue;
+    }
+    if (text[i] == '"') {
+      return i + 1;
+    }
+  }
+  return std::string::npos;
+}
+
+// True when the string token [begin,end) -- quotes included -- spells `key`.
+// Escapes are not decoded; every key this reads is plain ASCII.
+bool JsonStringIs(const std::string &text, std::size_t begin, std::size_t end,
+                  const std::string &key) {
+  return end == begin + key.size() + 2 &&
+         text.compare(begin + 1, key.size(), key) == 0;
+}
+
+// Scans the members of one object, whose `{` is just before `from`, for a string
+// `file` value at that object's own level. Nested objects are skipped by depth
+// so a `file` inside them cannot match.
+bool FindFileKeyInObject(const std::string &text, std::size_t from,
+                         std::size_t &begin, std::size_t &end) {
+  int depth = 1;  // inside the object that owns the members
+  for (std::size_t i = from; i < text.size();) {
+    const char c = text[i];
+    if (c == '"') {
+      const std::size_t tokenEnd = SkipJsonString(text, i);
+      if (tokenEnd == std::string::npos) return false;
+      std::size_t after = tokenEnd;
+      while (after < text.size() && IsJsonSpace(text[after])) ++after;
+      const bool isKey = after < text.size() && text[after] == ':';
+      if (isKey && depth == 1 && JsonStringIs(text, i, tokenEnd, "file")) {
+        ++after;  // past ':'
+        while (after < text.size() && IsJsonSpace(text[after])) ++after;
+        if (after >= text.size() || text[after] != '"') return false;
+        const std::size_t valueEnd = SkipJsonString(text, after);
+        if (valueEnd == std::string::npos) return false;
+        begin = after;
+        end = valueEnd;
+        return true;
+      }
+      i = tokenEnd;
+      continue;
+    }
+    if (c == '{' || c == '[') {
+      ++depth;
+    } else if (c == '}' || c == ']') {
+      --depth;
+      if (depth == 0) return false;  // the object closed without a `file` key
+    }
+    ++i;
+  }
+  return false;
+}
+
+// Finds the string value of the top-level `map.file` key in raw JSON text.
+// `begin`/`end` bracket the value's quotes. False when the key is absent, the
+// text is not an object or the value is not a string -- all of which the caller
+// handles by falling back to a real parse.
+bool FindTopLevelMapFileValue(const std::string &text, std::size_t &begin,
+                              std::size_t &end) {
+  int depth = 0;
+  for (std::size_t i = 0; i < text.size();) {
+    const char c = text[i];
+    if (c == '"') {
+      const std::size_t tokenEnd = SkipJsonString(text, i);
+      if (tokenEnd == std::string::npos) return false;
+      std::size_t after = tokenEnd;
+      while (after < text.size() && IsJsonSpace(text[after])) ++after;
+      const bool isKey = after < text.size() && text[after] == ':';
+      if (isKey && depth == 1 && JsonStringIs(text, i, tokenEnd, "map")) {
+        ++after;  // past ':'
+        while (after < text.size() && IsJsonSpace(text[after])) ++after;
+        if (after >= text.size() || text[after] != '{') return false;
+        return FindFileKeyInObject(text, after + 1, begin, end);
+      }
+      i = tokenEnd;
+      continue;
+    }
+    if (c == '{' || c == '[') {
+      ++depth;
+    } else if (c == '}' || c == ']') {
+      --depth;
+    }
+    ++i;
+  }
+  return false;
+}
+
+// Replaces `path` with `text` through a temporary file in the same directory, so
+// a failure cannot leave a truncated settings file behind. `path` is replaced
+// atomically by the rename.
+bool WriteWholeFile(const std::string &path, const std::string &text,
+                    std::string &error) {
+  const std::filesystem::path target(path);
+  std::filesystem::path temporary = target;
+  temporary += ".tmp";
+
+  {
+    std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+    if (!out.is_open()) {
+      error = "could not open " + temporary.string() + " for writing";
+      return false;
+    }
+    out << text;
+    out.flush();
+    if (!out) {
+      out.close();
+      std::error_code ignored;
+      std::filesystem::remove(temporary, ignored);
+      error = "could not write " + temporary.string();
+      return false;
+    }
+  }
+
+  std::error_code ec;
+  std::filesystem::rename(temporary, target, ec);
+  if (ec) {
+    std::error_code ignored;
+    std::filesystem::remove(temporary, ignored);
+    error = "could not replace " + target.string() + ": " + ec.message();
+    return false;
+  }
+  return true;
+}
+
+// True when the untracked override beside `path` sets `map.file` to something
+// other than `mapPath`. That layer is merge-patched after the main file, so it
+// would win at the next startup and make this write look like a no-op.
+bool LocalOverrideChangesMapFile(const std::string &path,
+                                 const std::string &mapPath) {
+  const std::filesystem::path localPath =
+      std::filesystem::path(path).parent_path() / "settings.local.json";
+  std::ifstream file(localPath);
+  if (!file.is_open()) return false;
+  try {
+    nlohmann::json local = nlohmann::json::parse(file);
+    const nlohmann::json &root = local;
+    if (!root.is_object()) return false;
+    const auto map = root.find("map");
+    if (map == root.end() || !map->is_object()) return false;
+    const auto file = map->find("file");
+    if (file == map->end() || !file->is_string()) return false;
+    return file->get<std::string>() != mapPath;
+  } catch (const std::exception &) {
+    // A malformed override cannot be applied at startup either, so it cannot
+    // contradict what was just written. LoadGameSettings reports it on its own.
+    return false;
+  }
+}
+
+}  // namespace
+
+bool SaveStartupMapToSettingsFile(const std::string &path,
+                                  const std::string &mapPath,
+                                  std::string &message) {
+  message.clear();
+  if (mapPath.empty()) {
+    message = "No map is loaded, so there is no path to write.";
+    return false;
+  }
+
+  std::ifstream file(path, std::ios::binary);
+  if (!file.is_open()) {
+    message = "Could not open " + path + " to read it.";
+    return false;
+  }
+  std::ostringstream buffer;
+  buffer << file.rdbuf();
+  file.close();
+  std::string text = buffer.str();
+
+  const std::string jsonValue = nlohmann::json(mapPath).dump();
+
+  std::size_t valueBegin = 0;
+  std::size_t valueEnd = 0;
+  bool reflowed = false;
+  if (FindTopLevelMapFileValue(text, valueBegin, valueEnd)) {
+    text.replace(valueBegin, valueEnd - valueBegin, jsonValue);
+  } else {
+    // No `map.file` string to substitute: the key, the section or a string value
+    // is missing. Rebuilding is the only honest way to add one, and it reflows
+    // the file -- the message says so, because that is a visible change to a
+    // tracked file.
+    nlohmann::ordered_json root;
+    try {
+      root = nlohmann::ordered_json::parse(text);
+    } catch (const std::exception &e) {
+      message = "Could not parse " + path + ": " + e.what();
+      return false;
+    }
+    if (!root.is_object()) {
+      message = path + " does not contain a JSON object.";
+      return false;
+    }
+    if (!root.contains("map") || !root["map"].is_object()) {
+      root["map"] = nlohmann::ordered_json::object();
+    }
+    root["map"]["file"] = mapPath;
+    text = root.dump(2) + "\n";
+    reflowed = true;
+  }
+
+  std::string writeError;
+  if (!WriteWholeFile(path, text, writeError)) {
+    message = "Could not update " + path + ": " + writeError + ".";
+    return false;
+  }
+
+  message = "Default map set to " + mapPath + " in " + path + ".";
+  if (reflowed) {
+    message +=
+        " The file had no map.file, so it was rewritten in a standard layout.";
+  }
+  if (LocalOverrideChangesMapFile(path, mapPath)) {
+    message +=
+        " settings.local.json also sets map.file, and that file wins at startup.";
+  }
+  return true;
 }

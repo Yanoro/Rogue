@@ -3,6 +3,11 @@
 **Status:** brief for a new session. First cut implemented 2026-10-18 — see "Implementation status"
 at the end. The AI run itself is still the owner's to verify.
 
+**2026-10-21:** the default perception field is now all-round (360° at 22 tiles) so the navigation
+stage can be evaluated without the forward cone as a second variable. The 90° cone + 2-tile radar
+described below is available as `"perception": { "range": 22, "angleDegrees": 90, "radarRadius": 2 }`;
+the acquisition function and the fair-test rules are unchanged.
+
 **Goal.** One NPC starts in a forest with **zero spatial memory** and no hints, and must reach a
 village using what it can see — a road, signposts, the shape of the land. It should be a fair test of
 whether the memory and place features are worth keeping, not a scripted walk.
@@ -90,9 +95,15 @@ entity. Without this, a failed run cannot be diagnosed.
 
 - `[PLACES]` shows a road place once one is derived: `road 100% -- 30 tiles north-east`. That is enough
   to head toward it.
-- `[MOVE_TO] <place>` targets the **nearest walkable member cell** (`PlaceQuery::ApproachCell`). On a
-  long thin road that is one step. Following a road is therefore a loop of `[PLACES]` → pick a farther
-  stretch → `[MOVE_TO]`.
+- `[MOVE_TO] <place>` targets the place's **approach cell** (`PlaceQuery::ApproachCell`): the nearest
+  walkable member for an area, the **far end** from the character for a linear place. On a long thin
+  road the far end is what makes the move useful; the nearest cell would be the one underfoot.
+  Following a road is therefore a loop of `[PLACES]` → pick a farther stretch → `[MOVE_TO]`.
+- The target is **fixed when the move starts**, and a place is arrived at by standing on that cell.
+  Both matter. Re-resolving the named place and recomputing `ApproachCell` from the moving character
+  made the far end flip at the midpoint — the 18:02 run turned around and walked back to the same
+  tile — and the object-style "next to" arrival stopped one tile short of the road. A character or
+  object target is still followed when it moves; only a place is pinned.
 - Test that loop before building anything. If the model cannot do it, the cheapest fix is in
   `ApproachCell`: when a place is linear (large extent, small area), target the **far end** from the
   character instead of the nearest cell. Do not add a travel verb until the cheap fix is shown to fail.
@@ -137,7 +148,7 @@ Map format facts that cost time last session:
 
 ## Build and test rules
 
-- Build inside `nix-shell`: `nix-shell --run 'cmake --build build -j4'`. Never `-j` above 4.
+- Build inside `nix-shell`: `nix-shell --run 'cmake --build build -j$(nproc)'` (all cores).
 - If the assembler reports `.loa`/`leb128` on a source file, the ccache entry is corrupt: rebuild with
   `CCACHE_DISABLE=1`. It is not a C++ error.
 - ASan is always on. A crash in a run is a real bug.
@@ -198,7 +209,7 @@ Paste this into a fresh session in this repository:
 >
 > Work in the order of "Suggested first cut". Before writing code, confirm by reading the systems
 > that an NPC with the components would be written and derived per-entity, and say what you found.
-> Build with `nix-shell --run 'cmake --build build -j4'` (add `CCACHE_DISABLE=1` if the assembler
+> Build with `nix-shell --run 'cmake --build build -j$(nproc)'` (add `CCACHE_DISABLE=1` if the assembler
 > complains about `.loa`). Test pure logic with a throwaway harness in `/tmp` against the real
 > headers. Do not add hints to make the agent succeed, and do not claim a model run passed — runtime
 > verification is mine.
@@ -228,7 +239,9 @@ Landed, in the order of "Suggested first cut":
 4. **Road following.** `PlaceQuery::ApproachCell` targets the far end of a linear place instead of
    the nearest cell (`include/PlaceQuery.hpp:121`); `[MOVE_TO] <label>` among places sharing a name
    picks the one whose approach is nearest (`include/AgentActions.h:191`). Without the first, the
-   nearest cell of a road is the one underfoot and the command is a no-op.
+   nearest cell of a road is the one underfoot and the command is a no-op. The chosen place's target
+   cell is fixed at the start and a place is arrived at by standing on it; re-resolving it per frame
+   flipped the far end at the midpoint and produced the 18:02 back-and-forth.
 5. **`[LOOK $DIRECTION]`.** `LookAction` (`include/AgentActions.h:314`), registered as a visible
    command (`src/GameECS.cpp:2510`). It sets `Facing`, waits one frame for the sampler, then returns
    a prose report of the sweep: what ground, things and places are in sight, in eight compass

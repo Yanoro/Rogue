@@ -29,6 +29,7 @@
 #include "AgentActions.h"
 #include "TaskVerification.h"
 #include "CharacterStatusWindow.h"
+#include "NavigationDebugWindow.h"
 #include "GlobalCommandRegistry.h"
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
@@ -1135,7 +1136,13 @@ void Game::AttachPerception(flecs::entity entity) {
     return;
   }
 
-  entity.set<Vision>({});
+  const GameSettings::PerceptionSection &perceptionSettings =
+      Settings().perception;
+  Vision vision;
+  vision.range = perceptionSettings.range;
+  vision.angleDegrees = perceptionSettings.angleDegrees;
+  vision.radarRadius = perceptionSettings.radarRadius;
+  entity.set<Vision>(vision);
   // Empty on spawn: the Origin place is created by the first sample, which is
   // what makes "I have no idea where I am" the honest starting state.
   entity.set<SpatialMemory>({});
@@ -2490,19 +2497,20 @@ void Game::ECSInit() {
 
   GlobalCommandRegistry::Register({
     .format = "[MOVE_TO $TARGET]",
-    .rule = "Pathfind automatically to a character, an object, or a place you remember. When you arrive at an object you are shown the interactions it offers. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
+    .rule = "Go directly to one named target you already know: a character, an object, or a remembered place. Use it when that target is the destination -- it is one move, not a search. If your goal is beyond the target (a road you can see, a path), use [NAVIGATE <goal>] instead. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
     .pattern = std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
       return [targetName](flecs::entity) { return std::make_unique<MoveToEntityAction>(targetName); };
     },
     .help = {
-      .description = "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is how you get within reach of something: arriving next to an object is what makes its interactions available, and arriving next to a character is the step before talking to them.",
+      .description = "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is one move to a target you already know: use it when the target is where you want to end up, or a known waypoint you have already chosen. It is not a search -- if the goal is beyond the target, use [NAVIGATE]. Arriving at an object lists the interactions it offers; arriving at a place stands you in it.",
       .examples = {"[MOVE_TO Pietro]", "[MOVE_TO Mill]"},
-      .usage = {"$TARGET: the exact name as printed by [PLACES] or [CHARACTERS], or the name of something you can see with [LOOK]. Matching ignores case."},
+      .usage = {"$TARGET: a name from [PLACES] or [CHARACTERS]. An unnamed remembered place must first be given a name with [NAME_PLACE #<number> <name>]; a [PLACES] number on its own is not a target. Matching ignores case."},
       .notes = {"Arriving at an object lists the interactions it offers and remembers it as your interaction target.",
                 "Directions such as \"east\" and bare coordinates are not valid targets.",
-                "If the name matches nothing you are told so and nothing moves."}
+                "If the name matches nothing, the failure names the two ways forward: [PLACES] + [NAME_PLACE] for a remembered place, or [NAVIGATE <goal>] for a goal you cannot name yet.",
+                "Use [NAVIGATE] when a target you can name or see (a road, a path) is only a step toward a goal beyond it; [MOVE_TO] stops at that target."}
     }
   });
 
@@ -2526,24 +2534,24 @@ void Game::ECSInit() {
 
   GlobalCommandRegistry::Register({
     .format = "[NAVIGATE $GOAL]",
-    .rule = "Travel toward a distant goal you cannot locate yet, letting a small decision model pick each next remembered place. Use it for a search such as finding a village; for a short trip to a place you can name or see nearby, use [MOVE_TO] instead. Example: [NAVIGATE find a village with a market].",
+    .rule = "Search toward a goal you cannot pinpoint yet (find the village, follow a rumour). A strategist plans from what you have observed and a small pilot chooses each next move: a direction within the place you are standing in, or a remembered place. Use it when the goal is not a place you can name or locate -- a visible road or path is a step, not the goal. [MOVE_TO] is only for a target that is the destination. Example: [NAVIGATE find a village with a market].",
     .pattern = std::regex(R"(\[NAVIGATE\s+(.+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string goal = match[1].str();
       return [goal](flecs::entity) { return std::make_unique<NavigateAction>(goal); };
     },
     .help = {
-      .description = "Use this for high-level travel: when you know what you are looking for but not where it is or which direction to take -- finding a village, following a signpost's rumour to a distant place, or looking for somewhere quiet to sleep when nothing you remember obviously matches. A small decision model picks the most likely next place from the places you remember, walks one leg, and decides again on arrival. It is not for short or already-known trips: to go to a place you can name, can see, or already have in mind, use [MOVE_TO], which goes there directly without a decision-model call. It stops when it judges that it has arrived, when no remembered place looks suitable, when it cannot decide even after looking around, or when it reaches its budget, and then tells you where you are and what places are nearby. The decision model only chooses from your own memory, so it can be wrong.",
+      .description = "Use this for high-level travel: when you know what you are looking for but not where it is or which direction to take -- finding a village, following a signpost's rumour to a distant place, or looking for somewhere quiet to sleep when nothing you remember obviously matches. A strategist plans from your observed surroundings and may take several seconds; a small pilot then picks the most likely next move, walks one leg, and decides again on arrival. The strategist also asks the pilot a few yes/no questions (a signpost, a junction, a dead end, water) and re-plans when one of them says the situation has changed. A move is either a direction within the place you are standing in (follow the road north, cross the orchard east) or a remembered place. The compass is what lets it keep following a road or leave it deliberately, instead of only jumping between remembered places. It is not for a target you can name that is itself the destination: use [MOVE_TO] for that. Local knowledge of the next few tiles -- a road or path you can see -- does not make the goal known; if the named target is only a step toward the goal, this is the verb. It stops when it judges that it has arrived, when the strategist gives up, when the strategist call budget is exhausted, or when a resource guard (the episode's wall clock or a stuck leg) is reached; a pilot that cannot decide or has no remembered move hands back to the strategist instead of ending the navigation. It then tells you where you are, what places are nearby, and the strategy it used. Both models only see your own memory, so either can be wrong.",
       .examples = {"[NAVIGATE find a village with a market]",
                    "[NAVIGATE the village the signpost mentioned; it said north]",
                    "[NAVIGATE somewhere quiet to sleep]"},
-      .usage = {"$GOAL: a short phrase describing the distant or uncertain goal you are searching for, e.g. a village with a market or the village a signpost mentioned. Do not name a place you already know; use [MOVE_TO] for that. What you learned from a sign or a person can be part of it."},
-      .notes = {"Use [MOVE_TO] for a short trip to a place you can name or see, or any destination you already have in mind. [NAVIGATE] is for the search when the destination is not yet known; every leg costs a decision, so a short trip is cheaper with [MOVE_TO].",
-                "Only places you have observed are candidates; nothing is revealed that you have not seen.",
-                "The goal is the only hint the decision model gets. It does not read your conversation or the map.",
-                "A place can be unnamed; the model chooses it by the number you saw in [PLACES].",
-                "When it is unsure it turns a full circle once to look for a better lead, then stops rather than guessing.",
-                "It stops without arriving if no place looks suitable, if it runs out of decisions or time, or if it would be going back and forth."}
+      .usage = {"$GOAL: a short phrase describing the distant or uncertain goal you are searching for, e.g. a village with a market or the village a signpost mentioned. Name the goal, not the next visible step; if the destination itself is a place you already know, use [MOVE_TO] for it. What you learned from a sign or a person can be part of it."},
+      .notes = {"Use [MOVE_TO] when the named target is the destination. If the goal is beyond a target you can name or see (a road, a path), that target is a step: use [NAVIGATE]. Every leg costs a decision, so a direct trip to a known destination is cheaper.",
+                "Only places, directions, objects and relations you have observed are in the strategist's brief; nothing is revealed that you have not seen. Your goal and task are the only hints it gets; it does not read your conversation or the map.",
+                "The strategist's questions are answered by the local pilot from the observation; an uncertain answer hands back to the strategist, which may re-plan or give up.",
+                "A place can be unnamed; the model chooses it by the number you saw in [PLACES]. Local compass moves are shown as here:<direction>.",
+                "When the pilot is unsure it turns a full circle once to look for a better lead; if that does not settle it, the strategist is asked again rather than guessing.",
+                "If the strategist is unavailable, the last accepted strategy is kept (its monitors are dropped) and the local pilot continues; the strategist is asked again on the pilot's next uncertainty. There is no per-episode decision cap and no back-and-forth stop: a repeated target is reported to the strategist, which decides. A pilot that cannot choose/has no remembered move asks the strategist; the episode stops without arriving only on a strategist give-up, an exhausted strategist call budget, or a resource guard (wall clock or stuck leg)."}
     }
   });
 
@@ -3811,6 +3819,37 @@ void Game::OpenCharacterStatusWindow(flecs::entity character) {
     if (!carrier.has<ActiveWindow>()) {
       carrier.set<ActiveWindow>(
           {std::make_shared<CharacterStatusWindow>(character, carrier)});
+    }
+  });
+}
+
+void Game::OpenNavigationDebugWindow(flecs::entity character) {
+  if (!character.is_alive()) {
+    return;
+  }
+  // Same carrier pattern as the status window: the character's own ActiveWindow
+  // slot belongs to its context/chat window, and several navigation views must
+  // be able to stay open at once.
+  ecs.defer([this, character]() {
+    flecs::entity carrier = flecs::entity::null();
+    ecs.filter<const NavigationDebugWindowTarget>().each(
+        [&](flecs::entity owner, const NavigationDebugWindowTarget &target) {
+          if (carrier.is_alive()) {
+            return;
+          }
+          if (target.character == character) {
+            carrier = owner;
+          }
+        });
+
+    if (!carrier.is_alive()) {
+      carrier = ecs.entity();
+      carrier.set<NavigationDebugWindowTarget>({character});
+    }
+
+    if (!carrier.has<ActiveWindow>()) {
+      carrier.set<ActiveWindow>(
+          {std::make_shared<NavigationDebugWindow>(character, carrier)});
     }
   });
 }

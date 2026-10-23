@@ -661,6 +661,110 @@ struct CharacterStatusWindowTarget {
   flecs::entity character;
 };
 
+// One carrier per character for the navigation debug window, for the same reason
+// as CharacterStatusWindowTarget: the character's own ActiveWindow slot belongs to
+// its context/chat window, and several navigation views must be able to stay open.
+struct NavigationDebugWindowTarget {
+  flecs::entity character;
+};
+
+// ── Navigation debug snapshot (docs/llm-s1-navigation-design.md) ─────────────
+// Written by NavigateAction at decision points, not every frame. The navigation
+// window reads this instead of reaching into the action, so the last episode
+// remains inspectable after the action ends.
+struct NavigationDebugMonitor {
+  std::string id;
+  std::string question;
+  std::string handoffWhen;
+  float minConfidence = 0.6f;
+};
+
+struct NavigationDebugMonitorAnswer {
+  std::string id;
+  float probability = 0.5f;
+  float confidence = 0.0f;
+  bool triggered = false;
+  bool answered = false;
+};
+
+// One System 1 decision, compact enough for a table. The raw reply is kept only
+// for the latest decision in NavigationDebugState.
+struct NavigationDebugS1Response {
+  int decision = 0;
+  std::string choice;
+  std::string outcome;
+  float probability = 0.0f;
+  float margin = 0.0f;
+  std::vector<NavigationDebugMonitorAnswer> monitors;
+  std::string handoff;
+  bool ok = true;
+  std::string error;
+  long long latencyMs = -1;
+  int promptTokens = -1;
+  int outputTokens = -1;
+};
+
+struct NavigationDebugCandidate {
+  std::string key;
+  std::string label;
+  std::string description;
+  int distance = 0;
+};
+
+// One strategist call's reasoning. The Navigation window shows this as the
+// navigator's thoughts; the JSON plan is deliberately not part of it.
+struct NavigationDebugStrategistThought {
+  int index = 0;
+  std::string reason;
+  std::string thought;
+  // The call's own plan. A failed/retry call has no plan; it does not fall back
+  // to an earlier call's strategy.
+  std::string strategy;
+  std::string subtask;
+  std::vector<NavigationDebugMonitor> monitors;
+  // The candidate list the strategist built for its observation at this call.
+  std::vector<NavigationDebugCandidate> candidates;
+  // The observed place/object graph the strategist saw at this call, as the
+  // observation's `graph` JSON. Kept per call so the Overview can show how the
+  // agent's picture evolved.
+  std::string graphJson;
+  bool complete = false;
+  bool failed = false;
+  std::string error;
+};
+
+struct NavigationDebugState {
+  bool active = false;
+  std::string goal;
+  std::string phase;
+  std::string strategy;
+  std::string subtask;
+  std::vector<NavigationDebugMonitor> monitors;
+  int strategyVersion = 0;
+  int strategiesUsed = 0;
+  int handoffs = 0;
+  int decisions = 0;
+  int legs = 0;
+  int surveysUsed = 0;
+  bool strategyReady = false;
+  bool strategistFallback = false;
+  std::string lastHandoff;
+  std::string repetition;
+  std::string strategistObservation;
+  std::string strategistBrief;
+  std::string strategistResponse;
+  std::string strategistError;
+  std::string pilotState;
+  std::vector<NavigationDebugCandidate> candidates;
+  std::vector<NavigationDebugS1Response> s1Responses;
+  std::vector<NavigationDebugStrategistThought> strategistThoughts;
+  std::string route;
+  std::string visited;
+  std::string lastSummary;
+  std::string lastS1Raw;
+  std::string lastS1Error;
+};
+
 struct AIBackend {
   std::unique_ptr<AI> ptr;
 };
@@ -1274,6 +1378,8 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<ActiveWindow>();
   ecs.component<StorageWindowTarget>();
   ecs.component<CharacterStatusWindowTarget>();
+  ecs.component<NavigationDebugWindowTarget>();
+  ecs.component<NavigationDebugState>();
   ecs.component<PendingPlayerInteraction>();
   ecs.component<LastObjectsQuery>();
 

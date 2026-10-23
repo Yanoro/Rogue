@@ -2,9 +2,20 @@
 
 **Status:** stages 1 and 2 implemented 2026-10-18 — one decision/one leg, then the loop with
 re-asking, survey-on-unsure, budgets, no-progress, interruption/resume and the
-`system1.navigation` config block. Stage 3's tuning surface (`[navigation]` trace, System 1
-scenario filter, runbook) landed the same day; its acceptance is the owner's real Kev-on-CUDA run.
-The optional stage 4 remains.
+`system1.navigation` config block. A design change during stage 3 prep added the **local compass**
+(stage 2.5): the place underfoot is acted on through directional runs and adjacent places instead of
+an engagement mode. Stage 3's tuning surface (`[navigation]` trace, System 1 scenario filter, runbook)
+landed the same day; its acceptance is the owner's real Kev-on-CUDA run. The optional stage 4 remains.
+
+**2026-10-19:** the long-term planner is redesigned in `docs/llm-s1-navigation-design.md`
+(LLM strategist + S1 pilot + monitor questions). This document remains the S1 compass/pilot reference
+and the fallback; its single-model navigation is not the target architecture.
+
+**2026-10-20:** the engine caps changed. `maxDecisions` and the same-target no-progress stop are
+gone; a repeated target is a soft `REPETITION` line in the S1/strategist state, not a `Finish`.
+Resource guards are now 600 s per episode, 60 s per leg and 4 surveys. The budget/no-progress
+sections below are historical; the current behaviour is in `docs/llm-s1-navigation-design.md` and
+`SETTINGS.md`.
 
 **Date:** 2026-10-18
 
@@ -47,7 +58,7 @@ choice, and the main model owns the goal.
    never an unobserved place, never a coordinate. A place enters the list because the character
    observed its ground and derivation made it.
 
-4. **The engine supplies facts; System 1 supplies the choice.** The engine formats each candidate's
+4. **The engine supplies facts; System 1 supplies the choice.** The engine formats each move's
    label, distance, direction and aspect scores. It does not rank by "likely to contain a village",
    does not prefer roads, and does not interpret the goal. That inference is System 1's.
 
@@ -59,7 +70,7 @@ choice, and the main model owns the goal.
 
 6. **Uncertainty gets one look around, then control returns.** If the answer is `none`, or a place
    is chosen below the probability/margin floor, the action requests the same one-shot 360-degree
-   survey `[LOOK around]` uses, rebuilds the candidates, and asks once more. If it is still unsure,
+   survey `[LOOK around]` uses, rebuilds the actions, and asks once more. If it is still unsure,
    the episode stops and the main model gets the summary and the nearby places. The survey is
    bounded (one per decision, a per-episode budget) so "look until something appears" cannot become
    a loop.
@@ -73,9 +84,10 @@ choice, and the main model owns the goal.
    without losing the goal, the visited set or the budget, and resume when the brain comes back to
    it. That is the "yielding" contract from `agent-attention-design.md` §5, applied to this action.
 
-9. **The loop is bounded.** A decision budget, a wall-clock budget, a per-leg movement timeout, a
-   survey budget, and a no-progress rule. A navigation that cannot decide must return control, not
-   walk forever.
+9. **The loop has resource bounds.** A wall-clock budget, a per-leg movement timeout, a survey
+   budget, and a strategist-call cost guard. There is no per-episode decision cap and no
+   back-and-forth stop: a repeated target is a soft repetition signal, and a navigation that cannot
+   decide hands to the strategist or gives up rather than walking forever.
 
 10. **Movement is not reimplemented.** The loop targets a place id and reuses the existing movement
     path (`ApproachCell`, A*, arrival rules). The new prerequisite is a move target that accepts a
@@ -89,7 +101,7 @@ choice, and the main model owns the goal.
     a separate program.
 
 13. **Degrade, never block.** If System 1 is unavailable, or `system1.useMainModel` is true, the
-    action does not send anything. It returns the candidate list to the main model and lets it
+    action does not send anything. It returns the action list to the main model and lets it
     choose with `[MOVE_TO]` — the pre-feature behaviour.
 
 ## 3. What this is not
@@ -97,12 +109,12 @@ choice, and the main model owns the goal.
 - **Not a pathfinder.** A* still moves the character; this only chooses the destination.
 - **Not an omniscient router.** It cannot see the village before the character has. It chooses among
   remembered places, and it can choose badly.
-- **Not a planner.** It decides one place at a time, on arrival, with no lookahead and no memory
+- **Not a planner.** It decides one move at a time, on arrival, with no lookahead and no memory
   beyond what the action pins into the state.
 - **Not a goal-setter.** It cannot add or complete a task. The main model's task list remains the
   agent's intentions.
 - **Not a prompt channel for arbitrary reasoning.** The goal text is capped and sanitised; the
-  engine frames the question and owns the candidate set.
+  engine frames the question and owns the action set.
 
 ## 4. The command
 
@@ -128,8 +140,10 @@ engine wraps it in a fixed question; it never appends knowledge of its own.
 The command is visible in the advertised list and has long-form help. Its help makes the split
 explicit: `[NAVIGATE]` is the high-level search verb for a destination the agent cannot yet locate --
 finding a village, following a rumour -- and `[MOVE_TO]` is the direct verb for a place the agent can
-already name or see, or any short trip to a nearby destination. It also says what it does, that it
-only knows remembered places, and that it stops and reports.
+already name or see, or any short trip to a nearby destination. The split is goal-based, not
+visibility-based: `[MOVE_TO]` is one named target that *is* the destination; `[NAVIGATE]` is for a goal
+that is not a place you can name or locate, even when the next road is visible. It also says what it
+does, that it only knows remembered places and observed directions, and that it stops and reports.
 
 ## 5. The request
 
@@ -140,17 +154,69 @@ State, as the engine assembles it:
 
 ```
 AGENT: Wren
-YOU ARE: in an unnamed orchard, facing south. Just came from: an unnamed road (west arm).
+YOU ARE: in an unnamed road (road 100%), facing east.
 GOAL: find a village with a market; a signpost said the village is north.
-STEPS: 2. Visited: p2 (an unnamed road), p1 (an unnamed orchard).
+STEPS: 2. Visited: an unnamed road (east), an unnamed orchard (north).
 
-PLACES YOU REMEMBER, nearest first:
-  p6  an unnamed road, 9 tiles north-east, road 100%
-  p8  an unnamed road, 14 tiles south, road 100%
-  p1  an unnamed orchard, 2 tiles north-west, orchard 100%
+ACTIONS, local first:
+  here:north  an unnamed orchard, 1 tile north (orchard 55%, road 22%)
+  here:east  follow an unnamed road east for 6 tiles (road 100%)
+  here:west  follow an unnamed road west for 6 tiles (road 100%)
+  p2  an unnamed road, 20 tiles east (road 100%)
+  p4  an unnamed road, 20 tiles east (road 100%)
 ```
 
-The two sentinels are not repeated in the place list — they are entries in the question's
+The actions are two layers in one list:
+
+- **Local compass** (`here:<direction>`): while standing in a place, each sector around the character
+  is a move through that place or into the place next to it. `here:east` on a road means the road
+  continues east; `here:north` may be the orchard beside it, with the orchard's own scores. This is
+  what makes the place underfoot actionable: without it, entering a road only produces a new list of
+  *other* places.
+- **Distant places** (`p<id>`): the remembered places not already on the compass, nearest first. A
+  distant move walks to the place's nearest cell; the compass takes over once inside.
+
+The compass is built from observed cells on demand, not stored. It is not a set of temporary
+`KnownPlace`s: those would pollute place ids, `[PLACES]`, the overlay and the visited set, and would
+need lifetimes and merge rules.
+
+Rules for the compass:
+
+- Look along each of the eight sectors for the first observed place within `compassRadius` (default 6).
+- If that place is the current one, the move follows its run to the last observed cell in that
+  sector; a run shorter than 2 tiles is a sidestep and is dropped.
+- If it is another place, the move enters its nearest cell and the line carries that place's scores.
+- Several sectors into the same neighbouring place are merged: one line, the nearest sector. A road in
+  a forest does not get three identical "orchard" entries.
+- At most `maxDirections` local lines (default 4), with one slot reserved for the nearest adjacent
+  place so a wide current place cannot crowd the way out off the list.
+- The current place is never also a distant option; the compass is how you act on it.
+- A local direction already taken **from this place** is marked `already walked` in its
+  line. It is a fact for the model, not a filter: the engine still offers it, because
+  backtracking can be correct (a dead end, a missed turning). At a junction this is what makes
+  "I already went west" visible; without it the west run and an unexplored branch can look the
+  same. The marker is keyed by the direction's **target cell**: if that cell is on a path the
+  character actually walked, the line says so. Place ids are re-derived as the memory grows; the
+  walked cells are the stable fact.
+
+  At a junction after walking the west road and coming back:
+
+  ```
+  here:west        follow an unnamed road west for 6 tiles (road 100%), already walked
+  here:south-east  an unnamed road, 1 tile south-east (road 100%)
+  p11              an unnamed road, 8 tiles south (road 100%)
+  ```
+
+  The first line is the road just covered; the south-east and the southern road are unwalked.
+
+**Explore, deferred.** The compass already lets the character walk a place's boundary by choosing
+successive directions, so a separate "explore" *behaviour* exists without a separate option. What is
+not built is a dedicated **boundary sweep**: choose a start boundary cell and follow the perimeter
+waypoints without re-asking System 1, reporting at the end. If the tuning runs show the model cannot
+sustain a boundary walk through the compass, add that as a multi-leg local mode with a new cell-target
+leg sequence — not as temporary memory places. It is deliberately out of v1.
+
+The two sentinels are not repeated in the action list — they are entries in the question's
 `options`, which is the definitive set of things the model may answer with.
 
 Questions:
@@ -160,25 +226,26 @@ Option next;
 next.id = "next";
 next.type = OptionType::Choice;
 next.instructions =
-    "Which of these places is most likely to bring the character closer to the goal?";
+    "Which of these moves is most likely to bring the character closer to the goal?";
 next.options = {
-    {"p6", "an unnamed road, 9 tiles north-east, road 100%"},
-    {"p8", "an unnamed road, 14 tiles south, road 100%"},
-    {"p1", "an unnamed orchard, 2 tiles north-west, orchard 100%"},
-    {"arrived", "you are already where the goal asks you to be (in an unnamed orchard)"},
-    {"none", "none of these places is likely to help; stop and let me reconsider"},
+    {"here:north", "an unnamed orchard, 1 tile north (orchard 55%, road 22%)"},
+    {"here:east", "follow an unnamed road east for 6 tiles (road 100%)"},
+    {"here:west", "follow an unnamed road west for 6 tiles (road 100%)"},
+    {"p2", "an unnamed road, 20 tiles east (road 100%)"},
+    {"arrived", "you are already where the goal asks you to be (in an unnamed road)"},
+    {"none", "none of these moves is likely to help; stop and let me reconsider"},
 };
 ```
 
-The two sentinels are **always** present, after the candidates. `arrived` is about the goal;
-`none` is about the candidate list. They are separate exits because they mean different things to
+The two sentinels are **always** present, after the actions. `arrived` is about the goal;
+`none` is about the action list. They are separate exits because they mean different things to
 the main model: success to be confirmed versus no useful information to act on.
 
 Rules for the state:
 
-- **Short.** One line per candidate, at most `maxCandidates` (default 8). The provider doc warns that
-  a paragraph of context produces a worse calibrated answer than a single sentence, and a 4B decision
-  model has a short trained input.
+- **Short.** One line per action, at most `maxCandidates` (default 8) in total. The provider doc warns
+  that a paragraph of context produces a worse calibrated answer than a single sentence, and a 4B
+  decision model has a short trained input.
 - **No chat history, no map coordinates, no place seeds.** The state is facts about the character's
   own record.
 - **The goal text is used verbatim** inside a fixed question; the engine adds no interpretation.
@@ -188,8 +255,11 @@ Rules for the state:
 - **Aspect scores are `mean`**, not `peak`. `peak` names the single best seed and makes one apple tree
   look like an orchard; `mean` is what the area is like (`place-derivation-design.md` §6.2). Use the
   top two aspects whose mean is above a floor, e.g. `road 100%`, `market 62%`.
-- **Distance and direction come from `PlaceQuery::DistancePhrase`**, the same wording `[PLACES]` uses,
-  so the two surfaces cannot disagree about where a place is.
+- **Distance and direction come from `PlaceQuery::DistancePhrase`** for distant places, the same
+  wording `[PLACES]` uses, so the two surfaces cannot disagree about where a place is. The compass
+  uses `PlaceQuery::CompassWord` and a run length.
+- **The verb comes from the shape.** A linear place is *followed*; an area is *walked through*. It is
+  the same `IsLinearPlace` fact the direct `[MOVE_TO]` heuristic uses, not a genre rule.
 
 Answer handling:
 
@@ -201,43 +271,60 @@ Answer handling:
   the distribution names one and it clears the floor, otherwise stop as unsure with the error named.
 - The probability gate uses `Answer::probabilities[choice]` and the runner-up margin. Hosted Jev's
   `choice` answers carry no `confidence` field (`SystemOneRecorder.h`), so `probabilities` is the only
-  honest source. Below `minProbability` or `minMargin`, the answer counts as unsure: survey, re-ask
-  once, then stop.
+  honest source. Below `minProbability` the answer counts as unsure: survey, re-ask once, then stop.
+  The runner-up margin adds a second test for **distant place** moves only; a local compass move is a
+  short, reversible leg, so the top local direction acts on the probability floor alone. A 0.41 west
+  vs 0.30 east is the best available guess and walking it is better than standing still; a distant
+  0.41 vs 0.30 is a commitment and still surveys.
 
-## 6. Candidate construction
+## 6. Action construction
 
-A pure function over the memory, so it can be unit-tested without a world:
+A pure function over the memory and the action's walked-cell set, so it can be unit-tested without a
+world:
 
 ```cpp
-struct NavigationCandidate {
+struct Candidate {
   int placeId = 0;
-  std::string key;          // "p12"
-  std::string description;  // "an unnamed road, 9 tiles north-east, road 100%"
+  GamePosition target{-1, -1};
+  std::string key;          // "here:north" or "p12"
+  std::string label;        // "an unnamed road (north)"
+  std::string description;  // "follow an unnamed road east for 6 tiles (road 100%)"
   int distance = 0;
 };
 
-std::vector<NavigationCandidate> BuildCandidates(
+std::vector<Candidate> BuildCandidates(
     const SpatialMemory &memory, GamePosition here,
-    const NavigationCandidatesConfig &config);
+    int maxOptions, int maxDirections, int compassRadius,
+    const std::unordered_set<std::uint64_t> &walkedCells);
 ```
 
 Rules:
 
-1. Iterate `memory.places` (already capped at `DEFAULT_MEMORY_PLACES_MAX`).
-2. Skip a place whose `memberCells` is empty.
-3. Compute its approach cell with `PlaceQuery::ApproachCell`. Skip it when the approach cell is the
-   cell the character stands on **and** the place is not linear — there is no move there. A road the
-   character is standing on is *not* skipped: its far end is exactly the useful target.
-4. Sort by Chebyshev distance from the approach cell, nearest first, and cap.
-5. Describe with `PlaceQuery::DisplayName`, `PlaceQuery::DistancePhrase`, and up to two aspects by
-   mean.
-6. Never include the map's authored seeds, the `Village` label before it is observed, or any place
+1. Find the current place with `PlaceQuery::At`. When there is none, skip the compass and build only
+   the distant list.
+2. For each of the eight sectors, look from `here` for the first observed, walkable, unoccupied cell
+   within `compassRadius` that belongs to a place. An unobserved cell ends the search; a walkable cell
+   in no place is open ground and the look continues to the place beyond it.
+3. If that place is the current one, continue along the sector to the last observed, unoccupied cell
+   of the same place. A run shorter than 2 tiles is a sidestep and is dropped. The candidate's target
+   is the run's last cell; the description says `follow` for a linear place and `walk ... through` for
+   an area, with the run length and the place's scores.
+4. Otherwise the target is the first cell of that adjacent place and the description carries its
+   scores: `an unnamed orchard, 1 tile north (orchard 55%, road 22%)`.
+5. Several sectors into the same adjacent place merge: one line, the nearest sector. Current-place
+   runs are sorted longest first; adjacent places nearest first. The local list is capped at
+   `maxDirections`, with one slot guaranteed to the nearest adjacent place.
+6. Distant places are the remembered places not current and not already local. The target is
+   `NearestWalkableCell`; the list is nearest first and fills the remaining `maxCandidates`.
+7. Mark `already walked` when the candidate's **target cell** is in `walkedCells`; mark `visited` when
+   any member cell of the candidate's place is in `walkedCells`. These are the action's own movement
+   history (the actual leg paths and endpoints), not world knowledge. They are cell-based because
+   place ids are re-derived as the memory grows; the `17:32` run showed a stale id marking an
+   unentered junction branch as visited.
+8. Never include the map's authored seeds, the `Village` label before it is observed, or any place
    the character has not derived.
-7. Mark places in the action's visited set with a `visited` word in the description (e.g.
-   `p2  an unnamed road, 3 tiles south-west, road 100%, visited`). This is the action's own movement
-   history, not world knowledge.
 
-The two sentinels (`arrived`, `none`) are always appended by the engine, after the candidates.
+The two sentinels (`arrived`, `none`) are always appended by the engine, after the actions.
 
 ## 7. The loop
 
@@ -249,11 +336,11 @@ Idle -> Asking -> (Moving -> Asking) | Surveying -> Asking -> ... -> Done | Inte
 
 Start:
 
-- Build the candidate list.
-- If System 1 is unavailable (or `system1.useMainModel`): `Done` with the candidate list and the
+- Build the action list.
+- If System 1 is unavailable (or `system1.useMainModel`): `Done` with the action list and the
   reason, so the main model can choose with `[MOVE_TO]`/`[PLACES]`. No survey — there is nobody to
   ask afterwards.
-- An empty candidate list is an **unsure** condition, not an immediate stop: the one-survey
+- An empty action list is an **unsure** condition, not an immediate stop: the one-survey
   recovery below runs, because a character in a place it has not named may still see one by turning.
   If the survey produces nothing, `Done`.
 - Otherwise ask.
@@ -267,14 +354,14 @@ Ask:
 On answer:
 
 - `arrived`: `Done` with the success summary. The engine reports the claim; it does not verify it.
-- `none`, an unknown key, or a place chosen below the probability/margin floor: **unsure**.
-- A valid place above the floor: resolve it with `PlaceQuery::ById` and start a move to it.
+- `none`, an unknown key, or a move chosen below the probability/margin floor: **unsure**.
+- A valid move above the floor: use the move's fixed target cell and start a move to it.
 
 Unsure:
 
 - If a survey is still available for this decision and the character has a `Vision`: request the
   one-shot full-circle sweep (`Vision::fullCircleRequested`, the same mechanism as `[LOOK around]`),
-  wait for `lastFullCircleTick` to change, then rebuild the candidates and ask once more. The sweep
+  wait for `lastFullCircleTick` to change, then rebuild the actions and ask once more. The sweep
   goes through the normal writer and deriver, so any newly seen places are in the list.
 - One survey per decision, and a per-episode `maxSurveys` (default 2). If the re-ask is still
   unsure, or no survey is left, `Done` with the unsure summary — control returns to the main model.
@@ -282,10 +369,18 @@ Unsure:
 
 Moving:
 
-- Use the shared place-target move path (decision 10). Call its `update` each frame.
-- On arrival: mark visited, increment steps, re-ask.
-- On failure (A* cannot reach, per-leg timeout, target vanished): mark the place unreachable for this
-  episode, re-ask once without it. A second failure stops the episode.
+- Use a cell-target move (`MoveToCellAction`); the target was fixed when the choice was made, so a
+  place that grows or a road's far end flipping cannot turn the character around.
+- **Arrival is standing on the target cell, not being next to it.** The direct `[MOVE_TO]` object
+  path stops when adjacent because that is enough to interact with a crate; a navigation leg that
+  stopped one tile short of a road left the character in the orchard beside it, and the compass kept
+  offering the same 1-tile step. The first real run hit this: the leg reported "an unnamed road" while
+  the character was still in the orchard.
+- On arrival: mark the move's place visited, increment steps, re-ask. A local `here:<direction>` move
+  does not add a place (the current place is already known); a distant or adjacent move does.
+- On failure (A* cannot reach, per-leg timeout, target vanished): mark the **target cell** unreachable
+  for this episode, re-ask once without it. A second failure of the same target stops the episode. A
+  different direction with the same name is a different target and is not excluded.
 
 Stop conditions, in order:
 
@@ -294,20 +389,21 @@ Stop conditions, in order:
 | `arrived` chosen | Done: "you judged that you had arrived" + nearby places |
 | `none` chosen, or still unsure after the survey/re-ask | Done: "you could not tell which way looked better" + nearby places |
 | choice probability/margin below the floor and no survey left | Done: unsure + nearby places |
-| no candidates (after any survey) | Done: "you do not know anywhere that could lead there" |
-| System 1 unavailable | Done: candidate list returned to the main model |
-| `maxDecisions` reached | Done: "you stopped after N legs" + nearby places |
-| `maxSeconds` reached | Done with a timeout reason + nearby places |
-| no progress (see below) | Done: "you would be going back and forth" + nearby places |
+| no actions (after any survey) | Done: "you do not know anywhere that could lead there" |
+| System 1 unavailable | Done: action list returned to the main model |
+| `maxSeconds` reached | Done with a timeout reason + nearby places (resource guard) |
+| repeated target (see below) | Not a stop: a `REPETITION` line is added to the next S1/strategist state |
 | interrupted by a wake / new action | `Interrupted`; see §9.1. The in-flight ask is cancelled and the episode stays on the stack |
 
-No-progress rule:
+Repetition signal:
 
-- Two consecutive choices of the same place id, or
-- a chosen approach cell within one tile of the current position while the character has not moved
-  more than one tile since the previous choice.
-
-A survey does not reset the no-progress counter: turning in place is not travelling.
+- The same **target cell** chosen twice in a row while the character has not moved more than one tile
+  is reported, not stopped: the next S1 state gets a `REPETITION:` line and the strategist's
+  observation gets a `repetition` field. The model decides whether to change course or repeat.
+- The target, not the direction name, is the unit: `here:east` from the orchard edge steps onto the
+  road (1 tile), while `here:east` from the road follows it (6 tiles). Repeating a direction while
+  the character actually advances is following, not a loop.
+- A survey does not reset the signal: turning in place is not travelling.
 
 The summary is described in §8.
 
@@ -322,7 +418,7 @@ Arrived:
 
 ```
 System: You stopped after 3 legs: you judged that you had arrived.
-Route: an unnamed orchard -> an unnamed road (west arm) -> an unnamed road (north stretch) -> Village.
+Route: an unnamed orchard -> an unnamed road (east) -> an unnamed road (east) -> Village.
 You are in Village (market 100%, workshop 100%).
 Nearby places you remember:
   #12 Village -- storage 100%, workshop 100% -- you are here
@@ -336,7 +432,7 @@ Unsure, after the survey and the re-ask:
 ```
 System: You stopped after 2 legs: you could not tell which way looked more likely.
 You turned a full circle to look for a better lead, and still could not choose.
-Route: an unnamed orchard -> an unnamed road (west arm).
+Route: an unnamed orchard -> an unnamed road (east).
 You are at an unnamed road (road 100%).
 Nearby places you remember:
   #6  an unnamed road -- road 100% -- you are here
@@ -346,7 +442,7 @@ You can [MOVE_TO] any of these, or use [PLACES] for the full list.
 ```
 
 Other exits use the same shape with a different reason: `none chosen after N legs`, `the decision
-budget was reached`, `you would have been going back and forth`, `System 1 is unavailable; here is
+resource guard was reached`, `System 1 is unavailable; here is
 what you know`.
 
 - The nearby list is capped (default 5) and built by the **same renderer `[PLACES]` uses**, so the
@@ -470,7 +566,7 @@ main-model turn. The same walk without this feature is five main-model turns, ea
 growing context. The saving is the point; the local CPU backend is not a fallback, it is a
 demonstration.
 
-The candidate building and summary cost nothing measurable: at most 24 places, one string each.
+The action building and summary cost nothing measurable: at most 24 places, one string each.
 
 ## 12. Configuration
 
@@ -482,24 +578,31 @@ Proposed, under `system1` (exact names settle during implementation). Stage 2 la
   "navigation": {
     "enabled": true,
     "maxCandidates": 8,
-    "maxDecisions": 8,
-    "maxSurveys": 2,
-    "maxSeconds": 120,
-    "legTimeoutSeconds": 30,
-    "minProbability": 0.5,
+    "maxDirections": 4,
+    "compassRadius": 6,
+    "maxSurveys": 4,
+    "maxSeconds": 600,
+    "legTimeoutSeconds": 60,
+    "minProbability": 0.3,
     "minMargin": 0.15
   }
 }
 ```
 
+- `maxCandidates` is the total action lines: local compass plus distant places.
+- `maxDirections` is the local compass cap. One slot is reserved for the nearest adjacent place, so
+  a wide current place cannot push the way out off the list.
+- `compassRadius` is how far a sector looks for the first place. A place farther than this belongs in
+  the distant list, where its own distance is shown.
 - `enabled` defaults true: the command only runs when the agent asks. A user who does not want
   navigation can disable it and `[NAVIGATE]` reports so.
-- `maxSurveys` bounds the "turn a full circle and try again" recovery across the whole episode. One
-  survey per unsure decision is already enforced; this is the episode ceiling so a stuck episode
-  cannot alternate survey/ask forever.
+- `maxSurveys` is a cheap recovery budget across the whole episode. One survey per unsure decision
+  is already enforced; a survey that does not settle the choice now hands to the strategist rather
+  than being a navigation stop.
 - `minProbability`/`minMargin` are per-task calibration and should not reuse the site-router or
   salience thresholds; calibration is not portable between tasks or models (the same reason
-  `system1.minConfidence` is per profile).
+  `system1.minConfidence` is per profile). `minMargin` applies to distant-place choices; local
+  compass moves use only `minProbability`.
 - The per-leg movement timeout is separate from the System 1 timeout: `MOVE_TO` has no timeout today,
   and a navigation leg must not hang the episode.
 
@@ -508,9 +611,9 @@ Proposed, under `system1` (exact names settle during implementation). Stage 2 la
 - **System 1 Overview window** already shows each call: scenario, state, reply, latency, probabilities.
   Filter the scenario to `navigation` and turn on "non-advisory" to see only these calls.
 - **`logs/system1/`** holds the exact request and response payloads. This is the replay: to study a
-  bad choice, read the record, change the wording/candidate list, and re-run the game. No separate
+  bad choice, read the record, change the wording/action list, and re-run the game. No separate
   harness is needed.
-- **Debug log** gets one `[navigation]` line per event: asking (with the candidate count and decision
+- **Debug log** gets one `[navigation]` line per event: asking (with the action count and decision
   number), the chosen key/kind/probability/margin, a survey start/completion, each leg's arrival or
   failure, interruption/resume, and the final reason with the counters. `grep '\[navigation\]'` is
   the run in order; the System 1 record beside it has the full payload.
@@ -523,8 +626,8 @@ Proposed, under `system1` (exact names settle during implementation). Stage 2 la
 
 | symptom | likely cause | response |
 |---|---|---|
-| picks the cell underfoot | no approach filter | `ApproachCell`/linear rule in §6, no-progress rule |
-| ping-pong between two stretches | equal probabilities, no margin | visited marking + no-progress stop |
+| picks the cell underfoot | no approach filter | `ApproachCell`/linear rule in §6; the repetition signal |
+| ping-pong between two stretches | equal probabilities, no margin | visited marking + repetition signal (the strategist sees the route) |
 | picks a place whose name it read in the goal | goal text injected into options | options are engine-built keys only |
 | unknown choice key | model error | fall back to top valid probability, else stop as unsure |
 | never arrives | A* failure with no timeout | per-leg timeout, mark unreachable, re-ask once |
@@ -571,7 +674,7 @@ System 1 returns `"choice": "p2"`. The loop walks to the road's far end (the lin
 **The sign.** On the way, the perception gate notices the signpost at the fork. It wakes Wren;
 `NavigateAction` is pushed onto the stack, the main model reads the sign (`[MOVE_TO Signpost]`,
 `[EXAMINE]`) and learns "village — north". It names the north stretch (`[NAME_PLACE #6 the north
-road]`) so the label is in the next candidate list, then the wake action finishes and the navigation
+road]`) so the label is in the next action list, then the wake action finishes and the navigation
 resumes. The episode's goal text is fixed for its lifetime; naming is how the main model injects what
 it just learned into the resumed loop.
 
@@ -581,7 +684,7 @@ the road ends — a real, inspectable failure.
 
 **The survey fallback.** Suppose the fork answer is `none`, or the north/south probabilities are too
 close to call. The action requests the one-shot 360-degree survey. The sweep fills memory and may
-derive places the cone missed; the candidate list is rebuilt and the question asked again. If the
+derive places the cone missed; the action list is rebuilt and the question asked again. If the
 second answer is still `none`, the episode stops with the unsure summary and the nearby places. The
 main model can then `[LOOK around]` itself, `[PLACES]`, or pick a `[MOVE_TO]` target.
 
@@ -598,33 +701,48 @@ from the Vision window.
 |---|---|---|
 | **1. One decision, one leg** ✅ (2026-10-18) | `[NAVIGATE]`, candidate builder, place-id move target, `arrived`/`none` sentinels, one S1 choice + one move, summary with nearby places | Ask on the quest map; the chosen place is a remembered one; the character moves to it; `arrived` and `none` both produce a summary; the call is in the System 1 window with the exact state; no map/seed access |
 | **2. The loop** ✅ (2026-10-18) | re-ask on arrival, survey-on-unsure, budgets/no-progress/leg timeout, visited marking, interruption/resume, one summary | A multi-leg journey returns one message; `none` triggers exactly one survey and one re-ask; a second `none` stops; it cannot exceed the budgets; a scripted interruption mid-ask and mid-move resumes the episode |
-| **3. Tuning** 🟡 surface ready (2026-10-18) | `[navigation]` debug trace, System 1 scenario/non-advisory filter, runbook, candidate/floor knobs; the real Kev-on-CUDA run is the owner's | The fork choice is correct in at least one real run, or the failure is explained from the record (this is the experiment the feature exists for) |
+| **2.5 Local compass** ✅ (2026-10-18) | directional runs of the current place, adjacent places in the compass, distant places at their nearest edge, cell-target legs, target-based no-progress | On the quest road the model sees east/west road runs and the orchard beside it; a repeated `here:east` with movement follows the road; the same with no movement stops; the adjacent road is still offered when the current place has four runs |
+| **3. Tuning** 🟡 surface ready (2026-10-18) | `[navigation]` debug trace, System 1 scenario/non-advisory filter, runbook, action/floor knobs; the real Kev-on-CUDA run is the owner's | The fork choice is correct in at least one real run, or the failure is explained from the record (this is the experiment the feature exists for) |
 | **4. Optional** | survey at every waypoint, `reach` task stop, named-place learning, a cancel verb for the resumed episode | each only if the runs show they are needed |
 
 Logic acceptance is a unit harness with a **fake classifier** (no network): scripted `choice`,
-`arrived`, `none`, invalid key, unavailable, no candidates, survey-then-still-none, budgets,
+`arrived`, `none`, invalid key, unavailable, no actions, survey-then-still-none, budgets,
 ping-pong, and interruption (mid-ask and mid-move) followed by resume. The model's actual taste is
 judged by playing the quest map, not by a harness.
 
 **Stage 1 actuals.** `include/NavigationPlan.hpp` (candidates, state, question, choice
-interpretation, summary), `MoveToPlaceAction` and `NavigateAction` in `include/AgentActions.h`,
+interpretation, summary), `MoveToPlaceAction` (replaced by `MoveToCellAction` in 2.5) and
+`NavigateAction` in `include/AgentActions.h`,
 `[NAVIGATE $GOAL]` in `src/GameECS.cpp`, and `SystemOneClassifierResource` in
 `include/Components.h`, published by `Game::Init` and updated on a profile swap. `Attribution` now
 carries `advisory`, and `JevClassifier` copies it into the record.
 
-One bug found and fixed while building it: `MoveToPlaceAction` must **fix its approach cell when
-the leg starts**. `ApproachCell` returns the far end of a linear place, and that far end flips to the
-other end at the midpoint; recomputing it while walking would turn the character around halfway. One
-leg means one destination — the next decision re-aims after arrival.
+One bug found and fixed while building it: the leg must **fix its target cell when it starts**. The
+old `MoveToPlaceAction` recomputed `ApproachCell`; for a linear place the far end flips to the other
+end at the midpoint, which would turn the character around halfway. `MoveToCellAction` takes the
+decision's target as fixed, so one leg always means one destination — the next decision re-aims after
+arrival.
 
 **Stage 2 actuals.** `NavigateAction` is now the loop: `Idle → Asking → (Moving | Surveying) → …`,
 one summary. Survey-on-unsure requests `Vision::fullCircleRequested` (one per decision, bounded by
-`maxSurveys`) and re-asks from the updated memory; budgets are `maxDecisions` (asks), `maxSeconds`
-(wall clock) and `legTimeoutSeconds`; a leg that fails is excluded for the episode and re-asked once;
-the two no-progress rules stop ping-pong; interruption cancels the ask and the movement but keeps the
-goal, route, visited set and counters, and resume recreates the leg or asks again. Settings:
-`system1.navigation` (`SETTINGS.md`). The stage-2 harness covers the loop, the survey recovery, both
-budgets, the no-progress stop, unavailable/disabled, and interruption mid-ask and mid-move.
+`maxSurveys`) and re-asks from the updated memory; resource guards are `maxSeconds` (wall clock) and
+`legTimeoutSeconds`; a leg that fails is excluded for the episode and re-asked once; a repeated
+target is a soft `REPETITION` signal, not a stop; interruption cancels the ask and the movement but
+keeps the goal, route, visited set and counters, and resume recreates the leg or asks again. Settings:
+`system1.navigation` (`SETTINGS.md`). The historical stage-2 harness covered the loop, the survey
+recovery, the budgets and the no-progress stop; the 2026-10-20 change replaced that stop with the
+signal and removed the per-episode ask cap.
+
+**Stage 2.5 actuals.** `NavigationPlan::BuildCandidates` builds the local compass: eight sectors,
+the first observed place within `compassRadius`, a run of the current place to its last observed cell
+(min 2 tiles), or the nearest cell of an adjacent place; adjacent sectors into the same place merge;
+one local slot is reserved for the nearest adjacent place; the current place is excluded from the
+distant list. A move is a `Candidate` with a fixed target cell and a key (`here:north`, `p12`);
+`MoveToCellAction` walks it and requires standing on the target cell (adjacency is not arrival).
+No-progress is by target cell plus actual movement, so following a road is not ping-pong and the same
+direction in a new place is a new move. The compass harness checks the exact-cell arrival, the
+road/orchard compass, the adjacent-road reservation, a followed `here:east`, the no-movement stop, a
+distant `p2`, survey recovery, the budget, and interruption mid-ask/mid-move.
 
 ### Stage 3 tuning runbook (local Kev on CUDA)
 
@@ -641,9 +759,9 @@ scenario filter set to `navigation` and "non-advisory" on, and open the Vision D
 tab on Wren. Every navigation event also writes one line to the debug log:
 
 ```
-[navigation] Wren step 0: asking (7 candidates, decision 1) for: find a village with a market; ...
-[navigation] Wren step 0: choice 'p2' place p=0.87 margin=0.34
-[navigation] Wren leg 1: arrived at an unnamed road
+[navigation] Wren step 0: asking (6 actions, decision 1, floor 0.30/0.15) for: find a village with a market; ...
+[navigation] Wren step 0: choice 'here:east' move p=0.87 margin=0.34
+[navigation] Wren leg 1: arrived at an unnamed road (east)
 [navigation] Wren step 1: asking (...)
 [navigation] Wren step 1: unsure, full-circle survey #1
 [navigation] Wren full circle complete; re-asking
@@ -654,7 +772,7 @@ tab on Wren. Every navigation event also writes one line to the debug log:
 Ask Wren to `[NAVIGATE find a village with a market; the signpost said north]` (or without the sign
 clause, as a second run — that difference is the experiment). Record, per run:
 
-- the spawn candidate list and the first choice with its probability/margin;
+- the spawn action list and the first choice with its probability/margin;
 - the fork choice: north stretch, south stretch, `none`, or a survey first;
 - the number of decisions/legs/surveys, the latency in the System 1 record, and the final summary;
 - whether `arrived` was claimed at a place that is actually the village (the record shows the state).
@@ -663,33 +781,59 @@ clause, as a second run — that difference is the experiment). Record, per run:
 
 | symptom | first thing to read | knob / edit |
 |---|---|---|
-| never chooses the road at spawn | spawn candidates: is the road in the list at all? | if missing, it is a memory/vision problem, not navigation; if present but ignored, the goal wording or the candidate line |
-| picks the south quarry at the fork | was the signpost's "north" in the goal text? | goal content (agent knowledge); naming the north stretch with `[NAME_PLACE]`; then candidate wording |
+| never chooses the road at spawn | spawn actions: is the road in the list at all? | if missing, it is a memory/vision problem, not navigation; if present but ignored, the goal wording or the action line |
+| picks the south quarry at the fork | was the signpost's "north" in the goal text? | goal content (agent knowledge); naming the north stretch with `[NAME_PLACE]`; then action wording |
 | always `none` or unsure | top probability and runner-up in the record | `minProbability` / `minMargin` against Kev's actual distribution, not against the run you want to pass |
 | stops too early after one leg | the `arrived` choice and the state's `YOU ARE` line | the `arrived` description; the model's claim, not an engine verdict |
-| surveys at every uncertainty | survey count vs decisions | `maxSurveys`, `maxCandidates`; candidate wording |
-| ping-pong | the `[navigation]` sequence and visited markers | no-progress rule already stops it; the record says whether the model ignored `visited` |
-| slow | `latencyMs` in the System 1 record | candidate cap, GPU server; CPU Kev is the wrong tool |
+| surveys at every uncertainty | survey count vs decisions | `maxSurveys`, `maxCandidates`, `maxDirections`; action wording |
+| backtracks at a junction instead of trying a branch | the state's `already walked` markers; is the new branch marked `visited` instead? | the marker is already in place; if the model still ignores it, consider dropping walked local directions when an unwalked branch exists, or give it the signpost direction in the goal |
+| ping-pong | the `[navigation]` sequence and visited markers | no hard stop now; the repetition line and the strategist's route show it, so the model can change course |
+| slow | `latencyMs` in the System 1 record | action cap, GPU server; CPU Kev is the wrong tool |
 
 **Calibration.** Kev's probabilities are not Jev's; record the top score and the gap for several
 decisions before moving `minProbability`/`minMargin`. A threshold chosen to make one run pass is not
 calibration. Repeat the same scenario two or three times (the model is sampled; the world seed is
 separate).
 
+The first real run (hosted Jev, `17:09`) is the reason the default floor is 0.3 rather than 0.5. The
+model's `here:south-east` moved from 0.28 (runner-up `none` 0.19) on the first ask to 0.37
+(runner-up 0.13) after the survey. The 0.5 floor rejected both and stopped with "you turned a full
+circle" while the character was one tile from the road; 0.3 passes the 0.37 re-ask and the 0.15 margin
+still rejects the genuinely split 0.28/0.19. The same run also exposed a separate movement bug: the
+leg stopped when it was merely adjacent to the target cell, so the character never stepped onto the
+road. That is fixed in `MoveToCellAction` (exact-cell arrival); the floor alone would not have helped.
+
+The next pair (`17:20`/`17:21`) exposed the other gate. On the road the model split west 0.41 / east
+0.30 (then 0.43/0.29, 0.39/0.27). The 0.15 runner-up margin rejected each local choice as unsure,
+surveyed, and the re-ask flipped east 0.39 / west 0.27; the character stood still and the episode ended
+"turned a full circle" again. That is what the local-compass exemption addresses: a six-tile local leg
+is reversible, so above the 0.30 floor it acts on the top direction; the margin remains for distant
+place choices. The logs also confirm the exact-cell fix: after the first leg the state now says
+`YOU ARE: in an unnamed road`, not the orchard beside it.
+
+The `17:32` run is the backtracking case. The route went west to the road's dead end, east along the
+whole road to the junction, and then west again for four legs; the twelve-leg budget ended it. At the
+junction the state offered `here:west` 0.31, `here:south-east` 0.25 and `p11` 0.18, and nothing in the
+west line said the agent had already walked that road. The walked-cell `already walked` marker is the
+fix; the run is the reason it exists. If a later run still takes the marked direction, the next knob is
+to suppress walked local directions when an unwalked branch is on the list — but that is an engine
+preference, so it stays out until the marker has been tried.
+
 **Acceptance.** Stage 3 is done when at least one real run picks the village-bound stretch at the
 fork and reaches a place it can claim as the village — or when the run's record explains the failure
-in terms of the candidate state, the goal text, or the model's probabilities. A failed run that is
+in terms of the action state, the goal text, or the model's probabilities. A failed run that is
 explained is the deliverable; adding a hint to make it pass is not.
 
 ## 17. Open questions
 
-1. **Will a decision model actually choose the road, and the north stretch?** This is the premise.
+1. **Will a decision model actually follow the road, and take the north branch?** This is the premise.
    The first real run answers it; the record makes the answer inspectable. No offline replay is
    planned — the recorder is the replay.
-2. **Candidate count and wording.** 8? 6? One line each? The 4B input budget and calibration decide;
-   sweep in-game.
+2. **Action count and wording.** 8? 6? One line each? The 4B input budget and calibration decide;
+   sweep in-game. The compass adds a second dimension (how many local directions vs distant places);
+   `maxCandidates`, `maxDirections` and `compassRadius` are the knobs.
 3. **Should the survey also run at every waypoint, not only on unsure?** The unsure recovery is
-   specified; surveying proactively would make the candidate set fresh but makes navigation stronger
+   specified; surveying proactively would make the action set fresh but makes navigation stronger
    than manual play. Stage 4.
 4. **Should the loop stop when a `reach` task is verified?** The task system already knows how to
    check "you are in the place"; reusing it would let the main model's intention end the loop
@@ -714,7 +858,7 @@ explained is the deliverable; adding a hint to make it pass is not.
 
 | file | change |
 |---|---|
-| `include/NavigationPlan.hpp` (new) | candidate struct, `BuildCandidates`, state/question builder, summary builder — pure, testable |
+| `include/NavigationPlan.hpp` (new) | move struct, `BuildCandidates`, state/question builder, summary builder — pure, testable |
 | `include/AgentActions.h` | `NavigateAction` (state machine, async handoff, survey recovery, interruption/resume, summary); a place-id move target / `MoveToPlaceAction` |
 | `include/PlaceQuery.hpp` | a shared place-list renderer extracted from `PlacesAction`, used by `[PLACES]` and the navigation summary |
 | `src/GameECS.cpp` | register `[NAVIGATE $GOAL]` with help; set the System 1 resource |

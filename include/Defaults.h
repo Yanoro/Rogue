@@ -58,13 +58,14 @@ constexpr float DEFAULT_FACING_MARKER_TILE_FRACTION = 0.6f;
 // `Vision`, which carries its own copy of each so a character can override them
 // later without a code change.
 //
-// The cone is 90 degrees at 22 tiles and the radar 2 tiles: about 390 cells in
-// total, roughly the size of a radius-10 square. The cone is not cheaper than a
-// disc, it is differently shaped -- it reaches further ahead and nothing behind.
-// These are starting guesses, chosen from looking at the overlay; the Vision
-// Debug window edits them live precisely because they are guesses.
+// The default field is all-round: 360 degrees at 22 tiles, about 1,500 cells.
+// That deliberately removes the forward cone as an independent variable while
+// navigation is being evaluated. The forward-cone variant -- 90 degrees at 22
+// tiles plus the 2-tile all-round radar, about 390 cells -- is still available
+// through the `vision` settings. These are starting guesses; the Vision Debug
+// window edits them live precisely because they are guesses.
 constexpr float DEFAULT_VISION_RANGE = 22.0f;
-constexpr float DEFAULT_VISION_ANGLE_DEGREES = 90.0f;
+constexpr float DEFAULT_VISION_ANGLE_DEGREES = 360.0f;
 constexpr int DEFAULT_VISION_RADAR_RADIUS = 2;
 
 // How far the facing must turn before the cached sweep is recomputed. A smaller
@@ -180,36 +181,79 @@ constexpr int DEFAULT_TASK_VERIFY_INTERVAL_TICKS = 60;
 // ---------------------------------------------------------------------------
 // Navigation by System 1 (docs/navigation-subagent-design.md).
 //
-// Stage 1 is one decision and one leg: these bound how many candidates the state
-// shows and when a choice is confident enough to act on. They become settings
-// under `system1.navigation` when the loop and the survey recovery land; keeping
-// them here until then means there is one home for the numbers.
+// Defaults for `system1.navigation`: how many actions the state shows, how the
+// local compass is bounded, and when a choice is confident enough to act on.
 // ---------------------------------------------------------------------------
-// One line per remembered place in the request. A decision model's input budget
-// is short, and a candidate list longer than this turns a choice into a reading
-// comprehension task.
+// One line per action in the request: a local compass move or a remembered place.
+// A decision model's input budget is short, and a candidate list longer than this
+// turns a choice into a reading comprehension task.
 constexpr int DEFAULT_NAVIGATION_MAX_CANDIDATES = 8;
+// Local compass moves offered before the distant place list. In a wide place the
+// eight sectors would otherwise crowd out the places that are the actual goal.
+constexpr int DEFAULT_NAVIGATION_MAX_DIRECTIONS = 4;
+// How far the local compass looks for the first place in a sector. A short radius
+// keeps "north" a local move; a place farther than this belongs in the distant
+// list, where its own distance is shown.
+constexpr int DEFAULT_NAVIGATION_COMPASS_RADIUS = 6;
+// A run of the current place shorter than this is a sidestep, not a direction:
+// one tile into the edge of the room is not "continue north". Two tiles is the
+// smallest move that is visibly a continuation.
+constexpr int DEFAULT_NAVIGATION_MIN_RUN = 2;
 // Places listed in the completion summary, in the same form [PLACES] prints.
 // Enough to orient the main model, not a second full listing.
 constexpr int DEFAULT_NAVIGATION_NEARBY_PLACES = 5;
 // Answer::probabilities[choice] below this is "not sure enough to walk".
-constexpr float DEFAULT_NAVIGATION_MIN_PROBABILITY = 0.5f;
+//
+// 0.3, not 0.5: a choice model spreading its answer over eight or ten actions
+// rarely gives the top one half the mass. In the first real Jev run the model's
+// successful `here:south-east` choices were 0.37/0.28 with a 0.13/0.19 runner-up;
+// the 0.5 floor rejected both, surveyed, and stopped with "turned a full circle"
+// while the character stood still beside the road. The margin below still rejects
+// a genuinely split answer (0.28 vs 0.19); the absolute floor only has to reject
+// the weak tail.
+constexpr float DEFAULT_NAVIGATION_MIN_PROBABILITY = 0.3f;
 // The margin over the runner-up. A 0.51/0.49 split is a coin flip even though the
 // winner clears the probability floor.
 constexpr float DEFAULT_NAVIGATION_MIN_MARGIN = 0.15f;
-// How many System 1 decisions one navigation episode may spend. Each leg is a
-// decision, and an unsure answer spends an extra one on the re-ask after the
-// survey; this is the ceiling on the model calls, not on the walking.
-constexpr int DEFAULT_NAVIGATION_MAX_DECISIONS = 8;
 // Survey recoveries per episode. One per unsure decision is enforced separately;
-// this stops an episode that keeps getting stuck from alternating ask/survey.
-constexpr int DEFAULT_NAVIGATION_MAX_SURVEYS = 2;
+// this is a cheap recovery budget, not a navigation stop: a failed survey still
+// hands to the strategist.
+constexpr int DEFAULT_NAVIGATION_MAX_SURVEYS = 4;
 // Wall-clock ceiling for the whole episode, including decision latency and
-// walking. Long enough for the village trip, short enough to hand back.
-constexpr float DEFAULT_NAVIGATION_MAX_SECONDS = 120.0f;
+// walking. A resource/hang guard, not a navigation decision: the strategist and
+// pilot decide when to stop; this only prevents an unbounded episode.
+constexpr float DEFAULT_NAVIGATION_MAX_SECONDS = 600.0f;
 // One leg may not monopolise the episode. MoveToEntityAction has no timeout of
 // its own; a navigation leg that cannot finish should hand back, not hang.
-constexpr float DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS = 30.0f;
+constexpr float DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS = 60.0f;
+
+// ---------------------------------------------------------------------------
+// LLM strategist + S1 pilot navigation (docs/llm-s1-navigation-design.md).
+// The S1 pilot keeps the system1.navigation defaults above; these are the outer
+// strategist layer.
+// ---------------------------------------------------------------------------
+// The hybrid is the default. A strategist failure falls back to the S1-only
+// navigation rather than stranding the character.
+constexpr bool DEFAULT_NAVIGATION_STRATEGIST_ENABLED = true;
+constexpr bool DEFAULT_NAVIGATION_STRATEGIST_FALLBACK = true;
+// How many strategist calls one episode may spend (start + re-plans). A cost
+// guard, not a navigation-decision cap: the strategist's own give-up is the
+// normal stop.
+constexpr int DEFAULT_NAVIGATION_MAX_STRATEGIES = 12;
+// Monitor questions per strategist plan. The S1 is a small model; a long list
+// degrades its local choice.
+constexpr int DEFAULT_NAVIGATION_MAX_MONITORS = 3;
+// A yes/no Score answer must be at least this far from 0.5 (confidence =
+// 2*|p-0.5|) to be actionable. Below it the monitor is unknown and hands back.
+constexpr float DEFAULT_NAVIGATION_MONITOR_MIN_CONFIDENCE = 0.6f;
+// Standard-LLM strategist call timeout. The S1 is not blocked on it; the action
+// abandons the call and falls back.
+constexpr float DEFAULT_NAVIGATION_STRATEGIST_TIMEOUT_SECONDS = 30.0f;
+// Observation bounds for the strategist's brief.
+constexpr int DEFAULT_NAVIGATION_OBSERVATION_GRID_RADIUS = 8;
+constexpr int DEFAULT_NAVIGATION_MAX_GRAPH_NODES = 24;
+constexpr int DEFAULT_NAVIGATION_MAX_GRAPH_EDGES = 48;
+constexpr int DEFAULT_NAVIGATION_OBSERVATION_MAX_TOKENS = 2000;
 
 constexpr int DEFAULT_INPUT_MOVEMENT = 10;
 constexpr float DEFAULT_INPUT_ZOOM = 1.0f;
