@@ -15,6 +15,7 @@
 
 #include "Components.h"
 #include "DebugLog.h"
+#include "LogPaths.h"
 
 #include <nlohmann/json.hpp>
 #include "Game.h"
@@ -335,21 +336,21 @@ void TileDesignerWindow::Log(const std::string &text) {
   if (text.empty()) return;
 
   if (logFilePath.empty()) {
-    // logs/tile-designer/, beside the blueprint designer's but in its own
+    // <session>/tile-designer/, beside the blueprint designer's but in its own
     // directory: the two conversations are about different vocabularies, and
     // mixing them would make the folder harder to scan.
+    const std::filesystem::path directory = LogPaths::Subdir("tile-designer");
     std::error_code ec;
-    std::filesystem::create_directories("logs/tile-designer", ec);
-    if (ec) {
+    if (!std::filesystem::is_directory(directory, ec)) {
       if (game != nullptr && game->debugLog) {
-        game->debugLog->LogWarning(
-            "Tile designer: could not create logs/tile-designer: " + ec.message());
+        game->debugLog->LogWarning("Tile designer: could not create " +
+                                   directory.string() + ": " + ec.message());
       }
       logFilePath = " ";
       return;
     }
-    logFilePath = "logs/tile-designer/" + TimeUtils::GetCurrentTimeString() +
-                  "-tile-designer.txt";
+    logFilePath = (directory / (TimeUtils::GetCurrentTimeString() +
+                                "-tile-designer.txt")).string();
   }
   if (logFilePath == " ") return;
 

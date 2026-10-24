@@ -168,6 +168,13 @@ inline std::string ExtractThinking(const std::string &raw) {
     if (json != std::string::npos && json < end) end = json;
   }
   std::string text = raw.substr(start, end - start);
+  // Models sometimes put the JSON (or a fenced JSON block) inside the think
+  // block. Keep the thought as prose; StripToJson separately recovers the JSON
+  // from the raw reply.
+  const std::size_t fence = text.find("```");
+  if (fence != std::string::npos) text.resize(fence);
+  const std::size_t brace = text.find('{');
+  if (brace != std::string::npos) text.resize(brace);
   const std::size_t first = text.find_first_not_of(" \t\r\n");
   if (first == std::string::npos) return std::string();
   const std::size_t last = text.find_last_not_of(" \t\r\n");
@@ -196,12 +203,22 @@ inline std::string StripToJson(const std::string &raw) {
                                     : text.substr(start, end - start);
   }
 
-  const std::size_t open = text.find('{');
-  const std::size_t close = text.rfind('}');
-  if (open == std::string::npos || close == std::string::npos || close <= open) {
-    return std::string();
-  }
-  return text.substr(open, close - open + 1);
+  const auto braces = [](const std::string &candidate) {
+    const std::size_t open = candidate.find('{');
+    const std::size_t close = candidate.rfind('}');
+    if (open == std::string::npos || close == std::string::npos ||
+        close <= open) {
+      return std::string();
+    }
+    return candidate.substr(open, close - open + 1);
+  };
+
+  std::string json = braces(text);
+  if (!json.empty()) return json;
+  // The JSON may be inside the <think> block (or inside a fence there). The
+  // first/last braces in the raw reply still delimit it; stripping the block
+  // first was throwing the only JSON away.
+  return braces(raw);
 }
 
 inline bool ParsePlan(const std::string &raw, Plan &plan, std::string &error) {
@@ -485,8 +502,18 @@ inline nlohmann::json BuildGraph(
     node["key"] = key;
     node["kind"] = "place";
     node["category"] = place.primaryAspect.empty() ? "place" : place.primaryAspect;
+    node["regionLevel"] = place.regionLevel;
     node["aspects"] = detail::AspectsJson(place, 3);
-    node["anchor"] = {place.anchor.x, place.anchor.y};
+    // A stable position: the region uses its grid-cell centre, which does not
+    // move as the observed extent grows; a semantic place uses its extent
+    // centre. The top-left `anchor` was the old source of the jump between calls.
+    const GamePosition graphPosition =
+        (place.regionLevel >= 0 && place.regionSize > 0)
+            ? GamePosition{place.regionCell.x + place.regionSize / 2,
+                           place.regionCell.y + place.regionSize / 2}
+            : GamePosition{place.anchor.x + place.width / 2,
+                           place.anchor.y + place.height / 2};
+    node["anchor"] = {graphPosition.x, graphPosition.y};
     node["label"] = PlaceQuery::DisplayName(place);
     node["visited"] = visitedPlaceIds.count(place.id) != 0 ||
                       detail::PlaceWalked(place, walkedCells);
@@ -494,6 +521,13 @@ inline nlohmann::json BuildGraph(
   };
 
   if (current != nullptr) addPlace(*current);
+  // The semantic place underfoot wins the current key, but the base region is
+  // still the ground the character is standing on. Keep it in the graph so the
+  // region's stable cell centre is visible even when a village/road is current.
+  const KnownPlace *currentRegion = PlaceQuery::RegionAt(memory, here);
+  if (currentRegion != nullptr && currentRegion != current) {
+    addPlace(*currentRegion);
+  }
   for (const NavigationPlan::Candidate &candidate : candidates) {
     if (const KnownPlace *place = PlaceQuery::ById(memory, candidate.placeId)) {
       addPlace(*place);
@@ -608,8 +642,7 @@ inline nlohmann::json BuildGraph(
   // sector. That is the same condition the compass reports as no here: run.
   bool hasCurrentRun = false;
   for (const NavigationPlan::Candidate &candidate : candidates) {
-    if (candidate.key.rfind("here:", 0) == 0 &&
-        candidate.placeId == (current != nullptr ? current->id : -1)) {
+    if (candidate.key.rfind("here:", 0) == 0) {
       hasCurrentRun = true;
       break;
     }
@@ -653,15 +686,150 @@ inline nlohmann::json BuildObservation(
 
 // ── The S1 pilot's compact observation ───────────────────────────────────────
 
+// A small agent-centred ASCII map for the S1. The S1 is a classifier and a full
+// 17x17 strategist grid is too much; this is the 13x13 experiment: terrain,
+// objects, semantic-place initials, candidate target digits and the @. The
+// target list below the map is the action vocabulary; the map alone is context.
+inline std::string BuildPilotMap(
+    const SpatialMemory &memory, GamePosition here, const Facing &facing,
+    const std::vector<NavigationPlan::Candidate> &candidates, int radius) {
+  const int r = std::clamp(radius, 3, 12);
+  const int width = 2 * r + 1;
+  const int height = width;
+  const GamePosition origin{here.x - r, here.y - r};
+  std::vector<std::string> rows(static_cast<std::size_t>(height),
+                                std::string(static_cast<std::size_t>(width), '?'));
+  const auto inside = [width, height](int x, int y) {
+    return x >= 0 && y >= 0 && x < width && y < height;
+  };
+
+  for (const auto &[key, cell] : memory.cells) {
+    (void)key;
+    const int x = cell.pos.x - origin.x;
+    const int y = cell.pos.y - origin.y;
+    if (!inside(x, y)) continue;
+    char symbol = '.';
+    if (!cell.walkable) {
+      symbol = '#';
+    } else {
+      const std::string surface = detail::Lower(cell.surface);
+      if (detail::Contains(surface, "water") ||
+          detail::Contains(surface, "lake") ||
+          detail::Contains(surface, "river") ||
+          detail::Contains(surface, "pond")) {
+        symbol = '~';
+      }
+    }
+    rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)] = symbol;
+  }
+
+  for (const auto &[id, object] : memory.objects) {
+    (void)id;
+    if (object.vanishedTick >= 0 || object.portable) continue;
+    const int x = object.pos.x - origin.x;
+    const int y = object.pos.y - origin.y;
+    if (!inside(x, y)) continue;
+    const std::string code = detail::ObjectCode(object);
+    if (!code.empty()) {
+      rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)] = code[0];
+    }
+  }
+
+  // Semantic-place initials fill open ground only: an object code stays visible.
+  for (const KnownPlace &place : memory.places) {
+    if (place.origin == PlaceOrigin::Region) continue;
+    std::string name = !place.labels.empty() ? place.labels.front()
+                                              : place.primaryAspect;
+    if (name.empty()) continue;
+    char symbol = static_cast<char>(
+        std::toupper(static_cast<unsigned char>(name.front())));
+    if (symbol < 'A' || symbol > 'Z') symbol = 'P';
+    for (const std::uint64_t key : place.memberCells) {
+      const GamePosition pos = VisionQuery::CellFromKey(key);
+      const int x = pos.x - origin.x;
+      const int y = pos.y - origin.y;
+      if (!inside(x, y)) continue;
+      char &cell = rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)];
+      if (cell == '.' || cell == '~' || cell == '#') cell = symbol;
+    }
+  }
+
+  for (std::size_t i = 0; i < candidates.size(); ++i) {
+    const NavigationPlan::Candidate &candidate = candidates[i];
+    const int x = candidate.target.x - origin.x;
+    const int y = candidate.target.y - origin.y;
+    if (!inside(x, y)) continue;
+    rows[static_cast<std::size_t>(y)][static_cast<std::size_t>(x)] =
+        static_cast<char>('1' + static_cast<int>(i % 9));
+  }
+
+  const int hereX = here.x - origin.x;
+  const int hereY = here.y - origin.y;
+  if (inside(hereX, hereY)) {
+    rows[static_cast<std::size_t>(hereY)][static_cast<std::size_t>(hereX)] = '@';
+  }
+
+  std::ostringstream out;
+  out << "MAP " << width << "x" << height
+      << " north-up (@=you .=open #=blocked ~=water T=tree B=building S=sign "
+         "C=character O=other ?=unknown; letters=semantic place initials; "
+         "digits=targets)";
+  const std::string facingWord = SightReport::FacingWord(facing);
+  if (!facingWord.empty()) out << " facing " << facingWord;
+  out << ":";
+  for (const std::string &row : rows) {
+    out << "\n  " << row;
+  }
+  out << "\nMAP TARGETS:";
+  for (std::size_t i = 0; i < candidates.size(); ++i) {
+    const NavigationPlan::Candidate &candidate = candidates[i];
+    out << "\n  " << (i + 1) << "  " << candidate.key << "  "
+        << candidate.label << " (" << candidate.distance << " tiles)";
+  }
+  return out.str();
+}
+
 inline std::string BuildPilotObservation(
     const SpatialMemory &memory, GamePosition here, const Facing &facing,
     const std::vector<NavigationPlan::Candidate> &candidates,
     const std::vector<std::string> &routeLabels,
     const std::unordered_set<int> &visitedPlaceIds,
-    const std::unordered_set<std::uint64_t> &walkedTargets, int radius) {
+    const std::unordered_set<std::uint64_t> &walkedTargets, int radius,
+    const std::string &mapMode = "off", int mapRadius = 6) {
   const KnownPlace *current = PlaceQuery::At(memory, here);
   const int r = std::clamp(radius, 1, 24);
   const std::string facingWord = SightReport::FacingWord(facing);
+
+  const std::string mode =
+      (mapMode == "append" || mapMode == "replace") ? mapMode : "off";
+  const std::string map = mode == "off"
+                              ? std::string()
+                              : BuildPilotMap(memory, here, facing,
+                                              candidates, mapRadius);
+  if (mode == "replace") {
+    std::ostringstream mapOut;
+    mapOut << map << "\nROUTE:";
+    if (routeLabels.empty()) {
+      mapOut << " nothing walked yet";
+    } else {
+      for (std::size_t i = 0; i < routeLabels.size(); ++i) {
+        if (i > 0) mapOut << " -> ";
+        mapOut << routeLabels[i];
+      }
+    }
+    bool hasCurrentRun = false;
+    for (const NavigationPlan::Candidate &candidate : candidates) {
+      if (candidate.key.rfind("here:", 0) == 0) {
+        hasCurrentRun = true;
+        break;
+      }
+    }
+    if (current != nullptr && !hasCurrentRun && !candidates.empty()) {
+      mapOut << "\nDEAD END: the place underfoot has no observed "
+                "continuation; only other places are reachable.";
+    }
+    return mapOut.str();
+  }
 
   std::ostringstream out;
   out << "SURROUNDINGS:";
@@ -681,9 +849,9 @@ inline std::string BuildPilotObservation(
     int bestDistance = r + 1;
     bool bestWater = false;
 
-    for (const KnownPlace &place : memory.places) {
+    for (const KnownPlace *place : PlaceQuery::ModelPlaces(memory, here)) {
       const GamePosition cell =
-          PlaceQuery::NearestWalkableCell(memory, place, here);
+          PlaceQuery::NearestWalkableCell(memory, *place, here);
       if (cell == here) continue;
       if (cell.x - here.x != 0 && (cell.x - here.x) * dx[i] < 0) continue;
       if (cell.y - here.y != 0 && (cell.y - here.y) * dy[i] < 0) continue;
@@ -693,7 +861,8 @@ inline std::string BuildPilotObservation(
       if (distance > r || distance >= bestDistance) continue;
       bestDistance = distance;
       best = cell;
-      label = detail::PlaceLabel(place) + ", " + std::to_string(distance) + " tiles";
+      label = detail::PlaceLabel(*place) + ", " + std::to_string(distance) +
+              " tiles";
       bestWater = false;
     }
 
@@ -772,8 +941,7 @@ inline std::string BuildPilotObservation(
 
   bool hasCurrentRun = false;
   for (const NavigationPlan::Candidate &candidate : candidates) {
-    if (candidate.key.rfind("here:", 0) == 0 && current != nullptr &&
-        candidate.placeId == current->id) {
+    if (candidate.key.rfind("here:", 0) == 0) {
       hasCurrentRun = true;
       break;
     }
@@ -781,6 +949,9 @@ inline std::string BuildPilotObservation(
   if (current != nullptr && !hasCurrentRun && !candidates.empty()) {
     out << "\nDEAD END: the place underfoot has no observed continuation; "
            "only other places are reachable.";
+  }
+  if (mode == "append") {
+    out << "\n" << map;
   }
   return out.str();
 }
@@ -873,6 +1044,106 @@ inline std::string BuildStrategistUserPrompt(
       << "\n";
   out << "\nOBSERVATION (observed only):\n" << observation.dump(2) << "\n";
   out << "\nReturn the JSON object now.\n";
+  return out.str();
+}
+
+// ── Single-context navigator prompts ─────────────────────────────────────────
+
+// One main-model context holds the whole navigation: the map, graph, plan, route
+// and previous results. This prompt is intentionally richer than the pilot's
+// one-step prompt: the model is the strategist and the pilot at once.
+inline std::string BuildSingleSystemPrompt() {
+  return R"(You are the navigator for a character in a tile-based game. You are the
+only navigation model: there is no separate strategist or pilot. You see only
+what the character has observed in SpatialMemory; you have no map, no authored
+name you have not seen, and no coordinates the character has not observed.
+
+Each turn the engine gives you:
+- OBSERVATION: the observed JSON grid and minimal place/object graph.
+- MAP: a north-up ASCII map; @ is you, digits are candidate target cells,
+  letters are semantic-place initials; the legend is on the MAP line.
+- STATE: where you are, the goal, the route and the candidate actions.
+- PLAN: your previous plan (or none).
+- ROUTE and LAST RESULT: what the character has walked and what just happened.
+
+Your job is one decision: keep or update the plan, and choose the next move.
+Think about the long-term route and the local geometry, not just the next tile.
+
+Reply with a short <think>...</think> block (2-6 sentences), then ONE JSON
+object. The JSON must be after the closing </think> tag, not inside it, and must
+not be wrapped in a code fence:
+{
+  "plan": {
+    "strategy": "a few sentences the main character could follow",
+    "subtask": "a short instruction for the next few moves",
+    "monitors": [
+      {"id": "short_id", "question": "a yes/no question you could answer from
+       the observation", "handoff_when": "yes", "min_confidence": 0.6}
+    ]
+  },
+  "move": "here:east",
+  "confidence": 0.7,
+  "done": false,
+  "unsure": false,
+  "reason": "one short sentence"
+}
+
+Rules:
+- `move` must be one of the observed action keys, or `arrived`, `none`, `unsure`
+  or `look_around`. Never invent a coordinate or a place name.
+- Some action keys start with `examine:`. Choosing one walks to the observed
+  object and examines it; the result appears in the next turn's LAST RESULT. Use
+  them on signposts, notices and markers when the text could change the route.
+  Every observed examinable object inside the examine radius is listed; do not
+  assume an unlisted object exists.
+- `arrived` is only for when the goal is actually satisfied; the engine verifies
+  the current place. `done` is an alias for arrived.
+- `unsure` or `none` hands control back; do not use them to avoid a decision when
+  a usable move exists.
+- `look_around` asks for a full-circle survey; use it only when the map is too
+  thin to choose.
+- The plan is yours to keep or replace. If the map changed enough to invalidate
+  it, update it in this response.
+- The engine resolves the chosen key to a target cell and validates the walk.
+- Do not plan through unknown cells as if they were open.
+- Reply within roughly 500 tokens. The JSON is authoritative; no prose outside
+  the think block and the JSON.
+)";
+}
+
+inline std::string BuildSingleUserPrompt(
+    const std::string &goal, const std::string &taskDigest,
+    const nlohmann::json &observation, const std::string &map,
+    const std::string &state, const Plan *plan,
+    const std::vector<std::string> &route, const std::string &lastResult,
+    int calls, int maxCalls) {
+  std::ostringstream out;
+  out << "GOAL: " << goal << "\n";
+  if (!taskDigest.empty()) {
+    out << "\nTASK CONTEXT:\n" << taskDigest << "\n";
+  }
+  out << "\nOBSERVATION (observed only):\n" << observation.dump(2) << "\n";
+  out << "\n" << map << "\n";
+  out << "\n" << state << "\n";
+  out << "\nPREVIOUS PLAN:\n";
+  if (plan != nullptr) {
+    out << PlanToJson(*plan) << "\n";
+  } else {
+    out << "none\n";
+  }
+  out << "\nROUTE:";
+  if (route.empty()) {
+    out << " nothing walked yet";
+  } else {
+    for (std::size_t i = 0; i < route.size(); ++i) {
+      if (i > 0) out << " -> ";
+      out << route[i];
+    }
+  }
+  out << "\nLAST RESULT: " << (lastResult.empty() ? "episode start" : lastResult)
+      << "\n";
+  out << "DECISION: " << (calls + 1) << " / " << maxCalls << "\n";
+  out << "\nReturn the think block and JSON now.\n";
   return out.str();
 }
 

@@ -42,10 +42,16 @@ inline long long Signature(const SpatialMemory &memory) {
   long long signature = static_cast<long long>(memory.cells.size()) * 1000003LL;
   signature += static_cast<long long>(memory.runs.size()) * 10007LL;
   signature += static_cast<long long>(memory.places.size()) * 101LL;
+  signature += static_cast<long long>(memory.regions.size()) * 103LL;
   for (const KnownPlace &place : memory.places) {
     signature += place.id * 7919LL;
     signature += static_cast<long long>(place.memberCells.size());
     signature += static_cast<long long>(place.labels.size()) * 31LL;
+  }
+  for (const KnownPlace &region : memory.regions) {
+    signature += region.id * 7907LL;
+    signature += static_cast<long long>(region.memberCells.size());
+    signature += static_cast<long long>(region.labels.size()) * 31LL;
   }
   return signature;
 }
@@ -57,9 +63,12 @@ inline std::vector<Candidate> BuildCandidates(const SpatialMemory &memory,
   std::vector<Candidate> candidates;
 
   std::vector<const KnownPlace *> places;
-  places.reserve(memory.places.size());
+  places.reserve(memory.places.size() + memory.regions.size());
   for (const KnownPlace &place : memory.places) {
     places.push_back(&place);
+  }
+  for (const KnownPlace &region : memory.regions) {
+    places.push_back(&region);
   }
   std::sort(places.begin(), places.end(),
             [](const KnownPlace *a, const KnownPlace *b) {

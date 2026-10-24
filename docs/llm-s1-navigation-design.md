@@ -8,11 +8,93 @@ Stage 2 tuning, the factual-monitor question and the full request/response recor
 **2026-10-20:** removed the per-episode S1 decision cap and the strategy step limit; the same-target
 back-and-forth is now a soft `REPETITION` signal instead of a stop. Resource guards were raised to
 600 s episode, 60 s leg, 12 strategist calls and 4 surveys; they are not navigation decisions.
+**2026-10-23:** Stage 1 of `docs/region-place-design.md` is implemented: when no place is underfoot,
+the S1 candidates include open-ground `here:<direction>` runs over observed walkable cells, and the
+S1 state/summary say "open ground". **Stage 1.5** makes the compass direction-first in every case:
+one best move per sector — current place run, adjacent place, or open ground — with the nearest
+adjacent place reserved and the rest cardinal-first. A place underfoot no longer hides an open
+direction. No provisional `KnownPlace` or region node is created. **Stage 2** is also implemented: observed
+8×8 base regions within 12 tiles are the current place in open ground, appear in `[PLACES]` and the
+strategist graph, and can be named. **Stage 3** adds the terrain aspects: a region reads `an unnamed
+sand field (sand 82%, grass 10%)`, and its objects remain aspects inside it. **Stage 4** adds the
+8/16/32 parent views and `PlaceQuery::ModelPlaces`: the model sees the semantic places, the current
+region and the nearest `regions.modelNearCount` regions, with a coarser parent hidden while a finer
+child is selected. `regions.modelNearCount` is wired to the S1 candidates, `[PLACES]` and the
+summary; the existing 5/8/24 caps remain. **Stage 5** makes `PlaceQuery::At` prefer a semantic place
+underfoot even when the region is smaller, lists semantic places first in `[PLACES]` with `#id`
+duplicate-name hints, and labels the graph’s region nodes `[R8]`/`[R16]`/`[R32]`. A named parent
+region passes its label to the child containing the parent anchor.
+
+### Examine affordances (2026-10-24)
+
+`[NAVIGATE]` now offers examine candidates: `examine:<objectId>` walks to the observed
+object's nearest walkable adjacent cell and executes its `Examine` interaction. The
+result becomes the single navigator's next `LAST RESULT`, or `recentExamination` in the
+two-context S1 state and strategist observation.
+
+`system1.navigation.examineRadius` defaults to the perception range (22) and is the only
+bound; every observed non-character, non-portable, non-vanished object inside it is listed.
+The single navigator shows all of them. The two-context S1 caps the examine candidates at
+`maxExamine` (default 2), reserved inside `maxCandidates`; the single ignores that cap.
+
+## Single-context navigator (2026-10-24)
+
+`navigation.agent` selects the navigation architecture. `single` is the new default: one
+main-model context (`navsingle-<entity>`) holds the whole episode — JSON grid + graph,
+ASCII map with target digits, current state, plan, route and last result — and returns
+an updated plan and the next move in **one decision call**. `two` restores the previous
+strategist + Jev pilot; it is also the fallback when `navigation.single.fallbackToTwo` is
+on and the single call times out, is unsure, loses a leg, or repeats an unusable reply
+past the `maxAttempts` budget.
+
+Any unusable model reply is retried in the **same** context. That covers invalid JSON
+or field types, an invalid plan, a missing `move`, and a move that is not one of the
+offered candidates; the rejected assistant reply and a user correction naming the exact
+error are appended, and the model is asked for a shorter think and one complete JSON
+object. The same `maxTokens` budget is kept. Up to `navigation.single.maxAttempts`
+(default 3) consecutive unusable replies are allowed; an accepted reply (a move,
+`look_around`, or `arrived`) resets the counter. On the cap, `fallbackToTwo` switches to
+the two-context navigator, or — when false — returns control to the main LLM with the
+summary.
+
+The main LLM receives all eight compass sectors (`navigation.single.maxDirections = 8`) and
+up to 12 total movement options (`maxCandidates = 12`: eight local + four distant). The
+two-context S1 keeps its smaller `system1.navigation` caps. Examine candidates are a
+separate affordance list and do not consume those slots.
+
+The `road` category is marked `diagonal` in `data/places.json`: `SplitAtJunctions` connects
+road cells in all eight directions and keeps a junction cell on the diagonal stretch, so a
+diagonal road that crosses a vertical road is one road place rather than a chain of 1-tile
+endpoints. The navigator then follows it with the same `here:<direction>` run used for
+horizontal and vertical roads.
+
+The single response is a short `<think>` block followed by JSON:
+
+```json
+{"plan": {"strategy": "...", "subtask": "...", "monitors": []},
+ "move": "here:east", "confidence": 0.7, "done": false,
+ "unsure": false, "reason": "one sentence"}
+```
+
+The engine validates the move against the candidate set, resolves the target cell, walks
+one leg and checks arrival; the model never invents coordinates. The full history is
+retained for the quality-first experiment; context compaction/caching is deliberately
+left for the optimization pass. `navigation.single.mapRadius` (default 6) controls the
+ASCII map; `maxTokens` (500) and `timeoutSeconds` (60) bound one decision.
+
+**2026-10-23 S1 ASCII-map experiment:** `system1.navigation.mapMode` selects the S1's spatial
+input: `off` (the current sector prose), `append` (prose + a north-up ASCII map + target list), or
+`replace` (map + compact target list instead of the `SURROUNDINGS`/`FRONTIER` prose). The map is
+13×13 by default (`mapRadius: 6`), marks `@`, terrain, objects, semantic-place initials and the
+candidate target digits, and is built by `BuildPilotMap`. It is context only: the target list and
+`ACTIONS` remain the choice vocabulary. Default is `off` so the map can be A/B tested against the
+current behavior.
 **Date:** 2026-10-19
 **Related:** `navigation-subagent-design.md` (the S1 compass/pilot, which this document keeps as
 the local executor), `agent-attention-design.md` (waking and interruption), `spatial-memory-design.md`
 (what the observation is built from), `agent-exploration-task.md` (the fair-test brief),
-`place-derivation-design.md` (places and their aspects).
+`place-derivation-design.md` (semantic places and their aspects), `region-place-design.md`
+(perceived base regions and their terrain/aspect categorization).
 
 ---
 
@@ -238,7 +320,8 @@ Rules:
 The engine validates the JSON before use: non-empty strategy, unique monitor ids, non-empty
 questions, a yes/no `handoff_when`, a `min_confidence` in 0..1, the strategy/subtask length, and the
 absence of a map/coordinate payload that would bypass the observation. Extra monitors beyond
-`maxMonitors` are truncated; an invalid plan gets one retry and then the S1 fallback.
+`maxMonitors` are truncated; an invalid plan gets up to `maxAttempts` attempts (default 3: the
+first call plus two retries) and then the S1 fallback.
 
 ### 6.3 Call cadence and cost
 
@@ -265,10 +348,10 @@ A give-up ends the episode with the summary rather than spending the whole budge
 
 ### 6.5 Failure
 
-- Invalid JSON or invalid monitors: one retry. If it still fails, keep the **last accepted strategy**
+- Invalid JSON or invalid monitors: retry up to `maxAttempts` (default 3). If all attempts fail, keep the **last accepted strategy**
   (its monitors are dropped, since they caused the failing handoff) and let the S1 continue with that
   strategy. The strategist is asked again on the S1's next uncertainty or no-move, not abandoned.
-- Strategist timeout/unavailable: the same fallback, with the failure reason recorded in the summary
+- Strategist timeout/transport failure: retry up to `maxAttempts`; then the same fallback, with the failure reason recorded in the summary
   and the Navigation debug window.
 - The fallback is a setting (`fallbackToS1`). A run with no strategist must still navigate with the
   S1.
@@ -713,6 +796,7 @@ there is no provider/model block in Stage 1. The existing S1 section remains:
   "strategist": {
     "enabled": true,
     "maxStrategies": 12,
+    "maxAttempts": 3,
     "maxMonitors": 3,
     "monitorMinConfidence": 0.6,
     "timeoutSeconds": 30,
@@ -760,15 +844,16 @@ Notes:
 
 - **Stage 1 strategist records**: the `[navigation]` debug-log trace records the strategist start
   (reason, strategy number, model), the accepted plan (subtask + monitors), each handoff, and the
-  fallback. The full request/response and the full JSON observation are **not** yet persisted to
-  `logs/navigation/`; that is Stage 2.
+  fallback. The full request/response and the full JSON observation are now persisted to
+  `logs/<run-start>/navigator/<Agent>.txt`, including a partial/cut-off stream and the parse error.
 - **S1 records**: the existing `System 1` record now holds the local `next` and the monitor
   questions/answers, their probabilities, and the scenario. Its state includes the strategy/subtask
-  and the compact observation, so the exact S1 input is inspectable.
+  and the compact observation, so the exact S1 input is inspectable. The same state/answer is also
+  in the per-agent navigator log.
 - **Handoff record**: the `[navigation]` trace line for the monitor/unsure handoff with the reason;
   the S1 record has the question and answer; the summary has the new plan and the counts.
-- **Observation**: the S1's compact text is in the System 1 record. The strategist's JSON grid/graph
-  is not separately stored in Stage 1; the same memory produces it, and the plan summary in the trace
+- **Observation**: the S1's compact text is in the System 1 record and the navigator log. The
+  strategist's JSON grid/graph is in the navigator request; the same memory produces it, and the plan summary in the trace
   is the audit trail.
 - **Per-NPC navigation window (Stage 1 debug UI)**: the NPC Menu has a `Navigation` column; its
   button opens a per-character window (`NavigationDebugWindow`) reading the last
@@ -778,7 +863,17 @@ Notes:
   S1 reply. The snapshot is kept after the episode ends, so a completed or failed run can be
   inspected. It is read-only.
 - **Agent location graph**: the Overview tab draws the observed place/object graph the strategist
-  received at the selected call, above the thoughts. Nodes are at their observed world positions;
+  received at the selected call, above the thoughts. The graph header has two toggles: **Hide
+  objects** removes every `object` node (and its edges); **Hide names** removes every node label,
+  including “you are here”, while the green current ring remains. With names hidden, hovering a node
+  shows its full name and region level. The toggles are per NPC Navigation window session. Region
+  nodes from `docs/region-place-design.md` appear in this same graph. Nodes are at their observed
+  world positions, and all calls share one world-to-screen frame computed from the union of the
+  stored call graphs plus the latest observation, so a node keeps the same screen position when the
+  selected call changes. The frame expands if a new call adds a node beyond it. Node positions are
+  stable by construction: a region uses its grid-cell centre (`regionCell` + `regionSize`), a
+  semantic place uses its extent centre rather than the growing top-left `anchor`, and an object
+  uses its cell. The current region node is included even when a semantic place is the current key.
   edges are observed or walked; the current place is green, the frontier yellow, visited places
   blue, objects orange, dead ends red. The graph is captured per strategist call, so selecting an
   older call shows the world picture at that point. With no call history the latest observation's
@@ -788,6 +883,17 @@ Notes:
   plan, re-plan, retry), and `Latest` returns to the live one. A call with no `<think>` says so; a
   failed call shows its error. The JSON is not shown here; the raw plan and observation stay in the
   Strategist tab.
+- **S1 responses**: the Overview tab shows the S1 answers that followed the selected strategist
+  call, between Navigator thoughts and Monitors. Every answer for that call is retained, not only
+  the newest eight. With no strategist call (strategist disabled or no call history) it falls back
+  to the compact newest-eight S1 list. The old **S1 Responses** tab is gone; the latest raw S1
+  response and last S1 error now live in the **Pilot** tab beside the S1 input.
+- **Pause/Resume navigator**: the window has a per-NPC Pause/Resume button beside the status.
+  Pausing interrupts the current `NavigateAction` and cancels its in-flight S1 ask and strategist
+  call; the episode, strategy, route, counters, memory, position and selected snapshots stay
+  intact. The brain is paused for that NPC only, so no new step or S1/strategist call starts.
+  Resume continues the same episode where it stopped. Other NPCs and the rest of the simulation
+  continue. The button is disabled when the NPC has no navigator action.
 - Selecting a call also switches the Overview's **Strategy/Subtask**, **Monitors** and **Pilot
   candidates** to that call's snapshot. The candidates are the list the strategist built for that
   call's observation, not the later S1 decision's list. A failed/retry call shows "no plan for this
@@ -804,7 +910,7 @@ Notes:
 
 | failure | behaviour |
 |---|---|
-| Strategist unavailable/timeout | Retry once; then `fallbackToS1` (the existing S1-only loop) or end with the summary. |
+| Strategist unavailable/timeout/invalid | Retry up to `maxAttempts` (default 3); then `fallbackToS1` (the existing S1-only loop) or end with the summary. |
 | Strategist invalid JSON/monitors | Retry once; then fallback/end. |
 | S1 unavailable | The strategist cannot execute; fall back to the main model/`[MOVE_TO]`; end with the summary. |
 | Monitor unanswerable/unknown/low | Recorded as advisory; it does not block the leg. A confident `handoff_when` answer hands to the strategist; the pilot's own uncertainty/no-move also hands back. |
@@ -837,7 +943,7 @@ What landed:
 Acceptance:
 
 - **Wiring acceptance (fake strategist AI + fake S1, real quest map): PASS A–H** — initial plan +
-  monitor handoff + re-plan + summary; a confident monitor trigger; an unknown monitor does not block a leg; strategist disabled; invalid reply retry
+  monitor handoff + re-plan + summary; a confident monitor trigger; an unknown monitor does not block a leg; strategist disabled; invalid reply retry (up to `maxAttempts`, default 3)
   + S1 fallback; plan/leg/arrival; survey/unsure handoff; direct parse/evaluate; failed re-plan keeps
   the last strategy, the pilot's unsure calls the strategist again, and the episode ends with the
   strategist's give-up and the last strategy in the summary (not the old "full circle" message).
@@ -910,8 +1016,8 @@ These are the parts the implementation still leaves for tuning runs:
    the S1 remains as a monitor. Stage 4.
 10. **Attention/interruption.** The handoff mid-leg via the attention gate (the gate itself is outside
     this document), and how the strategist/S1 state is preserved.
-11. **Full records.** The strategist request/response and the full JSON observation are not persisted
-    in Stage 1; Stage 2 adds `logs/navigation/` and the replay.
+11. **Full records.** The strategist request/response and the full JSON observation are persisted in
+    `logs/<run-start>/navigator/<Agent>.txt`; the replay reads that file.
 
 ---
 

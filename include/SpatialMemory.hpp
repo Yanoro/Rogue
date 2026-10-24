@@ -21,10 +21,12 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <tuple>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -32,6 +34,82 @@
 #include <vector>
 
 namespace Memory {
+
+// Where the once-per-sample derivation spends its time.
+//
+// The pass is felt as a frame hitch, so "70 ms" is only useful with the split
+// that produced it. The game logs this breakdown when the pass crosses the
+// perceptible threshold, and `SpatialMemoryBench` reports the same numbers
+// without a window. Fields are milliseconds accumulated by one call.
+struct DerivationProfile {
+  // DerivePlaces
+  double placesSeedMs = 0.0;
+  double placesClusterMs = 0.0;   // sort, union, flood, candidates
+  double placesUnionMs = 0.0;     // included in placesClusterMs
+  double placesFloodMs = 0.0;     // included in placesClusterMs
+  double placesSplitMs = 0.0;     // included in placesClusterMs
+  double placesBuildMs = 0.0;     // identity, extent, labels, aspect index
+  double placesAspectsMs = 0.0;   // included in placesBuildMs
+  double placesFactsMs = 0.0;
+  // DeriveRegions
+  double regionsCellsMs = 0.0;    // bucket every observed cell by LOD
+  double regionsSetupMs = 0.0;    // existing-region index and ordered keys
+  double regionsMembershipMs = 0.0;  // member cells and seeds per region
+  double regionsSignatureMs = 0.0;   // cache key per region
+  double regionsLabelsMs = 0.0;      // parent label inheritance
+  double regionsBuildMs = 0.0;    // region identity, member cells and seeds
+  double regionsAspectsMs = 0.0;  // included in regionsBuildMs
+  double regionsFactsMs = 0.0;
+  double regionsEvictMs = 0.0;
+
+  // Inside BuildAspects, accumulated over every call in the pass.
+  double aspectsObjectMs = 0.0;
+  double aspectsTileMs = 0.0;
+  double aspectsSurfaceMs = 0.0;
+  double aspectsWallMs = 0.0;
+  double aspectsMeanMs = 0.0;
+  int aspectsCalls = 0;
+
+  // Shape of the work, for interpreting the numbers above.
+  int placesSeeds = 0;
+  int placesAspectRebuilds = 0;
+  int regionsRefreshed = 0;
+  int regionsRetained = 0;
+  int regionsAspectRebuilds = 0;
+};
+
+namespace detail {
+
+using ProfileClock = std::chrono::steady_clock;
+
+inline double ProfileMs(ProfileClock::time_point start,
+                        ProfileClock::time_point end) {
+  return std::chrono::duration<double, std::milli>(end - start).count();
+}
+
+// Adds the time spent in the enclosing scope to one profile field. Inert when
+// there is no profile because the benchmark and the game both pass one only when
+// they intend to read the split.
+class ProfileScope {
+public:
+  ProfileScope(DerivationProfile *profile,
+               double DerivationProfile::*field)
+      : profile(profile), field(field), start(ProfileClock::now()) {}
+  ~ProfileScope() {
+    if (profile != nullptr) {
+      profile->*field += ProfileMs(start, ProfileClock::now());
+    }
+  }
+  ProfileScope(const ProfileScope &) = delete;
+  ProfileScope &operator=(const ProfileScope &) = delete;
+
+private:
+  DerivationProfile *profile;
+  double DerivationProfile::*field;
+  ProfileClock::time_point start;
+};
+
+}  // namespace detail
 
 // Creates the `Origin` place on the very first sample. It is the only thing a
 // memory can be anchored to when it knows nothing, which is what lets a stranger
@@ -83,6 +161,7 @@ inline void RecordCell(SpatialMemory &memory, GamePosition pos,
     record.visitCount = 1;
     memory.cells.emplace(key, std::move(record));
     ++memory.discoveredCells;
+    ++memory.contentRevision;
     return;
   }
 
@@ -91,12 +170,26 @@ inline void RecordCell(SpatialMemory &memory, GamePosition pos,
   // categories are refreshed because a tile can be repainted under a character --
   // a path turned into a road is the same cell with a different part to play.
   MemoryCell &cell = known->second;
-  cell.surface = surface;
-  cell.walkable = walkable;
+  bool changed = false;
+  // Compared before assigning: most tiles are the same on every sighting, and
+  // copying the surface string per visible cell per sample was pure cost.
+  if (cell.surface != surface) {
+    cell.surface = surface;
+    changed = true;
+  }
+  if (cell.walkable != walkable) {
+    cell.walkable = walkable;
+    changed = true;
+  }
   // Compared before assigning: most tiles have no categories, and an assignment
   // per visible cell per sample was an allocation per cell for no change.
   if (cell.categories != categories) {
     cell.categories = categories;
+    changed = true;
+  }
+  if (changed) {
+    ++cell.contentVersion;
+    ++memory.contentRevision;
   }
   cell.observedTick = tick;
   ++cell.visitCount;
@@ -145,6 +238,7 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
           record.character = other.has<CharacterTag>();
           record.firstSeenTick = tick;
           found = memory.objects.emplace(other.id(), std::move(record)).first;
+          ++memory.contentRevision;
         }
 
         // Everything template-derived is refreshed on every sighting, not only
@@ -154,9 +248,20 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
         // record that kept its first sighting's categories would be a chest whose
         // seed data says "wooden wall" -- visible, and never a place.
         SeenObject &record = found->second;
-        record.templateId =
+        const std::string templateId =
             other.has<ItemType>() ? other.get<ItemType>()->id : std::string();
-        record.name = name.name;
+        bool changed = record.templateId != templateId ||
+                       record.name != name.name ||
+                       record.pos.x != pos.x || record.pos.y != pos.y ||
+                       record.portable != other.has<Portable>() ||
+                       record.structural != other.has<Structural>() ||
+                       record.vanishedTick != -1;
+        if (record.templateId != templateId) {
+          record.templateId = templateId;
+        }
+        if (record.name != name.name) {
+          record.name = name.name;
+        }
         record.pos = pos;
         record.lastSeenTick = tick;
         record.vanishedTick = -1;
@@ -165,9 +270,15 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
         if (const PlaceCategories *categories = other.get<PlaceCategories>()) {
           if (record.categories != categories->categories) {
             record.categories = categories->categories;
+            changed = true;
           }
         } else if (!record.categories.empty()) {
           record.categories.clear();
+          changed = true;
+        }
+        if (changed) {
+          ++record.contentVersion;
+          ++memory.contentRevision;
         }
       });
 
@@ -191,6 +302,8 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
     }
     if (!world.is_alive(id)) {
       object.vanishedTick = tick;
+      ++object.contentVersion;
+      ++memory.contentRevision;
     }
   }
 }
@@ -229,6 +342,7 @@ inline const char *PlaceOriginName(PlaceOrigin origin) {
   case PlaceOrigin::Origin: return "Origin";
   case PlaceOrigin::Inferred: return "Inferred";
   case PlaceOrigin::Authored: return "Authored";
+  case PlaceOrigin::Region: return "Region";
   }
   return "Inferred";
 }
@@ -278,20 +392,16 @@ inline float Decay(float distance, float radius) {
   return t >= 1.0f ? 0.0f : 1.0f - t;
 }
 
-inline void RecomputeExtent(
-    KnownPlace &place,
-    const std::unordered_map<std::uint64_t, MemoryCell> &cells) {
+inline void RecomputeExtent(KnownPlace &place) {
   if (place.memberCells.empty()) {
     return;
   }
   int minX = 0, minY = 0, maxX = 0, maxY = 0;
   bool first = true;
   for (const std::uint64_t key : place.memberCells) {
-    const auto found = cells.find(key);
     // The key packs the position, so an evicted cell still contributes its
     // coordinate to the box; the surface is what was lost, not the location.
-    const GamePosition pos =
-        found == cells.end() ? VisionQuery::CellFromKey(key) : found->second.pos;
+    const GamePosition pos = VisionQuery::CellFromKey(key);
     if (first) {
       minX = maxX = pos.x;
       minY = maxY = pos.y;
@@ -313,68 +423,286 @@ inline void RecomputeExtent(
 
 // Facts are counted from the raw vocabulary: surfaces from member cells, objects
 // from whatever was recorded standing on one. Sorting makes the dump stable.
+//
+// Batched over all places rather than called per place: the per-place form
+// walked the whole object store once for every region, which was quadratic in
+// two numbers that are both in the hundreds. Every object now contributes to
+// every place it touches in a single pass.
 inline void RecomputeFacts(
-    SpatialMemory &memory, KnownPlace &place,
-    const std::unordered_map<std::uint64_t, int> &placeOfCell) {
-  place.facts.clear();
-
-  std::map<std::string, int> surfaces;
-  for (const std::uint64_t key : place.memberCells) {
-    const auto found = memory.cells.find(key);
-    if (found == memory.cells.end()) {
-      continue;
-    }
-    ++surfaces[found->second.surface];
+    SpatialMemory &memory, std::vector<KnownPlace> &places,
+    const std::unordered_map<std::uint64_t, int> &placeOfCell,
+    const std::vector<char> *recompute = nullptr) {
+  if (places.empty()) {
+    return;
   }
+  const auto needed = [recompute](std::size_t index) {
+    return recompute == nullptr || (*recompute)[index] != 0;
+  };
 
-  std::map<std::string, int> objects;
-  std::unordered_set<std::uint64_t> memberKeys;
-  for (const auto &[id, object] : memory.objects) {
-    if (object.character || object.vanishedTick >= 0) {
-      continue;
+  std::unordered_map<int, std::size_t> indexOfId;
+  indexOfId.reserve(places.size() * 2);
+  for (std::size_t i = 0; i < places.size(); ++i) {
+    if (needed(i)) {
+      places[i].facts.clear();
     }
-    if (object.structural) {
-      continue;  // counted below, by whether it touches the place
-    }
-    const auto owner = placeOfCell.find(VisionQuery::CellKey(object.pos));
-    if (owner == placeOfCell.end() || owner->second != place.id) {
-      continue;
-    }
-    ++objects[object.templateId.empty() ? object.name : object.templateId];
+    indexOfId[places[i].id] = i;
   }
 
   // A wall is part of what a place is made of even though it is never claimed
-  // ground, so it is counted by contact rather than by membership.
-  memberKeys.reserve(place.memberCells.size() * 2);
-  for (const std::uint64_t key : place.memberCells) {
-    memberKeys.insert(key);
-  }
+  // ground, so it is counted by contact rather than by membership. Index the
+  // contact once: the cell each wall borders points back at the wall.
+  std::unordered_map<std::uint64_t, std::vector<const SeenObject *>>
+      wallsTouching;
   for (const auto &[id, object] : memory.objects) {
     if (!object.structural || object.vanishedTick >= 0) {
       continue;
     }
-    const std::uint64_t left =
-        VisionQuery::CellKey({object.pos.x - 1, object.pos.y});
-    const std::uint64_t right =
-        VisionQuery::CellKey({object.pos.x + 1, object.pos.y});
-    const std::uint64_t up =
-        VisionQuery::CellKey({object.pos.x, object.pos.y - 1});
-    const std::uint64_t down =
-        VisionQuery::CellKey({object.pos.x, object.pos.y + 1});
-    if (memberKeys.count(left) == 0 && memberKeys.count(right) == 0 &&
-        memberKeys.count(up) == 0 && memberKeys.count(down) == 0) {
-      continue;
-    }
-    ++objects[object.templateId.empty() ? object.name : object.templateId];
+    wallsTouching[VisionQuery::CellKey({object.pos.x - 1, object.pos.y})]
+        .push_back(&object);
+    wallsTouching[VisionQuery::CellKey({object.pos.x + 1, object.pos.y})]
+        .push_back(&object);
+    wallsTouching[VisionQuery::CellKey({object.pos.x, object.pos.y - 1})]
+        .push_back(&object);
+    wallsTouching[VisionQuery::CellKey({object.pos.x, object.pos.y + 1})]
+        .push_back(&object);
   }
 
-  for (const auto &[name, count] : surfaces) {
-    place.facts.push_back({"surface", name, count});
+  std::vector<std::vector<std::pair<std::string, int>>> surfaces(places.size());
+  std::vector<std::vector<std::pair<std::string, int>>> objects(places.size());
+  const auto bump = [](std::vector<std::pair<std::string, int>> &counts,
+                       const std::string &name) {
+    // A place has a handful of distinct surfaces and object names, so a linear
+    // scan beats a map node allocation per entry.
+    for (auto &[existing, count] : counts) {
+      if (existing == name) {
+        ++count;
+        return;
+      }
+    }
+    counts.emplace_back(name, 1);
+  };
+
+  std::vector<const SeenObject *> touchedWalls;
+  for (std::size_t i = 0; i < places.size(); ++i) {
+    if (!needed(i)) {
+      continue;
+    }
+    for (const std::uint64_t key : places[i].memberCells) {
+      const auto found = memory.cells.find(key);
+      if (found != memory.cells.end()) {
+        bump(surfaces[i], found->second.surface);
+      }
+      const auto walls = wallsTouching.find(key);
+      if (walls != wallsTouching.end()) {
+        touchedWalls.insert(touchedWalls.end(), walls->second.begin(),
+                            walls->second.end());
+      }
+    }
+    // A wall touching the same place along two sides counts once.
+    std::sort(touchedWalls.begin(), touchedWalls.end(),
+              [](const SeenObject *a, const SeenObject *b) {
+                return reinterpret_cast<std::uintptr_t>(a) <
+                       reinterpret_cast<std::uintptr_t>(b);
+              });
+    touchedWalls.erase(std::unique(touchedWalls.begin(), touchedWalls.end()),
+                       touchedWalls.end());
+    for (const SeenObject *wall : touchedWalls) {
+      bump(objects[i], wall->templateId.empty() ? wall->name
+                                                : wall->templateId);
+    }
+    touchedWalls.clear();
   }
-  for (const auto &[name, count] : objects) {
-    place.facts.push_back({"object", name, count});
+
+  // Ownership by cell: what stands on a place's own ground.
+  for (const auto &[id, object] : memory.objects) {
+    if (object.character || object.vanishedTick >= 0 || object.structural) {
+      continue;
+    }
+    const auto owner = placeOfCell.find(VisionQuery::CellKey(object.pos));
+    if (owner == placeOfCell.end()) {
+      continue;
+    }
+    const auto index = indexOfId.find(owner->second);
+    if (index == indexOfId.end() || !needed(index->second)) {
+      continue;
+    }
+    bump(objects[index->second],
+         object.templateId.empty() ? object.name : object.templateId);
+  }
+
+  const auto byName = [](const std::pair<std::string, int> &a,
+                         const std::pair<std::string, int> &b) {
+    return a.first < b.first;
+  };
+  for (std::size_t i = 0; i < places.size(); ++i) {
+    if (!needed(i)) {
+      continue;
+    }
+    std::sort(surfaces[i].begin(), surfaces[i].end(), byName);
+    std::sort(objects[i].begin(), objects[i].end(), byName);
+    for (const auto &[name, count] : surfaces[i]) {
+      places[i].facts.push_back({"surface", name, count});
+    }
+    for (const auto &[name, count] : objects[i]) {
+      places[i].facts.push_back({"object", name, count});
+    }
   }
 }
+
+// A wall's material is a property of every place it borders, so both aspects and
+// facts need "which structural objects touch this cell". Built once per pass
+// rather than scanning the object store once per region.
+struct StructuralContacts {
+  std::unordered_map<std::uint64_t, std::vector<const SeenObject *>> byCell;
+
+  StructuralContacts() = default;
+
+  explicit StructuralContacts(const SpatialMemory &memory) {
+    byCell.reserve(memory.objects.size() * 2);
+    for (const auto &[id, object] : memory.objects) {
+      if (!object.structural || object.vanishedTick >= 0) {
+        continue;
+      }
+      byCell[VisionQuery::CellKey({object.pos.x - 1, object.pos.y})]
+          .push_back(&object);
+      byCell[VisionQuery::CellKey({object.pos.x + 1, object.pos.y})]
+          .push_back(&object);
+      byCell[VisionQuery::CellKey({object.pos.x, object.pos.y - 1})]
+          .push_back(&object);
+      byCell[VisionQuery::CellKey({object.pos.x, object.pos.y + 1})]
+          .push_back(&object);
+    }
+  }
+
+  // The structural objects touching any of these cells, each once, in a stable
+  // order so two passes build the same aspect list.
+  std::vector<const SeenObject *>
+  Touching(const std::vector<std::uint64_t> &memberCells) const {
+    std::vector<const SeenObject *> touched;
+    for (const std::uint64_t key : memberCells) {
+      const auto found = byCell.find(key);
+      if (found != byCell.end()) {
+        touched.insert(touched.end(), found->second.begin(),
+                       found->second.end());
+      }
+    }
+    std::sort(touched.begin(), touched.end(),
+              [](const SeenObject *a, const SeenObject *b) {
+                return reinterpret_cast<std::uintptr_t>(a) <
+                       reinterpret_cast<std::uintptr_t>(b);
+              });
+    touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+    return touched;
+  }
+};
+
+// Signature of the inputs `BuildAspects` reads for a place: member cells and
+// their observed content, the objects that seed it, and (globally) every wall
+// that could touch it. Regions compare this between samples and keep their
+// aspect field when it has not changed, which turns a rebuild of every region
+// into a rebuild of only the regions whose ground actually changed.
+inline void SignatureMix(std::uint64_t &hash, std::uint64_t value) {
+  hash ^= value + 0x9e3779b97f4a7c15ull + (hash << 6) + (hash >> 2);
+}
+
+inline std::uint64_t StructuralSignature(const SpatialMemory &memory) {
+  std::uint64_t hash = 1469598103934665603ull;
+  for (const auto &[id, object] : memory.objects) {
+    if (!object.structural || object.vanishedTick >= 0) {
+      continue;
+    }
+    // Position and categories are folded into contentVersion when they change.
+    SignatureMix(hash, id);
+    SignatureMix(hash, object.contentVersion);
+  }
+  return hash;
+}
+
+// Everything facts count from objects, excluding the two kinds they do not
+// count directly: characters (never facts) and structural objects (counted by
+// contact, already covered by StructuralSignature). The ids are mixed in map
+// iteration order, which is stable for an unchanged store and different once it
+// changes -- all a cache key needs.
+inline std::uint64_t ObjectsSignature(const SpatialMemory &memory) {
+  std::uint64_t hash = 1469598103934665603ull;
+  for (const auto &[id, object] : memory.objects) {
+    if (object.character || object.structural) {
+      continue;
+    }
+    SignatureMix(hash, id);
+    SignatureMix(hash, object.contentVersion);
+  }
+  return hash;
+}
+
+inline std::uint64_t CellSignature(std::uint64_t key,
+                                   std::uint32_t contentVersion) {
+  std::uint64_t hash = 1469598103934665603ull;
+  SignatureMix(hash, key);
+  SignatureMix(hash, contentVersion);
+  return hash;
+}
+
+inline std::uint64_t OwnerSignature(
+    const KnownPlace &place,
+    const std::unordered_map<std::uint64_t, int> &placeOfCell) {
+  // XOR: the owner of a cell does not depend on the order member cells were
+  // collected in.
+  std::uint64_t hash = 0;
+  for (const std::uint64_t key : place.memberCells) {
+    const auto owner = placeOfCell.find(key);
+    hash ^= CellSignature(key, owner == placeOfCell.end()
+                                   ? 0xffffffffu
+                                   : static_cast<std::uint32_t>(owner->second));
+  }
+  return hash;
+}
+
+inline std::uint64_t AspectSignature(const KnownPlace &place,
+                                     const SpatialMemory &memory,
+                                     std::uint64_t cellSignature,
+                                     std::uint64_t structuralSignature) {
+  std::uint64_t hash = 1469598103934665603ull;
+  // The cell set and the content of each cell are already folded into
+  // `cellSignature` while the LOD buckets are built.
+  SignatureMix(hash, cellSignature);
+  SignatureMix(hash, static_cast<std::uint64_t>(place.origin));
+  SignatureMix(hash, static_cast<std::uint64_t>(place.seedKind));
+  SignatureMix(hash, place.memberCells.size());
+  SignatureMix(hash, place.memberSeeds.size());
+  for (const flecs::entity_t id : place.memberSeeds) {
+    SignatureMix(hash, id);
+    const auto found = memory.objects.find(id);
+    SignatureMix(hash, found == memory.objects.end()
+                           ? 0xdeadbeefull
+                           : found->second.contentVersion);
+  }
+  SignatureMix(hash, structuralSignature);
+  return hash == 0 ? 1 : hash;
+}
+
+// One LOD bucket: level 0/1/2 and the grid cell inside it. An unordered key
+// rather than a std::tuple in a std::map: bucketing every observed cell every
+// sample is a hot loop, and the tuple map spent more time comparing keys than
+// grouping cells.
+struct RegionKey {
+  int level = 0;
+  int rx = 0;
+  int ry = 0;
+
+  bool operator==(const RegionKey &other) const {
+    return level == other.level && rx == other.rx && ry == other.ry;
+  }
+};
+
+struct RegionKeyHash {
+  std::size_t operator()(const RegionKey &key) const {
+    std::size_t hash = std::hash<int>{}(key.level);
+    hash = hash * 1315423911u ^ std::hash<int>{}(key.rx);
+    hash = hash * 1315423911u ^ std::hash<int>{}(key.ry);
+    return hash;
+  }
+};
 
 // Union-find over seed indices. Plain path halving; the sets never exceed the
 // 1024-object cap.
@@ -406,6 +734,55 @@ struct DisjointSet {
   }
 };
 
+// Packs a pair of (possibly negative) integer grid coordinates into one key.
+inline std::uint64_t GridKey(int x, int y) {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) << 32) |
+         static_cast<std::uint32_t>(y);
+}
+
+// "Is this cell within `radius` (Chebyshev) of any seed?" for a flood that may
+// query tens of thousands of cells against hundreds of seeds.
+//
+// A bucket grid with bucket size = radius: every seed within radius of a cell is
+// in the cell's own bucket or one of the eight around it, so the query costs a
+// handful of comparisons instead of a scan over the whole seed list. This was
+// the dominant cost of deriving a large orchard's extent.
+class SeedProximity {
+public:
+  SeedProximity(const std::vector<GamePosition> &seeds, int radius)
+      : radius(radius < 1 ? 1 : radius),
+        bucketSize(radius < 1 ? 1 : radius) {
+    buckets.reserve(seeds.size() * 2);
+    for (const GamePosition &seed : seeds) {
+      buckets[GridKey(seed.x / bucketSize, seed.y / bucketSize)].push_back(seed);
+    }
+  }
+
+  bool Within(GamePosition cell) const {
+    const int bx = cell.x / bucketSize;
+    const int by = cell.y / bucketSize;
+    for (int dx = -1; dx <= 1; ++dx) {
+      for (int dy = -1; dy <= 1; ++dy) {
+        const auto found = buckets.find(GridKey(bx + dx, by + dy));
+        if (found == buckets.end()) {
+          continue;
+        }
+        for (const GamePosition &seed : found->second) {
+          if (Chebyshev(cell, seed) <= radius) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+private:
+  int radius;
+  int bucketSize;
+  std::unordered_map<std::uint64_t, std::vector<GamePosition>> buckets;
+};
+
 // The observed ground a cluster covers: flood out from the seeds over cells the
 // character actually observed, no further than `radius` from the nearest seed,
 // and never across a structural cell.
@@ -427,14 +804,7 @@ inline std::vector<GamePosition> FloodExtent(
     }
   }
 
-  const auto withinRadius = [&seeds, radius](GamePosition cell) {
-    for (const GamePosition &seed : seeds) {
-      if (Chebyshev(cell, seed) <= radius) {
-        return true;
-      }
-    }
-    return false;
-  };
+  const SeedProximity proximity(seeds, radius);
 
   static const int dx[4] = {1, -1, 0, 0};
   static const int dy[4] = {0, 0, 1, -1};
@@ -456,7 +826,7 @@ inline std::vector<GamePosition> FloodExtent(
       if (structural.count(key) != 0 || !found->second.walkable) {
         continue;  // a wall or an impassable tile bounds the place
       }
-      if (!withinRadius(next)) {
+      if (!proximity.Within(next)) {
         continue;
       }
       visited.insert(key);
@@ -467,32 +837,54 @@ inline std::vector<GamePosition> FloodExtent(
   return extent;
 }
 
+// A place has a handful of distinct surfaces, categories and wall materials, so
+// a small vector with a linear scan beats a map node per entry.
+template <typename Value>
+inline std::vector<Value> &GroupFor(
+    std::vector<std::pair<std::string, std::vector<Value>>> &groups,
+    const std::string &name) {
+  for (auto &[existing, values] : groups) {
+    if (existing == name) {
+      return values;
+    }
+  }
+  groups.emplace_back(name, std::vector<Value>{});
+  return groups.back().second;
+}
+
 // Turns a place's seeds into its aspect field and the summaries a reader needs.
 //
 // Sources are every category of every owned seed -- forming ones included, so a
 // market's own stalls decay too and its edge is less "market" than its middle.
 inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
-                         const PlaceCategoryRegistry &registry) {
+                         const PlaceCategoryRegistry &registry,
+                         DerivationProfile *profile = nullptr,
+                         const StructuralContacts *contacts = nullptr) {
   place.aspectSources.clear();
   place.aspects.clear();
   place.primaryAspect.clear();
-
-  for (const flecs::entity_t id : place.memberSeeds) {
-    const auto found = memory.objects.find(id);
-    if (found == memory.objects.end()) {
-      continue;
-    }
-    for (const SeedCategory &seed : found->second.categories) {
-      const PlaceCategory *category = registry.Get(seed.category);
-      if (category == nullptr) {
-        continue;  // unknown ids are reported once at load
+  if (profile != nullptr) {
+    ++profile->aspectsCalls;
+  }
+  {
+    ProfileScope scope(profile, &DerivationProfile::aspectsObjectMs);
+    for (const flecs::entity_t id : place.memberSeeds) {
+      const auto found = memory.objects.find(id);
+      if (found == memory.objects.end()) {
+        continue;
       }
-      AspectSource source;
-      source.category = seed.category;
-      source.pos = found->second.pos;
-      source.weight = seed.weight;
-      source.radius = static_cast<float>(category->radius);
-      place.aspectSources.push_back(std::move(source));
+      for (const SeedCategory &seed : found->second.categories) {
+        const PlaceCategory *category = registry.Get(seed.category);
+        if (category == nullptr) {
+          continue;  // unknown ids are reported once at load
+        }
+        AspectSource source;
+        source.category = seed.category;
+        source.pos = found->second.pos;
+        source.weight = seed.weight;
+        source.radius = static_cast<float>(category->radius);
+        place.aspectSources.push_back(std::move(source));
+      }
     }
   }
 
@@ -502,14 +894,16 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
   // positions) at a bounded cost. Object sources are not subsampled: there are
   // few of them and each is a distinct thing.
   {
-    std::map<std::string, std::vector<const MemoryCell *>> byCategory;
+    ProfileScope scope(profile, &DerivationProfile::aspectsTileMs);
+    std::vector<std::pair<std::string, std::vector<const MemoryCell *>>>
+        byCategory;
     for (const std::uint64_t key : place.memberCells) {
       const auto found = memory.cells.find(key);
       if (found == memory.cells.end() || found->second.categories.empty()) {
         continue;
       }
       for (const SeedCategory &seed : found->second.categories) {
-        byCategory[seed.category].push_back(&found->second);
+        GroupFor(byCategory, seed.category).push_back(&found->second);
       }
     }
 
@@ -540,6 +934,41 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
     }
   }
 
+  // Surface sources: a tile's name is the terrain it is made of. The semantic
+  // place derivation uses tile *categories* for seeds; a region needs the
+  // surface itself so a grass field and a sand field are not both "open ground".
+  // The surface categories are data (`places.json`); an unknown surface is
+  // ignored here but still appears in `facts`.
+  std::vector<std::pair<std::string, std::vector<const MemoryCell *>>>
+      bySurface;
+  {
+    ProfileScope scope(profile, &DerivationProfile::aspectsSurfaceMs);
+    for (const std::uint64_t key : place.memberCells) {
+      const auto found = memory.cells.find(key);
+      if (found == memory.cells.end() || found->second.surface.empty()) {
+        continue;
+      }
+      GroupFor(bySurface, found->second.surface).push_back(&found->second);
+    }
+    for (const auto &[surface, cells] : bySurface) {
+      const PlaceCategory *definition = registry.Get(surface);
+      if (definition == nullptr || cells.empty()) {
+        continue;
+      }
+      const std::size_t stride =
+          (cells.size() + DEFAULT_PLACE_TILE_SOURCES_MAX - 1) /
+          DEFAULT_PLACE_TILE_SOURCES_MAX;
+      for (std::size_t i = 0; i < cells.size(); i += stride) {
+        AspectSource source;
+        source.category = surface;
+        source.pos = cells[i]->pos;
+        source.weight = 1.0f;
+        source.radius = static_cast<float>(definition->radius);
+        place.aspectSources.push_back(std::move(source));
+      }
+    }
+  }
+
   // Structural sources: walls that *touch* the claimed ground (section 3.4).
   //
   // Orthogonal contact only -- a corner touch is not an enclosure -- and both
@@ -548,31 +977,25 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
   // sources: a hall's walls are dozens of cells and each would otherwise cost a
   // query.
   {
-    std::unordered_set<std::uint64_t> memberKeys(place.memberCells.begin(),
-                                                 place.memberCells.end());
-    std::map<std::string, std::vector<std::pair<GamePosition, float>>> walls;
-    for (const auto &[id, object] : memory.objects) {
-      if (!object.structural || object.vanishedTick >= 0 ||
-          object.categories.empty()) {
+    ProfileScope scope(profile, &DerivationProfile::aspectsWallMs);
+    StructuralContacts fallback;
+    const StructuralContacts *wallContacts = contacts;
+    if (wallContacts == nullptr) {
+      fallback = StructuralContacts(memory);
+      wallContacts = &fallback;
+    }
+    std::vector<std::pair<std::string,
+                          std::vector<std::pair<GamePosition, float>>>>
+        walls;
+    for (const SeenObject *object : wallContacts->Touching(place.memberCells)) {
+      if (object->categories.empty()) {
         continue;
       }
-      const std::uint64_t left =
-          VisionQuery::CellKey({object.pos.x - 1, object.pos.y});
-      const std::uint64_t right =
-          VisionQuery::CellKey({object.pos.x + 1, object.pos.y});
-      const std::uint64_t up =
-          VisionQuery::CellKey({object.pos.x, object.pos.y - 1});
-      const std::uint64_t down =
-          VisionQuery::CellKey({object.pos.x, object.pos.y + 1});
-      if (memberKeys.count(left) == 0 && memberKeys.count(right) == 0 &&
-          memberKeys.count(up) == 0 && memberKeys.count(down) == 0) {
-        continue;
-      }
-      for (const SeedCategory &seed : object.categories) {
+      for (const SeedCategory &seed : object->categories) {
         if (seed.weight <= 0.0f || registry.Get(seed.category) == nullptr) {
           continue;
         }
-        walls[seed.category].push_back({object.pos, seed.weight});
+        GroupFor(walls, seed.category).push_back({object->pos, seed.weight});
       }
     }
 
@@ -603,17 +1026,27 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
     return;
   }
 
-  std::map<std::string, std::vector<const AspectSource *>> byCategory;
-  for (const AspectSource &source : place.aspectSources) {
-    byCategory[source.category].push_back(&source);
-  }
+  {
+    ProfileScope scope(profile, &DerivationProfile::aspectsMeanMs);
+    std::map<std::string, std::vector<const AspectSource *>> byCategory;
+    for (const AspectSource &source : place.aspectSources) {
+      byCategory[source.category].push_back(&source);
+    }
 
-  for (const auto &[category, sources] : byCategory) {
+    for (const auto &[category, sources] : byCategory) {
     PlaceAspect summary;
     summary.category = category;
 
+    // Heaviest first: a source's value can never exceed its weight, so once the
+    // weights fall to the best value already found the rest cannot improve it.
+    std::vector<const AspectSource *> ranked = sources;
+    std::sort(ranked.begin(), ranked.end(),
+              [](const AspectSource *a, const AspectSource *b) {
+                return a->weight > b->weight;
+              });
+
     // The peak is a source's own cell, where decay is 1.
-    for (const AspectSource *source : sources) {
+    for (const AspectSource *source : ranked) {
       if (source->weight > summary.peak) {
         summary.peak = source->weight;
         summary.peakPos = source->pos;
@@ -624,22 +1057,35 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
     // "strong at one edge" apart from "strong everywhere". Sampled, not exhaustive:
     // it is a summary for a reader, and evaluating every cell against every source
     // was the largest single cost of deriving places every sample.
+    //
+    // Each source is tested against the distance at which it could still beat the
+    // best value, so the square root and the multiply only happen for a source
+    // that can actually matter. A cell sitting on a surface source breaks out of
+    // the loop after the first comparison.
     double total = 0.0;
     std::size_t count = 0;
     const std::size_t stride =
         (place.memberCells.size() + DEFAULT_PLACE_MEAN_SAMPLES - 1) /
         DEFAULT_PLACE_MEAN_SAMPLES;
     for (std::size_t i = 0; i < place.memberCells.size(); i += stride) {
-      const std::uint64_t key = place.memberCells[i];
-      const auto found = memory.cells.find(key);
-      const GamePosition cell = found == memory.cells.end()
-                                    ? VisionQuery::CellFromKey(key)
-                                    : found->second.pos;
+      const GamePosition cell =
+          VisionQuery::CellFromKey(place.memberCells[i]);
       float best = 0.0f;
-      for (const AspectSource *source : sources) {
+      for (const AspectSource *source : ranked) {
+        if (source->weight <= best || source->radius <= 0.0f) {
+          break;
+        }
+        const float dx = static_cast<float>(cell.x - source->pos.x);
+        const float dy = static_cast<float>(cell.y - source->pos.y);
+        const float distance2 = dx * dx + dy * dy;
+        // value = weight * (1 - d / radius), so value > best exactly when
+        // d < radius * (1 - best / weight).
+        const float reach = source->radius * (1.0f - best / source->weight);
+        if (reach <= 0.0f || distance2 >= reach * reach) {
+          continue;
+        }
         const float value =
-            source->weight *
-            Decay(Distance(cell, source->pos), source->radius);
+            source->weight * (1.0f - std::sqrt(distance2) / source->radius);
         if (value > best) {
           best = value;
         }
@@ -652,6 +1098,7 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
                        : static_cast<float>(total / static_cast<double>(count));
 
     place.aspects.push_back(std::move(summary));
+  }
   }
 
   std::sort(place.aspects.begin(), place.aspects.end(),
@@ -677,6 +1124,39 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
   if (place.primaryAspect.empty() && !place.aspects.empty()) {
     place.primaryAspect = place.aspects.front().category;
   }
+
+  // A region is ground first: its display is the dominant surface, not an
+  // object that happens to be inside it. The object/place aspects remain in
+  // `aspects`, so the model still sees the orchard in the sand.
+  if (place.origin == PlaceOrigin::Region) {
+    float bestSurfaceMean = -1.0f;
+    std::string bestSurface;
+    for (const auto &[surface, cells] : bySurface) {
+      (void)cells;
+      if (registry.Get(surface) == nullptr) {
+        continue;
+      }
+      const auto aspect = std::find_if(
+          place.aspects.begin(), place.aspects.end(),
+          [&surface](const PlaceAspect &candidate) {
+            return candidate.category == surface;
+          });
+      if (aspect == place.aspects.end()) {
+        continue;
+      }
+      if (aspect->mean > bestSurfaceMean) {
+        bestSurfaceMean = aspect->mean;
+        bestSurface = surface;
+      }
+    }
+    if (!bestSurface.empty()) {
+      const PlaceCategory *definition = registry.Get(bestSurface);
+      place.primaryAspect =
+          (definition != nullptr && !definition->regionLabel.empty())
+              ? definition->regionLabel
+              : bestSurface;
+    }
+  }
 }
 
 // Cuts a road network into stretches between junctions and endpoints
@@ -687,7 +1167,8 @@ inline void BuildAspects(KnownPlace &place, const SpatialMemory &memory,
 // and a cut cell belongs to exactly one stretch -- the one holding its lowest
 // (y, x) neighbour -- so no cell is claimed twice and none is orphaned.
 inline std::vector<std::vector<GamePosition>>
-SplitAtJunctions(const std::vector<GamePosition> &cells) {
+SplitAtJunctions(const std::vector<GamePosition> &cells,
+                 bool diagonalRoad = false) {
   std::unordered_set<std::uint64_t> present;
   present.reserve(cells.size() * 2);
   for (const GamePosition &cell : cells) {
@@ -699,7 +1180,11 @@ SplitAtJunctions(const std::vector<GamePosition> &cells) {
   // connected without the cell below a T junction reading as a four-way crossing
   // -- it is diagonally adjacent to both arms of the T, and counting those made a
   // one-cell stretch out of the junction's shadow.
-  const auto neighbours = [&present](GamePosition cell) {
+  //
+  // A category marked `diagonal` opts into all eight neighbours instead. That is
+  // the road case: a diagonal stretch that crosses a vertical road must remain
+  // one diagonal place rather than becoming a 1-tile endpoint on each side.
+  const auto neighbours = [&present, diagonalRoad](GamePosition cell) {
     std::vector<GamePosition> orthogonal;
     static const int ox[4] = {1, -1, 0, 0};
     static const int oy[4] = {0, 0, 1, -1};
@@ -708,9 +1193,6 @@ SplitAtJunctions(const std::vector<GamePosition> &cells) {
       if (present.count(VisionQuery::CellKey(next)) != 0) {
         orthogonal.push_back(next);
       }
-    }
-    if (!orthogonal.empty()) {
-      return orthogonal;
     }
 
     std::vector<GamePosition> diagonal;
@@ -722,6 +1204,14 @@ SplitAtJunctions(const std::vector<GamePosition> &cells) {
           diagonal.push_back(next);
         }
       }
+    }
+
+    if (diagonalRoad) {
+      orthogonal.insert(orthogonal.end(), diagonal.begin(), diagonal.end());
+      return orthogonal;
+    }
+    if (!orthogonal.empty()) {
+      return orthogonal;
     }
     return diagonal;
   };
@@ -740,6 +1230,7 @@ SplitAtJunctions(const std::vector<GamePosition> &cells) {
   std::unordered_set<std::uint64_t> visited;
   std::vector<std::vector<GamePosition>> stretches;
   std::unordered_map<std::uint64_t, std::size_t> stretchOf;
+  std::unordered_map<std::uint64_t, std::size_t> cutOwner;
 
   for (const GamePosition &start : cells) {
     const std::uint64_t startKey = VisionQuery::CellKey(start);
@@ -766,28 +1257,114 @@ SplitAtJunctions(const std::vector<GamePosition> &cells) {
   }
 
   // Hand each cut cell to the stretch of its lowest (y, x) neighbour. A cut with
-  // no ordinary neighbour (a one-cell road) is its own stretch.
+  // no ordinary neighbour (a one-cell road) is its own stretch. For a diagonal
+  // road, a junction cell that has a diagonal stretch is handed to the diagonal
+  // first: this is what keeps one diagonal place across a vertical/horizontal
+  // crossing instead of splitting it into two 1-tile branches.
   for (const GamePosition &cut : cells) {
     if (cuts.count(VisionQuery::CellKey(cut)) == 0) {
       continue;
     }
     GamePosition best{-1, -1};
     std::size_t bestStretch = stretches.size();
-    for (const GamePosition &next : neighbours(cut)) {
-      const auto owner = stretchOf.find(VisionQuery::CellKey(next));
-      if (owner == stretchOf.end()) {
-        continue;
+
+    // A diagonal run cell may also touch the vertical road orthogonally. The
+    // diagonal must win there: only count this as a diagonal cut when the cell
+    // has two diagonal neighbours, or no orthogonal one (a diagonal endpoint).
+    // A vertical cell with one diagonal and two orthogonal neighbours is a
+    // vertical junction and must not be pulled onto the diagonal.
+    bool preferDiagonal = false;
+    if (diagonalRoad) {
+      int diagonalCount = 0;
+      int orthogonalCount = 0;
+      for (const GamePosition &next : neighbours(cut)) {
+        if (std::abs(next.x - cut.x) == 1 &&
+            std::abs(next.y - cut.y) == 1) {
+          ++diagonalCount;
+        } else {
+          ++orthogonalCount;
+        }
       }
-      if (bestStretch == stretches.size() || next.y < best.y ||
-          (next.y == best.y && next.x < best.x)) {
-        best = next;
-        bestStretch = owner->second;
+      preferDiagonal = diagonalCount > 0 &&
+                       (diagonalCount >= 2 || orthogonalCount == 0);
+    }
+
+    if (preferDiagonal) {
+      for (const GamePosition &next : neighbours(cut)) {
+        if (std::abs(next.x - cut.x) != 1 ||
+            std::abs(next.y - cut.y) != 1) {
+          continue;
+        }
+        std::size_t owner = stretches.size();
+        const auto stretch = stretchOf.find(VisionQuery::CellKey(next));
+        if (stretch != stretchOf.end()) {
+          owner = stretch->second;
+        } else {
+          const auto previous = cutOwner.find(VisionQuery::CellKey(next));
+          if (previous != cutOwner.end()) owner = previous->second;
+        }
+        if (owner == stretches.size()) continue;
+        if (bestStretch == stretches.size() || next.y < best.y ||
+            (next.y == best.y && next.x < best.x)) {
+          best = next;
+          bestStretch = owner;
+        }
       }
     }
+
+    if (bestStretch == stretches.size()) {
+      // A non-diagonal cut (the vertical side of a crossing) should stay with
+      // its orthogonal road first. Falling through to a diagonal owner would
+      // pull the vertical arm onto the diagonal place.
+      const auto consider = [&](const GamePosition &next,
+                                bool includeCutOwners) {
+        std::size_t owner = stretches.size();
+        const auto stretch = stretchOf.find(VisionQuery::CellKey(next));
+        if (stretch != stretchOf.end()) {
+          owner = stretch->second;
+        } else if (includeCutOwners) {
+          const auto previous = cutOwner.find(VisionQuery::CellKey(next));
+          if (previous != cutOwner.end()) owner = previous->second;
+        }
+        if (owner == stretches.size()) return;
+        if (bestStretch == stretches.size() || next.y < best.y ||
+            (next.y == best.y && next.x < best.x)) {
+          best = next;
+          bestStretch = owner;
+        }
+      };
+      const auto considerOrthogonal = [&](bool includeCutOwners) {
+        for (const GamePosition &next : neighbours(cut)) {
+          if (std::abs(next.x - cut.x) == 1 &&
+              std::abs(next.y - cut.y) == 1) {
+            continue;
+          }
+          consider(next, includeCutOwners);
+        }
+      };
+      // Prefer a real orthogonal stretch over a cut owner's stretch: a vertical
+      // junction next to the crossing must stay with the vertical arm, not be
+      // pulled onto the diagonal through a neighbouring cut.
+      considerOrthogonal(false);
+      if (bestStretch == stretches.size()) considerOrthogonal(true);
+      if (bestStretch == stretches.size()) {
+        for (const GamePosition &next : neighbours(cut)) {
+          consider(next, false);
+        }
+      }
+      if (bestStretch == stretches.size()) {
+        for (const GamePosition &next : neighbours(cut)) {
+          consider(next, true);
+        }
+      }
+    }
+
     if (bestStretch < stretches.size()) {
       stretches[bestStretch].push_back(cut);
+      cutOwner[VisionQuery::CellKey(cut)] = bestStretch;
     } else {
       stretches.push_back({cut});
+      cutOwner[VisionQuery::CellKey(cut)] = stretches.size() - 1;
     }
   }
 
@@ -877,10 +1454,21 @@ inline Color CategoryColor(const std::string &category) {
 // path across the village chains every object within the link radius into a single
 // place (section 5.1).
 inline void DerivePlaces(SpatialMemory &memory,
-                         const PlaceCategoryRegistry &registry, int tick) {
+                         const PlaceCategoryRegistry &registry, int tick,
+                         DerivationProfile *profile = nullptr) {
   if (memory.lastPlaceTick >= tick) {
     return;
   }
+  // Nothing the derivation reads has changed since the last pass. Re-observing
+  // the same ground updates visit ticks, not place membership, so rebuilding the
+  // same places would be pure cost. The next real observation bumps the
+  // revision and both passes run again.
+  if (memory.lastPlacesRevision == memory.contentRevision) {
+    memory.lastPlaceTick = tick;
+    return;
+  }
+  const std::uint64_t revision = memory.contentRevision;
+  const auto profileStart = detail::ProfileClock::now();
 
   struct Seed {
     GamePosition pos;
@@ -944,6 +1532,13 @@ inline void DerivePlaces(SpatialMemory &memory,
     if (a.object != b.object) return a.object < b.object;
     return a.entity < b.entity;
   });
+  if (profile != nullptr) {
+    profile->placesSeedMs =
+        detail::ProfileMs(profileStart, detail::ProfileClock::now());
+    profile->placesSeeds = static_cast<int>(seeds.size());
+  }
+  const detail::StructuralContacts structuralContacts(memory);
+  const std::uint64_t structuralSignature = detail::StructuralSignature(memory);
 
   const auto sharesForming = [&registry](const Seed &a, const Seed &b) {
     for (const SeedCategory &left : *a.categories) {
@@ -965,15 +1560,43 @@ inline void DerivePlaces(SpatialMemory &memory,
   };
 
   detail::DisjointSet sets(seeds.size());
-  for (std::size_t i = 0; i < seeds.size(); ++i) {
-    for (std::size_t j = i + 1; j < seeds.size(); ++j) {
-      if (detail::Chebyshev(seeds[i].pos, seeds[j].pos) >
-          DEFAULT_PLACE_LINK_RADIUS) {
-        continue;
-      }
-      const bool across = !seeds[i].insular && !seeds[j].insular;
-      if (across || sharesForming(seeds[i], seeds[j])) {
-        sets.Union(static_cast<int>(i), static_cast<int>(j));
+  {
+    detail::ProfileScope scope(profile, &DerivationProfile::placesUnionMs);
+    // Only seeds within one link radius can union, so hash them into cells of
+    // that size first. The pair scan was O(seeds^2) and spent almost all of it
+    // rejecting pairs that were nowhere near each other.
+    const int linkRadius = DEFAULT_PLACE_LINK_RADIUS;
+    std::unordered_map<std::uint64_t, std::vector<std::size_t>> buckets;
+    buckets.reserve(seeds.size() * 2);
+    for (std::size_t i = 0; i < seeds.size(); ++i) {
+      buckets[detail::GridKey(seeds[i].pos.x / linkRadius,
+                              seeds[i].pos.y / linkRadius)]
+          .push_back(i);
+    }
+    for (std::size_t i = 0; i < seeds.size(); ++i) {
+      const int bx = seeds[i].pos.x / linkRadius;
+      const int by = seeds[i].pos.y / linkRadius;
+      for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+          const auto found =
+              buckets.find(detail::GridKey(bx + dx, by + dy));
+          if (found == buckets.end()) {
+            continue;
+          }
+          for (const std::size_t j : found->second) {
+            if (j <= i) {
+              continue;
+            }
+            if (detail::Chebyshev(seeds[i].pos, seeds[j].pos) >
+                DEFAULT_PLACE_LINK_RADIUS) {
+              continue;
+            }
+            const bool across = !seeds[i].insular && !seeds[j].insular;
+            if (across || sharesForming(seeds[i], seeds[j])) {
+              sets.Union(static_cast<int>(i), static_cast<int>(j));
+            }
+          }
+        }
       }
     }
   }
@@ -995,6 +1618,7 @@ inline void DerivePlaces(SpatialMemory &memory,
     std::map<std::string, int> forming;
     int extentRadius = 0;
     bool split = false;
+    bool diagonal = false;
     for (const std::size_t index : group) {
       for (const SeedCategory &seed : *seeds[index].categories) {
         const PlaceCategory *category = registry.Get(seed.category);
@@ -1007,6 +1631,9 @@ inline void DerivePlaces(SpatialMemory &memory,
         }
         if (category->split == "junctions") {
           split = true;
+        }
+        if (category->diagonal) {
+          diagonal = true;
         }
       }
     }
@@ -1033,8 +1660,12 @@ inline void DerivePlaces(SpatialMemory &memory,
           roadCells.push_back(seeds[index].pos);
         }
       }
-      for (std::vector<GamePosition> &stretch :
-           detail::SplitAtJunctions(roadCells)) {
+      std::vector<std::vector<GamePosition>> stretches;
+      {
+        detail::ProfileScope scope(profile, &DerivationProfile::placesSplitMs);
+        stretches = detail::SplitAtJunctions(roadCells, diagonal);
+      }
+      for (std::vector<GamePosition> &stretch : stretches) {
         Candidate candidate;
         candidate.extent = std::move(stretch);
         candidates.push_back(std::move(candidate));
@@ -1053,6 +1684,7 @@ inline void DerivePlaces(SpatialMemory &memory,
       }
     }
     if (!objectSeeds.empty()) {
+      detail::ProfileScope scope(profile, &DerivationProfile::placesFloodMs);
       candidate.extent =
           detail::FloodExtent(memory, objectSeeds, extentRadius, structural);
     }
@@ -1088,11 +1720,18 @@ inline void DerivePlaces(SpatialMemory &memory,
               if (first.y != other.y) return first.y < other.y;
               return first.x < other.x;
             });
+  const auto clusterFinished = detail::ProfileClock::now();
+  if (profile != nullptr) {
+    profile->placesClusterMs =
+        detail::ProfileMs(profileStart, clusterFinished) -
+        profile->placesSeedMs;
+  }
 
   std::vector<char> claimed(memory.places.size(), 0);
   std::vector<KnownPlace> places;
   places.reserve(candidates.size());
 
+  double aspectsMs = 0.0;
   for (Candidate &candidate : candidates) {
     std::unordered_set<std::uint64_t> candidateCells;
     candidateCells.reserve(candidate.extent.size() * 2);
@@ -1147,8 +1786,31 @@ inline void DerivePlaces(SpatialMemory &memory,
       place.memberCells.push_back(VisionQuery::CellKey(cell));
     }
     place.memberSeeds = candidate.seedIds;
-    detail::RecomputeExtent(place, memory.cells);
-    detail::BuildAspects(place, memory, registry);
+    // Same cache as a region: a place whose extent, cell content and seeds are
+    // unchanged keeps its aspect field. Semantic places are rebuilt from their
+    // clusters every pass, but most of them do not move between passes.
+    std::uint64_t cellSignature = 1469598103934665603ull;
+    for (const std::uint64_t key : place.memberCells) {
+      detail::SignatureMix(cellSignature, key);
+      const auto cell = memory.cells.find(key);
+      detail::SignatureMix(cellSignature,
+                           cell == memory.cells.end()
+                               ? 0xdeadbeefull
+                               : cell->second.contentVersion);
+    }
+    const std::uint64_t signature = detail::AspectSignature(
+        place, memory, cellSignature, structuralSignature);
+    if (place.aspectSignature != signature) {
+      if (profile != nullptr) {
+        ++profile->placesAspectRebuilds;
+      }
+      detail::RecomputeExtent(place);
+      const auto aspectsStart = detail::ProfileClock::now();
+      detail::BuildAspects(place, memory, registry, profile,
+                           &structuralContacts);
+      aspectsMs += detail::ProfileMs(aspectsStart, detail::ProfileClock::now());
+      place.aspectSignature = signature;
+    }
     places.push_back(std::move(place));
   }
 
@@ -1229,14 +1891,24 @@ inline void DerivePlaces(SpatialMemory &memory,
       place.memberCells.push_back(VisionQuery::CellKey(cell));
     }
     place.memberSeeds.clear();
-    detail::RecomputeExtent(place, memory.cells);
+    detail::RecomputeExtent(place);
     // A named area is ground like any other: its walls are what it is made of.
     // `primaryAspect` stays "named" because no category formed it -- the label is
     // its reason for existing.
-    detail::BuildAspects(place, memory, registry);
+    const auto namedAspectsStart = detail::ProfileClock::now();
+    detail::BuildAspects(place, memory, registry, profile, &structuralContacts);
+    aspectsMs +=
+        detail::ProfileMs(namedAspectsStart, detail::ProfileClock::now());
     place.primaryAspect = "named";
     places.push_back(std::move(place));
     indexPlaces();
+  }
+
+  if (profile != nullptr) {
+    profile->placesAspectsMs = aspectsMs;
+    profile->placesBuildMs =
+        detail::ProfileMs(clusterFinished, detail::ProfileClock::now()) -
+        aspectsMs;
   }
 
   if (places.size() > static_cast<std::size_t>(DEFAULT_MEMORY_PLACES_MAX)) {
@@ -1251,12 +1923,428 @@ inline void DerivePlaces(SpatialMemory &memory,
             [](const KnownPlace &a, const KnownPlace &b) { return a.id < b.id; });
 
   indexPlaces();
-  for (KnownPlace &place : places) {
-    detail::RecomputeFacts(memory, place, placeOfCell);
+  const auto factsStart = detail::ProfileClock::now();
+  const std::uint64_t objectSignature = detail::ObjectsSignature(memory);
+  std::vector<char> recomputeFacts(places.size(), 1);
+  for (std::size_t i = 0; i < places.size(); ++i) {
+    KnownPlace &place = places[i];
+    std::uint64_t signature = 1469598103934665603ull;
+    detail::SignatureMix(signature, place.aspectSignature);
+    detail::SignatureMix(signature,
+                         detail::OwnerSignature(place, placeOfCell));
+    detail::SignatureMix(signature, objectSignature);
+    if (signature == place.factSignature) {
+      recomputeFacts[i] = 0;
+    } else {
+      place.factSignature = signature;
+    }
+  }
+  detail::RecomputeFacts(memory, places, placeOfCell, &recomputeFacts);
+  if (profile != nullptr) {
+    profile->placesFactsMs =
+        detail::ProfileMs(factsStart, detail::ProfileClock::now());
   }
 
   memory.places = std::move(places);
   memory.lastPlaceTick = tick;
+  memory.lastPlacesRevision = revision;
+}
+
+// Perceived base regions (docs/region-place-design.md, Stage 2).
+//
+// A region is a `KnownPlace` with origin/seedKind Region: it claims only the
+// observed cells of its 8x8 grid cell, its display name is the generic "open
+// ground" until Stage 3 adds terrain aspects, and it lives in `memory.regions`
+// rather than `memory.places` so `DerivePlaces`'s semantic rebuild cannot drop it.
+//
+// Only ground within `nearRadius` (Chebyshev, from `here`) is refreshed. Regions
+// the character has already discovered stay in the vector when the character
+// walks away; the 16/32 LOD and eviction are Stage 4.
+inline void DeriveRegions(SpatialMemory &memory,
+                          const PlaceCategoryRegistry &registry,
+                          GamePosition here, int tick, int nearSize,
+                          int nearRadius, int midSize, int midRadius,
+                          int farSize, int farRadius, int maxRegions,
+                          DerivationProfile *profile = nullptr) {
+  if (memory.lastRegionTick >= tick) {
+    return;
+  }
+  if (memory.lastRegionsRevision == memory.contentRevision) {
+    memory.lastRegionTick = tick;
+    return;
+  }
+  const std::uint64_t revision = memory.contentRevision;
+  const auto profileStart = detail::ProfileClock::now();
+  if (nearSize < 1) {
+    nearSize = DEFAULT_REGION_NEAR_SIZE;
+  }
+  if (nearRadius < 0) {
+    nearRadius = 0;
+  }
+  if (midSize < 1) {
+    midSize = DEFAULT_REGION_MID_SIZE;
+  }
+  if (midRadius < nearRadius) {
+    midRadius = nearRadius;
+  }
+  if (farSize < 1) {
+    farSize = DEFAULT_REGION_FAR_SIZE;
+  }
+  if (farRadius < midRadius) {
+    farRadius = midRadius;
+  }
+  if (maxRegions < 0) {
+    maxRegions = 0;
+  }
+
+  // Three levels of observed ground. A near cell appears at all three levels:
+  // the 8x8 child, its 16x16 parent view and its 32x32 parent view. A mid cell
+  // appears at mid and far; a far cell only at far. `PlaceQuery::At` picks the
+  // finest, and `ModelPlaces` hides a parent when a finer child is selected.
+  //
+  // Flat bucket arrays rather than a map keyed by (level, cell): the grids are
+  // small (a 64x64 map is 64 near buckets, 16 mid and 4 far), so hashing every
+  // observed cell into a map was overhead with no purpose.
+  struct LevelBucket {
+    std::vector<GamePosition> cells;
+    std::uint64_t signature = 0;
+  };
+  struct LevelGrid {
+    int size = 1;
+    int minBx = 0;
+    int minBy = 0;
+    int width = 0;
+    int height = 0;
+    std::vector<LevelBucket> buckets;
+  };
+  LevelGrid grids[3];
+  grids[0].size = nearSize;
+  grids[1].size = midSize;
+  grids[2].size = farSize;
+  const int radii[3] = {nearRadius, midRadius, farRadius};
+
+  bool anyCell = false;
+  int minX = 0, minY = 0, maxX = 0, maxY = 0;
+  for (const auto &[key, cell] : memory.cells) {
+    (void)key;
+    if (!anyCell) {
+      minX = maxX = cell.pos.x;
+      minY = maxY = cell.pos.y;
+      anyCell = true;
+      continue;
+    }
+    minX = std::min(minX, cell.pos.x);
+    maxX = std::max(maxX, cell.pos.x);
+    minY = std::min(minY, cell.pos.y);
+    maxY = std::max(maxY, cell.pos.y);
+  }
+  if (anyCell) {
+    for (LevelGrid &grid : grids) {
+      grid.minBx = minX / grid.size;
+      grid.minBy = minY / grid.size;
+      grid.width = maxX / grid.size - grid.minBx + 1;
+      grid.height = maxY / grid.size - grid.minBy + 1;
+      grid.buckets.resize(static_cast<std::size_t>(grid.width) * grid.height);
+    }
+  }
+
+  for (const auto &[key, cell] : memory.cells) {
+    (void)key;
+    const int distance = std::max(std::abs(cell.pos.x - here.x),
+                                  std::abs(cell.pos.y - here.y));
+    const std::uint64_t cellSignature =
+        detail::CellSignature(VisionQuery::CellKey(cell.pos),
+                              cell.contentVersion);
+    for (int level = 0; level < 3; ++level) {
+      if (distance > radii[level]) {
+        continue;
+      }
+      LevelGrid &grid = grids[level];
+      const int bx = cell.pos.x / grid.size;
+      const int by = cell.pos.y / grid.size;
+      LevelBucket &bucket =
+          grid.buckets[static_cast<std::size_t>(by - grid.minBy) * grid.width +
+                       (bx - grid.minBx)];
+      bucket.cells.push_back(cell.pos);
+      bucket.signature ^= cellSignature;
+    }
+  }
+  const auto cellsFinished = detail::ProfileClock::now();
+  if (profile != nullptr) {
+    profile->regionsCellsMs =
+        detail::ProfileMs(profileStart, cellsFinished);
+  }
+  const detail::StructuralContacts structuralContacts(memory);
+  const std::uint64_t structuralSignature = detail::StructuralSignature(memory);
+
+  // Objects standing on a cell, indexed once. The per-region form scanned every
+  // remembered object for every refreshed region to answer the same question.
+  std::unordered_map<std::uint64_t, std::vector<flecs::entity_t>> cellSeeds;
+  for (const auto &[id, object] : memory.objects) {
+    if (object.vanishedTick >= 0 || object.character || object.portable ||
+        object.structural || object.categories.empty()) {
+      continue;
+    }
+    cellSeeds[VisionQuery::CellKey(object.pos)].push_back(id);
+  }
+
+  // Existing regions by (level, rx, ry). Stage 2/3 regions predate regionLevel
+  // and were 8x8 near regions; infer level 0 for them so their labels survive
+  // the first Stage 4 pass.
+  std::unordered_map<detail::RegionKey, KnownPlace, detail::RegionKeyHash>
+      existing;
+  existing.reserve(memory.regions.size());
+  for (KnownPlace &region : memory.regions) {
+    int level = region.regionLevel;
+    if (level < 0 || level > 2) {
+      level = 0;
+    }
+    const int size = level == 0 ? nearSize : level == 1 ? midSize : farSize;
+    existing[detail::RegionKey{level, region.anchor.x / size,
+                               region.anchor.y / size}] =
+        std::move(region);
+  }
+  const auto setupFinished = detail::ProfileClock::now();
+  if (profile != nullptr) {
+    profile->regionsSetupMs =
+        detail::ProfileMs(cellsFinished, setupFinished);
+  }
+
+  std::vector<KnownPlace> regions;
+  regions.reserve(existing.size() + 256);
+  double regionAspectsMs = 0.0;
+  double regionMembershipMs = 0.0;
+  double regionSignatureMs = 0.0;
+  int refreshed = 0;
+  // x outer, y inner matches the old (level, rx, ry) key order, so two passes
+  // assign the same ids and firstSeenTick to the same regions.
+  for (int level = 0; level < 3; ++level) {
+    LevelGrid &grid = grids[level];
+    for (int x = 0; x < grid.width; ++x) {
+      for (int y = 0; y < grid.height; ++y) {
+        LevelBucket &bucket =
+            grid.buckets[static_cast<std::size_t>(y) * grid.width + x];
+        if (bucket.cells.empty()) {
+          continue;
+        }
+        ++refreshed;
+        const detail::RegionKey key{level, grid.minBx + x, grid.minBy + y};
+        const std::vector<GamePosition> &cells = bucket.cells;
+        const int size = grid.size;
+        KnownPlace region;
+        const auto found = existing.find(key);
+        const bool reused = found != existing.end();
+        if (reused) {
+          region = std::move(found->second);
+          existing.erase(found);
+        } else {
+          region = KnownPlace{};
+          region.id = memory.nextPlaceId++;
+          region.firstSeenTick = tick;
+        }
+        region.origin = PlaceOrigin::Region;
+        region.seedKind = SeedKind::Region;
+        region.regionLevel = level;
+        region.regionSize = size;
+        region.regionCell = {key.rx * size, key.ry * size};
+        region.source = KnowledgeSource::Observed;
+        region.confidence = 255;
+        const auto membershipStart = detail::ProfileClock::now();
+        region.memberSeeds.clear();
+        region.memberCells.clear();
+        region.memberCells.reserve(cells.size());
+        for (const GamePosition &cell : cells) {
+          region.memberCells.push_back(VisionQuery::CellKey(cell));
+        }
+
+        for (const std::uint64_t cellKey : region.memberCells) {
+          const auto seeds = cellSeeds.find(cellKey);
+          if (seeds == cellSeeds.end()) {
+            continue;
+          }
+          region.memberSeeds.insert(region.memberSeeds.end(),
+                                    seeds->second.begin(), seeds->second.end());
+        }
+        std::sort(region.memberSeeds.begin(), region.memberSeeds.end());
+        regionMembershipMs +=
+            detail::ProfileMs(membershipStart, detail::ProfileClock::now());
+
+        region.lastSeenTick = tick;
+        const auto signatureStart = detail::ProfileClock::now();
+        const std::uint64_t signature = detail::AspectSignature(
+            region, memory, bucket.signature, structuralSignature);
+        regionSignatureMs +=
+            detail::ProfileMs(signatureStart, detail::ProfileClock::now());
+        if (!reused || region.aspectSignature != signature) {
+          if (profile != nullptr) {
+            ++profile->regionsAspectRebuilds;
+          }
+          detail::RecomputeExtent(region);
+          const auto regionAspectsStart = detail::ProfileClock::now();
+          detail::BuildAspects(region, memory, registry, profile,
+                               &structuralContacts);
+          regionAspectsMs +=
+              detail::ProfileMs(regionAspectsStart, detail::ProfileClock::now());
+          region.aspectSignature = signature;
+        }
+        if (region.primaryAspect.empty()) {
+          region.primaryAspect = "open ground";
+        }
+        regions.push_back(std::move(region));
+      }
+    }
+  }
+
+  // Keep regions outside the current level bands: they are still remembered
+  // ground. The cap below decides what to retain.
+  for (auto &[key, region] : existing) {
+    (void)key;
+    regions.push_back(std::move(region));
+  }
+
+  // A named parent passes its label to the one child that contains the parent's
+  // anchor; the other children stay unnamed. The parent view keeps its own label.
+  // This is the Stage 5 label-inheritance rule: the name survives the split, and
+  // [MOVE_TO] keeps resolving to the detailed ground under the name.
+  const auto labelStart = detail::ProfileClock::now();
+  for (KnownPlace &child : regions) {
+    if (child.regionLevel != 0 || !child.labels.empty()) {
+      continue;
+    }
+    const KnownPlace *bestParent = nullptr;
+    for (const KnownPlace &parent : regions) {
+      if (parent.regionLevel <= child.regionLevel || parent.labels.empty()) {
+        continue;
+      }
+      const std::uint64_t anchorKey = VisionQuery::CellKey(parent.anchor);
+      if (std::find(child.memberCells.begin(), child.memberCells.end(),
+                    anchorKey) == child.memberCells.end()) {
+        continue;
+      }
+      if (bestParent == nullptr ||
+          parent.regionLevel < bestParent->regionLevel) {
+        bestParent = &parent;
+      }
+    }
+    if (bestParent != nullptr) {
+      child.labels = bestParent->labels;
+    }
+  }
+
+  if (profile != nullptr) {
+    profile->regionsAspectsMs = regionAspectsMs;
+    profile->regionsMembershipMs = regionMembershipMs;
+    profile->regionsSignatureMs = regionSignatureMs;
+    profile->regionsLabelsMs =
+        detail::ProfileMs(labelStart, detail::ProfileClock::now());
+    profile->regionsBuildMs =
+        detail::ProfileMs(cellsFinished, detail::ProfileClock::now()) -
+        regionAspectsMs;
+    profile->regionsRefreshed = refreshed;
+    profile->regionsRetained =
+        static_cast<int>(regions.size()) - profile->regionsRefreshed;
+  }
+
+  // Facts use the semantic places and the regions. Ownership is assigned
+  // deterministically: a semantic place wins over a base region, and a finer
+  // region wins over a coarser one, so facts do not change just because the
+  // refreshed/retained order changed between samples.
+  std::unordered_map<std::uint64_t, int> placeOfCell;
+  for (const KnownPlace &place : memory.places) {
+    for (const std::uint64_t key : place.memberCells) {
+      placeOfCell.emplace(key, place.id);
+    }
+  }
+  std::vector<const KnownPlace *> orderedRegions;
+  orderedRegions.reserve(regions.size());
+  for (const KnownPlace &region : regions) {
+    orderedRegions.push_back(&region);
+  }
+  std::sort(orderedRegions.begin(), orderedRegions.end(),
+            [](const KnownPlace *a, const KnownPlace *b) {
+              if (a->regionLevel != b->regionLevel) {
+                return a->regionLevel < b->regionLevel;
+              }
+              return a->id < b->id;
+            });
+  for (const KnownPlace *region : orderedRegions) {
+    for (const std::uint64_t key : region->memberCells) {
+      placeOfCell.emplace(key, region->id);
+    }
+  }
+  const auto regionFactsStart = detail::ProfileClock::now();
+  detail::RecomputeFacts(memory, regions, placeOfCell);
+  const auto regionFactsFinished = detail::ProfileClock::now();
+  if (profile != nullptr) {
+    profile->regionsFactsMs =
+        detail::ProfileMs(regionFactsStart, regionFactsFinished);
+  }
+
+  // Eviction: current first, named regions, regions on semantic ground, then
+  // near/mid/far and distance; the far, unnamed, least useful region goes first.
+  //
+  // Score each region ONCE. The old comparator recomputed the whole priority on
+  // every stable_sort comparison, including a nested scan over every semantic
+  // place and region cell, which is what made the village centre take 500 ms.
+  const std::uint64_t hereKey = VisionQuery::CellKey(here);
+  std::unordered_set<std::uint64_t> semanticCells;
+  for (const KnownPlace &place : memory.places) {
+    for (const std::uint64_t key : place.memberCells) {
+      semanticCells.insert(key);
+    }
+  }
+
+  struct ScoredRegion {
+    std::tuple<bool, bool, bool, int, int, int> priority;
+    KnownPlace region;
+  };
+  std::vector<ScoredRegion> scored;
+  scored.reserve(regions.size());
+  for (KnownPlace &region : regions) {
+    const bool current =
+        std::find(region.memberCells.begin(), region.memberCells.end(),
+                  hereKey) != region.memberCells.end();
+    const bool named = !region.labels.empty();
+    bool onSemantic = false;
+    for (const std::uint64_t key : region.memberCells) {
+      if (semanticCells.count(key) != 0) {
+        onSemantic = true;
+        break;
+      }
+    }
+    const int distance =
+        std::max(std::abs(region.anchor.x + region.width / 2 - here.x),
+                 std::abs(region.anchor.y + region.height / 2 - here.y));
+    ScoredRegion entry;
+    entry.priority = std::make_tuple(!current, !named, !onSemantic,
+                                     region.regionLevel, distance,
+                                     -region.lastSeenTick);
+    entry.region = std::move(region);
+    scored.push_back(std::move(entry));
+  }
+
+  if (scored.size() > static_cast<std::size_t>(maxRegions)) {
+    std::stable_sort(scored.begin(), scored.end(),
+                     [](const ScoredRegion &a, const ScoredRegion &b) {
+                       return a.priority < b.priority;
+                     });
+    scored.resize(static_cast<std::size_t>(maxRegions));
+  }
+
+  regions.clear();
+  regions.reserve(scored.size());
+  for (ScoredRegion &entry : scored) {
+    regions.push_back(std::move(entry.region));
+  }
+  std::sort(regions.begin(), regions.end(),
+            [](const KnownPlace &a, const KnownPlace &b) { return a.id < b.id; });
+  if (profile != nullptr) {
+    profile->regionsEvictMs =
+        detail::ProfileMs(regionFactsFinished, detail::ProfileClock::now());
+  }
+  memory.regions = std::move(regions);
+  memory.lastRegionTick = tick;
+  memory.lastRegionsRevision = revision;
 }
 
 inline Color PlaceColor(int id) {
@@ -1683,6 +2771,7 @@ inline void Consolidate(SpatialMemory &memory, int tick) {
           if (found != memory.cells.end() &&
               found->second.surface == run.surface) {
             memory.cells.erase(found);
+            ++memory.contentRevision;
             ++record.freedCells;
           }
         }
@@ -1769,6 +2858,9 @@ inline std::string DumpJson(const SpatialMemory &memory, const std::string &name
   places.push_back(&memory.origin);
   for (const KnownPlace &place : memory.places) {
     places.push_back(&place);
+  }
+  for (const KnownPlace &region : memory.regions) {
+    places.push_back(&region);
   }
 
   std::ostringstream out;
@@ -1890,7 +2982,7 @@ inline std::string DumpJson(const SpatialMemory &memory, const std::string &name
           firstCategory = false;
         }
       }
-      out << "]" 
+      out << "]"
           << ", \"firstSeenTick\": " << object->firstSeenTick
           << ", \"lastSeenTick\": " << object->lastSeenTick
           << ", \"vanishedTick\": ";
@@ -1917,7 +3009,12 @@ inline std::string DumpJson(const SpatialMemory &memory, const std::string &name
           << ", \"seedKind\": "
           << Quote(place->seedKind == SeedKind::Tile     ? "Tile"
                    : place->seedKind == SeedKind::Named  ? "Named"
+                   : place->seedKind == SeedKind::Region ? "Region"
                                                           : "Object")
+          << ", \"regionLevel\": " << place->regionLevel
+          << ", \"regionCell\": [" << place->regionCell.x << ", "
+          << place->regionCell.y << "]"
+          << ", \"regionSize\": " << place->regionSize
           << ", \"primaryAspect\": " << Quote(place->primaryAspect)
           << ", \"anchor\": [" << place->anchor.x << ", " << place->anchor.y
           << "], \"w\": " << place->width << ", \"h\": " << place->height

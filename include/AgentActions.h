@@ -5,6 +5,7 @@
 #include "DebugLog.h"
 #include "Map.h"
 #include "NavigationPlan.hpp"
+#include "NavigatorLog.h"
 #include "NavigationStrategist.hpp"
 #include "PlaceQuery.hpp"
 #include "Settings.h"
@@ -30,6 +31,7 @@
 #include <sstream>
 #include <stop_token>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -59,6 +61,20 @@ enum class ActionStatus { Doing, Done, Failed, Interrupted };
 inline const char *const HELP_HINT =
     "Use [HELP] to list every command with a short description, or "
     "[HELP <COMMAND>] for a full explanation, e.g. [HELP MOVE_TO].";
+
+// Executes the object's Examine interaction, if it has one. Returns the AI-facing
+// text (the ObjectDescription and any extra state); empty when nothing answered.
+inline std::string ExamineNavigationObject(flecs::entity actor,
+                                           flecs::entity object) {
+  if (!object.is_alive()) return std::string();
+  for (const InteractionHandler &interaction :
+       InteractionRegistry::GetAvailableInteractions(object)) {
+    if (StringUtils::EqualsIgnoreCase(interaction.name, "Examine")) {
+      return interaction.execute(actor, object, "");
+    }
+  }
+  return std::string();
+}
 
 class AgentAction {
 public:
@@ -228,7 +244,8 @@ public:
                 const KnownPlace *best = nullptr;
                 GamePosition bestCell = {-1, -1};
                 int bestDistance = -1;
-                for (const KnownPlace &place : memory->places) {
+                for (const KnownPlace *placePtr : PlaceQuery::AllPlaces(*memory)) {
+                  const KnownPlace &place = *placePtr;
                   bool matches = false;
                   for (const std::string &label : place.labels) {
                     if (StringUtils::EqualsIgnoreCase(label, targetName)) {
@@ -676,6 +693,7 @@ public:
         ActionStatus update(float deltaTime, flecs::entity entity) override {
           const GameSettings::SystemOneNavigationSection &nav =
               Settings().system1.navigation;
+          EnsureNavigatorLog(entity);
           if (!nav.enabled) {
             return Finish(entity, "navigation is turned off in the settings");
           }
@@ -881,6 +899,15 @@ public:
         // these plus the System 1 records; the recorder has the full payload, this
         // has the sequence in order, which is what a run needs when the question
         // is "did it look, choose, walk, and why did it stop".
+        void EnsureNavigatorLog(flecs::entity entity) {
+          if (navigatorLog) {
+            return;
+          }
+          navigatorLog =
+              std::make_unique<NavigatorLog>(AgentName(entity), entity.id());
+          navigatorLog->Begin(goal);
+        }
+
         void Trace(flecs::entity entity, const std::string &text) {
           const DebugLogResource *resource =
               entity.world().get<DebugLogResource>();
@@ -914,6 +941,12 @@ public:
           if (!entity.is_alive()) return;
           NavigationDebugState state;
           state.active = active;
+          if (const NavigationDebugState *previous =
+                  entity.get<NavigationDebugState>()) {
+            state.snapshotVersion = previous->snapshotVersion + 1;
+          } else {
+            state.snapshotVersion = 1;
+          }
           state.goal = goal;
           state.phase = PhaseName(phase);
           state.strategy = strategy.strategy;
@@ -938,6 +971,7 @@ public:
           state.lastSummary = lastSummary;
           state.lastS1Raw = debugS1Raw;
           state.lastS1Error = debugS1Error;
+          state.recentExamination = recentExamination;
 
           for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
             NavigationDebugMonitor entry;
@@ -981,6 +1015,12 @@ public:
         }
 
         void PushS1Debug(NavigationDebugS1Response response) {
+          if (currentStrategistThoughtIndex >= 0 &&
+              currentStrategistThoughtIndex <
+                  static_cast<int>(debugStrategistThoughts.size())) {
+            debugStrategistThoughts[currentStrategistThoughtIndex]
+                .s1Responses.push_back(response);
+          }
           debugS1Responses.push_back(std::move(response));
           while (debugS1Responses.size() > 8) {
             debugS1Responses.pop_front();
@@ -1030,7 +1070,10 @@ public:
           const std::vector<NavigationPlan::Candidate> candidates =
               NavigationPlan::BuildCandidates(
                   *memory, *here, nav.maxCandidates, nav.maxDirections,
-                  nav.compassRadius, walkedCells);
+                  nav.compassRadius, walkedCells,
+                  Settings().regions.modelNearCount,
+                  Settings().system1.navigation.maxExamine,
+                  Settings().system1.navigation.examineRadius);
           const Facing *facing = entity.get<Facing>();
 
           nlohmann::json observation =
@@ -1043,6 +1086,9 @@ public:
                   cfg.observation.maxGraphEdges);
           if (!repetitionNote.empty()) {
             observation["repetition"] = repetitionNote;
+          }
+          if (!recentExamination.empty()) {
+            observation["recent_examination"] = recentExamination;
           }
 
           std::string taskDigest;
@@ -1057,6 +1103,14 @@ public:
                   goal, taskDigest, observation,
                   strategyReady ? &strategy : nullptr, reason, strategiesUsed,
                   cfg.maxStrategies);
+          if (navigatorLog) {
+            if (reason.rfind("retry", 0) != 0 &&
+                reason != "episode start") {
+              navigatorLog->Handoff(reason);
+            }
+            navigatorLog->Request(reason, strategistRetries + 1,
+                                  cfg.maxAttempts, user);
+          }
 
           if (reason == "episode start") {
             lastHandoffReason.clear();
@@ -1161,6 +1215,18 @@ public:
             }
           }
           if (timedOut) {
+            if (navigatorLog) {
+              navigatorLog->Partial(partial);
+              navigatorLog->Error("strategist timed out");
+            }
+            if (strategistRetries + 1 < cfg.maxAttempts &&
+                strategiesUsed < cfg.maxStrategies) {
+              ++strategistRetries;
+              if (navigatorLog) {
+                navigatorLog->Retry("timeout", strategistRetries);
+              }
+              return StartStrategize(entity, "retry after timeout");
+            }
             return FallbackStrategist(entity, "strategist timed out");
           }
           if (!ready) {
@@ -1175,14 +1241,25 @@ public:
           }
           strategistPending.reset();
 
+          if (navigatorLog) {
+            navigatorLog->Response(response);
+          }
+
           if (failed) {
             debugStrategistError = "transport failure";
             UpdateCurrentStrategistThought(
                 NavigationStrategist::ExtractThinking(response), true, true,
                 debugStrategistError);
             PublishNavigationDebug(entity, true);
-            if (strategistRetries < 1 && strategiesUsed < cfg.maxStrategies) {
+            if (navigatorLog) {
+              navigatorLog->Error("transport failure");
+            }
+            if (strategistRetries + 1 < cfg.maxAttempts &&
+                strategiesUsed < cfg.maxStrategies) {
               ++strategistRetries;
+              if (navigatorLog) {
+                navigatorLog->Retry("transport failure", strategistRetries);
+              }
               return StartStrategize(entity, "retry after transport failure");
             }
             return FallbackStrategist(entity, "strategist call failed");
@@ -1198,8 +1275,15 @@ public:
                 NavigationStrategist::ExtractThinking(response), true, true,
                 error);
             PublishNavigationDebug(entity, true);
-            if (strategistRetries < 1 && strategiesUsed < cfg.maxStrategies) {
+            if (navigatorLog) {
+              navigatorLog->Error(error);
+            }
+            if (strategistRetries + 1 < cfg.maxAttempts &&
+                strategiesUsed < cfg.maxStrategies) {
               ++strategistRetries;
+              if (navigatorLog) {
+                navigatorLog->Retry("invalid reply", strategistRetries);
+              }
               return StartStrategize(entity, "retry after invalid reply");
             }
             return FallbackStrategist(entity,
@@ -1219,6 +1303,9 @@ public:
                                       (plan.giveUpReason.empty()
                                            ? std::string()
                                            : ": " + plan.giveUpReason));
+          }
+          if (navigatorLog) {
+            navigatorLog->Plan(NavigationStrategist::BuildPlanSummary(plan));
           }
           debugStrategistError.clear();
           strategy = std::move(plan);
@@ -1321,8 +1408,9 @@ public:
           const SpatialMemory *memory = entity.get<SpatialMemory>();
           const GamePosition *here = entity.get<GamePosition>();
           if (memory != nullptr && here != nullptr) {
-            response = NavigationPlan::BuildSummary(reason, route, *memory,
-                                                    *here, legs, arrived);
+            response = NavigationPlan::BuildSummary(
+                reason, route, *memory, *here, legs, arrived,
+                Settings().regions.modelNearCount);
           } else {
             response = "System: You stopped: " + reason + ".\n";
           }
@@ -1354,6 +1442,9 @@ public:
                   " No strategy was available; the S1 pilot ran alone.";
             }
             response += "\n";
+          }
+          if (navigatorLog) {
+            navigatorLog->Summary(response);
           }
           lastSummary = response;
           PublishNavigationDebug(entity, false);
@@ -1436,7 +1527,10 @@ public:
 
           candidates = NavigationPlan::BuildCandidates(
               *memory, *here, nav.maxCandidates, nav.maxDirections,
-              nav.compassRadius, walkedCells);
+              nav.compassRadius, walkedCells,
+              Settings().regions.modelNearCount,
+              Settings().system1.navigation.maxExamine,
+              Settings().system1.navigation.examineRadius);
           candidates.erase(
               std::remove_if(
                   candidates.begin(), candidates.end(),
@@ -1484,7 +1578,12 @@ public:
             state += "\n";
             state += NavigationStrategist::BuildPilotObservation(
                 *memory, *here, facingValue, candidates, route, visitedPlaceIds,
-                walkedCells, strategist.observation.localGridRadius);
+                walkedCells, strategist.observation.localGridRadius,
+                Settings().system1.navigation.mapMode,
+                Settings().system1.navigation.mapRadius);
+          }
+          if (!recentExamination.empty()) {
+            state += "\nRECENT EXAMINATION: " + recentExamination + "\n";
           }
           if (!repetitionNote.empty()) {
             state += "\nREPETITION: " + repetitionNote + "\n";
@@ -1685,6 +1784,10 @@ public:
                     FormatScore(outcome.margin) +
                     (surveyedThisDecision ? " (after survey)" : ""));
 
+          if (navigatorLog) {
+            navigatorLog->S1(debugPilotState, answer->choice,
+                             outcome.probability);
+          }
           if (handoff.triggered) {
             Trace(entity, "monitor handoff: " + handoff.reason);
             return StartStrategize(entity, handoff.reason);
@@ -1737,9 +1840,15 @@ public:
           lastChoiceTargetSet = true;
           positionAtLastChoice = *here;
 
+          if (navigatorLog) {
+            navigatorLog->Leg(chosen.key, chosen.label, chosen.target.x,
+                              chosen.target.y);
+          }
           legName = chosen.label;
           legPlaceId = chosen.placeId;
           legTarget = chosen.target;
+          legExamine = chosen.examine;
+          legObjectId = chosen.objectId;
           leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
@@ -1787,21 +1896,36 @@ public:
           if (status == ActionStatus::Doing) return ActionStatus::Doing;
 
           if (status == ActionStatus::Done) {
+            const bool examined = legExamine;
+            const std::uint64_t examinedId = legObjectId;
+            legExamine = false;
+            legObjectId = 0;
             ++legs;
             for (const GamePosition &cell : leg->getPath()) {
               walkedCells.insert(VisionQuery::CellKey(cell));
             }
             walkedCells.insert(VisionQuery::CellKey(legTarget));
-            // The state's Visited list is places, not legs: following one road
-            // for five legs should not fill the prompt with the same place five
-            // times. The summary's Route still records every leg.
-            if (visitedPlaceIds.insert(legPlaceId).second) {
-              visitedNames.push_back(legName);
-            }
-            route.push_back(legName);
-            if (routePlaceIds.empty() ||
-                routePlaceIds.back() != legPlaceId) {
-              routePlaceIds.push_back(legPlaceId);
+            if (examined) {
+              flecs::entity object(entity.world(), examinedId);
+              const std::string text = ExamineNavigationObject(entity, object);
+              recentExamination =
+                  text.empty()
+                      ? "you reached the " + legName +
+                            ", but there was nothing to examine"
+                      : text;
+              route.push_back(legName);
+            } else {
+              // The state's Visited list is places, not legs: following one road
+              // for five legs should not fill the prompt with the same place five
+              // times. The summary's Route still records every leg.
+              if (visitedPlaceIds.insert(legPlaceId).second) {
+                visitedNames.push_back(legName);
+              }
+              route.push_back(legName);
+              if (routePlaceIds.empty() ||
+                  routePlaceIds.back() != legPlaceId) {
+                routePlaceIds.push_back(legPlaceId);
+              }
             }
             Trace(entity, "leg " + std::to_string(legs) + ": arrived at " +
                               legName);
@@ -1821,6 +1945,7 @@ public:
         }
 
         std::string goal;
+        std::unique_ptr<NavigatorLog> navigatorLog;
         std::string response;
         Phase phase = Phase::Idle;
         std::shared_ptr<SystemOne::SystemOneClassifier> classifier;
@@ -1853,11 +1978,14 @@ public:
         std::string debugS1Error;
         std::string lastHandoffReason;
         std::string repetitionNote;
+        std::string recentExamination;
         std::string lastSummary;
         std::unique_ptr<MoveToCellAction> leg;
         std::string legName;
         GamePosition legTarget{-1, -1};
         int legPlaceId = 0;
+        bool legExamine = false;
+        std::uint64_t legObjectId = 0;
         int legs = 0;
         int decisions = 0;
         int surveysUsed = 0;
@@ -1876,6 +2004,905 @@ public:
         std::unordered_set<std::uint64_t> unreachableTargets;
       };
 
+
+      // ── Single-context navigator ──────────────────────────────────────────
+      //
+      // One main-model context holds the whole navigation: the map, graph, plan,
+      // route and previous results. Each decision returns an updated plan and
+      // the next move in the same response. The previous two-context navigator
+      // remains available with navigation.agent = "two" and is also the
+      // fallback when this call fails and single.fallbackToTwo is on.
+      class SingleNavigateAction : public AgentAction {
+      public:
+        explicit SingleNavigateAction(std::string goal)
+            : goal(SanitiseGoal(std::move(goal))) {}
+
+        ~SingleNavigateAction() override {
+          AbandonCall();
+          if (fallback) fallback.reset();
+        }
+
+        std::string getActionName() const override { return "NAVIGATE"; }
+
+        std::string getActionContext() const override {
+          return legs > 0 ? goal + " (leg " + std::to_string(legs + 1) + ")"
+                          : goal;
+        }
+
+        ActionStatus update(float deltaTime, flecs::entity entity) override {
+          const GameSettings::SystemOneNavigationSection &nav =
+              Settings().system1.navigation;
+          EnsureNavigatorLog(entity);
+          if (!nav.enabled) {
+            return Finish(entity, "navigation is turned off in the settings");
+          }
+          if (!started) {
+            started = true;
+            startedAt = Clock::now();
+            PublishNavigationDebug(entity, true);
+          }
+          if (SecondsSince(startedAt) > nav.maxSeconds) {
+            return Finish(entity, "you reached the time limit without arriving");
+          }
+
+          if (fallback) {
+            return fallback->update(deltaTime, entity);
+          }
+
+          switch (phase) {
+            case Phase::Deciding:
+              return singlePending == nullptr ? StartSingle(entity, nav)
+                                              : PollSingle(entity, nav);
+            case Phase::Moving:
+              return UpdateLeg(deltaTime, entity, nav);
+            case Phase::Surveying:
+              return UpdateSurvey(entity, nav);
+            case Phase::Fallback:
+              return fallback != nullptr ? fallback->update(deltaTime, entity)
+                                         : Finish(entity, "navigation fallback");
+          }
+          return Finish(entity, "your sense of direction failed");
+        }
+
+        std::string getSuccessMessage() override {
+          if (fallback) return fallback->getSuccessMessage();
+          return response;
+        }
+
+        std::string getFailureMessage() override {
+          if (fallback) return fallback->getFailureMessage();
+          return response.empty() ? "System: Navigation failed.\n" : response;
+        }
+
+        ActionStatus handleInterruption(flecs::entity entity) override {
+          AbandonCall();
+          if (leg) {
+            leg->handleInterruption(entity);
+            leg.reset();
+          }
+          if (fallback) {
+            return fallback->handleInterruption(entity);
+          }
+          phase = Phase::Deciding;
+          PublishNavigationDebug(entity, false);
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity entity) override {
+          if (fallback) {
+            fallback->resume(entity);
+            return;
+          }
+          PublishNavigationDebug(entity, true);
+        }
+
+      private:
+        using Clock = std::chrono::steady_clock;
+
+        enum class Phase { Deciding, Moving, Surveying, Fallback };
+
+        struct SinglePending {
+          std::mutex mutex;
+          bool ready = false;
+          bool abandoned = false;
+          bool failed = false;
+          std::string response;
+          std::string error;
+        };
+
+        static std::string SanitiseGoal(std::string text) {
+          std::string cleaned;
+          cleaned.reserve(text.size());
+          bool lastSpace = false;
+          for (char c : text) {
+            const unsigned char uc = static_cast<unsigned char>(c);
+            if (c == '[' || c == ']' || std::iscntrl(uc) != 0) c = ' ';
+            if (c == ' ') {
+              if (lastSpace || cleaned.empty()) continue;
+              lastSpace = true;
+            } else {
+              lastSpace = false;
+            }
+            cleaned += c;
+          }
+          while (!cleaned.empty() && cleaned.back() == ' ') cleaned.pop_back();
+          if (cleaned.size() > 200) cleaned.resize(200);
+          return cleaned;
+        }
+
+        static std::string AgentName(flecs::entity entity) {
+          if (const DisplayName *name = entity.get<DisplayName>()) {
+            if (!name->name.empty()) return name->name;
+          }
+          const std::string named = entity.name().c_str();
+          return named.empty() ? std::string("character") : named;
+        }
+
+        static int Chebyshev(const GamePosition &a, const GamePosition &b) {
+          return std::max(std::abs(a.x - b.x), std::abs(a.y - b.y));
+        }
+
+        static std::string PhaseName(Phase phase) {
+          switch (phase) {
+            case Phase::Deciding: return "deciding";
+            case Phase::Moving: return "moving";
+            case Phase::Surveying: return "surveying";
+            case Phase::Fallback: return "two-context fallback";
+          }
+          return "unknown";
+        }
+
+        void EnsureNavigatorLog(flecs::entity entity) {
+          if (navigatorLog != nullptr) return;
+          navigatorLog =
+              std::make_unique<NavigatorLog>(AgentName(entity), entity.id());
+          navigatorLog->Begin(goal);
+        }
+
+        void Trace(flecs::entity entity, const std::string &text) {
+          const DebugLogResource *resource =
+              entity.world().get<DebugLogResource>();
+          if (resource != nullptr && resource->log != nullptr) {
+            resource->log->LogInfo("[navigation] " + text);
+          }
+        }
+
+        double SecondsSince(Clock::time_point start) const {
+          return std::chrono::duration<double>(Clock::now() - start).count();
+        }
+
+        void AbandonCall() {
+          if (singlePending != nullptr) {
+            std::lock_guard<std::mutex> lock(singlePending->mutex);
+            singlePending->abandoned = true;
+          }
+          singleStop.request_stop();
+          singlePending.reset();
+        }
+
+        void PublishNavigationDebug(flecs::entity entity, bool active) {
+          NavigationDebugState *debug = entity.get_mut<NavigationDebugState>();
+          if (debug == nullptr) return;
+          debug->active = active;
+          debug->goal = goal;
+          debug->phase = PhaseName(phase);
+          debug->strategy = strategy.strategy;
+          debug->subtask = strategy.subtask;
+          debug->strategyVersion = strategy.version;
+          debug->strategyReady = strategyReady;
+          debug->strategiesUsed = singleCalls;
+          debug->decisions = singleCalls;
+          debug->legs = legs;
+          debug->handoffs = fallback != nullptr ? 1 : 0;
+          debug->surveysUsed = surveysUsed;
+          debug->monitors.clear();
+          for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
+            NavigationDebugMonitor entry;
+            entry.id = monitor.id;
+            entry.question = monitor.question;
+            entry.handoffWhen = monitor.handoffOnYes ? "yes" : "no";
+            entry.minConfidence = monitor.minConfidence;
+            debug->monitors.push_back(std::move(entry));
+          }
+          debug->candidates.clear();
+          for (const NavigationPlan::Candidate &candidate : candidates) {
+            NavigationDebugCandidate entry;
+            entry.key = candidate.key;
+            entry.label = candidate.label;
+            entry.description = candidate.description;
+            entry.distance = candidate.distance;
+            debug->candidates.push_back(std::move(entry));
+          }
+          debug->strategistObservation = debugObservation;
+          debug->strategistBrief = debugBrief;
+          debug->strategistResponse = debugResponse;
+          debug->strategistError = debugError;
+          debug->pilotState = debugState;
+          debug->lastS1Raw = debugResponse;
+          debug->lastS1Error = debugError;
+          debug->recentExamination = lastResult;
+          debug->lastSummary = lastSummary;
+          debug->route.clear();
+          for (std::size_t i = 0; i < route.size(); ++i) {
+            if (i > 0) debug->route += " -> ";
+            debug->route += route[i];
+          }
+          debug->visited.clear();
+          for (std::size_t i = 0; i < visitedNames.size(); ++i) {
+            if (i > 0) debug->visited += ", ";
+            debug->visited += visitedNames[i];
+          }
+          debug->strategistThoughts = singleThoughts;
+          ++debug->snapshotVersion;
+          debug->s1Responses.clear();
+          for (const NavigationDebugStrategistThought &thought :
+               singleThoughts) {
+            for (const NavigationDebugS1Response &entry : thought.s1Responses) {
+              debug->s1Responses.push_back(entry);
+            }
+          }
+          if (fallback != nullptr) {
+            debug->strategistFallback = true;
+            debug->lastHandoff = fallbackReason;
+          }
+        }
+
+        ActionStatus StartSingle(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          const GameSettings::NavigationSingleSection &cfg =
+              Settings().navigation.single;
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            return Finish(entity, "you have no memory of where you are");
+          }
+          const AIBackend *backend = entity.world().get<AIBackend>();
+          if (backend == nullptr || backend->ptr == nullptr) {
+            return FallbackToTwo(entity, "no AI backend");
+          }
+
+          // A retry keeps the same context and the same state. The invalid
+          // assistant reply is already in `singleMessages`; this branch only
+          // appends the correction (which names the exact error the reply made)
+          // and asks again.
+          if (!singleRetryCorrection.empty()) {
+            const std::string correction = singleRetryCorrection;
+            singleRetryCorrection.clear();
+            singleMessages.push_back({"user", correction});
+            debugBrief = correction;
+            debugResponse.clear();
+            debugError.clear();
+            if (navigatorLog) {
+              navigatorLog->Request("single retry",
+                                    singleErrorAttempts + 1, cfg.maxAttempts,
+                                    correction);
+            }
+            phase = Phase::Deciding;
+            singleStartedAt = Clock::now();
+            singleStop = std::stop_source();
+            auto pending = std::make_shared<SinglePending>();
+            singlePending = pending;
+            PublishNavigationDebug(entity, true);
+
+            const std::string contextId =
+                "navsingle-" + std::to_string(entity.id());
+            AI *ai = backend->ptr.get();
+            ai->setMaxTokens(cfg.maxTokens);
+            const bool startedCall = ai->generateStream(
+                contextId, singleMessages,
+                [pending](const std::string &token) {
+                  std::lock_guard<std::mutex> lock(pending->mutex);
+                  if (pending->abandoned) return;
+                  if (token.empty()) {
+                    pending->ready = true;
+                    return;
+                  }
+                  pending->response += token;
+                },
+                singleStop.get_token());
+            if (!startedCall) {
+              std::lock_guard<std::mutex> lock(pending->mutex);
+              pending->failed = true;
+              pending->error = "the backend did not start the request";
+              pending->ready = true;
+            }
+            return ActionStatus::Doing;
+          }
+
+          if (route.empty()) {
+            route.push_back(NavigationPlan::StartPlaceName(*memory, *here));
+          }
+          candidates = NavigationPlan::BuildCandidates(
+              *memory, *here, Settings().navigation.single.maxCandidates,
+              Settings().navigation.single.maxDirections, nav.compassRadius,
+              walkedCells, Settings().regions.modelNearCount, -1,
+              Settings().system1.navigation.examineRadius);
+          candidates.erase(
+              std::remove_if(candidates.begin(), candidates.end(),
+                             [this](const NavigationPlan::Candidate &candidate) {
+                               return unreachableTargets.count(
+                                          VisionQuery::CellKey(candidate.target)) !=
+                                      0;
+                             }),
+              candidates.end());
+          if (candidates.empty()) {
+            return Finish(entity, "you do not remember any place that could lead there");
+          }
+
+          const Facing *facing = entity.get<Facing>();
+          const Facing facingValue = facing != nullptr ? *facing : Facing{};
+          const nlohmann::json observation =
+              NavigationStrategist::BuildObservation(
+                  *memory, *here, facingValue, candidates, routePlaceIds, route,
+                  visitedPlaceIds, walkedCells, walkedCells,
+                  Settings().navigation.strategist.observation.localGridRadius,
+                  Settings().navigation.strategist.observation.maxGraphNodes,
+                  Settings().navigation.strategist.observation.maxGraphEdges);
+          const std::string state = NavigationPlan::BuildState(
+              *memory, *here, facingValue, AgentName(entity), goal, legs,
+              visitedNames, candidates);
+          const std::string map = NavigationStrategist::BuildPilotMap(
+              *memory, *here, facingValue, candidates, cfg.mapRadius);
+
+          std::string taskDigest;
+          if (const TaskList *tasks = entity.get<TaskList>()) {
+            taskDigest = RenderTaskDigest(*tasks, "");
+          }
+
+          const std::string system =
+              NavigationStrategist::BuildSingleSystemPrompt();
+          const int maxCalls = 60;
+          const std::string user =
+              NavigationStrategist::BuildSingleUserPrompt(
+                  goal, taskDigest, observation, map, state,
+                  strategyReady ? &strategy : nullptr, route, lastResult,
+                  singleCalls, maxCalls);
+          if (!singleSystemAdded) {
+            singleMessages.push_back({"system", system});
+            singleSystemAdded = true;
+          }
+          singleMessages.push_back({"user", user});
+
+          ++singleCalls;
+          debugObservation = observation.dump(2);
+          debugBrief = user;
+          debugState = state;
+          debugResponse.clear();
+          debugError.clear();
+          lastResult.clear();
+
+          NavigationDebugStrategistThought thought;
+          thought.index = singleCalls;
+          thought.reason = "single decision";
+          thought.strategy = strategy.strategy;
+          thought.subtask = strategy.subtask;
+          for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
+            NavigationDebugMonitor entry;
+            entry.id = monitor.id;
+            entry.question = monitor.question;
+            entry.handoffWhen = monitor.handoffOnYes ? "yes" : "no";
+            entry.minConfidence = monitor.minConfidence;
+            thought.monitors.push_back(std::move(entry));
+          }
+          for (const NavigationPlan::Candidate &candidate : candidates) {
+            NavigationDebugCandidate entry;
+            entry.key = candidate.key;
+            entry.label = candidate.label;
+            entry.description = candidate.description;
+            entry.distance = candidate.distance;
+            thought.candidates.push_back(std::move(entry));
+          }
+          thought.graphJson = observation["graph"].dump();
+          singleThoughts.push_back(std::move(thought));
+
+          if (navigatorLog) {
+            navigatorLog->Request("single decision", 1, 1, user);
+          }
+
+          phase = Phase::Deciding;
+          singleStartedAt = Clock::now();
+          singleStop = std::stop_source();
+          auto pending = std::make_shared<SinglePending>();
+          singlePending = pending;
+          PublishNavigationDebug(entity, true);
+
+          const std::string contextId =
+              "navsingle-" + std::to_string(entity.id());
+          AI *ai = backend->ptr.get();
+          if (!singleContextReset) {
+            ai->resetContext(contextId);
+            singleContextReset = true;
+          }
+          ai->setMaxTokens(cfg.maxTokens);
+          const bool startedCall = ai->generateStream(
+              contextId, singleMessages,
+              [pending](const std::string &token) {
+                std::lock_guard<std::mutex> lock(pending->mutex);
+                if (pending->abandoned) return;
+                if (token.empty()) {
+                  pending->ready = true;
+                  return;
+                }
+                pending->response += token;
+              },
+              singleStop.get_token());
+          if (!startedCall) {
+            std::lock_guard<std::mutex> lock(pending->mutex);
+            pending->failed = true;
+            pending->error = "the backend did not start the request";
+            pending->ready = true;
+          }
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus PollSingle(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          if (singlePending == nullptr) return ActionStatus::Doing;
+          std::string text;
+          bool failed = false;
+          std::string error;
+          {
+            std::lock_guard<std::mutex> lock(singlePending->mutex);
+            if (!singlePending->ready) {
+              if (SecondsSince(singleStartedAt) >
+                  Settings().navigation.single.timeoutSeconds) {
+                singlePending->abandoned = true;
+                failed = true;
+                error = "the single navigator timed out";
+              } else {
+                return ActionStatus::Doing;
+              }
+            } else {
+              text = singlePending->response;
+              failed = singlePending->failed;
+              error = singlePending->error;
+            }
+          }
+          singleStop.request_stop();
+          singlePending.reset();
+          if (failed || text.empty()) {
+            return FallbackToTwo(entity, error.empty() ? "empty response" : error);
+          }
+
+          debugResponse = text;
+          singleMessages.push_back({"assistant", text});
+          if (navigatorLog) navigatorLog->Response(text);
+          const std::string think = NavigationStrategist::ExtractThinking(text);
+          const std::string jsonText = NavigationStrategist::StripToJson(text);
+          nlohmann::json reply;
+          std::string parseError;
+          try {
+            reply = nlohmann::json::parse(jsonText);
+          } catch (const nlohmann::json::exception &error) {
+            parseError = error.what();
+          }
+          if (parseError.empty() && !reply.is_object()) {
+            parseError = "the response was not a JSON object";
+          }
+          if (!parseError.empty()) {
+            return RetrySingle(
+                entity, "the reply was not usable JSON: " + parseError,
+                "Reply with exactly one complete JSON object after </think>, "
+                "with no prose and no code fence.");
+          }
+
+          // Every model-output error below uses the same consecutive-error
+          // budget. An accepted reply clears it; a rejected reply names the
+          // exact problem in the next correction, whether that problem is JSON,
+          // the plan, or the chosen move.
+          const auto planIt = reply.find("plan");
+          if (planIt == reply.end() || !planIt->is_object()) {
+            return RetrySingle(
+                entity, "the reply has no plan object",
+                "The reply must contain a `plan` object with a non-empty "
+                "`strategy` string.");
+          }
+          NavigationStrategist::Plan nextPlan;
+          std::string planError;
+          bool planParsed = false;
+          try {
+            planParsed = NavigationStrategist::ParsePlan(
+                planIt->dump(), nextPlan, planError);
+          } catch (const std::exception &exception) {
+            // A field with the wrong JSON type can throw inside ParsePlan; that
+            // is still a model error, not a crash.
+            planError = exception.what();
+          }
+          if (!planParsed) {
+            return RetrySingle(
+                entity, "the plan was invalid: " + planError,
+                "Fix the `plan` object: it needs a non-empty `strategy` string; "
+                "`subtask` and `monitors` are optional.");
+          }
+          nextPlan.version = singleCalls;
+          strategy = nextPlan;
+          strategyReady = true;
+
+          const auto moveIt = reply.find("move");
+          if (moveIt == reply.end() || !moveIt->is_string()) {
+            return RetrySingle(
+                entity, "the reply has no string `move`",
+                "`move` must be one of the action keys offered for this "
+                "decision, or `arrived`, `look_around`, `none` or `unsure`.");
+          }
+          const std::string move = moveIt->get<std::string>();
+
+          bool done = false;
+          const auto doneIt = reply.find("done");
+          if (doneIt != reply.end()) {
+            if (!doneIt->is_boolean()) {
+              return RetrySingle(entity, "`done` is not a boolean",
+                                 "Use `true` or `false` for `done`.");
+            }
+            done = doneIt->get<bool>();
+          }
+
+          bool unsure = false;
+          const auto unsureIt = reply.find("unsure");
+          if (unsureIt != reply.end()) {
+            if (!unsureIt->is_boolean()) {
+              return RetrySingle(entity, "`unsure` is not a boolean",
+                                 "Use `true` or `false` for `unsure`.");
+            }
+            unsure = unsureIt->get<bool>();
+          }
+
+          float confidence = 0.0f;
+          const auto confidenceIt = reply.find("confidence");
+          if (confidenceIt != reply.end()) {
+            if (!confidenceIt->is_number()) {
+              return RetrySingle(entity, "`confidence` is not a number",
+                                 "Use a number between 0 and 1 for "
+                                 "`confidence`.");
+            }
+            confidence = confidenceIt->get<float>();
+          }
+
+          const auto acceptReply = [this]() {
+            singleErrorAttempts = 0;
+            if (!singleThoughts.empty()) {
+              singleThoughts.back().failed = false;
+              singleThoughts.back().error.clear();
+            }
+          };
+
+          // Validate the move before `done` is allowed to short-circuit it: an
+          // invented key is a model error even on an arrival reply. Special
+          // words are legal choices; anything else must be an offered key.
+          const bool specialMove = move == "arrived" || move == "none" ||
+                                   move == "unsure" || move == "look_around";
+          const NavigationPlan::Candidate *chosen = nullptr;
+          for (const NavigationPlan::Candidate &candidate : candidates) {
+            if (candidate.key == move) {
+              chosen = &candidate;
+              break;
+            }
+          }
+          if (!specialMove && chosen == nullptr) {
+            std::string available;
+            for (const NavigationPlan::Candidate &candidate : candidates) {
+              if (!available.empty()) {
+                available += ", ";
+              }
+              available += candidate.key;
+            }
+            return RetrySingle(
+                entity,
+                move.empty() ? "the move is empty"
+                             : "the move '" + move + "' is not available",
+                "Use exactly one of these action keys: " + available +
+                    ". `arrived`, `look_around`, `none` and `unsure` are also "
+                    "accepted.");
+          }
+
+          if (navigatorLog) {
+            navigatorLog->S1(debugState, move, confidence);
+            navigatorLog->Plan(NavigationStrategist::BuildPlanSummary(strategy));
+          }
+
+          if (done || move == "arrived") {
+            acceptReply();
+            if (singleThoughts.empty()) {
+              return Finish(entity, "you judged that you had arrived", true);
+            }
+            singleThoughts.back().thought = think;
+            singleThoughts.back().strategy = strategy.strategy;
+            singleThoughts.back().subtask = strategy.subtask;
+            singleThoughts.back().complete = true;
+            singleThoughts.back().s1Responses.clear();
+            NavigationDebugS1Response s1;
+            s1.decision = singleCalls;
+            s1.choice = "arrived";
+            s1.outcome = "arrived";
+            s1.probability = confidence;
+            s1.ok = true;
+            s1.latencyMs = static_cast<long long>(
+                SecondsSince(singleStartedAt) * 1000.0);
+            singleThoughts.back().s1Responses.push_back(std::move(s1));
+            return Finish(entity, "you judged that you had arrived", true);
+          }
+          if (unsure || move == "none" || move == "unsure") {
+            acceptReply();
+            return FallbackToTwo(entity, "the single navigator was unsure");
+          }
+          if (move == "look_around") {
+            acceptReply();
+            return StartSurvey(entity, nav);
+          }
+
+          acceptReply();
+          if (!singleThoughts.empty()) {
+            singleThoughts.back().thought = think;
+            singleThoughts.back().strategy = strategy.strategy;
+            singleThoughts.back().subtask = strategy.subtask;
+            singleThoughts.back().complete = true;
+            NavigationDebugS1Response s1;
+            s1.decision = singleCalls;
+            s1.choice = move;
+            s1.outcome = "candidate";
+            s1.probability = confidence;
+            s1.ok = true;
+            s1.latencyMs = static_cast<long long>(
+                SecondsSince(singleStartedAt) * 1000.0);
+            singleThoughts.back().s1Responses.push_back(std::move(s1));
+          }
+          return StartLeg(entity, *chosen);
+        }
+
+        ActionStatus RetrySingle(flecs::entity entity,
+                                 const std::string &error,
+                                 const std::string &detail = "") {
+          ++singleErrorAttempts;
+          if (!singleThoughts.empty()) {
+            singleThoughts.back().failed = true;
+            singleThoughts.back().error = error;
+          }
+          debugError = error;
+          if (navigatorLog) navigatorLog->Error(error);
+          const GameSettings::NavigationSingleSection &cfg =
+              Settings().navigation.single;
+          if (singleErrorAttempts >= cfg.maxAttempts) {
+            return FallbackToTwo(
+                entity, "the single navigator made " +
+                            std::to_string(singleErrorAttempts) +
+                            " unusable replies in a row (last: " + error + ")");
+          }
+          std::ostringstream correction;
+          correction
+              << "Your previous reply could not be used: " << error
+              << ".\nThe navigation state has not changed. Fix that problem and "
+                 "reply again with a <think> of at most two sentences followed "
+                 "by ONE complete JSON object using the same schema. The JSON "
+                 "must be AFTER the closing </think> tag, not inside it, and "
+                 "must not use a code fence. Do not repeat the state; keep the "
+                 "think short so the JSON is not cut off.";
+          if (!detail.empty()) {
+            correction << " " << detail;
+          }
+          correction << "\n";
+          singleRetryCorrection = correction.str();
+          phase = Phase::Deciding;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus StartLeg(flecs::entity entity,
+                              const NavigationPlan::Candidate &chosen) {
+          const GamePosition *here = entity.get<GamePosition>();
+          if (here == nullptr) {
+            return Finish(entity, "you have no memory of where you are");
+          }
+          repetitionNote.clear();
+          const int movedSinceLastChoice = Chebyshev(*here, positionAtLastChoice);
+          if (lastChoiceTargetSet && chosen.target == lastChoiceTarget &&
+              movedSinceLastChoice == 0) {
+            repetitionNote = "the same target is still offered; consider a "
+                             "different direction.";
+          }
+          walkedCells.insert(VisionQuery::CellKey(*here));
+          lastChoiceTarget = chosen.target;
+          lastChoiceTargetSet = true;
+          positionAtLastChoice = *here;
+          if (navigatorLog) {
+            navigatorLog->Leg(chosen.key, chosen.label, chosen.target.x,
+                              chosen.target.y);
+          }
+          legName = chosen.label;
+          legPlaceId = chosen.placeId;
+          legTarget = chosen.target;
+          legExamine = chosen.examine;
+          legObjectId = chosen.objectId;
+          leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
+          legStartedAt = Clock::now();
+          phase = Phase::Moving;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus UpdateLeg(
+            float deltaTime, flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          const GamePosition *here = entity.get<GamePosition>();
+          if (here == nullptr) return Finish(entity, "you have no memory of where you are");
+          if (!leg) {
+            leg = std::make_unique<MoveToCellAction>(legTarget, legName);
+            legStartedAt = Clock::now();
+          }
+          if (SecondsSince(legStartedAt) > nav.legTimeoutSeconds) {
+            leg->handleInterruption(entity);
+            leg.reset();
+            return FallbackToTwo(entity, "a leg timed out");
+          }
+          const ActionStatus status = leg->update(deltaTime, entity);
+          if (status == ActionStatus::Doing) return ActionStatus::Doing;
+          if (status == ActionStatus::Done) {
+            const bool examined = legExamine;
+            const std::uint64_t examinedId = legObjectId;
+            legExamine = false;
+            legObjectId = 0;
+            ++legs;
+            for (const GamePosition &cell : leg->getPath()) {
+              walkedCells.insert(VisionQuery::CellKey(cell));
+            }
+            walkedCells.insert(VisionQuery::CellKey(legTarget));
+            if (examined) {
+              flecs::entity object(entity.world(), examinedId);
+              const std::string text = ExamineNavigationObject(entity, object);
+              lastResult = text.empty()
+                               ? "you reached the " + legName +
+                                     ", but there was nothing to examine"
+                               : text;
+              route.push_back(legName);
+            } else {
+              if (visitedPlaceIds.insert(legPlaceId).second) {
+                visitedNames.push_back(legName);
+              }
+              route.push_back(legName);
+              if (routePlaceIds.empty() || routePlaceIds.back() != legPlaceId) {
+                routePlaceIds.push_back(legPlaceId);
+              }
+              lastResult = "arrived at " + legName + " (leg " +
+                           std::to_string(legs) + ")";
+            }
+            leg.reset();
+            phase = Phase::Deciding;
+            PublishNavigationDebug(entity, true);
+            return ActionStatus::Doing;
+          }
+          const std::string reason = leg->getFailureReason();
+          leg.reset();
+          return FallbackToTwo(entity, "a leg failed: " + reason);
+        }
+
+        ActionStatus StartSurvey(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &nav) {
+          if (surveysUsed >= nav.maxSurveys) {
+            return FallbackToTwo(entity, "the survey budget is exhausted");
+          }
+          Vision *vision = entity.get_mut<Vision>();
+          if (vision == nullptr) {
+            return FallbackToTwo(entity, "you cannot look around");
+          }
+          vision->fullCircleRequested = true;
+          surveyRequestedTick = vision->lastSampleTick;
+          ++surveysUsed;
+          afterSurvey = true;
+          phase = Phase::Surveying;
+          if (navigatorLog) {
+            navigatorLog->Handoff("full-circle survey");
+          }
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus UpdateSurvey(
+            flecs::entity entity,
+            const GameSettings::SystemOneNavigationSection &) {
+          Vision *vision = entity.get_mut<Vision>();
+          if (vision == nullptr) {
+            return FallbackToTwo(entity, "you cannot look around");
+          }
+          if (vision->lastFullCircleTick != surveyRequestedTick) {
+            phase = Phase::Deciding;
+            lastResult = "full-circle survey completed; choose again";
+            PublishNavigationDebug(entity, true);
+            return ActionStatus::Doing;
+          }
+          if (++surveyWaitUpdates > 10) {
+            vision->fullCircleRequested = false;
+            return FallbackToTwo(entity, "the survey did not complete");
+          }
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus FallbackToTwo(flecs::entity entity,
+                                   const std::string &reason) {
+          if (!Settings().navigation.single.fallbackToTwo) {
+            return Finish(entity, reason);
+          }
+          if (fallback != nullptr) {
+            return fallback->update(0.0f, entity);
+          }
+          AbandonCall();
+          fallbackReason = "single-context fallback: " + reason;
+          Trace(entity, fallbackReason);
+          if (navigatorLog) navigatorLog->Handoff(fallbackReason);
+          fallback = std::make_unique<NavigateAction>(goal);
+          phase = Phase::Fallback;
+          PublishNavigationDebug(entity, true);
+          return fallback->update(0.0f, entity);
+        }
+
+        ActionStatus Finish(flecs::entity entity, const std::string &reason,
+                            bool arrived = false) {
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory != nullptr && here != nullptr) {
+            lastSummary = NavigationPlan::BuildSummary(
+                reason, route, *memory, *here, legs, arrived);
+          } else {
+            lastSummary = "System: " + reason + ".\n";
+          }
+          if (navigatorLog) navigatorLog->Summary(lastSummary);
+          response = lastSummary;
+          PublishNavigationDebug(entity, false);
+          return ActionStatus::Done;
+        }
+
+        std::string goal;
+        std::unique_ptr<NavigatorLog> navigatorLog;
+        std::string response;
+        std::string lastSummary;
+        std::string fallbackReason;
+        std::unique_ptr<NavigateAction> fallback;
+        Phase phase = Phase::Deciding;
+        bool started = false;
+        Clock::time_point startedAt;
+        Clock::time_point singleStartedAt;
+        Clock::time_point legStartedAt;
+        std::shared_ptr<SinglePending> singlePending;
+        std::stop_source singleStop;
+        std::vector<ChatMessage> singleMessages;
+        bool singleSystemAdded = false;
+        bool singleContextReset = false;
+        int singleCalls = 0;
+        int singleErrorAttempts = 0;
+        std::string singleRetryCorrection;
+        int legs = 0;
+        int surveysUsed = 0;
+        int surveyWaitUpdates = 0;
+        int surveyRequestedTick = -1;
+        bool afterSurvey = false;
+        bool strategyReady = false;
+        NavigationStrategist::Plan strategy;
+        std::vector<NavigationPlan::Candidate> candidates;
+        std::vector<std::string> route;
+        std::vector<int> routePlaceIds;
+        std::vector<std::string> visitedNames;
+        std::unordered_set<int> visitedPlaceIds;
+        std::unordered_set<std::uint64_t> walkedCells;
+        std::unordered_set<std::uint64_t> unreachableTargets;
+        std::string lastResult;
+        std::string repetitionNote;
+        GamePosition lastChoiceTarget{0, 0};
+        GamePosition positionAtLastChoice{0, 0};
+        bool lastChoiceTargetSet = false;
+        std::string legName;
+        int legPlaceId = 0;
+        GamePosition legTarget{0, 0};
+        bool legExamine = false;
+        std::uint64_t legObjectId = 0;
+        std::unique_ptr<MoveToCellAction> leg;
+        std::vector<NavigationDebugStrategistThought> singleThoughts;
+        std::string debugObservation;
+        std::string debugBrief;
+        std::string debugState;
+        std::string debugResponse;
+        std::string debugError;
+      };
 
       enum class ConversationState {
         Talking,
@@ -2002,18 +3029,71 @@ private:
           const GamePosition here =
               entity.has<GamePosition>() ? *entity.get<GamePosition>()
                                          : GamePosition{0, 0};
-          if (memory == nullptr || memory->places.empty()) {
+          if (memory == nullptr ||
+              (memory->places.empty() && memory->regions.empty())) {
             response = "System: You do not remember any places yet.\n";
             return ActionStatus::Done;
           }
 
           const std::vector<PlaceQuery::PlaceLine> sorted =
               PlaceQuery::SortedPlaces(*memory, here);
+          std::unordered_map<const KnownPlace *, const PlaceQuery::PlaceLine *>
+              lineByPlace;
+          lineByPlace.reserve(sorted.size());
+          for (const PlaceQuery::PlaceLine &line : sorted) {
+            lineByPlace[line.place] = &line;
+          }
+          const std::vector<const KnownPlace *> model =
+              PlaceQuery::ModelPlaces(*memory, here,
+                                      Settings().regions.modelNearCount);
+
+          std::vector<const KnownPlace *> ordered = model;
+          std::stable_sort(
+              ordered.begin(), ordered.end(),
+              [&lineByPlace](const KnownPlace *a, const KnownPlace *b) {
+                const bool aSemantic = a->origin != PlaceOrigin::Region;
+                const bool bSemantic = b->origin != PlaceOrigin::Region;
+                if (aSemantic != bSemantic) {
+                  return aSemantic;
+                }
+                const auto aLine = lineByPlace.find(a);
+                const auto bLine = lineByPlace.find(b);
+                if (aLine == lineByPlace.end() || bLine == lineByPlace.end()) {
+                  return a->id < b->id;
+                }
+                return aLine->second->distance < bLine->second->distance;
+              });
 
           response = "System: Places you remember (" +
-                     std::to_string(sorted.size()) + "):\n";
-          for (const PlaceQuery::PlaceLine &line : sorted) {
-            response += "  " + PlaceQuery::FormatPlaceLine(line, here) + "\n";
+                     std::to_string(ordered.size()) + "):\n";
+          for (const KnownPlace *place : ordered) {
+            const auto line = lineByPlace.find(place);
+            if (line == lineByPlace.end()) {
+              continue;
+            }
+            response += "  " + PlaceQuery::FormatPlaceLine(*line->second, here) +
+                        "\n";
+          }
+
+          // Two places can share a display name (two unnamed grass fields, a
+          // region and a semantic place called "Village"). The id is the stable
+          // handle; say so explicitly rather than leaving the model to guess.
+          std::map<std::string, std::vector<const KnownPlace *>> byName;
+          for (const KnownPlace *place : ordered) {
+            byName[PlaceQuery::DisplayName(*place)].push_back(place);
+          }
+          for (const auto &[name, places] : byName) {
+            if (places.size() < 2) {
+              continue;
+            }
+            response += "System: " + std::to_string(places.size()) +
+                        " places are called " + name + ":";
+            for (const KnownPlace *place : places) {
+              response += " #" + std::to_string(place->id);
+            }
+            response +=
+                ". To target one, first give the others a distinct name with "
+                "[NAME_PLACE #<number> <name>].\n";
           }
           response +=
               "System: [MOVE_TO] accepts these names. An unnamed place can be "
@@ -2067,26 +3147,36 @@ private:
                                             : GamePosition{0, 0};
 
           KnownPlace *place = nullptr;
-          if (here) {
-            for (KnownPlace &candidate : memory->places) {
-              const std::uint64_t key = VisionQuery::CellKey(position);
-              if (std::find(candidate.memberCells.begin(),
-                            candidate.memberCells.end(),
-                            key) != candidate.memberCells.end()) {
+          const auto findIn = [&place](std::vector<KnownPlace> &places,
+                                       auto &&matches) {
+            for (KnownPlace &candidate : places) {
+              if (matches(candidate)) {
                 place = &candidate;
-                break;
+                return true;
               }
+            }
+            return false;
+          };
+          if (here) {
+            const std::uint64_t key = VisionQuery::CellKey(position);
+            const auto coversHere = [key](const KnownPlace &candidate) {
+              return std::find(candidate.memberCells.begin(),
+                               candidate.memberCells.end(),
+                               key) != candidate.memberCells.end();
+            };
+            if (!findIn(memory->places, coversHere)) {
+              findIn(memory->regions, coversHere);
             }
           } else {
             // The registry pattern accepts "#4"; the id is the digits.
             const std::string digits =
                 target.empty() ? target : target.substr(target[0] == '#' ? 1 : 0);
             const int id = std::atoi(digits.c_str());
-            for (KnownPlace &candidate : memory->places) {
-              if (candidate.id == id) {
-                place = &candidate;
-                break;
-              }
+            const auto hasId = [id](const KnownPlace &candidate) {
+              return candidate.id == id;
+            };
+            if (!findIn(memory->places, hasId)) {
+              findIn(memory->regions, hasId);
             }
             if (place == nullptr) {
               response =
@@ -2121,6 +3211,7 @@ private:
               seed.source = KnowledgeSource::Observed;
               seed.createsPlace = false;
               memory->nameSeeds.push_back(std::move(seed));
+              ++memory->contentRevision;
             }
             response = "System: You call this place " + trimmed + ".\n";
             return ActionStatus::Done;
@@ -2141,6 +3232,7 @@ private:
           seed.createsPlace = true;
           seed.radius = DEFAULT_PLACE_NAME_RADIUS;
           memory->nameSeeds.push_back(std::move(seed));
+          ++memory->contentRevision;
           response = "System: You name this spot " + trimmed + ".\n";
           return ActionStatus::Done;
         }

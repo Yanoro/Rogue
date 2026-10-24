@@ -172,11 +172,11 @@ inline std::string Render(const SpatialMemory &memory,
     int distance = 0;
   };
   std::vector<Landmark> landmarks;
-  for (const KnownPlace &place : memory.places) {
+  for (const KnownPlace *place : PlaceQuery::ModelPlaces(memory, here)) {
     Landmark landmark;
-    landmark.place = &place;
+    landmark.place = place;
     landmark.distance = -1;
-    for (const std::uint64_t key : place.memberCells) {
+    for (const std::uint64_t key : place->memberCells) {
       if (visibleKeys.count(key) == 0) continue;
       const auto cell = memory.cells.find(key);
       if (cell == memory.cells.end()) continue;

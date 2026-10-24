@@ -677,8 +677,8 @@ is, and the examples stop being illustrative and become the acceptance artifact.
 
 ### 7.3 The dump
 
-One JSON file per character, under `logs/`, written on demand from the Memory tab:
-`logs/<run>-<name>-memory.json`. The repo has no test suite; its verification idiom is reading
+One JSON file per character, under `logs/<run-start>/npcs/<Agent>/`, written on demand from the
+Memory tab: `logs/<run-start>/npcs/<Agent>/<run-start>-<Agent>-memory.json`. The repo has no test suite; its verification idiom is reading
 transcripts (`docs/agent-attention-design.md` §12 uses exactly this discipline), and a JSON dump is
 diffable between runs in a way a window is not — which is what makes "did the walk fill the same cells
 twice" answerable.

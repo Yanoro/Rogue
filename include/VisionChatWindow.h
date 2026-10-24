@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <flecs.h>
-
 #include "AI.h"
 #include "Window.h"
 
@@ -31,8 +29,7 @@ public:
   // null pointer is a supported state (vision disabled in settings, or the
   // backend failed to construct) and is reported inside the window rather than
   // crashing.
-  VisionChatWindow(Game *game, AI *visionAI, const std::string &modelLabel,
-                   flecs::entity owner = flecs::entity::null());
+  VisionChatWindow(Game *game, AI *visionAI, const std::string &modelLabel);
 
   void Draw() override;
 
@@ -93,7 +90,6 @@ private:
   Game *game;
   AI *ai;
   std::string modelLabel;
-  flecs::entity owner;
 
   // Unique per instance, so this conversation never shares Ollama's server-side
   // context with another window or an NPC.

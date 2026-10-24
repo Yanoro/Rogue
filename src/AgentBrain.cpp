@@ -5,6 +5,7 @@
 #include "DebugLog.h"
 #include "Map.h"
 #include "PathFinding.h"
+#include "LogPaths.h"
 #include "StringUtils.hpp"
 #include "TradeGrammar.hpp"
 #include "Trading.h"
@@ -550,8 +551,11 @@ AgentBrain::AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLo
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
   entity.set_name(name.c_str());
 
-  std::filesystem::create_directories("logs");
-  logFilePath = "logs/" + TimeUtils::GetStartTimeString() + "-" + name + ".txt";
+  const std::string agentKey = LogPaths::AgentKey(name, entity.id());
+  logFilePath = LogPaths::NpcFile(
+                     name, entity.id(),
+                     TimeUtils::GetStartTimeString() + "-" + agentKey + ".txt")
+                     .string();
 }
 
 AgentBrain::~AgentBrain() {
@@ -605,8 +609,11 @@ void AgentBrain::ProbeMemorySalience() {
     state += RenderTaskDigest(*list, "");
   }
   state += "Places remembered:\n";
-  for (const KnownPlace &place : memory->places) {
-    state += "  - " + PlaceQuery::DisplayName(place) + "\n";
+  const GamePosition here = entity.has<GamePosition>()
+                                ? *entity.get<GamePosition>()
+                                : GamePosition{0, 0};
+  for (const KnownPlace *place : PlaceQuery::ModelPlaces(*memory, here)) {
+    state += "  - " + PlaceQuery::DisplayName(*place) + "\n";
   }
   for (const MemoryDigestEntry &entry : memory->digest.entries) {
     state += "  note: " + entry.text + "\n";
@@ -812,6 +819,18 @@ AI::StreamCallback AgentBrain::getStreamCallback() {
   return [this](const std::string &token) { appendContext("assistant", token); };
 }
 
+void AgentBrain::Pause() {
+  if (paused) {
+    return;
+  }
+  paused = true;
+  interruptCurrentAction();
+}
+
+void AgentBrain::Resume() {
+  paused = false;
+}
+
 void AgentBrain::interruptCurrentAction() {
   if (currentAction) {
     currentAction->handleInterruption(entity);
@@ -878,6 +897,12 @@ void AgentBrain::addCmdToQueue(ActionThunk actionThunk) {
 }
 
 void AgentBrain::update(float deltaTime) {
+  // A paused NPC keeps its action on the stack and its navigator episode intact;
+  // it takes no steps, starts no S1 ask and makes no strategist call until
+  // Resume. The action was interrupted when Pause was pressed.
+  if (paused) {
+    return;
+  }
   if (entity.get<AgentSleepTimer>()) {
     AgentSleepTimer *timer = entity.get_mut<AgentSleepTimer>();
     timer->time_remaining_ms -= deltaTime;

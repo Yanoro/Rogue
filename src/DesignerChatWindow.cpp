@@ -17,6 +17,7 @@
 #include "Components.h"
 #include "DebugLog.h"
 #include "Game.h"
+#include "LogPaths.h"
 #include "RewriteBriefs.hpp"
 #include "Settings.h"
 #include "SpriteDraw.hpp"
@@ -147,25 +148,24 @@ void DesignerChatWindow::Log(const std::string &text) {
   if (text.empty()) return;
 
   if (logFilePath.empty()) {
-    // logs/designer/, beside the NPC transcripts but in its own directory: the
-    // designer is not an NPC, and mixing its conversations in with the villagers'
-    // would make the folder harder to scan.
+    // <session>/designer/: the designer is not an NPC, and mixing its
+    // conversations in with the villagers' would make the folder harder to scan.
+    const std::filesystem::path directory = LogPaths::Subdir("designer");
     std::error_code ec;
-    std::filesystem::create_directories("logs/designer", ec);
-    if (ec) {
+    if (!std::filesystem::is_directory(directory, ec)) {
       // Not fatal: a session with nowhere to write still works, it is just not
       // recorded. Reported through the game's log so the absence is explicable.
       if (game != nullptr && game->debugLog) {
-        game->debugLog->LogWarning(
-            "Designer: could not create logs/designer: " + ec.message());
+        game->debugLog->LogWarning("Designer: could not create " +
+                                   directory.string() + ": " + ec.message());
       }
       // Marks the attempt as failed so every later call re-tries rather than
       // spinning on an empty path forever.
       logFilePath = " ";
       return;
     }
-    logFilePath = "logs/designer/" + TimeUtils::GetCurrentTimeString() +
-                  "-designer.txt";
+    logFilePath = (directory / (TimeUtils::GetCurrentTimeString() +
+                                "-designer.txt")).string();
   }
   if (logFilePath == " ") return;
 

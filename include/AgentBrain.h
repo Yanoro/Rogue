@@ -69,6 +69,14 @@ public:
   void update(float deltaTime);
   AgentAction* getCurrentAction() const { return currentAction.get(); }
 
+  // Temporarily suspend this NPC's brain/navigation. Pause interrupts the
+  // current action (cancelling an in-flight navigator S1/strategist call and
+  // parking the episode on the action stack); Resume lets the next update resume
+  // it. Only the paused NPC is affected.
+  void Pause();
+  void Resume();
+  bool IsPaused() const { return paused; }
+
   std::string getContext() const;
   // Add a message to the agent's context, continuing the current turn when the
   // previous message has the same role. Mirrored to the transcript log.
@@ -110,6 +118,7 @@ private:
   void logTaskTransitions();
 
   flecs::entity entity;
+  bool paused = false;
   std::unique_ptr<AgentAction> currentAction;
   std::vector<std::unique_ptr<AgentAction>> actionStack;
   std::deque<ActionThunk> action_queue;

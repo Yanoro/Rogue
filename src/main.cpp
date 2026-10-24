@@ -3,6 +3,7 @@
 #include "DebugLog.h"
 #include "Defaults.h"
 #include "Game.h"
+#include "LogPaths.h"
 #include "GapLog.h"
 #include "JevClassifier.h"
 #include "ObjectDesigner.hpp"
@@ -1192,7 +1193,7 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
 // knowable before the run -- so the test asks the filesystem afterwards rather than
 // predicting the name.
 std::string NewestTileDesignerLog() {
-  const std::filesystem::path directory("logs/tile-designer");
+  const std::filesystem::path directory = LogPaths::Subdir("tile-designer");
   std::error_code ec;
   if (!std::filesystem::is_directory(directory, ec)) return {};
 

@@ -7,6 +7,7 @@
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "GapLog.h"
+#include "LogPaths.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
@@ -51,6 +52,7 @@
 #include "raylib.h"
 #include <algorithm>
 #include <chrono>
+#include <sstream>
 #include <cmath>
 #include <functional>
 #include <iostream>
@@ -1161,6 +1163,9 @@ void Game::AttachPerception(flecs::entity entity) {
     seed.radius = authored.radius;
     memory->nameSeeds.push_back(std::move(seed));
   }
+  if (!memory->nameSeeds.empty()) {
+    ++memory->contentRevision;
+  }
 
   if (debugLog) {
     const std::string name = entity.name().c_str();
@@ -1282,8 +1287,10 @@ void Game::ECSInitMemorySystems() {
   // different jobs: the writer records what was seen, the deriver decides what it
   // belongs to. Keeping them apart is what lets the derivation be re-run, and
   // re-read, without re-observing anything.
-  ecs.system<SpatialMemory, const Vision>("SpatialMemoryPlaces")
-      .each([this](flecs::entity, SpatialMemory &memory, const Vision &vision) {
+  ecs.system<SpatialMemory, const Vision, const GamePosition>(
+         "SpatialMemoryPlaces")
+      .each([this](flecs::entity, SpatialMemory &memory, const Vision &vision,
+                   const GamePosition &position) {
         if (vision.lastSampleTick < 0) {
           return;
         }
@@ -1299,22 +1306,57 @@ void Game::ECSInitMemorySystems() {
           return;  // no taxonomy: places cannot form
         }
         const auto started = std::chrono::steady_clock::now();
-        Memory::DerivePlaces(memory, *resource->registry, vision.lastSampleTick);
+        Memory::DerivationProfile profile;
+        Memory::DerivePlaces(memory, *resource->registry,
+                             vision.lastSampleTick, &profile);
+        const auto afterPlaces = std::chrono::steady_clock::now();
+        if (Settings().regions.enabled) {
+          Memory::DeriveRegions(
+              memory, *resource->registry, position, vision.lastSampleTick,
+              Settings().regions.nearSize, Settings().regions.nearRadius,
+              Settings().regions.midSize, Settings().regions.midRadius,
+              Settings().regions.farSize, Settings().regions.farRadius,
+              Settings().regions.maxRegions, &profile);
+        }
+        const auto afterRegions = std::chrono::steady_clock::now();
         // Consolidation runs after derivation because a run is grouped by place:
         // it needs this sample's membership, not last sample's.
         Memory::Consolidate(memory, vision.lastSampleTick);
         // Reported only when it can be felt. This is the number to quote when a
         // frame-rate question turns into a guess: 16 ms is one frame at 60 Hz.
-        const double elapsed = std::chrono::duration<double, std::milli>(
-                                   std::chrono::steady_clock::now() - started)
-                                   .count();
-        if (elapsed > 8.0 && debugLog) {
-          debugLog->LogWarning("Spatial memory: sample pass took " +
-                               std::to_string(elapsed) + " ms (" +
-                               std::to_string(memory.cells.size()) + " cells, " +
-                               std::to_string(memory.places.size()) +
-                               " places, " + std::to_string(memory.runs.size()) +
-                               " runs)");
+        // The split says which pass to look at; the sub-splits say which step of
+        // that pass. Values are whole milliseconds.
+        const auto finished = std::chrono::steady_clock::now();
+        const auto ms = [](auto begin, auto end) {
+          return static_cast<int>(
+              std::chrono::duration<double, std::milli>(end - begin).count());
+        };
+        const int elapsed = ms(started, finished);
+        if (elapsed > 8 && debugLog) {
+          debugLog->LogWarning(
+              "Spatial memory: sample pass took " + std::to_string(elapsed) +
+              " ms (derivePlaces " + std::to_string(ms(started, afterPlaces)) +
+              " [seed " + std::to_string(static_cast<int>(profile.placesSeedMs)) + ", cluster " +
+              std::to_string(static_cast<int>(profile.placesClusterMs)) + " (union " +
+              std::to_string(static_cast<int>(profile.placesUnionMs)) + ", flood " +
+              std::to_string(static_cast<int>(profile.placesFloodMs)) + "), build " +
+              std::to_string(static_cast<int>(profile.placesBuildMs)) + ", aspects " +
+              std::to_string(static_cast<int>(profile.placesAspectsMs)) + ", facts " +
+              std::to_string(static_cast<int>(profile.placesFactsMs)) + "]; deriveRegions " +
+              std::to_string(ms(afterPlaces, afterRegions)) + " [cells " +
+              std::to_string(static_cast<int>(profile.regionsCellsMs)) + ", build " +
+              std::to_string(static_cast<int>(profile.regionsBuildMs)) + " (aspects " +
+              std::to_string(static_cast<int>(profile.regionsAspectsMs)) + ", facts " +
+              std::to_string(static_cast<int>(profile.regionsFactsMs)) + ", evict " +
+              std::to_string(static_cast<int>(profile.regionsEvictMs)) + "), " +
+              std::to_string(static_cast<int>(profile.regionsAspectRebuilds)) + "/" +
+              std::to_string(static_cast<int>(profile.regionsRefreshed)) +
+              " regions rebuilt]; consolidate " +
+              std::to_string(ms(afterRegions, finished)) + " ms; " +
+              std::to_string(memory.cells.size()) + " cells, " +
+              std::to_string(static_cast<int>(profile.placesSeeds)) + " seeds, " +
+              std::to_string(memory.places.size() + memory.regions.size()) +
+              " places, " + std::to_string(memory.runs.size()) + " runs)");
         }
       });
 }
@@ -1347,13 +1389,14 @@ void Game::DumpSpatialMemory(flecs::entity entity, bool includeCells) {
     }
   }
 
-  std::error_code error;
-  std::filesystem::create_directories("logs", error);
-
   // JSON, not prose: the window renders the same string, so the file you diff and
   // the record you inspected are the same artifact (section 7.3).
+  const std::string agentKey = LogPaths::AgentKey(name, entity.id());
   const std::string path =
-      "logs/" + TimeUtils::GetStartTimeString() + "-" + name + "-memory.json";
+      LogPaths::NpcFile(name, entity.id(),
+                        TimeUtils::GetStartTimeString() + "-" + agentKey +
+                            "-memory.json")
+          .string();
   std::ofstream out(path);
   if (!out.is_open()) {
     if (debugLog) debugLog->LogError("Spatial memory dump: cannot open " + path);
@@ -2538,7 +2581,12 @@ void Game::ECSInit() {
     .pattern = std::regex(R"(\[NAVIGATE\s+(.+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string goal = match[1].str();
-      return [goal](flecs::entity) { return std::make_unique<NavigateAction>(goal); };
+      return [goal](flecs::entity) -> std::unique_ptr<AgentAction> {
+        if (Settings().navigation.agent == "single") {
+          return std::make_unique<SingleNavigateAction>(goal);
+        }
+        return std::make_unique<NavigateAction>(goal);
+      };
     },
     .help = {
       .description = "Use this for high-level travel: when you know what you are looking for but not where it is or which direction to take -- finding a village, following a signpost's rumour to a distant place, or looking for somewhere quiet to sleep when nothing you remember obviously matches. A strategist plans from your observed surroundings and may take several seconds; a small pilot then picks the most likely next move, walks one leg, and decides again on arrival. The strategist also asks the pilot a few yes/no questions (a signpost, a junction, a dead end, water) and re-plans when one of them says the situation has changed. A move is either a direction within the place you are standing in (follow the road north, cross the orchard east) or a remembered place. The compass is what lets it keep following a road or leave it deliberately, instead of only jumping between remembered places. It is not for a target you can name that is itself the destination: use [MOVE_TO] for that. Local knowledge of the next few tiles -- a road or path you can see -- does not make the goal known; if the named target is only a step toward the goal, this is the verb. It stops when it judges that it has arrived, when the strategist gives up, when the strategist call budget is exhausted, or when a resource guard (the episode's wall clock or a stuck leg) is reached; a pilot that cannot decide or has no remembered move hands back to the strategist instead of ending the navigation. It then tells you where you are, what places are nearby, and the strategy it used. Both models only see your own memory, so either can be wrong.",

@@ -18,10 +18,104 @@
 
 namespace PlaceQuery {
 
+// Every remembered place: semantic places first, then base regions. The two
+// layers are stored separately because `DerivePlaces` rebuilds the semantic list;
+// queries that mean "anything the character knows as a place" use this view.
+inline std::vector<const KnownPlace *> AllPlaces(const SpatialMemory &memory) {
+  std::vector<const KnownPlace *> all;
+  all.reserve(memory.places.size() + memory.regions.size());
+  for (const KnownPlace &place : memory.places) {
+    all.push_back(&place);
+  }
+  for (const KnownPlace &region : memory.regions) {
+    all.push_back(&region);
+  }
+  return all;
+}
+
+inline const KnownPlace *At(const SpatialMemory &memory, GamePosition cell);
+inline const KnownPlace *RegionAt(const SpatialMemory &memory, GamePosition cell);
+
+// The model-facing view: all semantic places, the current region, and the nearest
+// `maxNearRegions` base regions. A coarser parent is omitted when a finer selected
+// region is already contained in it, so the capture does not show R16 and its four
+// R8 children as five competing places. The current region is always included.
+inline std::vector<const KnownPlace *> ModelPlaces(
+    const SpatialMemory &memory, GamePosition here,
+    int maxNearRegions = DEFAULT_REGION_MODEL_NEAR_COUNT) {
+  std::vector<const KnownPlace *> out;
+  out.reserve(memory.places.size() + 1 +
+              static_cast<std::size_t>(std::max(0, maxNearRegions)));
+  for (const KnownPlace &place : memory.places) {
+    out.push_back(&place);
+  }
+
+  const KnownPlace *currentRegion = RegionAt(memory, here);
+  std::vector<const KnownPlace *> selected;
+  const auto addRegion = [&out, &selected](const KnownPlace *region) {
+    if (region == nullptr) return;
+    out.push_back(region);
+    selected.push_back(region);
+  };
+  addRegion(currentRegion);
+
+  const auto contained = [](const KnownPlace *child,
+                            const KnownPlace *parent) {
+    if (child == parent || child->regionLevel < 0 ||
+        parent->regionLevel < 0 ||
+        child->regionLevel >= parent->regionLevel) {
+      return false;
+    }
+    for (const std::uint64_t key : child->memberCells) {
+      if (std::find(parent->memberCells.begin(), parent->memberCells.end(),
+                    key) == parent->memberCells.end()) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  std::vector<const KnownPlace *> regions;
+  regions.reserve(memory.regions.size());
+  for (const KnownPlace &region : memory.regions) {
+    if (&region == currentRegion) continue;
+    regions.push_back(&region);
+  }
+  std::stable_sort(regions.begin(), regions.end(),
+                   [&](const KnownPlace *a, const KnownPlace *b) {
+                     const int da = std::max(
+                         std::abs(a->anchor.x + a->width / 2 - here.x),
+                         std::abs(a->anchor.y + a->height / 2 - here.y));
+                     const int db = std::max(
+                         std::abs(b->anchor.x + b->width / 2 - here.x),
+                         std::abs(b->anchor.y + b->height / 2 - here.y));
+                     return da < db;
+                   });
+
+  const int limit = std::max(0, maxNearRegions);
+  for (const KnownPlace *region : regions) {
+    if (static_cast<int>(selected.size()) >= limit) break;
+    bool covered = false;
+    for (const KnownPlace *chosen : selected) {
+      if (contained(chosen, region)) {
+        covered = true;
+        break;
+      }
+    }
+    if (covered) continue;
+    addRegion(region);
+  }
+  return out;
+}
+
 // The place whose claimed ground covers a cell. The smallest extent wins, because
 // a named yard inside a bigger claimed area is the more specific answer.
 inline const KnownPlace *At(const SpatialMemory &memory, GamePosition cell) {
   const std::uint64_t key = VisionQuery::CellKey(cell);
+  // A semantic place underfoot wins even when it is larger than a base region:
+  // inside a village, the village is the current place, not the 8x8 region that
+  // happens to be smaller. The smallest semantic place wins among semantic
+  // places; the region is the fallback when there is no semantic place at all.
   const KnownPlace *best = nullptr;
   for (const KnownPlace &place : memory.places) {
     if (std::find(place.memberCells.begin(), place.memberCells.end(), key) ==
@@ -32,13 +126,33 @@ inline const KnownPlace *At(const SpatialMemory &memory, GamePosition cell) {
       best = &place;
     }
   }
+  if (best != nullptr) {
+    return best;
+  }
+  return RegionAt(memory, cell);
+}
+
+inline const KnownPlace *RegionAt(const SpatialMemory &memory,
+                                  GamePosition cell) {
+  const std::uint64_t key = VisionQuery::CellKey(cell);
+  const KnownPlace *best = nullptr;
+  for (const KnownPlace &region : memory.regions) {
+    if (std::find(region.memberCells.begin(), region.memberCells.end(), key) ==
+        region.memberCells.end()) {
+      continue;
+    }
+    if (best == nullptr ||
+        region.memberCells.size() < best->memberCells.size()) {
+      best = &region;
+    }
+  }
   return best;
 }
 
 inline const KnownPlace *ById(const SpatialMemory &memory, int id) {
-  for (const KnownPlace &place : memory.places) {
-    if (place.id == id) {
-      return &place;
+  for (const KnownPlace *place : AllPlaces(memory)) {
+    if (place->id == id) {
+      return place;
     }
   }
   return nullptr;
@@ -48,10 +162,10 @@ inline const KnownPlace *ById(const SpatialMemory &memory, int id) {
 // "the orchard" finds a region called "The Orchard" and "Market Square".
 inline const KnownPlace *ByLabel(const SpatialMemory &memory,
                                  const std::string &label) {
-  for (const KnownPlace &place : memory.places) {
-    for (const std::string &name : place.labels) {
+  for (const KnownPlace *place : AllPlaces(memory)) {
+    for (const std::string &name : place->labels) {
       if (StringUtils::EqualsIgnoreCase(name, label)) {
-        return &place;
+        return place;
       }
     }
   }
@@ -210,12 +324,12 @@ struct PlaceLine {
 inline std::vector<PlaceLine> SortedPlaces(const SpatialMemory &memory,
                                            GamePosition here) {
   std::vector<PlaceLine> lines;
-  lines.reserve(memory.places.size());
-  for (const KnownPlace &place : memory.places) {
+  lines.reserve(memory.places.size() + memory.regions.size());
+  for (const KnownPlace *place : AllPlaces(memory)) {
     PlaceLine line;
-    line.place = &place;
-    line.centre = {place.anchor.x + place.width / 2,
-                   place.anchor.y + place.height / 2};
+    line.place = place;
+    line.centre = {place->anchor.x + place->width / 2,
+                   place->anchor.y + place->height / 2};
     line.distance = std::max(std::abs(line.centre.x - here.x),
                              std::abs(line.centre.y - here.y));
     lines.push_back(line);

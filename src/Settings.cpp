@@ -409,6 +409,36 @@ bool LoadGameSettings(const std::string &path) {
       nav.minProbability =
           navigation.value("minProbability", nav.minProbability);
       nav.minMargin = navigation.value("minMargin", nav.minMargin);
+      nav.mapMode = ToLower(navigation.value("mapMode", nav.mapMode));
+      nav.mapRadius = navigation.value("mapRadius", nav.mapRadius);
+      nav.examineRadius =
+          navigation.value("examineRadius", nav.examineRadius);
+      nav.maxExamine = navigation.value("maxExamine", nav.maxExamine);
+      if (nav.mapMode != "off" && nav.mapMode != "append" &&
+          nav.mapMode != "replace") {
+        std::cerr << "Settings: system1.navigation.mapMode must be off, append "
+                     "or replace; using off."
+                  << std::endl;
+        nav.mapMode = "off";
+      }
+      if (nav.mapRadius < 3 || nav.mapRadius > 12) {
+        std::cerr << "Settings: system1.navigation.mapRadius must be 3..12; "
+                     "using 6."
+                  << std::endl;
+        nav.mapRadius = 6;
+      }
+      if (nav.examineRadius < 1 || nav.examineRadius > 64) {
+        std::cerr << "Settings: system1.navigation.examineRadius must be "
+                     "1..64; using 22."
+                  << std::endl;
+        nav.examineRadius = static_cast<int>(DEFAULT_VISION_RANGE);
+      }
+      if (nav.maxExamine < 0 || nav.maxExamine > 12) {
+        std::cerr << "Settings: system1.navigation.maxExamine must be 0..12; "
+                     "using 2."
+                  << std::endl;
+        nav.maxExamine = 2;
+      }
       if (nav.maxCandidates < 1) {
         std::cerr << "Settings: system1.navigation.maxCandidates must be at "
                      "least 1; using 1."
@@ -613,6 +643,73 @@ bool LoadGameSettings(const std::string &path) {
       settings.perception.radarRadius = DEFAULT_VISION_RADAR_RADIUS;
     }
 
+    const nlohmann::json &regions = Section(root, "regions");
+    settings.regions.enabled =
+        regions.value("enabled", settings.regions.enabled);
+    settings.regions.nearSize =
+        regions.value("nearSize", settings.regions.nearSize);
+    settings.regions.nearRadius =
+        regions.value("nearRadius", settings.regions.nearRadius);
+    settings.regions.midSize =
+        regions.value("midSize", settings.regions.midSize);
+    settings.regions.midRadius =
+        regions.value("midRadius", settings.regions.midRadius);
+    settings.regions.farSize =
+        regions.value("farSize", settings.regions.farSize);
+    settings.regions.farRadius =
+        regions.value("farRadius", settings.regions.farRadius);
+    settings.regions.maxRegions =
+        regions.value("maxRegions", settings.regions.maxRegions);
+    settings.regions.modelNearCount =
+        regions.value("modelNearCount", settings.regions.modelNearCount);
+    if (settings.regions.nearSize < 1 || settings.regions.nearSize > 64) {
+      std::cerr << "Settings: regions.nearSize must be 1..64; using "
+                << DEFAULT_REGION_NEAR_SIZE << "." << std::endl;
+      settings.regions.nearSize = DEFAULT_REGION_NEAR_SIZE;
+    }
+    if (settings.regions.nearRadius < 0 || settings.regions.nearRadius > 40) {
+      std::cerr << "Settings: regions.nearRadius must be 0..40; using "
+                << DEFAULT_REGION_NEAR_RADIUS << "." << std::endl;
+      settings.regions.nearRadius = DEFAULT_REGION_NEAR_RADIUS;
+    }
+    if (settings.regions.midSize < 1 || settings.regions.midSize > 128) {
+      std::cerr << "Settings: regions.midSize must be 1..128; using "
+                << DEFAULT_REGION_MID_SIZE << "." << std::endl;
+      settings.regions.midSize = DEFAULT_REGION_MID_SIZE;
+    }
+    if (settings.regions.midRadius < 0 || settings.regions.midRadius > 80) {
+      std::cerr << "Settings: regions.midRadius must be 0..80; using "
+                << DEFAULT_REGION_MID_RADIUS << "." << std::endl;
+      settings.regions.midRadius = DEFAULT_REGION_MID_RADIUS;
+    }
+    if (settings.regions.farSize < 1 || settings.regions.farSize > 256) {
+      std::cerr << "Settings: regions.farSize must be 1..256; using "
+                << DEFAULT_REGION_FAR_SIZE << "." << std::endl;
+      settings.regions.farSize = DEFAULT_REGION_FAR_SIZE;
+    }
+    if (settings.regions.farRadius < 1 || settings.regions.farRadius > 512) {
+      std::cerr << "Settings: regions.farRadius must be 1..512; using "
+                << DEFAULT_REGION_FAR_RADIUS << "." << std::endl;
+      settings.regions.farRadius = DEFAULT_REGION_FAR_RADIUS;
+    }
+    if (settings.regions.farRadius < settings.regions.midRadius) {
+      std::cerr << "Settings: regions.farRadius must be at least midRadius; "
+                   "using midRadius."
+                << std::endl;
+      settings.regions.farRadius = settings.regions.midRadius;
+    }
+    if (settings.regions.maxRegions < 0 || settings.regions.maxRegions > 512) {
+      std::cerr << "Settings: regions.maxRegions must be 0..512; using "
+                << DEFAULT_MEMORY_REGIONS_MAX << "." << std::endl;
+      settings.regions.maxRegions = DEFAULT_MEMORY_REGIONS_MAX;
+    }
+    if (settings.regions.modelNearCount < 0 ||
+        settings.regions.modelNearCount > 32) {
+      std::cerr << "Settings: regions.modelNearCount must be 0..32; using "
+                << DEFAULT_REGION_MODEL_NEAR_COUNT << "." << std::endl;
+      settings.regions.modelNearCount = DEFAULT_REGION_MODEL_NEAR_COUNT;
+    }
+
     const nlohmann::json &player = Section(root, "player");
     settings.player.name = player.value("name", settings.player.name);
     settings.player.startX = player.value("startX", settings.player.startX);
@@ -702,11 +799,76 @@ bool LoadGameSettings(const std::string &path) {
     // bounds on the outer navigation layer.
     {
       const nlohmann::json &navigationRoot = Section(root, "navigation");
+      auto &agent = settings.navigation.agent;
+      agent = ToLower(navigationRoot.value("agent", agent));
+      if (agent != "single" && agent != "two") {
+        std::cerr << "Settings: navigation.agent must be single or two; "
+                     "using single."
+                  << std::endl;
+        agent = "single";
+      }
+      const nlohmann::json &single = Section(navigationRoot, "single");
+      settings.navigation.single.maxTokens =
+          single.value("maxTokens", settings.navigation.single.maxTokens);
+      settings.navigation.single.timeoutSeconds = single.value(
+          "timeoutSeconds", settings.navigation.single.timeoutSeconds);
+      settings.navigation.single.fallbackToTwo = single.value(
+          "fallbackToTwo", settings.navigation.single.fallbackToTwo);
+      settings.navigation.single.mapRadius = single.value(
+          "mapRadius", settings.navigation.single.mapRadius);
+      settings.navigation.single.maxAttempts = single.value(
+          "maxAttempts", settings.navigation.single.maxAttempts);
+      settings.navigation.single.maxDirections = single.value(
+          "maxDirections", settings.navigation.single.maxDirections);
+      settings.navigation.single.maxCandidates = single.value(
+          "maxCandidates", settings.navigation.single.maxCandidates);
+      if (settings.navigation.single.maxTokens < 64 ||
+          settings.navigation.single.maxTokens > 8192) {
+        std::cerr << "Settings: navigation.single.maxTokens must be 64..8192; "
+                     "using 500."
+                  << std::endl;
+        settings.navigation.single.maxTokens = 500;
+      }
+      if (settings.navigation.single.timeoutSeconds < 1.0f) {
+        std::cerr << "Settings: navigation.single.timeoutSeconds must be at "
+                     "least 1; using 60."
+                  << std::endl;
+        settings.navigation.single.timeoutSeconds = 60.0f;
+      }
+      if (settings.navigation.single.mapRadius < 3 ||
+          settings.navigation.single.mapRadius > 12) {
+        std::cerr << "Settings: navigation.single.mapRadius must be 3..12; "
+                     "using 6."
+                  << std::endl;
+        settings.navigation.single.mapRadius = 6;
+      }
+      if (settings.navigation.single.maxAttempts < 1 ||
+          settings.navigation.single.maxAttempts > 8) {
+        std::cerr << "Settings: navigation.single.maxAttempts must be 1..8; "
+                     "using 3."
+                  << std::endl;
+        settings.navigation.single.maxAttempts = 3;
+      }
+      if (settings.navigation.single.maxDirections < 1 ||
+          settings.navigation.single.maxDirections > 8) {
+        std::cerr << "Settings: navigation.single.maxDirections must be 1..8; "
+                     "using 8."
+                  << std::endl;
+        settings.navigation.single.maxDirections = 8;
+      }
+      if (settings.navigation.single.maxCandidates < 1 ||
+          settings.navigation.single.maxCandidates > 32) {
+        std::cerr << "Settings: navigation.single.maxCandidates must be "
+                     "1..32; using 12."
+                  << std::endl;
+        settings.navigation.single.maxCandidates = 12;
+      }
       const nlohmann::json &strategist = Section(navigationRoot, "strategist");
       auto &s = settings.navigation.strategist;
       s.enabled = strategist.value("enabled", s.enabled);
       s.fallbackToS1 = strategist.value("fallbackToS1", s.fallbackToS1);
       s.maxStrategies = strategist.value("maxStrategies", s.maxStrategies);
+      s.maxAttempts = strategist.value("maxAttempts", s.maxAttempts);
       s.maxMonitors = strategist.value("maxMonitors", s.maxMonitors);
       s.monitorMinConfidence =
           strategist.value("monitorMinConfidence", s.monitorMinConfidence);
@@ -726,6 +888,12 @@ bool LoadGameSettings(const std::string &path) {
                      "least 1; using 1."
                   << std::endl;
         s.maxStrategies = 1;
+      }
+      if (s.maxAttempts < 1) {
+        std::cerr << "Settings: navigation.strategist.maxAttempts must be at "
+                     "least 1; using 1."
+                  << std::endl;
+        s.maxAttempts = 1;
       }
       if (s.maxMonitors < 0) {
         std::cerr << "Settings: navigation.strategist.maxMonitors cannot be "

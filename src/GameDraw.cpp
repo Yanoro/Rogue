@@ -110,8 +110,24 @@ void Game::DrawGameWindows() {
 
 void Game::Draw() {
   if (cameraMode == GameCameraMode::FollowMode) {
-    const ScreenPosition *playerPos = playerEntity.get<ScreenPosition>();
-    camera.target = {playerPos->x, playerPos->y};
+    // The NPC Menu can retarget the follow camera at a character. A target that no
+    // longer resolves -- the NPC died, or a map reload replaced it -- is cleared,
+    // and the player gets the camera back rather than the id being silently kept.
+    const ScreenPosition *followedPos = nullptr;
+    if (cameraFollowEntity != 0) {
+      const flecs::entity followed = ecs.entity(cameraFollowEntity);
+      if (followed.is_alive()) {
+        followedPos = followed.get<ScreenPosition>();
+      } else {
+        cameraFollowEntity = 0;
+      }
+    }
+    if (followedPos == nullptr) {
+      followedPos = playerEntity.get<ScreenPosition>();
+    }
+    if (followedPos != nullptr) {
+      camera.target = {followedPos->x, followedPos->y};
+    }
   }
 
   float targetWidth = static_cast<float>(gameTexture.texture.width);
@@ -246,7 +262,8 @@ void Game::Draw() {
     if (overlayEntity.is_alive() &&
         placeOverlayCharacters.count(overlayEntity.id()) != 0) {
       if (const SpatialMemory *memory = overlayEntity.get<SpatialMemory>()) {
-        for (const KnownPlace &place : memory->places) {
+        for (const KnownPlace *placePtr : PlaceQuery::AllPlaces(*memory)) {
+          const KnownPlace &place = *placePtr;
           const Color placeColor = Memory::PlaceColor(place.id);
 
           for (const std::uint64_t key : place.memberCells) {

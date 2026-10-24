@@ -3,6 +3,7 @@
 #include "Components.h"
 #include "Settings.h"
 
+#include "AgentBrain.h"
 #include "imgui.h"
 
 #include <algorithm>
@@ -83,6 +84,7 @@ struct GraphNodeView {
   float x = 0.0f;
   float y = 0.0f;
   bool visited = false;
+  int regionLevel = -1;
 };
 
 // The direction strings the graph uses ("north", "south-east", ...), turned into
@@ -101,11 +103,70 @@ ImVec2 DirectionVector(const std::string &direction) {
   return d;
 }
 
+void IncludeGraphBounds(const nlohmann::json &graph, GraphBounds &bounds) {
+  if (!graph.is_object() || !graph.contains("nodes") ||
+      !graph["nodes"].is_array()) {
+    return;
+  }
+  for (const nlohmann::json &jsonNode : graph["nodes"]) {
+    if (!jsonNode.is_object()) continue;
+    const nlohmann::json *position = nullptr;
+    if (jsonNode.contains("anchor") && jsonNode["anchor"].is_array() &&
+        jsonNode["anchor"].size() >= 2) {
+      position = &jsonNode["anchor"];
+    } else if (jsonNode.contains("cell") && jsonNode["cell"].is_array() &&
+               jsonNode["cell"].size() >= 2) {
+      position = &jsonNode["cell"];
+    }
+    if (position == nullptr) continue;
+    const float x = (*position)[0].get<float>();
+    const float y = (*position)[1].get<float>();
+    if (!bounds.valid) {
+      bounds.valid = true;
+      bounds.minX = bounds.maxX = x;
+      bounds.minY = bounds.maxY = y;
+      continue;
+    }
+    bounds.minX = std::min(bounds.minX, x);
+    bounds.maxX = std::max(bounds.maxX, x);
+    bounds.minY = std::min(bounds.minY, y);
+    bounds.maxY = std::max(bounds.maxY, y);
+  }
+}
+
+GraphBounds CollectGraphBounds(const NavigationDebugState &state) {
+  GraphBounds bounds;
+  for (const NavigationDebugStrategistThought &thought :
+       state.strategistThoughts) {
+    if (thought.graphJson.empty()) continue;
+    const nlohmann::json graph =
+        nlohmann::json::parse(thought.graphJson, nullptr, false);
+    IncludeGraphBounds(graph, bounds);
+  }
+  // The latest observation may include the current call's graph before/after
+  // the thought record; include it so the live view shares the same frame.
+  const nlohmann::json observation =
+      nlohmann::json::parse(state.strategistObservation, nullptr, false);
+  if (!observation.is_discarded() && observation.contains("graph")) {
+    IncludeGraphBounds(observation["graph"], bounds);
+  }
+  return bounds;
+}
+
 // A spatial drawing of the strategist's observed place/object graph. Nodes are
 // at their observed world positions, so the picture is the world the agent has
 // built, not a force-directed abstraction of it.
-void DrawLocationGraph(const std::string &graphJson, float height) {
+void DrawLocationGraph(const std::string &graphJson, float height,
+                       bool &hideObjects, bool &hideNames,
+                       const GraphBounds &sharedBounds) {
   ImGui::SeparatorText("Agent location graph");
+  ImGui::Checkbox("Hide objects", &hideObjects);
+  ImGui::SameLine();
+  ImGui::Checkbox("Hide names", &hideNames);
+  if (hideNames) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(hover a node for its name)");
+  }
   if (graphJson.empty()) {
     ImGui::TextDisabled("(no graph snapshot for this call)");
     return;
@@ -135,12 +196,14 @@ void DrawLocationGraph(const std::string &graphJson, float height) {
     node.key = jsonNode.value("key", std::string());
     node.kind = jsonNode.value("kind", std::string("place"));
     node.visited = jsonNode.value("visited", false);
+    node.regionLevel = jsonNode.value("regionLevel", -1);
     node.x = (*position)[0].get<float>();
     node.y = (*position)[1].get<float>();
     node.label = jsonNode.value("label", std::string());
     if (node.label.empty()) node.label = jsonNode.value("name", std::string());
     if (node.label.empty()) node.label = jsonNode.value("category", std::string());
     if (node.label.empty()) node.label = node.key;
+    if (hideObjects && node.kind == "object") continue;
     nodes.push_back(std::move(node));
   }
   if (nodes.empty()) {
@@ -174,15 +237,17 @@ void DrawLocationGraph(const std::string &graphJson, float height) {
     }
   }
 
-  float minX = nodes[0].x;
-  float maxX = nodes[0].x;
-  float minY = nodes[0].y;
-  float maxY = nodes[0].y;
-  for (const GraphNodeView &node : nodes) {
-    minX = std::min(minX, node.x);
-    maxX = std::max(maxX, node.x);
-    minY = std::min(minY, node.y);
-    maxY = std::max(maxY, node.y);
+  float minX = sharedBounds.valid ? sharedBounds.minX : nodes[0].x;
+  float maxX = sharedBounds.valid ? sharedBounds.maxX : nodes[0].x;
+  float minY = sharedBounds.valid ? sharedBounds.minY : nodes[0].y;
+  float maxY = sharedBounds.valid ? sharedBounds.maxY : nodes[0].y;
+  if (!sharedBounds.valid) {
+    for (const GraphNodeView &node : nodes) {
+      minX = std::min(minX, node.x);
+      maxX = std::max(maxX, node.x);
+      minY = std::min(minY, node.y);
+      maxY = std::max(maxY, node.y);
+    }
   }
 
   ImGui::BeginChild("NavigationLocationGraph", ImVec2(0.0f, height),
@@ -237,6 +302,16 @@ void DrawLocationGraph(const std::string &graphJson, float height) {
     }
   }
 
+  const auto nodeLabel = [](const GraphNodeView &node) {
+    std::string label = node.label;
+    if (node.regionLevel >= 0) {
+      label += node.regionLevel == 0   ? " [R8]"
+               : node.regionLevel == 1 ? " [R16]"
+                                       : " [R32]";
+    }
+    return label;
+  };
+
   for (const GraphNodeView &node : nodes) {
     const ImVec2 centre = screen(node.x, node.y);
     const bool isCurrent = node.key == currentKey;
@@ -261,14 +336,37 @@ void DrawLocationGraph(const std::string &graphJson, float height) {
       draw->AddCircle(centre, radius + 4.0f, IM_COL32(90, 240, 150, 255), 0,
                       2.0f);
     }
-    std::string label = node.label;
-    constexpr std::size_t kMaxLabel = 30;
-    if (label.size() > kMaxLabel) label = label.substr(0, kMaxLabel) + "...";
-    draw->AddText(ImVec2(centre.x + radius + 4.0f, centre.y - 6.0f),
-                  IM_COL32(225, 230, 238, 235), label.c_str());
-    if (isCurrent) {
-      draw->AddText(ImVec2(centre.x + radius + 4.0f, centre.y + 8.0f),
-                    IM_COL32(90, 240, 150, 235), "you are here");
+    if (!hideNames) {
+      std::string label = nodeLabel(node);
+      constexpr std::size_t kMaxLabel = 34;
+      if (label.size() > kMaxLabel) label = label.substr(0, kMaxLabel) + "...";
+      draw->AddText(ImVec2(centre.x + radius + 4.0f, centre.y - 6.0f),
+                    IM_COL32(225, 230, 238, 235), label.c_str());
+      if (isCurrent) {
+        draw->AddText(ImVec2(centre.x + radius + 4.0f, centre.y + 8.0f),
+                      IM_COL32(90, 240, 150, 235), "you are here");
+      }
+    }
+  }
+
+  if (hideNames && ImGui::IsWindowHovered()) {
+    const ImVec2 mouse = ImGui::GetMousePos();
+    const GraphNodeView *hovered = nullptr;
+    float bestDistance = 1.0e9f;
+    for (const GraphNodeView &node : nodes) {
+      const ImVec2 centre = screen(node.x, node.y);
+      const float radius = node.key == currentKey ? 9.0f : 6.0f;
+      const float dx = mouse.x - centre.x;
+      const float dy = mouse.y - centre.y;
+      const float distance = dx * dx + dy * dy;
+      const float reach = radius + 4.0f;
+      if (distance <= reach * reach && distance < bestDistance) {
+        bestDistance = distance;
+        hovered = &node;
+      }
+    }
+    if (hovered != nullptr) {
+      ImGui::SetTooltip("%s", nodeLabel(*hovered).c_str());
     }
   }
 
@@ -281,6 +379,92 @@ void DrawLocationGraph(const std::string &graphJson, float height) {
   ImGui::TextDisabled(
       "green = current; yellow ring/tick = frontier; blue = visited place; "
       "orange = object; red ring = dead end; cyan edge = walked.");
+}
+
+void DrawS1ResponsesSection(
+    const NavigationDebugState &state,
+    const NavigationDebugStrategistThought *selectedCall) {
+  ImGui::SeparatorText("S1 responses");
+
+  std::vector<const NavigationDebugS1Response *> responses;
+  if (selectedCall != nullptr) {
+    responses.reserve(selectedCall->s1Responses.size());
+    for (auto it = selectedCall->s1Responses.rbegin();
+         it != selectedCall->s1Responses.rend(); ++it) {
+      responses.push_back(&*it);
+    }
+    ImGui::TextDisabled("Answers that followed Call %d.", selectedCall->index);
+  } else {
+    responses.reserve(state.s1Responses.size());
+    for (auto it = state.s1Responses.rbegin();
+         it != state.s1Responses.rend(); ++it) {
+      responses.push_back(&*it);
+    }
+    ImGui::TextDisabled("Recent S1 answers (no strategist call selected).");
+  }
+
+  if (responses.empty()) {
+    ImGui::TextDisabled(selectedCall != nullptr
+                            ? "(no S1 answers for this call)"
+                            : "(no S1 answers yet)");
+    return;
+  }
+
+  if (ImGui::BeginTable("NavigationS1Responses", 8,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                            ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                            ImGuiTableFlags_SizingStretchProp,
+                        ImVec2(0.0f, 190.0f))) {
+    ImGui::TableSetupColumn("Decision", ImGuiTableColumnFlags_WidthFixed,
+                            65.0f);
+    ImGui::TableSetupColumn("Next", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+    ImGui::TableSetupColumn("Outcome", ImGuiTableColumnFlags_WidthFixed,
+                            70.0f);
+    ImGui::TableSetupColumn("p", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+    ImGui::TableSetupColumn("Margin", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+    ImGui::TableSetupColumn("Monitors");
+    ImGui::TableSetupColumn("Handoff");
+    ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+    ImGui::TableHeadersRow();
+    for (const NavigationDebugS1Response *response : responses) {
+      ImGui::TableNextRow();
+      ImGui::TableNextColumn();
+      ImGui::Text("%d", response->decision);
+      ImGui::TableNextColumn();
+      ImGui::TextUnformatted(response->choice.c_str());
+      ImGui::TableNextColumn();
+      ImGui::TextUnformatted(response->outcome.c_str());
+      ImGui::TableNextColumn();
+      ImGui::Text("%.2f", static_cast<double>(response->probability));
+      ImGui::TableNextColumn();
+      ImGui::Text("%.2f", static_cast<double>(response->margin));
+      ImGui::TableNextColumn();
+      const std::string monitors = MonitorSummary(*response);
+      ImGui::TextWrapped("%s", monitors.empty() ? "-" : monitors.c_str());
+      ImGui::TableNextColumn();
+      if (!response->ok) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "error");
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("%s", response->error.c_str());
+        }
+      } else if (response->handoff.empty()) {
+        ImGui::TextDisabled("-");
+      } else {
+        ImGui::TextWrapped("%s", response->handoff.c_str());
+      }
+      ImGui::TableNextColumn();
+      if (response->latencyMs >= 0) {
+        ImGui::Text("%lld", response->latencyMs);
+        if (ImGui::IsItemHovered()) {
+          ImGui::SetTooltip("prompt %d, output %d tokens",
+                            response->promptTokens, response->outputTokens);
+        }
+      } else {
+        ImGui::TextDisabled("-");
+      }
+    }
+    ImGui::EndTable();
+  }
 }
 
 }  // namespace
@@ -336,6 +520,34 @@ void NavigationDebugWindow::Draw() {
   const GameSettings::SystemOneNavigationSection &nav = settings.system1.navigation;
   const GameSettings::NavigationStrategistSection &strategist =
       settings.navigation.strategist;
+
+  // Pause/Resume is per NPC. It interrupts the current navigation action
+  // (cancelling its in-flight S1/strategist call) and parks it on the brain's
+  // action stack; Resume continues the same episode.
+  AgentBrain *brain = nullptr;
+  if (AgentBrainWrapper *wrapper = npc.get_mut<AgentBrainWrapper>()) {
+    brain = wrapper->agBrain.get();
+  }
+  const bool paused = brain != nullptr && brain->IsPaused();
+  const bool canPause = brain != nullptr && (state->active || paused);
+  if (canPause) {
+    if (ImGui::Button(paused ? "Resume navigator" : "Pause navigator")) {
+      if (paused) {
+        brain->Resume();
+      } else {
+        brain->Pause();
+      }
+    }
+    if (paused) {
+      ImGui::SameLine();
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "PAUSED");
+    }
+  } else {
+    ImGui::BeginDisabled();
+    ImGui::Button("Pause navigator");
+    ImGui::EndDisabled();
+  }
+  ImGui::SameLine();
 
   // ── Status ───────────────────────────────────────────────────────────────
   if (state->active) {
@@ -428,7 +640,12 @@ void NavigationDebugWindow::Draw() {
           graphJson = observation["graph"].dump();
         }
       }
-      DrawLocationGraph(graphJson, 300.0f);
+      if (state->snapshotVersion != cachedGraphBoundsVersion) {
+        cachedGraphBounds = CollectGraphBounds(*state);
+        cachedGraphBoundsVersion = state->snapshotVersion;
+      }
+      DrawLocationGraph(graphJson, 300.0f, hideGraphObjects, hideGraphNames,
+                        cachedGraphBounds);
 
       ImGui::SeparatorText("Navigator thoughts");
       if (state->strategistThoughts.empty()) {
@@ -490,6 +707,8 @@ void NavigationDebugWindow::Draw() {
           }
         }
       }
+
+      DrawS1ResponsesSection(*state, selectedCall);
 
       ImGui::SeparatorText("Monitors");
       if (monitors.empty()) {
@@ -572,80 +791,6 @@ void NavigationDebugWindow::Draw() {
     // ── Pilot ──────────────────────────────────────────────────────────────
     if (ImGui::BeginTabItem("Pilot")) {
       DrawTextBlock("Pilot state (exact S1 input)", state->pilotState, 460.0f);
-      ImGui::EndTabItem();
-    }
-
-    // ── S1 responses ──────────────────────────────────────────────────────
-    if (ImGui::BeginTabItem("S1 Responses")) {
-      ImGui::TextDisabled(
-          "Compact answers, newest first. p/conf is the monitor probability and "
-          "confidence (2*|p-0.5|); ! means it triggered a handoff.");
-
-      if (state->s1Responses.empty()) {
-        ImGui::TextDisabled("(no S1 answers yet)");
-      } else {
-        const int count = static_cast<int>(state->s1Responses.size());
-        if (ImGui::BeginTable("NavigationS1Responses", 8,
-                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-                                  ImGuiTableFlags_ScrollX |
-                                  ImGuiTableFlags_SizingStretchProp,
-                              ImVec2(0.0f, 190.0f))) {
-          ImGui::TableSetupColumn("Decision", ImGuiTableColumnFlags_WidthFixed,
-                                  65.0f);
-          ImGui::TableSetupColumn("Next", ImGuiTableColumnFlags_WidthFixed,
-                                  110.0f);
-          ImGui::TableSetupColumn("Outcome", ImGuiTableColumnFlags_WidthFixed,
-                                  70.0f);
-          ImGui::TableSetupColumn("p", ImGuiTableColumnFlags_WidthFixed, 50.0f);
-          ImGui::TableSetupColumn("Margin", ImGuiTableColumnFlags_WidthFixed,
-                                  60.0f);
-          ImGui::TableSetupColumn("Monitors");
-          ImGui::TableSetupColumn("Handoff");
-          ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, 50.0f);
-          ImGui::TableHeadersRow();
-          for (int i = count - 1; i >= 0; --i) {
-            const NavigationDebugS1Response &response = state->s1Responses[i];
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::Text("%d", response.decision);
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(response.choice.c_str());
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(response.outcome.c_str());
-            ImGui::TableNextColumn();
-            ImGui::Text("%.2f", static_cast<double>(response.probability));
-            ImGui::TableNextColumn();
-            ImGui::Text("%.2f", static_cast<double>(response.margin));
-            ImGui::TableNextColumn();
-            const std::string monitors = MonitorSummary(response);
-            ImGui::TextWrapped("%s", monitors.empty() ? "-" : monitors.c_str());
-            ImGui::TableNextColumn();
-            if (!response.ok) {
-              ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "error");
-              if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s", response.error.c_str());
-              }
-            } else if (response.handoff.empty()) {
-              ImGui::TextDisabled("-");
-            } else {
-              ImGui::TextWrapped("%s", response.handoff.c_str());
-            }
-            ImGui::TableNextColumn();
-            if (response.latencyMs >= 0) {
-              ImGui::Text("%lld", response.latencyMs);
-              if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("prompt %d, output %d tokens",
-                                  response.promptTokens,
-                                  response.outputTokens);
-              }
-            } else {
-              ImGui::TextDisabled("-");
-            }
-          }
-          ImGui::EndTable();
-        }
-      }
-
       if (!state->lastS1Error.empty()) {
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Last S1 error: %s",
                            state->lastS1Error.c_str());

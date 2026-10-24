@@ -1,5 +1,7 @@
 #include "SystemOneRecorder.h"
 
+#include "LogPaths.h"
+
 #include <filesystem>
 #include <fstream>
 #include <utility>
@@ -98,23 +100,23 @@ void SystemOneRecorder::EnsureLogFile() {
     return;
   }
 
+  // System 1 traffic lives under <session>/system1/, beside the NPC and
+  // navigator logs of the same run.
+  const std::filesystem::path directory = LogPaths::Subdir("system1");
   std::error_code ec;
-  // logs/system1/, beside the NPC transcripts and the designer's, in its own
-  // directory: System 1 traffic is neither an NPC conversation nor a design
-  // session, and mixing them would make all three harder to scan.
-  std::filesystem::create_directories("logs/system1", ec);
-  if (ec) {
+  if (!std::filesystem::is_directory(directory, ec)) {
     logFilePath = " ";
     if (!warnedAboutLog && warningSink) {
       warnedAboutLog = true;
-      warningSink("System 1: could not create logs/system1: " + ec.message());
+      warningSink("System 1: could not create " + directory.string() + ": " +
+                  ec.message());
     }
     return;
   }
 
   // One file per run, named for the run's start, so records from one session
   // stay together and sort chronologically.
-  logFilePath = "logs/system1/" + TimeUtils::GetStartTimeString() + "-system1.txt";
+  logFilePath = (directory / (TimeUtils::GetStartTimeString() + "-system1.txt")).string();
 
   std::ofstream header(logFilePath, std::ios::app);
   if (!header.is_open()) {

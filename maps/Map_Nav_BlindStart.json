@@ -1,0 +1,2609 @@
+{
+  "mapWidth": 32,
+  "mapHeight": 32,
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "tilePalette": [
+    "grass",
+    "path",
+    "wooden floor"
+  ],
+  "positions": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    2,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "objects": [
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 9,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 10,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 12,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 13,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 8
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 9,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 10,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 11,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 12,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 13,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 14
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 9
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 10
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 11
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 12
+    },
+    {
+      "type": "wooden_wall",
+      "x": 8,
+      "y": 13
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 9
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 10
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 11
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 12
+    },
+    {
+      "type": "wooden_wall",
+      "x": 14,
+      "y": 13
+    },
+    {
+      "type": "door",
+      "x": 11,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 0,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 3
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 1,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 2,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 3,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 4,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 5,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 5,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 5,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 6,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 7,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 8,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 9,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 10,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 10,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 11,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 11,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 11,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 12,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 13,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 13,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 13,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 13,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 14,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 14,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 14,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 14,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 15,
+      "y": 29
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 16,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 13
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 17,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 18,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 19,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 19,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 19,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 19,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 19,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 20,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 13
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 21,
+      "y": 29
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 22,
+      "y": 29
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 23,
+      "y": 27
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 24,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 25,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 5
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 26,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 16
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 18
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 27,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 28,
+      "y": 29
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 1
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 8
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 10
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 15
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 17
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 23
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 24
+    },
+    {
+      "type": "apple_tree",
+      "x": 29,
+      "y": 26
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 0
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 6
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 9
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 13
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 14
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 19
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 28
+    },
+    {
+      "type": "apple_tree",
+      "x": 30,
+      "y": 31
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 2
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 4
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 7
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 11
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 12
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 20
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 21
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 22
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 25
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 29
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 30
+    },
+    {
+      "type": "apple_tree",
+      "x": 31,
+      "y": 31
+    }
+  ],
+  "placeSeeds": [
+    {
+      "label": "the hut",
+      "position": [
+        11,
+        11
+      ],
+      "radius": 3
+    }
+  ],
+  "npcs": [
+    {
+      "name": "Wren",
+      "position": [
+        11,
+        11
+      ],
+      "background": "You are Wren, waking in a small hut at the edge of a forest. You need to find the road.",
+      "goals": {
+        "terminal": [
+          "Find the road"
+        ]
+      }
+    }
+  ]
+}

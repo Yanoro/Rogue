@@ -247,6 +247,19 @@ struct GameSettings {
     // Calibration for *this* task, not a copy of the profile's confidence knob.
     float minProbability = DEFAULT_NAVIGATION_MIN_PROBABILITY;
     float minMargin = DEFAULT_NAVIGATION_MIN_MARGIN;
+    // S1 spatial input experiment:
+    //   "off"     -- current sector prose (default; unchanged)
+    //   "append"  -- sector prose + ASCII map + target list
+    //   "replace" -- ASCII map + compact target list instead of the sector/
+    //                frontier prose (the map-only baseline)
+    std::string mapMode = "off";
+    int mapRadius = 6;
+    // Examine affordance list (shared by both navigation modes). The radius
+    // defaults to the standard visual range; the single navigator lists every
+    // qualifying object inside it. The two-context S1 is capped by maxExamine,
+    // reserved inside maxCandidates.
+    int examineRadius = static_cast<int>(DEFAULT_VISION_RANGE);
+    int maxExamine = 2;
   };
 
   // The strategist's observation is the local grid + the minimal observed graph
@@ -264,14 +277,39 @@ struct GameSettings {
     bool enabled = DEFAULT_NAVIGATION_STRATEGIST_ENABLED;
     bool fallbackToS1 = DEFAULT_NAVIGATION_STRATEGIST_FALLBACK;
     int maxStrategies = DEFAULT_NAVIGATION_MAX_STRATEGIES;
+    // Attempts per strategist request: the first call plus retries after a
+    // transport failure or an invalid reply.
+    int maxAttempts = DEFAULT_NAVIGATION_MAX_ATTEMPTS;
     int maxMonitors = DEFAULT_NAVIGATION_MAX_MONITORS;
     float monitorMinConfidence = DEFAULT_NAVIGATION_MONITOR_MIN_CONFIDENCE;
     float timeoutSeconds = DEFAULT_NAVIGATION_STRATEGIST_TIMEOUT_SECONDS;
     NavigationObservationSection observation;
   };
 
+  // The single-context navigator: one main-model context that returns both the
+  // plan and the next move each decision. `two` restores the strategist + Jev
+  // pilot from before this experiment.
+  struct NavigationSingleSection {
+    int maxTokens = 500;
+    float timeoutSeconds = 60.0f;
+    bool fallbackToTwo = true;
+    int mapRadius = 6;
+    // All eight compass sectors are offered to the main LLM, and there is room
+    // for four distant places after them. The two-context S1 keeps its smaller
+    // system1.navigation caps.
+    int maxDirections = 8;
+    int maxCandidates = 12;
+    // Consecutive unusable replies allowed for one decision before the
+    // fallback. Any model-output error counts: invalid JSON or field types,
+    // an invalid plan, a missing move, or a move that is not an offered
+    // candidate. An accepted reply resets the counter.
+    int maxAttempts = 3;
+  };
+
   struct NavigationSection {
+    std::string agent = "single";  // "single" | "two"
     NavigationStrategistSection strategist;
+    NavigationSingleSection single;
   };
 
   struct SystemOneSection {
@@ -426,6 +464,20 @@ struct GameSettings {
     float angleDegrees = DEFAULT_VISION_ANGLE_DEGREES;
     int radarRadius = DEFAULT_VISION_RADAR_RADIUS;
   } perception;
+
+  // Observed base regions (docs/region-place-design.md, Stage 2). Separate from
+  // the semantic place derivation and from the model-facing place/candidate caps.
+  struct RegionsSection {
+    bool enabled = true;
+    int nearSize = DEFAULT_REGION_NEAR_SIZE;
+    int nearRadius = DEFAULT_REGION_NEAR_RADIUS;
+    int midSize = DEFAULT_REGION_MID_SIZE;
+    int midRadius = DEFAULT_REGION_MID_RADIUS;
+    int farSize = DEFAULT_REGION_FAR_SIZE;
+    int farRadius = DEFAULT_REGION_FAR_RADIUS;
+    int maxRegions = DEFAULT_MEMORY_REGIONS_MAX;
+    int modelNearCount = DEFAULT_REGION_MODEL_NEAR_COUNT;
+  } regions;
 
   struct PlayerSection {
     std::string name = DEFAULT_PLAYER_ENTITY_NAME;

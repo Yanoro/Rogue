@@ -10,6 +10,18 @@ ends, what it is like, and how the same place can be several things at once. Cov
 structural seeds, the category taxonomy, **aspects as distance-decayed fields**, and the demotion of
 authored `Location` rects to name seeds.
 
+**See also:** `docs/region-place-design.md` (2026-10-23 design) for the observed **base region**
+layer that sits under these semantic places, with its 8/16/32 LOD and terrain/aspect
+categorization. This document remains the rule for the semantic overlay.
+
+**2026-10-23:** `BuildAspects` also adds one source per observed **surface** (the tile name) using the
+same category data, and base regions choose their primary from the dominant surface and use the
+category's `regionLabel` (`sand field`, `grass field`, ...). The semantic place keeps its forming
+category as its primary; its aspect list now includes the terrain. See
+`docs/region-place-design.md` Stage 3. Since Stage 5, `PlaceQuery::At` prefers a semantic place
+underfoot even when a base region covers the same cell with a smaller extent; the region is the
+fallback via `RegionAt`.
+
 Companions: `docs/spatial-memory-design.md` (the cell record places are derived from),
 `docs/agent-attention-design.md` (why a perceived state needs a real component behind it),
 `docs/site-selection-design.md` (spacing signals, still unimplemented).
@@ -173,6 +185,12 @@ A road is a chain, so one component would be "all the roads" and say nothing abo
 or more road neighbours) and **endpoints** (one). Each stretch is a place, and a cut cell belongs to
 exactly one stretch — the one holding its lowest `(y, x)` neighbour — so no cell is claimed twice or
 orphaned. A loop with no junction has no cut and stays one place.
+
+The `road` category can set `"diagonal": true` in `places.json`. In that mode a cell
+connects to all eight road neighbours, and a junction cell that continues a diagonal run
+is assigned to the diagonal stretch rather than the orthogonal arm. This keeps a diagonal
+road that crosses a vertical road as one diagonal place; the default remains orthogonal-
+first for categories that do not opt in.
 
 A cell connects to its **orthogonal** road neighbours; diagonals count only for a cell with no
 orthogonal neighbour. With plain 8-adjacency the cell just below a T junction is diagonally adjacent to

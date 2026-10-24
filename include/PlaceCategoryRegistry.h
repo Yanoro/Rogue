@@ -38,11 +38,21 @@ struct PlaceCategory {
   // "junctions" is for networks like roads (section 4.2).
   std::string split;
 
+  // Roads only: connect diagonal neighbours as well as orthogonal ones, and
+  // keep a junction on the diagonal stretch. This is what makes a road drawn
+  // diagonally one road place instead of a chain of 1-tile endpoints.
+  bool diagonal = false;
+
   // Whether seeds of this category may join seeds of *other* categories in one
   // place. False for linear terrain: a road or a lake is its own region, and
   // without this one path across the village chains every object within the link
   // radius into a single place (section 5.1).
   bool linksAcross = true;
+
+  // How a base region whose dominant surface is this category is displayed.
+  // Empty means the category id ("an unnamed sand"). The region primary stores
+  // this label, so it is what [PLACES]/the S1/graph show.
+  std::string regionLabel;
 };
 
 class PlaceCategoryRegistry {

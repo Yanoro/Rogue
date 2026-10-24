@@ -315,6 +315,16 @@ private:
   raylib::Camera2D camera;
   GameCameraMode cameraMode;
 
+  // The character the follow camera centres instead of the player, or 0 for the
+  // player. Set by the NPC Menu's Follow column and cleared when the character is
+  // destroyed while being watched.
+  //
+  // An id rather than a handle for the same reason the other debug selections use
+  // one: a map reload destroys every NPC, and a stale id is merely dead where a
+  // stale handle would dangle. Session state, not persisted -- ids mean nothing in
+  // the next run, and the camera falls back to the player until a row is ticked.
+  flecs::entity_t cameraFollowEntity = 0;
+
   // Debug window entities in ECS
   flecs::entity debugConsoleWindowEntity;
   flecs::entity tileInfoWindowEntity;

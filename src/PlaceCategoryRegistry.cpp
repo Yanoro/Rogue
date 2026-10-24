@@ -57,7 +57,9 @@ void PlaceCategoryRegistry::Load(const std::string &filePath) {
     category.minSeeds = it.value().value("minSeeds", 1);
     category.radius = it.value().value("radius", 4);
     category.split = it.value().value("split", std::string());
+    category.diagonal = it.value().value("diagonal", false);
     category.linksAcross = it.value().value("linksAcross", true);
+    category.regionLabel = it.value().value("regionLabel", std::string());
 
     // A seed count of zero would make an empty component a place, so it is
     // clamped rather than trusted.

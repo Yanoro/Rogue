@@ -190,7 +190,7 @@ struct SeedCategory {
 
 // Object and Tile are seed clusters; Named is a place that exists because
 // something is called that, with no seeds of its own (section 8).
-enum class SeedKind { Object, Tile, Named };
+enum class SeedKind { Object, Tile, Named, Region };
 
 // Where a place or a name came from. Declared here rather than beside KnownPlace
 // because PlaceNameSeed needs it and is declared first.
@@ -214,6 +214,11 @@ struct MemoryCell {
   // refreshed when it is re-seen (a repainted tile changes what it is). Empty for
   // common ground. docs/place-derivation-design.md section 3.3.
   std::vector<SeedCategory> categories;
+  // Bumped when surface, walkability or categories change. Derived views hash
+  // this instead of the strings, so "has anything here changed?" is one integer
+  // compare per cell. Not part of the observation: a re-sighting of the same
+  // ground leaves it alone.
+  std::uint32_t contentVersion = 1;
 };
 
 // Layer 1: something that was standing somewhere. The item type is the strongest
@@ -282,6 +287,10 @@ struct SeenObject {
   bool portable = false;              // never seeds a place
   bool structural = false;            // bounds a place, contributes qualities
   std::vector<SeedCategory> categories;
+  // Bumped when any template-derived field changes, including vanishing. Lets a
+  // derived view detect "this thing is the same as last sample" without hashing
+  // its strings. See MemoryCell::contentVersion.
+  std::uint32_t contentVersion = 1;
 };
 
 // Layer 2: counts, never a verdict. "7 structures" is evidence; "village" is a
@@ -375,7 +384,7 @@ struct PlaceFact {
 //               description falls back to.
 //   Inferred -- a cluster derived from observed cells (section 3.3).
 //   Authored -- overlaps a map Location.
-enum class PlaceOrigin { Origin, Inferred, Authored };
+enum class PlaceOrigin { Origin, Inferred, Authored, Region };
 
 struct KnownPlace {
   // Stable for the session, so a label can attach to a place while its extent is
@@ -399,6 +408,15 @@ struct KnownPlace {
   // and "the old reading room" at once.
   std::vector<std::string> labels;
   SeedKind seedKind = SeedKind::Object;
+  // Base-region LOD: -1 for a semantic place, 0 near (8x8), 1 mid (16x16),
+  // 2 far (32x32). Used by ModelPlaces to prefer the finest ground and by the
+  // parent-view selection.
+  int regionLevel = -1;
+  // The world top-left and size of the grid cell a region belongs to. Stable
+  // across calls and independent of how much of the cell has been observed, so
+  // the graph can keep a region at one spatial position while its extent grows.
+  GamePosition regionCell{0, 0};
+  int regionSize = 0;
 
   int firstSeenTick = 0;
   int lastSeenTick = 0;
@@ -407,6 +425,13 @@ struct KnownPlace {
   // so a place never claims a cell it did not observe.
   std::vector<std::uint64_t> memberCells;
   std::vector<flecs::entity_t> memberSeeds;  // object seeds; empty for terrain
+
+  // Cache keys for derived views. `aspectSignature` covers the cells, their
+  // content, the seeds and the structural contact sheet that produced `aspects`.
+  // `factSignature` adds the cell ownership map and the object store, which facts
+  // also count. Zero means "never built". See DerivePlaces / DeriveRegions.
+  std::uint64_t aspectSignature = 0;
+  std::uint64_t factSignature = 0;
 };
 
 // Layer 3: the only stored prose, and only when something authored it. Written by
@@ -430,6 +455,10 @@ struct SpatialMemory {
   // lastSeenTick, not two records.
   std::unordered_map<flecs::entity_t, SeenObject> objects;
   std::vector<KnownPlace> places;
+  // Perceived base regions. A separate vector because `DerivePlaces` rebuilds the
+  // semantic `places` list from seed clusters and would otherwise drop them.
+  // PlaceQuery searches both; the semantic place wins when it is smaller.
+  std::vector<KnownPlace> regions;
   std::vector<MemoryNote> notes;
   // Names that may attach to derived places. Authored ones arrive at spawn; told
   // ones will arrive through dialogue with the same shape.
@@ -456,6 +485,16 @@ struct SpatialMemory {
   // lastVisionTick because the writer and the deriver are separate passes: the
   // deriver runs over the cells the writer just produced.
   int lastPlaceTick = -1;
+  // The sample the region pass has already consumed. Kept separate so the two
+  // passes can be throttled independently.
+  int lastRegionTick = -1;
+  // Bumped whenever an observation would change a derived view: a newly recorded
+  // cell, or a cell/object whose stored content changed. Re-seeing the same
+  // ground does not move it, which is what lets the derivation skip a sample
+  // whose inputs are identical to the last one it consumed.
+  std::uint64_t contentRevision = 0;
+  std::uint64_t lastPlacesRevision = 0;
+  std::uint64_t lastRegionsRevision = 0;
   int nextPlaceId = 1;
 };
 
@@ -728,6 +767,10 @@ struct NavigationDebugStrategistThought {
   // observation's `graph` JSON. Kept per call so the Overview can show how the
   // agent's picture evolved.
   std::string graphJson;
+  // Every S1 answer that followed this strategist call, retained in full for
+  // the S1 Responses tab's per-call view. The compact `s1Responses` deque on
+  // NavigationDebugState remains the newest-8 "All calls" view.
+  std::vector<NavigationDebugS1Response> s1Responses;
   bool complete = false;
   bool failed = false;
   std::string error;
@@ -763,6 +806,13 @@ struct NavigationDebugState {
   std::string lastSummary;
   std::string lastS1Raw;
   std::string lastS1Error;
+  // The most recent object examination text (signpost, notice, etc.), kept so
+  // the window can show what the navigator learned after the arrow.
+  std::string recentExamination;
+  // Incremented on every published snapshot. The window uses it to cache the
+  // expensive union of all call graphs instead of re-parsing every graph every
+  // frame (which made FPS fall with each navigator call).
+  int snapshotVersion = 0;
 };
 
 struct AIBackend {

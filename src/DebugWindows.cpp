@@ -2568,7 +2568,7 @@ void NPCMenuWindow::Draw() {
                             (hasTaskDetail ? ImGui::GetStyle().ItemSpacing.y
                                            : 0.0f));
 
-    if (ImGui::BeginTable("NPCMenuTable", 9,
+    if (ImGui::BeginTable("NPCMenuTable", 10,
                           ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                               ImGuiTableFlags_Resizable |
                               ImGuiTableFlags_ScrollY |
@@ -2576,6 +2576,11 @@ void NPCMenuWindow::Draw() {
                           ImVec2(0.0f, tableHeight))) {
       ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
       ImGui::TableSetupColumn("Name");
+      // Next to the name rather than at the far right: the table clips its right
+      // edge in a narrow window, and a camera control that can be clipped away is
+      // a camera the user cannot give back.
+      ImGui::TableSetupColumn("Follow",
+                              ImGuiTableColumnFlags_WidthFixed, 60.0f);
       ImGui::TableSetupColumn("Position", ImGuiTableColumnFlags_WidthFixed,
                               90.0f);
       ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed,
@@ -2619,6 +2624,32 @@ void NPCMenuWindow::Draw() {
 
             ImGui::TableNextColumn();
             ImGui::TextUnformatted(name.c_str());
+
+            ImGui::TableNextColumn();
+            // One camera, so this is a radio button drawn as a checkbox: ticking a
+            // row points the camera at that character, ticking another moves it
+            // there, and unticking the ticked row gives it back to the player.
+            // Only the followed row reads as ticked, because the state is the
+            // shared target rather than a flag per row. Follow mode is part of the
+            // test, so pressing H to free-roam reads as "not following" instead of
+            // leaving a tick that no longer describes the camera.
+            bool following = game->cameraMode == GameCameraMode::FollowMode &&
+                             game->cameraFollowEntity == npc.id();
+            if (ImGui::Checkbox(("##follow" + idStr).c_str(), &following)) {
+              game->cameraFollowEntity = following ? npc.id() : 0;
+              if (following) {
+                // The target only moves the camera in follow mode. Picking a
+                // character is a request to watch it, so free-roam ends here.
+                game->cameraMode = GameCameraMode::FollowMode;
+              }
+            }
+            if (ImGui::IsItemHovered()) {
+              ImGui::SetTooltip(
+                  following
+                      ? "Following %s. Untick to return the camera to the player."
+                      : "Centre the camera on %s instead of the player.",
+                  name.c_str());
+            }
 
             ImGui::TableNextColumn();
             if (const GamePosition *pos = npc.get<GamePosition>()) {
@@ -3213,7 +3244,9 @@ void VisionDebugWindow::Draw() {
                       static_cast<int>(memory->runs.size()),
                       static_cast<int>(memory->objects.size()),
                       DEFAULT_MEMORY_OBJECTS_MAX,
-                      static_cast<int>(memory->places.size()) + 1);
+                      static_cast<int>(memory->places.size() +
+                                       memory->regions.size()) +
+                          1);
           ImGui::Text("origin (%d,%d), first seen %s ago   last sample consumed: "
                       "tick %d",
                       memory->origin.anchor.x, memory->origin.anchor.y,
@@ -3340,11 +3373,12 @@ void VisionDebugWindow::Draw() {
           // The same colours the map boxes use, so a rectangle can be identified
           // without hovering it. Facts are printed exactly as stored -- raw tile
           // names and item types, never a category the engine invented.
-          if (memory->places.empty()) {
+          if (memory->places.empty() && memory->regions.empty()) {
             ImGui::TextDisabled("No places derived yet -- walk around.");
           } else {
             ImGui::BeginChild("##places", ImVec2(0, 140), true);
-            for (const KnownPlace &place : memory->places) {
+            for (const KnownPlace *placePtr : PlaceQuery::AllPlaces(*memory)) {
+              const KnownPlace &place = *placePtr;
               const Color color = Memory::PlaceColor(place.id);
               ImGui::PushID(place.id);
               ImGui::ColorButton("##swatch",
@@ -3363,9 +3397,11 @@ void VisionDebugWindow::Draw() {
                 name = "#" + std::to_string(place.id) + " " +
                        place.primaryAspect;
               }
-              const char *kind = place.seedKind == SeedKind::Tile    ? "(tile)"
-                                 : place.seedKind == SeedKind::Named ? "(named)"
-                                                                     : "(object)";
+              const char *kind =
+                  place.seedKind == SeedKind::Tile    ? "(tile)"
+                  : place.seedKind == SeedKind::Named ? "(named)"
+                  : place.seedKind == SeedKind::Region ? "(region)"
+                                                       : "(object)";
               ImGui::Text("%s  %dx%d  %zu seeds  %s", name.c_str(),
                           place.width, place.height,
                           place.memberSeeds.size(), kind);

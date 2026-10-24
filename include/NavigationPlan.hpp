@@ -14,11 +14,12 @@
 //
 // There are two layers of choice, in one list:
 //
-//   * **here** -- while standing in a place, the sectors around the character are
-//     moves *through* that place or *into* the place next to it. This is the local
-//     compass. It exists because a `KnownPlace` is too coarse to act on once you
-//     are inside it: "the road" is not a destination when you are on the road,
-//     "north along the road" is.
+//   * **here** -- the sectors around the character are moves *through* the current
+//     place, *into* the place next to it, or -- when standing in open ground -- across
+//     the observed walkable cells. This is the local compass. It exists because a
+//     `KnownPlace` is too coarse to act on once you are inside it: "the road" is not
+//     a destination when you are on the road, "north along the road" is. Open ground
+//     uses a temporary local area, not a provisional `KnownPlace`.
 //   * **there** -- the nearest remembered places that are not already on the local
 //     compass. A distant place's move walks to its nearest edge; the compass takes
 //     over after that.
@@ -66,6 +67,11 @@ struct Candidate {
   // The line in the request: the verb, the run length, the place's scores.
   std::string description;
   int distance = 0;
+  // An examine affordance: walk to `target` (the adjacent cell) and examine the
+  // observed object `objectId`. The single navigator lists every qualifying
+  // object in the examine radius; the two-context S1 caps the list.
+  bool examine = false;
+  std::uint64_t objectId = 0;
 };
 
 namespace detail {
@@ -181,6 +187,39 @@ inline std::pair<GamePosition, int> RunAlong(
   return {target, run};
 }
 
+// Stage 1: a local compass run when there is no semantic place underfoot. The
+// run walks observed, walkable, unoccupied cells and stops before the first
+// semantic place, an unobserved cell, or a blocked one. It does not create a
+// provisional `KnownPlace`: the target is a cell and the option disappears after
+// the decision, exactly like the place-based compass. See
+// docs/region-place-design.md section 13, Stage 1.
+inline std::pair<GamePosition, int> OpenGroundRun(
+    const SpatialMemory &memory, GamePosition here, int dx, int dy, int radius,
+    const std::unordered_set<std::uint64_t> &occupied,
+    const KnownPlace *allowedPlace = nullptr) {
+  GamePosition target = here;
+  int run = 0;
+  for (int step = 1; step <= radius; ++step) {
+    const GamePosition cell{here.x + dx * step, here.y + dy * step};
+    const std::uint64_t key = VisionQuery::CellKey(cell);
+    const auto observed = memory.cells.find(key);
+    if (observed == memory.cells.end()) break;
+    if (!observed->second.walkable) break;
+    if (occupied.count(key) != 0) break;
+    // A different semantic place is a separate candidate; the open run ends at
+    // its edge. `allowedPlace` lets a thin current place be crossed on the way
+    // into the open beyond it.
+    const KnownPlace *place = PlaceQuery::At(memory, cell);
+    if (place != nullptr &&
+        (allowedPlace == nullptr || place->id != allowedPlace->id)) {
+      break;
+    }
+    target = cell;
+    run = step;
+  }
+  return {target, run};
+}
+
 }  // namespace detail
 
 // The actions the model is shown: local compass moves first, then distant places,
@@ -194,129 +233,232 @@ inline std::pair<GamePosition, int> RunAlong(
 inline std::vector<Candidate> BuildCandidates(
     const SpatialMemory &memory, GamePosition here, int maxOptions,
     int maxDirections, int compassRadius,
-    const std::unordered_set<std::uint64_t> &walkedCells = {}) {
+    const std::unordered_set<std::uint64_t> &walkedCells = {},
+    int maxNearRegions = DEFAULT_REGION_MODEL_NEAR_COUNT,
+    int maxExamine = -1,
+    int examineRadius = static_cast<int>(DEFAULT_VISION_RANGE)) {
   const KnownPlace *current = PlaceQuery::At(memory, here);
   const std::unordered_set<std::uint64_t> occupied =
       detail::OccupiedCells(memory);
 
-  std::vector<Candidate> currentRuns;
-  std::vector<Candidate> adjacent;
+  // One best move per compass sector: the current place's run, an adjacent
+  // place, or an open-ground run. A place underfoot no longer suppresses a
+  // direction -- that is the point of the direction-first compass.
+  struct SectorMove {
+    bool present = false;
+    Candidate candidate;
+    bool adjacent = false;
+  };
+  std::vector<SectorMove> moves(detail::Sectors().size());
   std::unordered_set<int> localPlaceIds;
 
-  if (current != nullptr) {
-    for (const detail::Sector &sector : detail::Sectors()) {
-      const detail::SectorPlace first = detail::FirstPlaceInSector(
-          memory, here, sector.dx, sector.dy, compassRadius, occupied);
-      if (first.place == nullptr) continue;
+  for (std::size_t i = 0; i < detail::Sectors().size(); ++i) {
+    const detail::Sector &sector = detail::Sectors()[i];
+    const std::string direction =
+        PlaceQuery::CompassWord(sector.dx, sector.dy);
+    const detail::SectorPlace first = detail::FirstPlaceInSector(
+        memory, here, sector.dx, sector.dy, compassRadius, occupied);
+    SectorMove &move = moves[i];
 
-      const std::string direction =
-          PlaceQuery::CompassWord(sector.dx, sector.dy);
-      if (first.place->id == current->id) {
-        const auto [target, run] = detail::RunAlong(
-            memory, here, sector.dx, sector.dy, *current, first.cell,
-            first.distance, compassRadius, occupied);
-        if (run < DEFAULT_NAVIGATION_MIN_RUN) continue;
-
-        Candidate candidate;
-        candidate.placeId = current->id;
-        candidate.target = target;
-        candidate.key = "here:" + direction;
-        candidate.label = PlaceQuery::DisplayName(*current) + " (" + direction + ")";
-        candidate.distance = run;
-
+    if (first.place != nullptr && current != nullptr &&
+        first.place->id == current->id) {
+      const auto [target, run] = detail::RunAlong(
+          memory, here, sector.dx, sector.dy, *current, first.cell,
+          first.distance, compassRadius, occupied);
+      if (run >= DEFAULT_NAVIGATION_MIN_RUN) {
+        move.present = true;
+        move.candidate.placeId = current->id;
+        move.candidate.target = target;
+        move.candidate.key = "here:" + direction;
+        move.candidate.label =
+            PlaceQuery::DisplayName(*current) + " (" + direction + ")";
+        move.candidate.distance = run;
         const std::string aspects = detail::AspectSummary(*current, 2);
-        // The verb comes from the shape, not from a mode the model has to learn:
-        // a line is followed, an area is crossed. It is the same fact the geometry
-        // already uses, not a genre rule.
-        candidate.description =
+        move.candidate.description =
             (PlaceQuery::IsLinearPlace(*current)
                  ? "follow " + PlaceQuery::DisplayName(*current) + " " + direction +
                        " for " + std::to_string(run) + " tiles"
                  : "walk " + direction + " through " +
                        PlaceQuery::DisplayName(*current) + " for " +
                        std::to_string(run) + " tiles");
-        if (!aspects.empty()) candidate.description += " (" + aspects + ")";
-        if (walkedCells.count(VisionQuery::CellKey(candidate.target)) != 0) {
-          candidate.description += ", already walked";
+        if (!aspects.empty()) {
+          move.candidate.description += " (" + aspects + ")";
         }
-        currentRuns.push_back(std::move(candidate));
-      } else {
-        Candidate candidate;
-        candidate.placeId = first.place->id;
-        candidate.target = first.cell;
-        candidate.key = "here:" + direction;
-        candidate.label = PlaceQuery::DisplayName(*first.place) + " (" + direction + ")";
-        candidate.distance = first.distance;
-        candidate.description =
-            PlaceQuery::DisplayName(*first.place) + ", " +
-            PlaceQuery::DistancePhrase(here, first.cell);
-        const std::string aspects = detail::AspectSummary(*first.place, 2);
-        if (!aspects.empty()) candidate.description += " (" + aspects + ")";
-        bool visited = false;
-        for (const std::uint64_t cell : first.place->memberCells) {
-          if (walkedCells.count(cell) != 0) {
-            visited = true;
-            break;
-          }
+        if (walkedCells.count(VisionQuery::CellKey(move.candidate.target)) != 0) {
+          move.candidate.description += ", already walked";
         }
-        if (visited) candidate.description += ", visited";
-        if (walkedCells.count(VisionQuery::CellKey(candidate.target)) != 0) {
-          candidate.description += ", already walked";
-        }
-        adjacent.push_back(std::move(candidate));
+        continue;
       }
+
+      // The current place is only one cell thick in this sector. Continue the
+      // open-ground run through the current place's own cells and into the open
+      // beyond it, rather than losing the direction to a sidestep.
+      const auto [openTarget, openRun] = detail::OpenGroundRun(
+          memory, here, sector.dx, sector.dy, compassRadius, occupied, current);
+      if (openRun < DEFAULT_NAVIGATION_MIN_RUN) continue;
+      move.present = true;
+      move.candidate.placeId = 0;
+      move.candidate.target = openTarget;
+      move.candidate.key = "here:" + direction;
+      move.candidate.label = "open ground (" + direction + ")";
+      move.candidate.distance = openRun;
+      move.candidate.description =
+          "walk " + direction + " through open ground for " +
+          std::to_string(openRun) + " tiles";
+      if (walkedCells.count(VisionQuery::CellKey(move.candidate.target)) != 0) {
+        move.candidate.description += ", already walked";
+      }
+      continue;
     }
 
-    // A wide area can offer eight runs; the longest are the meaningful
-    // continuations. Ties keep compass order (stable sort).
-    std::stable_sort(currentRuns.begin(), currentRuns.end(),
-                     [](const Candidate &a, const Candidate &b) {
-                       return a.distance > b.distance;
-                     });
-
-    // Several sectors can lead into the same neighbouring place -- a road in a
-    // forest sees orchard east, north-east and south-east. One entry is enough;
-    // keep the nearest sector.
-    std::stable_sort(adjacent.begin(), adjacent.end(),
-                     [](const Candidate &a, const Candidate &b) {
-                       return a.distance < b.distance;
-                     });
-    std::vector<Candidate> uniqueAdjacent;
-    std::unordered_set<int> seenAdjacent;
-    for (Candidate &candidate : adjacent) {
-      if (seenAdjacent.insert(candidate.placeId).second) {
-        uniqueAdjacent.push_back(std::move(candidate));
+    if (first.place != nullptr) {
+      // The first place in the sector is a different place: the adjacent move.
+      move.present = true;
+      move.adjacent = true;
+      move.candidate.placeId = first.place->id;
+      move.candidate.target = first.cell;
+      move.candidate.key = "here:" + direction;
+      move.candidate.label =
+          PlaceQuery::DisplayName(*first.place) + " (" + direction + ")";
+      move.candidate.distance = first.distance;
+      move.candidate.description =
+          PlaceQuery::DisplayName(*first.place) + ", " +
+          PlaceQuery::DistancePhrase(here, first.cell);
+      const std::string aspects = detail::AspectSummary(*first.place, 2);
+      if (!aspects.empty()) {
+        move.candidate.description += " (" + aspects + ")";
       }
+      bool visited = false;
+      for (const std::uint64_t cell : first.place->memberCells) {
+        if (walkedCells.count(cell) != 0) {
+          visited = true;
+          break;
+        }
+      }
+      if (visited) move.candidate.description += ", visited";
+      if (walkedCells.count(VisionQuery::CellKey(move.candidate.target)) != 0) {
+        move.candidate.description += ", already walked";
+      }
+      continue;
     }
-    adjacent = std::move(uniqueAdjacent);
+
+    // No place in the sector: open ground.
+    const auto [target, run] = detail::OpenGroundRun(
+        memory, here, sector.dx, sector.dy, compassRadius, occupied);
+    if (run < DEFAULT_NAVIGATION_MIN_RUN) continue;
+    move.present = true;
+    move.candidate.placeId = 0;
+    move.candidate.target = target;
+    move.candidate.key = "here:" + direction;
+    move.candidate.label = "open ground (" + direction + ")";
+    move.candidate.distance = run;
+    move.candidate.description =
+        "walk " + direction + " through open ground for " +
+        std::to_string(run) + " tiles";
+    if (walkedCells.count(VisionQuery::CellKey(move.candidate.target)) != 0) {
+      move.candidate.description += ", already walked";
+    }
   }
+
+  // Examine affordances: every observed, examinable object in the stated radius.
+  // The single navigator passes maxExamine < 0 and gets all of them; the
+  // two-context S1 passes a count and reserves those slots inside maxOptions.
+  struct ExamineTarget {
+    std::uint64_t id = 0;
+    std::string name;
+    GamePosition target{-1, -1};
+    int distance = 0;
+    std::string direction;
+  };
+  std::vector<ExamineTarget> examineTargets;
+  for (const auto &[id, object] : memory.objects) {
+    if (object.character || object.portable || object.vanishedTick >= 0) continue;
+    const int objectDistance = detail::Chebyshev(object.pos, here);
+    if (objectDistance > examineRadius) continue;
+
+    GamePosition best{-1, -1};
+    int bestDistance = -1;
+    for (int dx = -1; dx <= 1; ++dx) {
+      for (int dy = -1; dy <= 1; ++dy) {
+        if (dx == 0 && dy == 0) continue;
+        const GamePosition cell{object.pos.x + dx, object.pos.y + dy};
+        const auto found = memory.cells.find(VisionQuery::CellKey(cell));
+        if (found == memory.cells.end() || !found->second.walkable) continue;
+        if (occupied.count(VisionQuery::CellKey(cell)) != 0) continue;
+        const int distance = detail::Chebyshev(cell, here);
+        if (bestDistance < 0 || distance < bestDistance) {
+          best = cell;
+          bestDistance = distance;
+        }
+      }
+    }
+    if (best.x < 0) continue;
+
+    ExamineTarget entry;
+    entry.id = id;
+    entry.name = object.name;
+    entry.target = best;
+    entry.distance = objectDistance;
+    entry.direction =
+        PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
+    examineTargets.push_back(std::move(entry));
+  }
+  std::stable_sort(examineTargets.begin(), examineTargets.end(),
+                   [](const ExamineTarget &a, const ExamineTarget &b) {
+                     return a.distance < b.distance;
+                   });
+  const int examineCount =
+      maxExamine >= 0
+          ? std::min<int>(maxExamine, static_cast<int>(examineTargets.size()))
+          : static_cast<int>(examineTargets.size());
 
   std::vector<Candidate> candidates;
   std::size_t directionLimit =
       maxDirections > 0 ? static_cast<std::size_t>(maxDirections) : 0;
   if (maxOptions > 0) {
-    directionLimit = std::min(directionLimit, static_cast<std::size_t>(maxOptions));
+    directionLimit =
+        std::min(directionLimit, static_cast<std::size_t>(maxOptions));
   }
-  // One adjacent place is guaranteed a slot even in a wide current place: the
-  // decision "stay here or leave into that orchard" needs the orchard on the
-  // list. The rest of the cap goes to the longest runs of the current place,
-  // then to the remaining adjacent places. Without this, four orchard runs can
-  // crowd the one-tile road out of the compass and it reappears only as a
-  // distant place.
-  std::size_t adjacentIndex = 0;
-  if (adjacentIndex < adjacent.size() && candidates.size() < directionLimit) {
-    localPlaceIds.insert(adjacent[adjacentIndex].placeId);
-    candidates.push_back(std::move(adjacent[adjacentIndex]));
-    ++adjacentIndex;
+  // The capped mode reserves the examine slots so it never exceeds maxOptions;
+  // the uncapped mode appends them after the movement list.
+  if (maxExamine >= 0 && maxOptions > 0) {
+    const std::size_t reserved = static_cast<std::size_t>(examineCount);
+    directionLimit =
+        reserved >= static_cast<std::size_t>(maxOptions)
+            ? 0
+            : std::min(directionLimit,
+                       static_cast<std::size_t>(maxOptions) - reserved);
   }
-  for (Candidate &candidate : currentRuns) {
+
+  // Preserve one slot for the nearest adjacent place -- "stay here or leave into
+  // that orchard" should not lose the orchard to a wide current place -- then
+  // fill the rest by compass spread: cardinals first, then diagonals. Length is
+  // no longer the selection key, so a short north run is not dropped because the
+  // south runs happen to be longer.
+  int adjacentSector = -1;
+  int adjacentDistance = 0;
+  for (std::size_t i = 0; i < moves.size(); ++i) {
+    if (!moves[i].present || !moves[i].adjacent) continue;
+    if (adjacentSector < 0 || moves[i].candidate.distance < adjacentDistance) {
+      adjacentSector = static_cast<int>(i);
+      adjacentDistance = moves[i].candidate.distance;
+    }
+  }
+  if (adjacentSector >= 0 && directionLimit > 0) {
+    localPlaceIds.insert(moves[adjacentSector].candidate.placeId);
+    candidates.push_back(std::move(moves[adjacentSector].candidate));
+    moves[adjacentSector].present = false;
+  }
+
+  static const std::size_t kCompassOrder[8] = {0, 2, 4, 6, 1, 3, 5, 7};
+  for (const std::size_t index : kCompassOrder) {
+    if (index >= moves.size()) continue;
+    if (!moves[index].present) continue;
     if (candidates.size() >= directionLimit) break;
-    candidates.push_back(std::move(candidate));
-  }
-  for (; adjacentIndex < adjacent.size(); ++adjacentIndex) {
-    if (candidates.size() >= directionLimit) break;
-    localPlaceIds.insert(adjacent[adjacentIndex].placeId);
-    candidates.push_back(std::move(adjacent[adjacentIndex]));
+    if (moves[index].adjacent) {
+      localPlaceIds.insert(moves[index].candidate.placeId);
+    }
+    candidates.push_back(std::move(moves[index].candidate));
   }
 
   // Distant places: what is left after the local compass, nearest first. A place
@@ -327,14 +469,16 @@ inline std::vector<Candidate> BuildCandidates(
     int distance = 0;
   };
   std::vector<Distant> distant;
-  for (const KnownPlace &place : memory.places) {
-    if (place.memberCells.empty()) continue;
-    if (current != nullptr && place.id == current->id) continue;
-    if (localPlaceIds.count(place.id) != 0) continue;
-    const GamePosition target = PlaceQuery::NearestWalkableCell(memory, place, here);
+  for (const KnownPlace *place :
+       PlaceQuery::ModelPlaces(memory, here, maxNearRegions)) {
+    if (place->memberCells.empty()) continue;
+    if (current != nullptr && place->id == current->id) continue;
+    if (localPlaceIds.count(place->id) != 0) continue;
+    const GamePosition target =
+        PlaceQuery::NearestWalkableCell(memory, *place, here);
     if (target == here) continue;
     Distant entry;
-    entry.place = &place;
+    entry.place = place;
     entry.target = target;
     entry.distance = detail::Chebyshev(target, here);
     distant.push_back(entry);
@@ -371,6 +515,20 @@ inline std::vector<Candidate> BuildCandidates(
     candidates.push_back(std::move(candidate));
   }
 
+  for (int i = 0; i < examineCount; ++i) {
+    const ExamineTarget &entry = examineTargets[static_cast<std::size_t>(i)];
+    Candidate candidate;
+    candidate.examine = true;
+    candidate.objectId = entry.id;
+    candidate.target = entry.target;
+    candidate.key = "examine:" + std::to_string(entry.id);
+    candidate.label = "examine " + entry.name + " (" + entry.direction + ", " +
+                      std::to_string(entry.distance) + " tiles)";
+    candidate.distance = entry.distance;
+    candidate.description = "walk to the " + entry.name + " and examine it";
+    candidates.push_back(std::move(candidate));
+  }
+
   return candidates;
 }
 
@@ -396,7 +554,7 @@ inline std::string BuildState(const SpatialMemory &memory, GamePosition here,
     const std::string aspects = detail::AspectSummary(*current, 2);
     if (!aspects.empty()) out += " (" + aspects + ")";
   } else {
-    out += "not standing in any place you know";
+    out += "in open ground";
   }
   const std::string facingWord = SightReport::FacingWord(facing);
   if (!facingWord.empty()) out += ", facing " + facingWord;
@@ -414,10 +572,25 @@ inline std::string BuildState(const SpatialMemory &memory, GamePosition here,
   out += ".\n";
 
   out += "\nACTIONS, local first:\n";
-  if (candidates.empty()) {
-    out += "  (none you could take)\n";
-  } else {
+  bool anyMove = false;
+  for (const Candidate &candidate : candidates) {
+    if (candidate.examine) continue;
+    out += "  " + candidate.key + "  " + candidate.description + "\n";
+    anyMove = true;
+  }
+  if (!anyMove) out += "  (none you could take)\n";
+
+  bool anyExamine = false;
+  for (const Candidate &candidate : candidates) {
+    if (candidate.examine) {
+      anyExamine = true;
+      break;
+    }
+  }
+  if (anyExamine) {
+    out += "\nEXAMINE (walk to the object and examine it):\n";
     for (const Candidate &candidate : candidates) {
+      if (!candidate.examine) continue;
       out += "  " + candidate.key + "  " + candidate.description + "\n";
     }
   }
@@ -434,7 +607,7 @@ inline SystemOne::Option BuildQuestion(const SpatialMemory &memory,
   next.id = "next";
   next.type = SystemOne::OptionType::Choice;
   next.instructions =
-      "Which of these moves is most likely to bring the character closer to "
+      "Which of these actions is most likely to bring the character closer to "
       "the goal?";
 
   for (const Candidate &candidate : candidates) {
@@ -449,7 +622,7 @@ inline SystemOne::Option BuildQuestion(const SpatialMemory &memory,
   } else {
     next.options.emplace_back(
         "arrived",
-        "you have not arrived: you are not standing in any place you know");
+        "you have not arrived: you are in open ground, not at a known place");
   }
   next.options.emplace_back(
       "none",
@@ -638,7 +811,9 @@ inline std::string DescribeJourney(const std::vector<std::string> &route) {
 inline std::string BuildSummary(const std::string &reason,
                                 const std::vector<std::string> &route,
                                 const SpatialMemory &memory, GamePosition here,
-                                int legs, bool arrived = false) {
+                                int legs, bool arrived = false,
+                                int maxNearRegions =
+                                    DEFAULT_REGION_MODEL_NEAR_COUNT) {
   const KnownPlace *current = PlaceQuery::At(memory, here);
 
   std::string out;
@@ -669,11 +844,19 @@ inline std::string BuildSummary(const std::string &reason,
     if (!aspects.empty()) out += " (" + aspects + ")";
     out += ".\n";
   } else {
-    out += "You are not standing in any place you know.\n";
+    out += "You are in open ground.\n";
   }
 
-  const std::vector<PlaceQuery::PlaceLine> nearby =
+  const std::vector<PlaceQuery::PlaceLine> sorted =
       PlaceQuery::SortedPlaces(memory, here);
+  std::vector<PlaceQuery::PlaceLine> nearby;
+  const std::vector<const KnownPlace *> model =
+      PlaceQuery::ModelPlaces(memory, here, maxNearRegions);
+  for (const PlaceQuery::PlaceLine &line : sorted) {
+    if (std::find(model.begin(), model.end(), line.place) != model.end()) {
+      nearby.push_back(line);
+    }
+  }
   if (!nearby.empty()) {
     out += "Nearby places you remember:\n";
     const std::size_t shown = std::min<std::size_t>(

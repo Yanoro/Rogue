@@ -172,7 +172,7 @@ forces the CPU tree.
   route **~0.37–0.50 s**. The first request after a load takes **~4 s** while CUDA
   warms up, and the model loads in ~15 s versus 70–115 s on CPU.
 - **Replayed the game's own calls:** the three CPU calls that took 40.9–41.8 s in
-  `logs/system1/` answer in **~0.37 s** each on the GPU.
+  `logs/<run-start>/system1/` answer in **~0.37 s** each on the GPU.
 
 The RPATH of `libggml-cuda.so` points at the real store paths for
 `libcudart`/`libcublas` rather than the temporary merged tree, so it survives a

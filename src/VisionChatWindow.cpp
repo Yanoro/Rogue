@@ -14,6 +14,7 @@
 #include "Components.h"
 #include "Game.h"
 #include "ImageEncode.h"
+#include "LogPaths.h"
 #include "Map.h"
 #include "imgui.h"
 #include "misc/cpp/imgui_stdlib.h"
@@ -76,9 +77,8 @@ std::string FormatTimings(const AIRequestStats &stats) {
 } // namespace
 
 VisionChatWindow::VisionChatWindow(Game *game, AI *visionAI,
-                                   const std::string &modelLabel,
-                                   flecs::entity owner)
-    : game(game), ai(visionAI), modelLabel(modelLabel), owner(owner),
+                                   const std::string &modelLabel)
+    : game(game), ai(visionAI), modelLabel(modelLabel),
       contextId("vision-chat-" +
                 std::to_string(reinterpret_cast<uintptr_t>(this))) {
   if (ai == nullptr) {
@@ -93,12 +93,13 @@ void VisionChatWindow::Draw() {
   ImGui::Begin("Vision Chat", &isOpen, ImGuiWindowFlags_None);
 
   if (!isOpen) {
-    if (owner.is_alive()) {
-      owner.remove<ActiveWindow>();
-    }
-    // Remember the close the way the other debug windows do, so the toggle in
-    // the debug menu and the state file agree with what is on screen.
-    game->debugWindowState->SetShowVisionChatWindow(false);
+    // Remove the component from the entity that carries the window -- the same
+    // close path the other debug windows take, and the state file is derived from
+    // it at shutdown (Game::Shutdown). This used to go through a defaulted
+    // constructor parameter that Game never passed, so `owner.is_alive()` was
+    // false, the component was never removed, the next frame drew the window
+    // again and the persisted state was forced back to "open".
+    game->visionChatWindowEntity.remove<ActiveWindow>();
     ImGui::End();
     return;
   }
@@ -238,8 +239,6 @@ void VisionChatWindow::Draw() {
     ImGui::GetForegroundDrawList()->AddCallback(
         &VisionChatWindow::WholeWindowCaptureCallback, this);
   }
-
-  game->debugWindowState->SetShowVisionChatWindow(true);
 }
 
 void VisionChatWindow::WholeWindowCaptureCallback(const ImDrawList *,
@@ -383,9 +382,9 @@ std::string VisionChatWindow::BuildGameStateSummary() const {
     if (game->playerEntity.is_alive()) {
       if (const SpatialMemory *memory =
               game->playerEntity.get<SpatialMemory>()) {
-        for (const KnownPlace &place : memory->places) {
-          if (!place.labels.empty()) {
-            remembered.push_back(place.labels.front());
+        for (const KnownPlace *place : PlaceQuery::AllPlaces(*memory)) {
+          if (!place->labels.empty()) {
+            remembered.push_back(place->labels.front());
           }
         }
       }
@@ -471,13 +470,14 @@ bool VisionChatWindow::SaveCaptureToDisk(
   char stamp[32] = {0};
   std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &localTime);
 
-  std::error_code error;
-  std::filesystem::create_directories("logs", error);
-
   std::ostringstream path;
   // The counter keeps two captures in the same second from overwriting each
-  // other, which is easy to do while probing the model.
-  path << "logs/vision_capture_" << stamp << "_" << ++captureCounter << ".png";
+  // other, which is easy to do while probing the model. Captures are
+  // session-level artifacts, beside the five standard subdirectories.
+  path << (LogPaths::SessionRoot() /
+           ("vision_capture_" + std::string(stamp) + "_" +
+            std::to_string(++captureCounter) + ".png"))
+              .string();
 
   std::ofstream file(path.str(), std::ios::binary);
   if (!file) {

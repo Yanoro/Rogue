@@ -97,7 +97,7 @@ choice, and the main model owns the goal.
     alongside `[MOVE_TO]`. `[MOVE_TO]` stays the verb for "I know the place".
 
 12. **Every call is recorded, with the exact state and reply, and marked non-advisory.** The System 1
-    log file is the replay harness: a bad choice is inspected from `logs/system1/`, not reproduced by
+    log file is the replay harness: a bad choice is inspected from `logs/<run-start>/system1/`, not reproduced by
     a separate program.
 
 13. **Degrade, never block.** If System 1 is unavailable, or `system1.useMainModel` is true, the
@@ -168,11 +168,11 @@ ACTIONS, local first:
 
 The actions are two layers in one list:
 
-- **Local compass** (`here:<direction>`): while standing in a place, each sector around the character
-  is a move through that place or into the place next to it. `here:east` on a road means the road
-  continues east; `here:north` may be the orchard beside it, with the orchard's own scores. This is
-  what makes the place underfoot actionable: without it, entering a road only produces a new list of
-  *other* places.
+- **Local compass** (`here:<direction>`): each sector around the character is a move through the
+  current place, into the place next to it, or across open ground. `here:east` on a road may mean the
+  road continues east; `here:north` may be the orchard beside it, with its own scores; `here:south`
+  may be the open field beyond the road. This is what makes the place underfoot actionable: the
+  place describes the direction, but it does not suppress the other sectors.
 - **Distant places** (`p<id>`): the remembered places not already on the compass, nearest first. A
   distant move walks to the place's nearest cell; the compass takes over once inside.
 
@@ -184,12 +184,14 @@ Rules for the compass:
 
 - Look along each of the eight sectors for the first observed place within `compassRadius` (default 6).
 - If that place is the current one, the move follows its run to the last observed cell in that
-  sector; a run shorter than 2 tiles is a sidestep and is dropped.
+  sector. A run shorter than 2 tiles is a sidestep; an open-ground run may continue through the
+  current place's own cells and into the open beyond it, so the direction is not lost.
 - If it is another place, the move enters its nearest cell and the line carries that place's scores.
-- Several sectors into the same neighbouring place are merged: one line, the nearest sector. A road in
-  a forest does not get three identical "orchard" entries.
-- At most `maxDirections` local lines (default 4), with one slot reserved for the nearest adjacent
-  place so a wide current place cannot crowd the way out off the list.
+- Each sector keeps its own direction. Two sectors into the same neighbouring place remain two
+  compass lines, because the direction is the action; the place is not repeated as a distant `p`.
+- At most `maxDirections` local lines (default 4). One slot is reserved for the nearest adjacent
+  place; the rest are filled cardinal-first (north, east, south, west, then diagonals), not by run
+  length, so a short north run survives longer south runs.
 - The current place is never also a distant option; the compass is how you act on it.
 - A local direction already taken **from this place** is marked `already walked` in its
   line. It is a fact for the model, not a filter: the engine still offers it, because
@@ -300,20 +302,26 @@ std::vector<Candidate> BuildCandidates(
 
 Rules:
 
-1. Find the current place with `PlaceQuery::At`. When there is none, skip the compass and build only
-   the distant list.
-2. For each of the eight sectors, look from `here` for the first observed, walkable, unoccupied cell
-   within `compassRadius` that belongs to a place. An unobserved cell ends the search; a walkable cell
-   in no place is open ground and the look continues to the place beyond it.
-3. If that place is the current one, continue along the sector to the last observed, unoccupied cell
-   of the same place. A run shorter than 2 tiles is a sidestep and is dropped. The candidate's target
-   is the run's last cell; the description says `follow` for a linear place and `walk ... through` for
-   an area, with the run length and the place's scores.
-4. Otherwise the target is the first cell of that adjacent place and the description carries its
-   scores: `an unnamed orchard, 1 tile north (orchard 55%, road 22%)`.
-5. Several sectors into the same adjacent place merge: one line, the nearest sector. Current-place
-   runs are sorted longest first; adjacent places nearest first. The local list is capped at
-   `maxDirections`, with one slot guaranteed to the nearest adjacent place.
+1. For each of the eight sectors, look from `here` for the first observed, walkable, unoccupied
+   cell within `compassRadius` that belongs to a place. An unobserved cell ends the search; a
+   walkable cell in no place is open ground and the look continues to the place beyond it.
+2. If that place is the current one, continue along the sector to the last observed, unoccupied cell
+   of the same place. A run shorter than 2 tiles is a sidestep: an open-ground run may cross the
+   current place's own cells and continue into the open beyond it, so the direction is not lost.
+   The candidate's target is the run's last cell; the description says `follow` for a linear place
+   and `walk ... through` for an area, with the run length and the place's scores.
+3. If the first place is a different place, the target is its nearest cell and the description
+   carries its scores: `an unnamed orchard, 1 tile north (orchard 55%, road 22%)`.
+4. If there is no place in the sector, the move is an open-ground run over observed, walkable,
+   unoccupied cells, stopping before a different place, an unobserved cell or a blocked one. Its
+   target is the last open cell; the label is `open ground (...)`, the description is
+   `walk ... through open ground ...`, and `placeId` is 0. No provisional `KnownPlace` is created.
+   A run shorter than 2 tiles is dropped.
+5. One best move is kept per sector. The nearest adjacent place receives one reserved slot; the
+   remaining local slots are filled cardinal-first (north, east, south, west, then the four
+   diagonals), not by run length. `maxDirections` and `maxCandidates` bound the list, so a short
+   north run is not dropped because the south runs are longer. A place underfoot does not suppress
+   an open direction.
 6. Distant places are the remembered places not current and not already local. The target is
    `NearestWalkableCell`; the list is nearest first and fills the remaining `maxCandidates`.
 7. Mark `already walked` when the candidate's **target cell** is in `walkedCells`; mark `visited` when
@@ -610,9 +618,16 @@ Proposed, under `system1` (exact names settle during implementation). Stage 2 la
 
 - **System 1 Overview window** already shows each call: scenario, state, reply, latency, probabilities.
   Filter the scenario to `navigation` and turn on "non-advisory" to see only these calls.
-- **`logs/system1/`** holds the exact request and response payloads. This is the replay: to study a
+- **`logs/<run-start>/system1/`** holds the exact request and response payloads. This is the replay: to study a
   bad choice, read the record, change the wording/action list, and re-run the game. No separate
   harness is needed.
+- **Pause/Resume navigator** in the per-NPC Navigation window interrupts the current action,
+  cancels its in-flight S1/strategist request, parks the episode on the brain's action stack and
+  resumes it on demand. It is per NPC; other agents are unaffected.
+- **`logs/<run-start>/navigator/<Agent>.txt`** holds the full navigator record: strategist prompt,
+  raw response (including a partial/cut-off stream), parse error, retries, parsed plan, handoffs,
+  S1 state/answer, legs and the final summary. A strategist reply that is cut off is visible here
+  before the retry.
 - **Debug log** gets one `[navigation]` line per event: asking (with the action count and decision
   number), the chosen key/kind/probability/margin, a survey start/completion, each leg's arrival or
   failure, interruption/resume, and the final reason with the counters. `grep '\[navigation\]'` is
@@ -692,7 +707,7 @@ main model can then `[LOOK around]` itself, `[PLACES]`, or pick a `[MOVE_TO]` ta
 chooses `arrived` (or `Village` and then `arrived` on the next ask). The loop stops with the route and
 nearby places.
 
-The state, both choices and the survey flag are in `logs/system1/`; the run's memory is dumpable
+The state, both choices and the survey flag are in `logs/<run-start>/system1/`; the run's memory is dumpable
 from the Vision window.
 
 ## 16. Stages and acceptance
@@ -733,16 +748,54 @@ keeps the goal, route, visited set and counters, and resume recreates the leg or
 recovery, the budgets and the no-progress stop; the 2026-10-20 change replaced that stop with the
 signal and removed the per-episode ask cap.
 
-**Stage 2.5 actuals.** `NavigationPlan::BuildCandidates` builds the local compass: eight sectors,
-the first observed place within `compassRadius`, a run of the current place to its last observed cell
-(min 2 tiles), or the nearest cell of an adjacent place; adjacent sectors into the same place merge;
-one local slot is reserved for the nearest adjacent place; the current place is excluded from the
-distant list. A move is a `Candidate` with a fixed target cell and a key (`here:north`, `p12`);
+**Stage 2.5 actuals.** `NavigationPlan::BuildCandidates` builds one best move per compass sector:
+a run of the current place to its last observed cell (min 2 tiles), the nearest cell of an adjacent
+place, or an open-ground run over observed walkable cells. A one-cell-thick current place is crossed
+by the open run instead of losing the direction to the 2-tile minimum; adjacent sectors no longer
+merge, because both directions are valid compass moves. One local slot is reserved for the nearest
+adjacent place; the rest are filled cardinal-first, not by length; the current place is excluded from
+the distant list. No provisional place is created. Since 2026-10-23 the S1 state/summary say "open
+ground" when nothing is underfoot (Stage 1/1.5 of `docs/region-place-design.md`). Since Stage 2 the
+current place may be a base region: `PlaceQuery::At` returns a smaller semantic place underfoot,
+otherwise the region; `[PLACES]`/`[MOVE_TO]`/`[NAME_PLACE]` use the combined `places` + `regions`
+view. Since Stage 3 the region descriptions carry its surface aspects (`sand 82%, grass 10%`) and
+its display name is the dominant surface's `regionLabel`; the semantic place underfoot keeps its
+forming primary. Since Stage 4 the far/near regions are 8/16/32 parent views: the local compass
+still uses the finest `PlaceQuery::At`, while the model-facing selection
+(`PlaceQuery::ModelPlaces`) shows the semantic places, the current region and the nearest
+`regions.modelNearCount` regions; a coarser parent is hidden while a finer selected child is
+contained in it. Since Stage 5 `PlaceQuery::At` prefers a semantic place underfoot even when it is
+larger than the region (village/road over the 8×8 child); `[PLACES]` lists semantic places first and
+adds `#id` duplicate-name hints; a named parent region passes its label to the child containing its
+Examine candidates (`examine:<objectId>`) walk to an observed object's adjacent cell and
+run its `Examine` interaction. The single navigator lists every qualifying object inside
+`system1.navigation.examineRadius` (default 22, the perception range). The two-context S1
+caps them at `maxExamine` (default 2), reserved inside `maxCandidates`, and carries the
+result as `recentExamination` in its state and the strategist observation.
+
+Any unusable reply from the single navigator is retried in its own context up to
+`navigation.single.maxAttempts` consecutive replies, with a correction naming the exact
+error (invalid JSON/type, invalid plan, missing move, or an unavailable move) and the
+same token budget. An accepted reply resets the counter; on the cap it falls back to the
+two-context navigator when `fallbackToTwo` is on, otherwise it returns to the main LLM.
+
+`navigation.agent: "single"` is the new default single-context navigator: one main-model
+context returns both the plan and the next move in one call, using the JSON grid + graph,
+the ASCII map and the action/target list. `navigation.agent: "two"` keeps the
+strategist + Jev pilot described here and is the rollback/control; it is also the
+fallback when the single call fails and `navigation.single.fallbackToTwo` is on.
+
+anchor; the graph labels region nodes `[R8]`/`[R16]`/`[R32]`. The S1 state can also include a
+north-up ASCII map (`system1.navigation.mapMode` = `append`/`replace`, `mapRadius` default 6); the
+map marks `@`, terrain, objects, semantic-place initials and candidate target digits, with
+`MAP TARGETS` as the compact action list. `off` is the unchanged prose baseline. A move is a
+`Candidate` with a fixed target cell and a key (`here:north`, `p12`);
 `MoveToCellAction` walks it and requires standing on the target cell (adjacency is not arrival).
 No-progress is by target cell plus actual movement, so following a road is not ping-pong and the same
 direction in a new place is a new move. The compass harness checks the exact-cell arrival, the
 road/orchard compass, the adjacent-road reservation, a followed `here:east`, the no-movement stop, a
-distant `p2`, survey recovery, the budget, and interruption mid-ask/mid-move.
+distant `p2`, survey recovery, the budget, interruption mid-ask/mid-move, open-ground `here:` moves,
+and the direction-first case (road underfoot, open north, a place south).
 
 ### Stage 3 tuning runbook (local Kev on CUDA)
 

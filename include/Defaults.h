@@ -116,6 +116,20 @@ constexpr int DEFAULT_MEMORY_OBJECTS_MAX = 1024;
 // 3.3). Overflow drops the place with the fewest member cells, then the one seen
 // longest ago; the cells stay in memory and simply stop being placed.
 constexpr int DEFAULT_MEMORY_PLACES_MAX = 24;
+// Base regions are a separate storage layer: they are observed ground, not
+// semantic places. The near radius keeps the 8x8 count small until the 16/32
+// LOD lands; the cap is storage-only, not the model-facing place/candidate cap.
+constexpr int DEFAULT_MEMORY_REGIONS_MAX = 64;
+constexpr int DEFAULT_REGION_NEAR_SIZE = 8;
+constexpr int DEFAULT_REGION_NEAR_RADIUS = 12;
+constexpr int DEFAULT_REGION_MID_SIZE = 16;
+constexpr int DEFAULT_REGION_MID_RADIUS = 24;
+constexpr int DEFAULT_REGION_FAR_SIZE = 32;
+// How far from the character the far level is rebuilt. The far regions outside
+// this band stay in memory untouched; without a bound every observed cell was
+// rebuilt at the 32 level on every sample, so the pass grew with the whole store.
+constexpr int DEFAULT_REGION_FAR_RADIUS = 48;
+constexpr int DEFAULT_REGION_MODEL_NEAR_COUNT = 6;
 
 // How close (Chebyshev) two seeds must be to land in the same place. Global
 // rather than per category, because one region may hold many categories
@@ -240,6 +254,10 @@ constexpr bool DEFAULT_NAVIGATION_STRATEGIST_FALLBACK = true;
 // guard, not a navigation-decision cap: the strategist's own give-up is the
 // normal stop.
 constexpr int DEFAULT_NAVIGATION_MAX_STRATEGIES = 12;
+// How many attempts one strategist request may spend (the first call plus
+// retries after a transport failure or an invalid reply) before control returns
+// to the main model. Three attempts means two retries.
+constexpr int DEFAULT_NAVIGATION_MAX_ATTEMPTS = 3;
 // Monitor questions per strategist plan. The S1 is a small model; a long list
 // degrades its local choice.
 constexpr int DEFAULT_NAVIGATION_MAX_MONITORS = 3;

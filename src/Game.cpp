@@ -820,6 +820,12 @@ void Game::Shutdown() {
         systemOneWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowVisionDebugWindow(
         visionDebugWindowEntity.has<ActiveWindow>());
+    // Vision Chat was the one window missing from this list. It then depended on
+    // the window's own Draw to write the flag, which meant a close that failed to
+    // remove ActiveWindow was silently overwritten back to "open" on the next
+    // frame. The component is the truth here, exactly as for the windows above.
+    debugWindowState->SetShowVisionChatWindow(
+        visionChatWindowEntity.has<ActiveWindow>());
 
     debugWindowState->SaveState(Settings().debug.windowStateFile);
     if (debugLog) {
