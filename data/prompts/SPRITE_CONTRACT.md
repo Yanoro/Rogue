@@ -70,8 +70,9 @@ one was itself created this way. A hand-authored catalog entry cannot be changed
   refused. If a request needs behaviour the engine does not have, say so in
   `designerNotes` and produce the closest thing that does exist.
 - **No art.** Do not invent an image path and do not describe a picture as if it will be
-  drawn. The appearance is the glyph, the colour and — for an object — the ASCII art you
-  are given the vocabulary to write.
+  drawn. An object's appearance is its sprite, generated later from your `description`.
+  For a tile the glyph and colours are still recorded (agents read the ground that way),
+  but they are not what the world draws either: it draws the tile's sprite.
 - **No name that already exists.** A definition whose name is taken is refused, and the
   refusal says which file defined the original. Reusing a name is not a rename: it would
   silently change the meaning of something that already exists.

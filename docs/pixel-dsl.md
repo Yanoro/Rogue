@@ -1,0 +1,245 @@
+# The sprite DSL: a second source for tile and object art
+
+**Status: built end to end.** The compiler (`src/PixelDSL.cpp`), the ramps
+(`data/style/ramps.json`, derived by `tools/derive_ramps.py`), the sidecar lookup,
+the `dsl` generation source, and the **second turn** — a designer conversation that
+writes the document, gets it compiled, reads the verdict back and retries. Fixtures
+and a regression harness (30 assertions) in `tests/pixel-dsl/`. The image pipeline
+is untouched and still selectable (`art.generation.source`).
+
+What is *not* verified by me is the live loop: sending needs a backend, so the
+window's send/inspect/retry path is reasoned statically and belongs to the owner's
+runtime test. Its two pure halves — reply → document, and document → verdict — are
+both headless (`--sprite-doc-check`, `--sprite-compile`).
+
+```
+AIRogue --sprite-compile <doc> [--sprite-compile-out <png>]
+AIRogue --sprite-grammar          # the language reference + the ramps
+AIRogue --sprite-doc-prompt       # what the document turn would send
+AIRogue --sprite-doc-check <reply>  # reply -> document -> verdict, no backend
+AIRogue --tile-art <name> --tile-art-dsl   # compile + place + report
+tests/pixel-dsl/run.sh            # 30 assertions
+```
+
+## 1. What this is, and what it is not
+
+Image generation produces a *picture* and then spends six stages correcting it:
+cut, inset, gutter wash, magenta key, trim, palette lock. A 32x32 ground tile or
+prop does not need a picture. It needs a *program*, and a program is:
+
+- **palette-correct by construction** — it cannot name a colour the art pack does
+  not use (§4), so there is no lock stage and nothing to measure afterwards;
+- **free and instant** — a compile is under a millisecond, so a designer can
+  render, read its own output, and retry without spending money or waiting 10-30 s;
+- **re-renderable** — swap the art pack, re-run the same document, and the theme
+  follows. A diffusion output can never do this;
+- **reviewable** — the document is text, so a diff shows exactly what changed;
+- **testable** — a pure function from document to pixels, which this repo
+  otherwise has no way to get from an image model.
+
+It is **not** a replacement. `art.generation.command` still names the image
+producer, and that path keeps working exactly as it does today. §7 is the seam.
+
+## 2. The language
+
+The reference is generated from the compiler (`--sprite-grammar`), so it cannot
+drift from the parser. In short:
+
+```
+version 1
+sprite 32x32
+kind tile                 # or object
+material stone            # optional: the ramp family
+wrap on                   # default: on for a tile, off for an object
+palette { joint = stone.0 }
+fill stone.2
+line (0,12) (10,11) color=joint
+fill_area (5,4) color=stone.3
+scatter color=stone.1,stone.2 density=0.10 seed=5 cluster=2
+```
+
+Ordered operations, no control flow, no variables, no expressions. Frames are
+the variant mechanism:
+
+```
+frame "sprout" { ... }
+frame "mature" { ... }
+```
+
+One document, one PNG per frame. That is what `Evolvable` stage chains and
+open/closed doors need, and it is the thing image generation cannot keep
+coherent for free.
+
+## 3. What was added over the reference DSL
+
+The shape is [pixlmao](https://github.com/metdxt/pixlmao) (MIT): declarative ops,
+a parse-only `check`, a grammar dump for the prompt. Its op set cannot draw this
+project's art, and that was measured rather than assumed — an experiment
+re-authored `tile_grass` with it and compared at 6x:
+
+| version | ops | result |
+|---|---|---|
+| hand-written, pixlmao ops only | 107 | readable, visibly flatter than the pack |
+| the same document + one `scatter` line | 108 | indistinguishable from the pack |
+| one `pixel` op per pack pixel | 354 | **pixel-identical**, 9.8 KB (~2.8k tokens) |
+
+So expressiveness was never the problem; **authoring cost** was. One line
+replaces 354 coordinates. Three additions follow from that measurement:
+
+1. **`scatter`** — seeded, clustered, optionally wrapped grain. Deterministic
+   (`splitmix64`, not `std::mt19937`, whose output is implementation-defined), so
+   the same document always compiles to the same bytes.
+2. **`wrap`** — canvas-level, toroidal drawing for every shape including
+   `fill_area`, so a tile's joints continue across its seam. The experiment's
+   tiling sheet showed the failure without it: joints and moss stop dead at the
+   edge, and because clipping is silent you cannot tell until you tile it. Here
+   clipping is a warning, per operation, with the pixel count.
+3. **Ramps** — colour by role, derived from the pack (§4).
+
+`polygon`, `fill_area` and ordered overwrites are pixlmao's, and they earn their
+place: the flagstone fixture is built as "fill one slab, draw 1px joints, flood
+each enclosed region with a tone", which is a technique the language makes easy
+and which no image model exposes at all.
+
+## 4. Where colour comes from
+
+`data/style/ramps.json`, generated by `tools/derive_ramps.py` from the pack's own
+sprites: `stone`, `sand`, `grass`, `soil`, `wood`, `water`, `iron`, `ink`. Each
+ramp is five steps ordered dark → light plus a `base` (the material's dominant
+tone). A document says `wood.2` or `wood.base`; it cannot say `#b3692f` unless it
+means to.
+
+**Ramps are not snapped to `data/palette.json`.** That file is a 128-colour
+*approximation* of the pack — `tile_grass` is only 65% inside it — and the first
+version of the deriver snapped to it, which collapsed the grass ramp to a single
+tone (four distinct steps became one). A ramp keeps the pack's own pixels, so a
+document "cannot invent a colour the pack does not use" holds by construction,
+which is a stronger property than "is near a palette approximation".
+
+The compiler still reports how much of a result falls inside `palette.json`,
+because it is a number the owner asked about and it costs one pass. It is
+informational, and the report says so.
+
+Regenerate after an art pack change:
+
+```sh
+nix-shell -p python3Packages.pillow --run "python3 tools/derive_ramps.py"
+```
+
+## 5. What is validated, and why it is a *semantic* check
+
+pixlmao's `check` is parse-only, verified in the experiment: an undefined palette
+name passed `check` and failed only at `render`; out-of-bounds coordinates were
+silently clipped; a zero-layer document was "OK" and rendered nothing; parse
+errors were token names (`found "RBrace" but expected "Color"`) with no line. A
+retry loop needs better than that, so `PixelDSL` refuses on semantics:
+
+| rule | severity |
+|---|---|
+| a tile is full-bleed (no transparent pixel) | error |
+| an object renders something, and keeps a 1px transparent margin | error / warning |
+| every colour resolves; every ramp index exists | error |
+| an operation stays inside the canvas — or wraps | warning with the count |
+| a tile is at most 64 vertices, a radius at most 64, coordinates within 8x | error |
+| a frame holds at most 4096 operations | error |
+| a document is operations *or* frames, not both | error |
+| scatter has a density in 0..1 and a seed | error |
+| an object is at least 6x6 opaque pixels | warning |
+
+Every diagnostic carries a line number and is worded as an instruction, because
+the next reader is a model that gets one more attempt.
+
+The summary block is the "look at your own output" channel: size, frame count,
+distinct colours and how many came from ramps, opaque share, palette coverage, and
+an object's silhouette box. That is what a designer agent reads back instead of
+seeing the image.
+
+## 6. Files
+
+| path | role |
+|---|---|
+| `include/PixelDSL.hpp` | the API: `Compile`, `CompileFile`, `WritePng`, `Describe`, `GrammarReference` |
+| `src/PixelDSL.cpp` | lexer, parser, validator, renderer |
+| `tools/derive_ramps.py` | derives the ramps from `data/sprites` |
+| `data/style/ramps.json` | the ramps themselves (committed; regenerate on pack change) |
+| `tests/pixel-dsl/*.sprite` | four documents that must compile, six that must be refused |
+| `tests/pixel-dsl/run.sh` | 19 assertions over the CLI: verdicts, PNGs, determinism, wrap |
+
+## 7. Wiring
+
+The DSL is a **source**, not a mode, and it enters where the image producer
+already is.
+
+### Built
+
+1. **Document lookup** — `SpritePaths::FindSpriteDSLDocument`, same roots and the
+   same order as the PNG: art pack first, then the generated layer (and
+   `data/sprites/` when no pack is configured). `tile_<slug>` for a tile,
+   `<key>` for an object. A hand-authored document in the pack is a supported
+   authoring path, and it is never written to: placement refuses pack writes.
+2. **The switch** — `art.generation.source = "image" | "dsl"`, default `"image"`,
+   so no existing checkout changes behaviour. Invalid values are refused by name
+   and fall back to `"image"`.
+3. **The queue backend** — `TileArtQueue::RunDslBatch`. Same job, same worker, same
+   main-thread drain, same `Game::HandleTileArtGenerated`; the producer is the
+   difference. A compile is free, so the batch window, the cell cap and the
+   request cap are all bypassed (§3 of `SETTINGS.md`).
+4. **One contract difference, enforced by omission** — the image path's palette
+   check is not run for DSL output, because ramp tones are the pack's own (§4) and
+   are not guaranteed to be inside the 128-colour approximation. `--tile-art-dsl`
+   says so in its report rather than claiming a pass.
+5. **Verification** — `--tile-art <name> --tile-art-dsl` runs exactly what the
+   worker runs and asserts placement, resolution and "never into the pack".
+
+6. **The second turn (the document turn)** — `TileDesignerWindow::RequestSpriteDocument`,
+   with its own history, system prompt and provider context so a document is never
+   replayed into the next definition. It sends the brief (name, description, and
+   whether a tile is walkable) plus the compiler's own grammar and ramps; extracts
+   the reply's fenced `sprite` block; compiles it; and on refusal sends the
+   diagnostics back for up to `art.generation.dslAttempts`. On acceptance it writes
+   `<conventionId>.sprite` to the generated layer, never the pack, and queues the
+   compile through the ordinary art request.
+   - The brief's `description` needed a fix: `TileDef` had no such field, and
+     `TileRegistry` warned that the prompt's `description` "is not read by anything"
+     while the prompt told the model it would be stored. It is stored now, because it
+     is the only sentence the document turn gets about what the tile *is*.
+   - One document per conversation, so a set asks its first entry and says so rather
+     than silently drawing one.
+7. **The window's DSL panes** — three of them, for tiles *and* objects, replacing
+   the image pipeline's views when the source is `dsl`. The object pane is in the
+   object preview: the look it will draw (sprite or the Unknown placeholder), the
+   same "Describe art (DSL)" button, and the same document/verdict/sprite panes.
+   The panes are one function with a kind argument, because the only thing the kind
+   changes is how the convention id and the target are derived:
+   - **Document**: the `.sprite` source, read-only in a scrolling child, with its path
+     and size. Read-only by construction rather than by a flag: a text box the user
+     can type into would be a second, worse editor for a format that has a compiler.
+   - **Verdict**: every diagnostic with its line, coloured by severity, then the
+     summary (kind, colours and how many came from ramps, opaque share, silhouette).
+     This is the same text the agent gets back, which is the point: what the pane
+     shows and what the retry says cannot disagree.
+   - **Sprite**: the compiled pixels drawn one rectangle per pixel, straight from the
+     compiler's frame buffer, so a refusal has no sprite and a document edited after
+     its sprite was compiled gets a "document is newer than the sprite" warning.
+
+   Two explicit actions, and their asymmetry is the rule from §7.1:
+   - **Recompile** forgets the finished queue job and compiles the document again
+     (`Game::RecompileTileArt`). Without it a document edited after its sprite landed
+     could never be applied, because the queue refuses a duplicate request — which is
+     right for an automatic path and wrong for a button.
+   - **Ask again** re-runs the document turn and may replace a *generated* document.
+     It is disabled for a document in the art pack, with the reason on the row: that
+     one is hand-authored and is not ours to discard.
+
+## 8. Non-goals
+
+- No control flow, no loops, no variables, no expressions. The language is data,
+  so there is nothing to sandbox and no precedent set for the deferred scripting
+  layer.
+- No layers or blend modes. Blending produces colours outside the palette, which
+  is the one property this exists to guarantee. Shading is a ramp step.
+- No animation timing. `frame` is a variant, not a walk cycle; the sprites this
+  replaces are static.
+- The compiler does not read the tile catalog or the object factory. It takes a
+  document and returns pixels; naming, overlay writes and the swap stay in the
+  code that already owns them.

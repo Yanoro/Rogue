@@ -672,9 +672,9 @@ small; the storage cap is separate.
 - The per-call graph snapshot grows because it includes region nodes; the existing
   `maxGraphNodes`/`maxGraphEdges` and the call history cap keep the debug state bounded.
 
-The Navigation window's **Agent location graph** already draws the per-call graph; region nodes
-should use the primary terrain as their color and the top aspects in the label/tooltip. The existing
-S1 state and summary show the region's character.
+The Navigation window's **Agent location graph** already draws the accumulated graph up to the
+selected call; region nodes should use the primary terrain as their color and the top aspects in the
+label/tooltip. The existing S1 state and summary show the region's character.
 
 Useful metrics:
 

@@ -55,11 +55,9 @@ wall or door to the tile designer; a tile is ground only.
 | `name` | **yes** | The object's identity, in plain words: `"wooden crate"`. This is what a blueprint, a spawn or another agent references. **It must not already exist** in the object catalog. |
 | `components` | **yes, at least one** | The capabilities it has, by their engine names. See the list at the end of this file — an unknown name is refused, and the refusal names the closest known one. |
 | `description` | no | One sentence saying what it is. Stored, and read by the art generator, so write it as a description of the thing and not of the JSON. |
-| `character` | **yes** | The single glyph it is drawn as when no other art resolves. One character, in quotes. |
-| `characterColor` | no | `[r, g, b]` or `[r, g, b, a]`, each 0–255. The colour the glyph is drawn in. |
-| `backgroundColor` | no | The same shape. Keep it far from `characterColor` in brightness — a glyph the same tone as its background is an invisible object. |
-| `art` | no | The ASCII-art block: an array of equal-length strings, one per row. This is what the world actually draws once an object has more than one cell of presence. |
-| `palette` | **yes when you give `art`** | A map from each character used in `art` to `[r, g, b]` or `[r, g, b, a]`. **Every character in `art` must be in the palette**, or that cell draws blank. |
+| `character` | **yes** | The single glyph recorded for it. Nothing draws it any more — an object is its sprite or the Unknown placeholder — but the field is still required, so pick a sensible one. |
+| `characterColor` | no | `[r, g, b]` or `[r, g, b, a]`, each 0–255. Recorded, not drawn. |
+| `backgroundColor` | no | The same shape. Recorded, not drawn. |
 | `nameTagColor` | no | The colour of the label drawn over the object. |
 | `designerNotes` | **yes** | Your own critique. Removed before saving — see the contract. |
 
@@ -84,18 +82,14 @@ paraphrased key is not refused — it is **ignored**, and the object silently ge
 default instead of what you asked for. The list at the end of this file gives the exact
 key for every parameter; use those spellings and nothing else.
 
-### ASCII art
+### Appearance
 
-`art` is how the object looks in the world, drawn with the pack's art font. Rules:
+You do not draw the object. An object is drawn as its **sprite**, generated later from
+the `description` you write, and a missing sprite shows as a placeholder in the world.
+So the description is the only thing you have to say about how it looks: make it
+concrete (materials, colours, condition) instead of repeating the name.
 
-- **All rows the same length.** A ragged block is drawn ragged.
-- **Two to five rows and two to six columns** is the readable range. A single character
-  is what `character` is for; a huge block blots out the world map.
-- **Every glyph in `art` needs a `palette` entry.** Reusing a character for two different
-  colours is not possible.
-- **Flat shading, no outlines**, matching the pack's look: a mid tone, a darker tone for
-  the underside, and a highlight if it needs one. Two to four palette entries is right
-  for this size; more turns to noise.
+There is no `art` or `palette` field any more — sending one is ignored.
 
 ### Choosing capabilities
 

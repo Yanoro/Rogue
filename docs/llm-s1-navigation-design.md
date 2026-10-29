@@ -77,10 +77,16 @@ The single response is a short `<think>` block followed by JSON:
 ```
 
 The engine validates the move against the candidate set, resolves the target cell, walks
-one leg and checks arrival; the model never invents coordinates. The full history is
-retained for the quality-first experiment; context compaction/caching is deliberately
-left for the optimization pass. `navigation.single.mapRadius` (default 6) controls the
-ASCII map; `maxTokens` (500) and `timeoutSeconds` (60) bound one decision.
+one leg and checks arrival; the model never invents coordinates. The single navigator uses
+a dedicated AI instance by default. `navigation.single.useMainModel` chooses between the
+NPC model settings and its own `navigation.single.model` block; the shipped configuration
+points that at a local Ollama `phi4-mini:latest`. Reasoning is off where the backend
+supports it, and `maxTokens` (350; `num_predict` on Ollama) bounds one decision.
+`navigation.single.historyTurns` (default 3; `0` keeps everything) caps the episode context
+because the current state already carries the route and last result. `compactJson` sends
+the observation and plan without pretty-print whitespace, and `concise` asks for a 1–2
+sentence think and a one-sentence strategy. Each can be switched back independently for
+A/B tests.
 
 **2026-10-23 S1 ASCII-map experiment:** `system1.navigation.mapMode` selects the S1's spatial
 input: `off` (the current sector prose), `append` (prose + a north-up ASCII map + target list), or
@@ -862,8 +868,10 @@ Notes:
   answers (choice, probability, margin, monitor p/confidence, handoff, latency) plus the latest raw
   S1 reply. The snapshot is kept after the episode ends, so a completed or failed run can be
   inspected. It is read-only.
-- **Agent location graph**: the Overview tab draws the observed place/object graph the strategist
-  received at the selected call, above the thoughts. The graph header has two toggles: **Hide
+- **Agent location graph**: the Overview tab draws the union of every observed place/object graph
+  up to the selected call, so a node the navigator has seen never disappears when the character
+  walks away from it. The selected call supplies `current`, the frontier ticks and dead ends; older
+  calls supply the accumulated nodes and edges. The graph header has two toggles: **Hide
   objects** removes every `object` node (and its edges); **Hide names** removes every node label,
   including “you are here”, while the green current ring remains. With names hidden, hovering a node
   shows its full name and region level. The toggles are per NPC Navigation window session. Region
@@ -875,14 +883,18 @@ Notes:
   semantic place uses its extent centre rather than the growing top-left `anchor`, and an object
   uses its cell. The current region node is included even when a semantic place is the current key.
   edges are observed or walked; the current place is green, the frontier yellow, visited places
-  blue, objects orange, dead ends red. The graph is captured per strategist call, so selecting an
-  older call shows the world picture at that point. With no call history the latest observation's
-  graph is used.
+  blue, objects orange, dead ends red. The graph is the union of the call snapshots up to the
+  selected call, so selecting an older call shows the accumulated picture at that point. With no
+  call history the latest observation's graph is used.
 - **Navigator thoughts**: the Overview tab has a live section for the strategist's `<think>` text.
   The latest call is followed while it streams; buttons select any earlier strategist call (initial
   plan, re-plan, retry), and `Latest` returns to the live one. A call with no `<think>` says so; a
-  failed call shows its error. The JSON is not shown here; the raw plan and observation stay in the
-  Strategist tab.
+  failed call shows its error. The raw assistant stream also appears under **Live navigator output**
+  while a single-navigator request is in flight, before parsing. **Full context** toggles the single
+  navigator's whole message list: system prompt, every user/assistant turn and every retry
+  correction. A failed single-navigator decision exposes **Attempt N** buttons only when it recorded
+  raw replies; each opens the verbatim response and the error that rejected it. The JSON is not
+  shown here beyond those raw attempts; the parsed plan and observation stay in the Strategist tab.
 - **S1 responses**: the Overview tab shows the S1 answers that followed the selected strategist
   call, between Navigator thoughts and Monitors. Every answer for that call is retained, not only
   the newest eight. With no strategist call (strategist disabled or no call history) it falls back

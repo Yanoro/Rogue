@@ -1,12 +1,12 @@
 {
   "backgroundColor": [
     60,
-    40,
-    20,
+    45,
+    30,
     255
   ],
-  "capacity": 8,
-  "character": "C",
+  "capacity": 24,
+  "character": "$",
   "characterColor": [
     255,
     215,
@@ -14,10 +14,9 @@
     255
   ],
   "components": [
-    "Obstacle",
     "Storage",
-    "Interactable"
+    "Obstacle"
   ],
-  "description": "A gleaming golden chest, possibly containing treasures.",
+  "description": "A heavy polished golden chest with dark metal corner bands, a prominent clasp, and a faint warm glow along its seams.",
   "name": "golden chest"
 }
