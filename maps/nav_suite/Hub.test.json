@@ -1,0 +1,42 @@
+{
+  "map": "Map_Nav_Hub.json",
+  "scenario": "hub",
+  "headline": "Five arms, four slots: does the cap hide the goal arm?",
+  "purpose": "A crossroads with five arms of unequal length. maxDirections=4 must drop one arm; the shortest is the one that leads to the goal, so the test is whether the distant-place list catches what the cap hid.",
+  "spawn": [
+    16,
+    16
+  ],
+  "goal": "find the market; a traveller said it is north-east",
+  "goalRegion": {
+    "x": [
+      24,
+      27
+    ],
+    "y": [
+      7,
+      10
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find the market; a traveller said it is north-east]"
+  ],
+  "expected": {
+    "maxLegs": 8,
+    "surveysAllowed": 2,
+    "note": "Four local runs of about ten tiles outrank the seven-tile north-east arm. If the market is missing from ACTIONS, the distant list is the only path to it."
+  },
+  "metrics": {
+    "optimalSteps": 8,
+    "reachableCells": 987,
+    "goalCellsWalkable": 12,
+    "objects": 17,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Hub.json",
+  "notes": [
+    "The cap test only works if the arms are observed: LOOK around first, otherwise every run is two tiles and nothing is visible.",
+    "Score: the market is present in the candidate list (either as here: or as pN) and is reached in at most three legs."
+  ]
+}

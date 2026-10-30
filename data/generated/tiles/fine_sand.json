@@ -1,0 +1,17 @@
+{
+  "backgroundColor": [
+    200,
+    175,
+    140,
+    255
+  ],
+  "blocksTile": false,
+  "character": "f",
+  "characterColor": [
+    240,
+    230,
+    200,
+    255
+  ],
+  "name": "fine sand"
+}

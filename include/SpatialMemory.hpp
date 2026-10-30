@@ -13,6 +13,7 @@
 // is the one part that is not a pure function of the memory.
 
 #include "Components.h"
+#include "InteractionRegistry.h"
 #include "Map.h"
 #include "PlaceCategoryRegistry.h"
 #include "TaskList.hpp"
@@ -250,6 +251,19 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
         SeenObject &record = found->second;
         const std::string templateId =
             other.has<ItemType>() ? other.get<ItemType>()->id : std::string();
+        // Readable, stable instance alias for the model-facing grammar. Assign
+        // once, and regenerate only when the content key changes: an entity
+        // overwritten from a tree to a chest must not keep calling itself
+        // "apple_tree-3".
+        SeenObject keySource;
+        keySource.templateId = templateId;
+        keySource.name = name.name;
+        const std::string contentKey = ObjectContentKey(keySource);
+        if (record.alias.empty() ||
+            ObjectContentKey(record) != contentKey) {
+          record.alias = contentKey + "-" +
+                         std::to_string(++memory.nextObjectAlias[contentKey]);
+        }
         bool changed = record.templateId != templateId ||
                        record.name != name.name ||
                        record.pos.x != pos.x || record.pos.y != pos.y ||
@@ -274,6 +288,22 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
           }
         } else if (!record.categories.empty()) {
           record.categories.clear();
+          changed = true;
+        }
+        // Interaction keys are template-derived in the same sense: the entity
+        // owns them, and the deriver only gets the memory. Snapshot them while
+        // the live entity is here, refreshing on every sighting so a component
+        // added or removed in place is reflected on the next look.
+        std::vector<std::string> interactions;
+        if (!record.character) {
+          interactions = InteractionRegistry::GetAvailableInteractionKeys(other);
+          std::sort(interactions.begin(), interactions.end());
+          interactions.erase(
+              std::unique(interactions.begin(), interactions.end()),
+              interactions.end());
+        }
+        if (record.interactions != interactions) {
+          record.interactions = std::move(interactions);
           changed = true;
         }
         if (changed) {

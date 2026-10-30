@@ -1,0 +1,41 @@
+sprite 32x32
+kind object
+material wood
+wrap off
+palette {
+  gold = #d4af37
+  goldlight = #f2d478
+  goldmid = #b78c2a
+  golddark = #8a651f
+  band = #141414
+  banddark = #0a0a0a
+  clasp = #1c1c1c
+  seamglow = #ffca6a66
+}
+
+rect (2,7) (29,27) color=goldmid
+rect (2,8) (29,14) color=goldlight
+rect (2,15) (29,27) color=gold
+rect (2,7) (29,27) color=golddark
+
+rect (2,7) (5,27) color=band
+rect (26,7) (29,27) color=band
+rect (2,7) (29,9) color=band
+rect (2,25) (29,27) color=banddark
+
+line (2,14) (29,14) color=band
+line (2,15) (29,15) color=banddark
+
+rect (13,14) (18,21) color=clasp
+rect (14,16) (17,20) color=banddark
+rect (15,16) (16,18) color=goldlight
+
+circle (15,14) radius=2 color=band
+rect (13,14) (18,15) color=clasp
+
+line (2,14) (29,14) color=seamglow
+line (2,15) (29,15) color=seamglow
+line (2,7) (2,27) color=seamglow
+line (29,7) (29,27) color=seamglow
+line (2,7) (29,7) color=seamglow
+line (2,27) (29,27) color=seamglow

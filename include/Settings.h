@@ -294,6 +294,48 @@ struct GameSettings {
     float timeoutSeconds = 60.0f;
     bool fallbackToTwo = true;
     int mapRadius = 6;
+    // Which model settings the dedicated navigator instance uses. True keeps the
+    // NPC model (still a separate instance, so reasoning/token options do not
+    // leak to NPC requests). False reads `model` below; that is how a local
+    // Ollama navigator or a different hosted model is configured.
+    bool useMainModel = true;
+    // Only read when useMainModel is false. Same shape and meaning as the
+    // top-level `model` block, including `type`, `model`, `endpoint`, `keepAlive`,
+    // `temperature` and `provider`. The default type is ollama, so a local model
+    // needs only its tag.
+    ModelSection model;
+    // Build a dedicated AI instance for the single navigator instead of sharing
+    // the NPC backend. The separate instance is what makes `disableReasoning`
+    // safe: toggling it on the shared backend would mutate options for NPC
+    // requests running at the same time.
+    bool dedicatedBackend = true;
+    // Turn the dedicated backend's chain-of-thought off. OpenRouter enables
+    // reasoning by default on the models used here, and reasoning can consume
+    // the entire completion budget before any JSON is emitted. Ignored when
+    // `dedicatedBackend` is false (the shared backend is left untouched).
+    bool disableReasoning = true;
+    // Send compact JSON in the single prompt. The pretty-printed form is useful
+    // in the debug window, but every space and newline is a prompt token. Off
+    // reproduces the previous prompt for A/B comparison.
+    bool compactJson = true;
+    // Previous decision turns kept in the single navigator's context. The state
+    // already carries the route and last result, so long histories mostly repeat
+    // observations the model has already acted on. 0 keeps the whole episode.
+    int historyTurns = 3;
+    // Ask for a one-sentence strategy and a 1-2 sentence think block instead of
+    // the previous "a few sentences" / "2-6 sentences" wording. Shorter output is
+    // the cheapest latency win after reasoning is off.
+    bool concise = true;
+    // Stage 2: group objects by type/profile and use the target grammar
+    // (objects:all, inspect:<group>, approach:<alias>, <verb>:<alias>) instead
+    // of listing every examine candidate. False restores the old per-instance
+    // examine list for A/B.
+    bool objectSummary = true;
+    // Groups shown in the default STATE block. The rest stay available through
+    // objects:all and inspect.
+    int maxObjectGroups = 6;
+    // Instances shown by inspect:<group>. inspect:<group>:all ignores this.
+    int maxGroupDetails = 8;
     // All eight compass sectors are offered to the main LLM, and there is room
     // for four distant places after them. The two-context S1 keeps its smaller
     // system1.navigation caps.
@@ -546,6 +588,13 @@ struct GameSettings {
     // this is the part that must not drift: a tile and an object are refused the same
     // way or the model has learned two contracts.
     std::string spriteContractFile = "data/prompts/SPRITE_CONTRACT.md";
+
+    // The system prompt for the turn that writes a *pixel document* (the sprite
+    // DSL) for a definition the designer already accepted. Separate from the two
+    // definition prompts because it answers a different question -- how the sprite
+    // is drawn, not what it is -- and because its `%SPRITE_DSL%` and `%RAMPS%`
+    // substitutions come from the compiler itself.
+    std::string spriteDSLPromptFile = "data/style/SPRITEDESIGNER.md";
     // The prompt-improver's instructions, shared by every window that offers the
     // Improve button -- the rules for rewriting a user's request are about rewriting,
     // not about tiles or buildings, so there is one file rather than one per window.
@@ -612,6 +661,20 @@ struct GameSettings {
       // thing in this feature that costs money to reproduce, so it is kept on disk
       // but never committed.
       std::string workDirectory;
+
+      // Which producer makes a sprite: "image" (the sheet API behind
+      // art.generation.command) or "dsl" (src/PixelDSL.cpp compiling the
+      // <conventionId>.sprite document next to it). Defaults to "image" so
+      // upgrading does not change what any existing checkout does.
+      //
+      // A source, not a mode: both write the same PNG through the same placement
+      // and the same hot-swap, so everything downstream is shared.
+      std::string source = "image";
+      // How many compile/describe attempts a designer agent gets when the DSL is
+      // the source. Compiles are free and instant, so this is much higher than the
+      // image path's maxDesignAttempts -- the cost of a retry is a text request,
+      // not $0.04.
+      int dslAttempts = 5;
     } generation;
   } art;
 

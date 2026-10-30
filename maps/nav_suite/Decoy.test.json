@@ -1,0 +1,43 @@
+{
+  "map": "Map_Nav_Decoy.json",
+  "scenario": "decoy",
+  "headline": "Two hamlets; only the far one has a market and a workshop.",
+  "purpose": "Two hamlets, both visible from the spawn. The nearer one is a settlement but has no market and no workshop, so the only honest arrival is the far one. Isolates the semantic arrival claim.",
+  "spawn": [
+    22,
+    17
+  ],
+  "goal": "find a village with a market and a smith's workshop",
+  "goalRegion": {
+    "x": [
+      34,
+      41
+    ],
+    "y": [
+      20,
+      27
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find a village with a market and a smith's workshop]"
+  ],
+  "expected": {
+    "maxLegs": 8,
+    "surveysAllowed": 2,
+    "note": "The near hamlet is about ten tiles away and the far one about sixteen. A correct run asks about the market before claiming arrival; a decoy run claims arrived at the near hamlet."
+  },
+  "metrics": {
+    "optimalSteps": 12,
+    "reachableCells": 2010,
+    "goalCellsWalkable": 47,
+    "objects": 296,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Decoy.json",
+  "notes": [
+    "Score arrival against goalRegion, never against the model's word: the engine does not verify the arrived sentinel.",
+    "The near hamlet derives a storage place from two chests but no market and no workshop, which is what makes it a decoy rather than a second correct answer.",
+    "If the strategist's monitor asks 'is this a village?', both answer yes; the useful monitor names the market."
+  ]
+}

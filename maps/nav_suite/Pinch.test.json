@@ -1,0 +1,43 @@
+{
+  "map": "Map_Nav_Pinch.json",
+  "scenario": "pinch",
+  "headline": "A zero-width diagonal gate: A*'s only route, impossible for a body.",
+  "purpose": "Two rooms joined only by a 2x2 diagonal gate: the free cells touch at a corner with walls on both orthogonal neighbours. The only route is a step a 1x1 body cannot physically make, so this isolates AStar's destination-only blocking rule.",
+  "spawn": [
+    2,
+    5
+  ],
+  "goal": "reach the far room",
+  "goalRegion": {
+    "x": [
+      7,
+      10
+    ],
+    "y": [
+      6,
+      8
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE reach the far room]"
+  ],
+  "expected": {
+    "maxLegs": 4,
+    "surveysAllowed": 1,
+    "note": "The gate is (1,4)..(4,6) -> (5,5) -> (6,6) -> (7,6). A corner-cut-safe pathfinder would report no route at all, so a successful leg here is the defect, not the goal."
+  },
+  "metrics": {
+    "optimalSteps": 5,
+    "reachableCells": 26,
+    "goalCellsWalkable": 12,
+    "objects": 118,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Pinch.json",
+  "notes": [
+    "The step (5,5) -> (6,6) has walls at (6,5) and (5,6): a square body cannot pass, an 8-way graph can. That is the whole scenario.",
+    "Score: did the leg arrive at all? If it did, record the route and the leg length; the map is the evidence, not a pass.",
+    "After any A* fix, this map should report the goal unreachable, which is the correct result."
+  ]
+}

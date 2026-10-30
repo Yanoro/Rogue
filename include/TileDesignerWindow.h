@@ -16,6 +16,7 @@
 #include "raylib-cpp.hpp"
 
 #include "AI.h"
+#include "PixelDSL.hpp"
 #include "TileArtQueue.hpp"
 #include "TileDesigner.hpp"
 #include "ObjectDesigner.hpp"
@@ -134,6 +135,12 @@ private:
     std::string HistoryAnswer() const;
     std::string ParsedAnswer() const;
 
+    // True when this exchange belongs to the *pixel document* conversation rather
+    // than the definition one. The two are separate histories with separate system
+    // prompts, but they share the transcript and the retry machinery -- so the flag
+    // is what Inspection dispatches on, not two nearly identical vectors.
+    bool isArtDocument = false;
+
     std::string prompt;
     std::string answer;
     bool done = false;
@@ -175,7 +182,56 @@ private:
   };
 
   void SendUserMessage(const std::string &prompt);
-  void GenerateResponse(size_t index, std::string prompt);
+  // `artConversation` selects the pixel-document history, system prompt and provider
+  // context. One function rather than two because everything else -- the streaming,
+  // the sentinel, the failure handling, the transcript -- is identical, and a second
+  // copy is a second place for the handoff to break.
+  void GenerateResponse(size_t index, std::string prompt,
+                        bool artConversation = false);
+
+  // ---- the pixel document turn (art.generation.source == "dsl") -------------------
+  //
+  // A second conversation, not a second mode: the definition turn answers "what is
+  // this", this one answers "how is it drawn". Keeping the histories apart matters
+  // in both directions -- a document must not be replayed into the next definition,
+  // and a definition prompt must not be replayed into a document request.
+  //
+  // Requests the document for `name`. If one already exists (hand-authored in the
+  // pack, or left by an earlier turn) it is used as-is and the art is queued; the
+  // pack's copy is never overwritten.
+  void RequestSpriteDocument(const std::string &name, SpriteKinds::Kind kind,
+                             bool replaceGenerated = false);
+  void SendArtTurn(const std::string &prompt);
+  void InspectFinishedArtDocument(size_t index, const Exchange &finished);
+  // True when settings say the generation source is "dsl".
+  bool DslArtSourceActive() const;
+  // Where a document written by this turn would go. Empty when no generated layer is
+  // configured, in which case there is nowhere an agent may write.
+  std::string ArtDocumentPath(const std::string &name, SpriteKinds::Kind kind) const;
+
+  std::string artContextId;
+  std::vector<ChatMessage> artHistory;
+  std::string artSystemPrompt;
+  TileDesigner::SpriteDocumentBrief artBrief;
+  int artAttempts = 0;
+  // The last compile verdict, kept for the pane: "compiled" is not the interesting
+  // half, "refused at line 7 because a tile cannot be transparent" is.
+  std::string artVerdict;
+
+  // The DSL panes: the document, its compile verdict, and the sprite it produces.
+  // Cached against the document's path *and* modification time, for the same reason
+  // the thumbnail cache is: re-asking reuses the filename, so the path alone cannot
+  // tell a new document from the previous one -- and a pane that kept showing the
+  // first compile of a document the agent had since replaced would be worse than no
+  // pane at all.
+  // The document, its compile verdict, and the compiled sprite, for either kind.
+  // `kind` decides only how the convention id and the target are derived -- the
+  // panes themselves are the same file, verdict and image for a tile and an object.
+  void DrawDslPanels(const std::string &name, SpriteKinds::Kind kind);
+  std::string dslCacheKey;
+  std::string dslText;
+  PixelDSL::Result dslResult;
+  bool dslCompiled = false;
   bool IsBusy();
 
   // Runs on the main thread once a stream has finished. Applies the reply through

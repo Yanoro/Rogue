@@ -1,6 +1,7 @@
 #include "StorageWindow.h"
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
+#include "SpritePaths.hpp"
 #include "Components.h"
 #include "ResourceManager.h"
 #include "StringUtils.hpp"
@@ -13,19 +14,14 @@
 namespace {
 
 // One row per *distinct* item, not per entity: a chest holding five apples
-// shows a single "Apple (5)" entry. The glyph and colors come from the first
-// instance seen, so the row looks like the item does on the map.
+// shows a single "Apple (5)" entry.
+//
+// The look is the item's sprite, or the Unknown placeholder when it has none --
+// the same rule the world uses (Game::DrawEntityVisual). There is no glyph and no
+// ASCII art in a row any more, so there is nothing else to copy out of the entity.
 struct StorageEntry {
-  char ch = '?';
-  Color characterColor = {255, 255, 255, 255};
-  Color backgroundColor = {0, 0, 0, 0};
-  // Copied, not referenced: the rows are rebuilt from the live ECS every frame
-  // and the item entity can be destroyed in between.
-  AsciiArt art;
-  bool hasArt = false;
-  // The item's raster sprite, when it has one. Also copied for the same reason,
-  // and resolved once per rebuild rather than per draw so the row keeps looking
-  // like the item even if the entity goes away.
+  // Copied as a pointer, not referenced: the rows are rebuilt from the live ECS
+  // every frame and the item entity can be destroyed in between.
   const Texture2D *sprite = nullptr;
   std::string name;
   int count = 0;
@@ -98,15 +94,6 @@ void StorageWindow::Draw() {
 
     StorageEntry entry;
     entry.name = name;
-    if (const DrawAscii *ascii = item.get<DrawAscii>()) {
-      entry.ch = ascii->ch;
-      entry.characterColor = ascii->characterColor;
-      entry.backgroundColor = ascii->backgroundColor;
-    }
-    if (const AsciiArt *art = item.get<AsciiArt>()) {
-      entry.hasArt = !art->lines.empty();
-      entry.art = *art;
-    }
     // The item's sprite, if it was given one at spawn. The path in the component
     // was already validated when it was attached, so this is a cache hit; the
     // null check is only for an item spawned while no manager was set.
@@ -142,35 +129,20 @@ void StorageWindow::Draw() {
   for (size_t i = 0; i < entries.size(); ++i) {
     const StorageEntry &entry = entries[i];
 
-    ImVec4 background = ToImVec4(entry.backgroundColor);
-    if (background.w <= 0.0f) {
-      // Item backgrounds are usually fully transparent (on the map they let the
-      // tile show through); in a window that leaves a floating glyph, so give
-      // the cell a neutral plate instead.
-      background = ImVec4(0.15f, 0.15f, 0.15f, 1.0f);
+    // Its sprite, or the placeholder. The button is only the click target and the
+    // neutral plate behind a cut-out sprite; its return value is unused here.
+    const Texture2D *look = entry.sprite;
+    if (look == nullptr && resources != nullptr) {
+      look = resources->TryGetTexture(UnknownSpritePath());
     }
 
     ImGui::PushID(static_cast<int>(i));
-    ImGui::PushStyleColor(ImGuiCol_Button, background);
-    ImGui::PushStyleColor(ImGuiCol_Text, ToImVec4(entry.characterColor));
-
-    // A sprite or an art block draws its own pixels over the plate; anything else
-    // keeps the single-glyph label. The button is only a coloured plate either
-    // way -- its return value is deliberately unused here.
-    if (entry.sprite != nullptr) {
-      ImGui::Button("##glyph", ImVec2(kGlyphSize, kGlyphSize));
-      DrawSpriteImGui(*entry.sprite, ImGui::GetItemRectMin(),
-                      ImGui::GetItemRectSize());
-    } else if (entry.hasArt) {
-      ImGui::Button("##glyph", ImVec2(kGlyphSize, kGlyphSize));
-      DrawAsciiArtImGui(entry.art, entry.characterColor,
-                        ImGui::GetItemRectMin(), ImGui::GetItemRectSize());
-    } else {
-      const std::string glyph = std::string(1, entry.ch) + "##glyph";
-      ImGui::Button(glyph.c_str(), ImVec2(kGlyphSize, kGlyphSize));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+    ImGui::Button("##look", ImVec2(kGlyphSize, kGlyphSize));
+    if (look != nullptr) {
+      DrawSpriteImGui(*look, ImGui::GetItemRectMin(), ImGui::GetItemRectSize());
     }
-
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor();
     ImGui::PopID();
 
     ImGui::SameLine();

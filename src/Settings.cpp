@@ -746,6 +746,8 @@ bool LoadGameSettings(const std::string &path) {
         "generatedObjects", settings.content.generatedObjects);
     settings.content.spriteContractFile = content.value(
         "spriteContractFile", settings.content.spriteContractFile);
+    settings.content.spriteDSLPromptFile = content.value(
+        "spriteDSLPromptFile", settings.content.spriteDSLPromptFile);
     settings.content.rewritePromptFile =
         content.value("rewritePromptFile", settings.content.rewritePromptFile);
     settings.content.blueprints =
@@ -770,6 +772,21 @@ bool LoadGameSettings(const std::string &path) {
       if (settings.art.generation.enabled &&
           settings.art.generation.command.empty()) {
         settings.art.generation.command = BuiltinTileArtCommand();
+      }
+      settings.art.generation.source =
+          generation.value("source", settings.art.generation.source);
+      if (settings.art.generation.source != "image" &&
+          settings.art.generation.source != "dsl") {
+        std::cerr << "Settings: art.generation.source must be \"image\" or "
+                     "\"dsl\"; using \"image\"." << std::endl;
+        settings.art.generation.source = "image";
+      }
+      settings.art.generation.dslAttempts =
+          generation.value("dslAttempts", settings.art.generation.dslAttempts);
+      if (settings.art.generation.dslAttempts < 1) {
+        std::cerr << "Settings: art.generation.dslAttempts must be at least 1; "
+                     "using 1." << std::endl;
+        settings.art.generation.dslAttempts = 1;
       }
       settings.art.generation.maxCellsPerRequest =
           generation.value("maxCellsPerRequest",
@@ -810,12 +827,63 @@ bool LoadGameSettings(const std::string &path) {
       const nlohmann::json &single = Section(navigationRoot, "single");
       settings.navigation.single.maxTokens =
           single.value("maxTokens", settings.navigation.single.maxTokens);
+      settings.navigation.single.dedicatedBackend =
+          single.value("dedicatedBackend",
+                       settings.navigation.single.dedicatedBackend);
+      settings.navigation.single.disableReasoning = single.value(
+          "disableReasoning", settings.navigation.single.disableReasoning);
+      settings.navigation.single.compactJson = single.value(
+          "compactJson", settings.navigation.single.compactJson);
+      settings.navigation.single.historyTurns = single.value(
+          "historyTurns", settings.navigation.single.historyTurns);
+      settings.navigation.single.concise = single.value(
+          "concise", settings.navigation.single.concise);
+      settings.navigation.single.objectSummary = single.value(
+          "objectSummary", settings.navigation.single.objectSummary);
+      settings.navigation.single.maxObjectGroups = single.value(
+          "maxObjectGroups", settings.navigation.single.maxObjectGroups);
+      settings.navigation.single.maxGroupDetails = single.value(
+          "maxGroupDetails", settings.navigation.single.maxGroupDetails);
       settings.navigation.single.timeoutSeconds = single.value(
           "timeoutSeconds", settings.navigation.single.timeoutSeconds);
       settings.navigation.single.fallbackToTwo = single.value(
           "fallbackToTwo", settings.navigation.single.fallbackToTwo);
       settings.navigation.single.mapRadius = single.value(
           "mapRadius", settings.navigation.single.mapRadius);
+      settings.navigation.single.useMainModel = single.value(
+          "useMainModel", settings.navigation.single.useMainModel);
+      // Empty is the "not configured" sentinel; ModelSection's default model id
+      // is "llama3", which must not be sent merely because useMainModel is false.
+      settings.navigation.single.model.model.clear();
+      if (single.contains("model")) {
+        const nlohmann::json &singleModel = single["model"];
+        GameSettings::ModelSection &target = settings.navigation.single.model;
+        target.type = singleModel.value("type", target.type);
+        target.model = singleModel.value("model", target.model);
+        target.apiKey = singleModel.value("apiKey", target.apiKey);
+        target.endpoint = singleModel.value("endpoint", target.endpoint);
+        target.keepAlive = singleModel.value("keepAlive", target.keepAlive);
+        if (singleModel.contains("temperature")) {
+          target.hasTemperature = true;
+          target.temperature = singleModel["temperature"].get<double>();
+        }
+        if (singleModel.contains("maxTokens")) {
+          target.hasMaxTokens = true;
+          target.maxTokens = singleModel["maxTokens"].get<int>();
+        }
+        if (singleModel.contains("provider")) {
+          target.hasProvider = true;
+          target.provider = singleModel["provider"];
+        }
+      }
+      if (!settings.navigation.single.useMainModel &&
+          settings.navigation.single.model.model.empty()) {
+        std::cerr << "Settings: navigation.single.useMainModel is false but "
+                     "navigation.single.model.model is empty; using the main "
+                     "model settings."
+                  << std::endl;
+        settings.navigation.single.useMainModel = true;
+      }
       settings.navigation.single.maxAttempts = single.value(
           "maxAttempts", settings.navigation.single.maxAttempts);
       settings.navigation.single.maxDirections = single.value(
@@ -828,6 +896,13 @@ bool LoadGameSettings(const std::string &path) {
                      "using 500."
                   << std::endl;
         settings.navigation.single.maxTokens = 500;
+      }
+      if (settings.navigation.single.historyTurns < 0 ||
+          settings.navigation.single.historyTurns > 64) {
+        std::cerr << "Settings: navigation.single.historyTurns must be 0..64 "
+                     "(0 keeps everything); using 3."
+                  << std::endl;
+        settings.navigation.single.historyTurns = 3;
       }
       if (settings.navigation.single.timeoutSeconds < 1.0f) {
         std::cerr << "Settings: navigation.single.timeoutSeconds must be at "
@@ -862,6 +937,20 @@ bool LoadGameSettings(const std::string &path) {
                      "1..32; using 12."
                   << std::endl;
         settings.navigation.single.maxCandidates = 12;
+      }
+      if (settings.navigation.single.maxObjectGroups < 1 ||
+          settings.navigation.single.maxObjectGroups > 64) {
+        std::cerr << "Settings: navigation.single.maxObjectGroups must be "
+                     "1..64; using 6."
+                  << std::endl;
+        settings.navigation.single.maxObjectGroups = 6;
+      }
+      if (settings.navigation.single.maxGroupDetails < 1 ||
+          settings.navigation.single.maxGroupDetails > 128) {
+        std::cerr << "Settings: navigation.single.maxGroupDetails must be "
+                     "1..128; using 8."
+                  << std::endl;
+        settings.navigation.single.maxGroupDetails = 8;
       }
       const nlohmann::json &strategist = Section(navigationRoot, "strategist");
       auto &s = settings.navigation.strategist;

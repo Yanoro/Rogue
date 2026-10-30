@@ -244,9 +244,11 @@ bool ParseTileDef(const nlohmann::json& j, const std::string& sourcePath,
     return false;
   }
 
-  if (j.contains("description")) {
-    warnings.push_back("the \"description\" field is not read by anything; it is "
-                       "kept in the file but has no effect");
+  // Stored, not warned about. It was "kept in the file but has no effect" until the
+  // pixel-document turn started reading it; a designer's own sentence about the tile
+  // is the best brief the art step can get.
+  if (j.contains("description") && j["description"].is_string()) {
+    out.description = j["description"].get<std::string>();
   }
 
   out.sourcePath = sourcePath;

@@ -54,6 +54,11 @@ public:
   // warm is the difference between measuring inference and measuring disk I/O.
   void setKeepAlive(const std::string &value) { keepAlive = value; }
 
+  // Ollama's completion cap is `options.num_predict`, not `max_tokens`. The
+  // navigator calls this per request; without the override it would silently
+  // inherit AI's no-op and run with Ollama's default budget.
+  void setMaxTokens(int tokens) override { options["num_predict"] = tokens; }
+
   std::string generate(const std::string &contextId,
                        const std::vector<ChatMessage> &history,
                        std::stop_token stoken = {},

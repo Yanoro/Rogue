@@ -73,6 +73,18 @@ inline bool Contains(const std::string &haystack, const std::string &needle) {
   return haystack.find(needle) != std::string::npos;
 }
 
+inline void ReplaceAll(std::string &text, const std::string &from,
+                       const std::string &to) {
+  if (from.empty()) {
+    return;
+  }
+  std::size_t position = 0;
+  while ((position = text.find(from, position)) != std::string::npos) {
+    text.replace(position, from.size(), to);
+    position += to.size();
+  }
+}
+
 inline int Chebyshev(const GamePosition &a, const GamePosition &b) {
   return std::max(std::abs(a.x - b.x), std::abs(a.y - b.y));
 }
@@ -684,6 +696,49 @@ inline nlohmann::json BuildObservation(
   return observation;
 }
 
+// Stage 2's grouped object summary replaces per-object graph nodes/edges. The
+// graph still carries the place structure; keeping the object copy as well was
+// pure prompt bloat (18 nodes + 18 edges in the first village test) and made the
+// small navigator ramble. Only the single navigator calls this.
+inline void StripObjectGraph(nlohmann::json &observation) {
+  const auto graphIt = observation.find("graph");
+  if (graphIt == observation.end() || !graphIt->is_object()) return;
+  nlohmann::json &graph = *graphIt;
+
+  const auto isObjectKey = [](const nlohmann::json &value) {
+    return value.is_string() &&
+           value.get_ref<const std::string &>().rfind("obj:", 0) == 0;
+  };
+  const auto stripArray = [&](const char *field, auto keep) {
+    const auto it = graph.find(field);
+    if (it == graph.end() || !it->is_array()) return;
+    nlohmann::json kept = nlohmann::json::array();
+    for (const nlohmann::json &entry : *it) {
+      if (keep(entry)) kept.push_back(entry);
+    }
+    *it = std::move(kept);
+  };
+
+  stripArray("nodes", [&](const nlohmann::json &node) {
+    if (!node.is_object()) return true;
+    const auto key = node.find("key");
+    return key == node.end() || !isObjectKey(*key);
+  });
+  stripArray("edges", [&](const nlohmann::json &edge) {
+    if (!edge.is_object()) return true;
+    const auto to = edge.find("to");
+    const auto from = edge.find("from");
+    if (to != edge.end() && isObjectKey(*to)) return false;
+    if (from != edge.end() && isObjectKey(*from)) return false;
+    return true;
+  });
+  stripArray("frontier", [&](const nlohmann::json &entry) {
+    if (!entry.is_object()) return true;
+    const auto key = entry.find("key");
+    return key == entry.end() || !isObjectKey(*key);
+  });
+}
+
 // ── The S1 pilot's compact observation ───────────────────────────────────────
 
 // A small agent-centred ASCII map for the S1. The S1 is a classifier and a full
@@ -1011,7 +1066,7 @@ Rules:
 )";
 }
 
-inline std::string PlanToJson(const Plan &plan) {
+inline std::string PlanToJson(const Plan &plan, bool pretty = true) {
   nlohmann::json root;
   root["strategy"] = plan.strategy;
   root["subtask"] = plan.subtask;
@@ -1024,7 +1079,7 @@ inline std::string PlanToJson(const Plan &plan) {
     entry["min_confidence"] = monitor.minConfidence;
     root["monitors"].push_back(std::move(entry));
   }
-  return root.dump(2);
+  return pretty ? root.dump(2) : root.dump();
 }
 
 inline std::string BuildStrategistUserPrompt(
@@ -1052,8 +1107,8 @@ inline std::string BuildStrategistUserPrompt(
 // One main-model context holds the whole navigation: the map, graph, plan, route
 // and previous results. This prompt is intentionally richer than the pilot's
 // one-step prompt: the model is the strategist and the pilot at once.
-inline std::string BuildSingleSystemPrompt() {
-  return R"(You are the navigator for a character in a tile-based game. You are the
+inline std::string BuildSingleSystemPrompt(bool concise = false) {
+  std::string prompt = R"(You are the navigator for a character in a tile-based game. You are the
 only navigation model: there is no separate strategist or pilot. You see only
 what the character has observed in SpatialMemory; you have no map, no authored
 name you have not seen, and no coordinates the character has not observed.
@@ -1069,9 +1124,9 @@ Each turn the engine gives you:
 Your job is one decision: keep or update the plan, and choose the next move.
 Think about the long-term route and the local geometry, not just the next tile.
 
-Reply with a short <think>...</think> block (2-6 sentences), then ONE JSON
-object. The JSON must be after the closing </think> tag, not inside it, and must
-not be wrapped in a code fence:
+Reply with a short <think>...</think> block (2-6 sentences, and never more
+than 30 words), then ONE JSON object. The JSON must be after the closing
+</think> tag, not inside it, and must not be wrapped in a code fence:
 {
   "plan": {
     "strategy": "a few sentences the main character could follow",
@@ -1089,26 +1144,55 @@ not be wrapped in a code fence:
 }
 
 Rules:
-- `move` must be one of the observed action keys, or `arrived`, `none`, `unsure`
-  or `look_around`. Never invent a coordinate or a place name.
-- Some action keys start with `examine:`. Choosing one walks to the observed
-  object and examines it; the result appears in the next turn's LAST RESULT. Use
-  them on signposts, notices and markers when the text could change the route.
-  Every observed examinable object inside the examine radius is listed; do not
-  assume an unlisted object exists.
+- `move` must be one of the action keys offered for this decision, one of the
+  object-target forms in STATE, or `arrived`, `none`, `unsure` or `look_around`.
+  Never invent a coordinate or a place name.
+- Object targets: when STATE contains OBJECT TARGETS, `objects:all` expands the
+  object groups without moving, `inspect:<group>` (where <group> is a `key=`
+  value from OBJECTS SEEN) lists instance aliases,
+  `approach:<alias>` walks to one instance, and `<verb>:<alias>` walks and uses a
+  no-argument verb such as `examine` or `harvest`. Aliases come only from an
+  inspect result; never use raw entity ids. The legacy EXAMINE section, when
+  present, lists examine:<id> keys instead.
+- `inspect` and `objects:all` do not move. A timed verb starts its action and
+  hands control back to the main agent; do not wait for it.
+- The JSON has exactly these top-level keys: plan, move, confidence, done,
+  unsure, reason. Do not use action, verb, alias or think at the top level.
+  `move` is always a string, never an object.
+- Place keys such as `p17` and `here:north` go directly in `move`. Object
+  actions are strings such as `inspect:apple_tree`, `approach:apple_tree-1` or
+  `examine:apple_tree-1`. Only type-number aliases returned by inspect are
+  object aliases; `p17` is not one.
+- Start with `<think>` and end with `</think>`; do not write a `THINK:` heading
+  and do not put a `think` field inside the JSON. Keep the think to at most two
+  sentences.
 - `arrived` is only for when the goal is actually satisfied; the engine verifies
   the current place. `done` is an alias for arrived.
 - `unsure` or `none` hands control back; do not use them to avoid a decision when
-  a usable move exists.
+  a usable move exists. When you choose a concrete move (`arrived`, `look_around`
+  or an action key), set `unsure` to false.
 - `look_around` asks for a full-circle survey; use it only when the map is too
   thin to choose.
 - The plan is yours to keep or replace. If the map changed enough to invalidate
   it, update it in this response.
 - The engine resolves the chosen key to a target cell and validates the walk.
 - Do not plan through unknown cells as if they were open.
-- Reply within roughly 500 tokens. The JSON is authoritative; no prose outside
-  the think block and the JSON.
+- Reply concisely. The JSON is authoritative; no prose outside the think block
+  and the JSON.
 )";
+  if (concise) {
+    detail::ReplaceAll(prompt,
+                       "short <think>...</think> block (2-6 sentences)",
+                       "short <think>...</think> block (1-2 sentences)");
+    detail::ReplaceAll(
+        prompt,
+        "\"strategy\": \"a few sentences the main character could follow\"",
+        "\"strategy\": \"one sentence the main character could follow\"");
+    detail::ReplaceAll(
+        prompt, "\"subtask\": \"a short instruction for the next few moves\"",
+        "\"subtask\": \"a few words for the next move\"");
+  }
+  return prompt;
 }
 
 inline std::string BuildSingleUserPrompt(
@@ -1116,18 +1200,19 @@ inline std::string BuildSingleUserPrompt(
     const nlohmann::json &observation, const std::string &map,
     const std::string &state, const Plan *plan,
     const std::vector<std::string> &route, const std::string &lastResult,
-    int calls, int maxCalls) {
+    int calls, int maxCalls, bool compactJson = true) {
   std::ostringstream out;
   out << "GOAL: " << goal << "\n";
   if (!taskDigest.empty()) {
     out << "\nTASK CONTEXT:\n" << taskDigest << "\n";
   }
-  out << "\nOBSERVATION (observed only):\n" << observation.dump(2) << "\n";
+  out << "\nOBSERVATION (observed only):\n"
+      << (compactJson ? observation.dump() : observation.dump(2)) << "\n";
   out << "\n" << map << "\n";
   out << "\n" << state << "\n";
   out << "\nPREVIOUS PLAN:\n";
   if (plan != nullptr) {
-    out << PlanToJson(*plan) << "\n";
+    out << PlanToJson(*plan, !compactJson) << "\n";
   } else {
     out << "none\n";
   }
@@ -1143,6 +1228,12 @@ inline std::string BuildSingleUserPrompt(
   out << "\nLAST RESULT: " << (lastResult.empty() ? "episode start" : lastResult)
       << "\n";
   out << "DECISION: " << (calls + 1) << " / " << maxCalls << "\n";
+  out << "\nJSON shape: {\"plan\":{\"strategy\":\"...\","
+         "\"subtask\":\"...\"},\"move\":\"p17\","
+         "\"confidence\":0.5,\"done\":false,\"unsure\":false,"
+         "\"reason\":\"...\"}. Only plan/move/confidence/done/unsure/reason; "
+         "`move` is a string. Object moves: \"inspect:apple_tree\", "
+         "\"examine:apple_tree-1\". Place keys like p17 go directly in move.\n";
   out << "\nReturn the think block and JSON now.\n";
   return out.str();
 }

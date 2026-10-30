@@ -677,6 +677,20 @@ public:
   // art.generation.enabled and capped by art.generation.maxRequestsPerSession.
   bool RequestTileArt(const std::string &tileName, std::string *reason = nullptr);
 
+  // Kind-explicit. The by-name form guesses the kind because a name can exist in
+  // both catalogs ('anvil' does), and the object pane asking for "anvil" would
+  // otherwise get the tile's sprite. A caller that already knows which definition it
+  // means -- every pane does -- must say so.
+  bool RequestSpriteArt(SpriteKinds::Kind kind, const std::string &name,
+                        std::string *reason = nullptr);
+
+  // Asks for the sprite again, even though one already landed. The queue refuses a
+  // duplicate request on purpose (an automatic path must not pay twice), so this
+  // forgets the finished job first. Only an explicit UI action calls it.
+  bool RecompileTileArt(const std::string &tileName, std::string *reason = nullptr);
+  bool RecompileSpriteArt(SpriteKinds::Kind kind, const std::string &name,
+                          std::string *reason = nullptr);
+
   // Which kind owns a given definition name, by asking the live registries.
   //
   // Derived rather than plumbed because the request path is name-based all the way down

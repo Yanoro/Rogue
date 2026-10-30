@@ -37,6 +37,15 @@ bound; every observed non-character, non-portable, non-vanished object inside it
 The single navigator shows all of them. The two-context S1 caps the examine candidates at
 `maxExamine` (default 2), reserved inside `maxCandidates`; the single ignores that cap.
 
+**Proposed replacement:** `docs/navigation-object-interactions-design.md`
+replaces this per-instance list with grouped object summaries (one line per type/profile, all
+verbs from `InteractionRegistry`) plus the standard target grammar: `objects:all`,
+`inspect:<group>` returns readable aliases (`apple_tree-3`), `approach:<objectAlias>` walks, and `<verb>:<objectAlias>` walks and
+runs a no-argument verb such as `examine` or `harvest`. Timed verbs start and hand control back
+to the main agent; argument-bearing verbs are deferred. **Stages 1 and 2 are implemented:** objects snapshot their interaction keys and aliases,
+`BuildObjectGroups` exists, the single navigator uses the grouped object grammar, and
+`objectSummary=false` restores the old `examine:<entityId>` path for A/B.
+
 ## Single-context navigator (2026-10-24)
 
 `navigation.agent` selects the navigation architecture. `single` is the new default: one
@@ -97,7 +106,9 @@ candidate target digits, and is built by `BuildPilotMap`. It is context only: th
 current behavior.
 **Date:** 2026-10-19
 **Related:** `navigation-subagent-design.md` (the S1 compass/pilot, which this document keeps as
-the local executor), `agent-attention-design.md` (waking and interruption), `spatial-memory-design.md`
+the local executor), `navigation-object-interactions-design.md` (the proposed grouped object
+summaries and registry-driven interaction actions), `agent-attention-design.md` (waking and
+interruption), `spatial-memory-design.md`
 (what the observation is built from), `agent-exploration-task.md` (the fair-test brief),
 `place-derivation-design.md` (semantic places and their aspects), `region-place-design.md`
 (perceived base regions and their terrain/aspect categorization).

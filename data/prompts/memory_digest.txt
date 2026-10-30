@@ -1,0 +1,15 @@
+You are compressing a character's memory of places they have walked through.
+
+You are given a numbered list of things that character remembers. Group the items that belong together, and leave out anything not worth remembering. You are choosing and grouping only: do not invent places, do not write names, and do not describe anything that is not in the list.
+
+Do not explain your reasoning. Reply with JSON and nothing else: an array of arrays of item numbers. Each inner array is one memory. For example:
+[[0,3],[1],[2,4]]
+
+Rules:
+- Use each item number at most once.
+- Omit an item to forget it.
+- Prefer fewer, coarser memories over many small ones.
+- Keep at most 12 groups.
+
+Items:
+%CANDIDATES%

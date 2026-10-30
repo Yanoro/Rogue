@@ -1,0 +1,43 @@
+{
+  "map": "Map_Nav_BlindStart.json",
+  "scenario": "blind_start",
+  "headline": "Cold start in a hut; keyhole view of a road beyond the compass radius.",
+  "purpose": "The character wakes in a walled hut with almost nothing in the cone, then sees a road through the doorway that is beyond the compass radius. Isolates the cold-start survey and the keyhole case.",
+  "spawn": [
+    11,
+    11
+  ],
+  "goal": "find the road north",
+  "goalRegion": {
+    "x": [
+      4,
+      28
+    ],
+    "y": [
+      3,
+      3
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find the road north]"
+  ],
+  "expected": {
+    "maxLegs": 6,
+    "surveysAllowed": 2,
+    "note": "The first action list should be short: the hut's own runs stop at the walls. The road is eight tiles from the spawn, past the door, so it is a distant place until the character steps outside."
+  },
+  "metrics": {
+    "optimalSteps": 8,
+    "reachableCells": 715,
+    "goalCellsWalkable": 25,
+    "objects": 309,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_BlindStart.json",
+  "notes": [
+    "The hut has an authored label seed, so a current place exists and the compass is not empty; the wall objects end every run.",
+    "The door object carries no Obstacle, so it is walkable and does not block the view through the gap.",
+    "Score: one survey at most, then progress north out of the hut; no 'no actions' stop while the road is visible through the door."
+  ]
+}

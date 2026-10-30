@@ -19,6 +19,7 @@
 
 #include <nlohmann/json.hpp>
 #include "Game.h"
+#include "PixelDSL.hpp"
 #include "Settings.h"
 #include "RewriteBriefs.hpp"
 #include "TileArt.hpp"
@@ -133,6 +134,11 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
   // One context per window instance, named so it cannot collide with an NPC's
   // ("npc-<id>"), the blueprint designer's or the vision window's.
   contextId = "tile-designer-" + std::to_string(reinterpret_cast<uintptr_t>(this));
+  // Its own provider context. Not because the histories are sent explicitly -- they
+  // are -- but because a provider that keys anything by context must not have a
+  // document request and a definition request share one.
+  artContextId =
+      "tile-designer-art-" + std::to_string(reinterpret_cast<uintptr_t>(this));
   if (game != nullptr) {
     // By the current mode rather than the tile-specific entry point, so the two cannot
     // disagree about what the model was told. The mode starts as Tile, so this is the same
@@ -574,23 +580,36 @@ void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
   GenerateResponse(index, prompt);
 }
 
-void TileDesignerWindow::GenerateResponse(size_t index, std::string prompt) {
+void TileDesignerWindow::GenerateResponse(size_t index, std::string prompt,
+                                          bool artConversation) {
   AI *backend = ai;
   if (backend == nullptr) {
     return;
   }
 
+  // Which conversation this request belongs to. Two histories and two system
+  // prompts, one send path: everything below -- the trim, the log, the streaming,
+  // the sentinel -- is the same for both, and a second copy of it is a second place
+  // for the handoff to break.
+  const std::string &activeSystem =
+      artConversation ? artSystemPrompt : systemPrompt;
+  const std::vector<ChatMessage> &activeHistory =
+      artConversation ? artHistory : history;
+  const std::string activeContext =
+      artConversation ? artContextId : contextId;
+
   // Snapshot the history on the main thread. The worker must not read `history`
   // while a later turn mutates it, and the request has to be built from the
   // conversation as it stood when the request was made.
   std::vector<ChatMessage> request;
-  if (!systemPrompt.empty()) {
-    request.push_back({"system", systemPrompt});
+  if (!activeSystem.empty()) {
+    request.push_back({"system", activeSystem});
   }
-  const size_t firstKept =
-      history.size() > kMaxHistoryMessages ? history.size() - kMaxHistoryMessages : 0;
-  for (size_t i = firstKept; i < history.size(); ++i) {
-    request.push_back(history[i]);
+  const size_t firstKept = activeHistory.size() > kMaxHistoryMessages
+                               ? activeHistory.size() - kMaxHistoryMessages
+                               : 0;
+  for (size_t i = firstKept; i < activeHistory.size(); ++i) {
+    request.push_back(activeHistory[i]);
   }
   request.push_back({"user", prompt});
 
@@ -633,15 +652,16 @@ void TileDesignerWindow::GenerateResponse(size_t index, std::string prompt) {
   // as soon as the request is accepted, so completion is the provider's
   // empty-token sentinel and nothing else. This mirrors DesignerChatWindow, which
   // is the proven implementation of the same handoff.
-  std::thread([this, index, request = std::move(request), backend]() {
+  std::thread([this, index, request = std::move(request), backend,
+               activeContext]() {
     // A fresh provider-side context per request, because the history is sent
     // explicitly: leaving the previous request's tokens in place would replay the
     // conversation twice.
-    backend->resetContext(contextId);
+    backend->resetContext(activeContext);
 
     std::string failure;
     const bool delivered = backend->generateStream(
-        contextId, request,
+        activeContext, request,
         [this, index](const std::string &token) {
           std::lock_guard<std::mutex> lock(transcriptMutex);
           if (index >= exchanges.size()) {
@@ -686,6 +706,250 @@ bool TileDesignerWindow::IsBusy() {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// The pixel document turn
+// ---------------------------------------------------------------------------
+
+bool TileDesignerWindow::DslArtSourceActive() const {
+  return Settings().art.generation.source == "dsl";
+}
+
+std::string TileDesignerWindow::ArtDocumentPath(const std::string &name,
+                                                SpriteKinds::Kind kind) const {
+  return GeneratedSpriteDocumentPath(SpriteKinds::ConventionIdFor(kind, name));
+}
+
+void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
+                                               SpriteKinds::Kind kind,
+                                               bool replaceGenerated) {
+  if (name.empty()) return;
+  if (ai == nullptr) {
+    statusIsError = true;
+    statusLine = "No designer backend is configured, so a document cannot be asked for.";
+    return;
+  }
+  if (IsBusy()) {
+    statusIsError = false;
+    statusLine = "A request is already in flight; the document follows it.";
+    return;
+  }
+  if (game == nullptr) return;
+
+  const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
+
+  // An existing document normally wins and is not overwritten: the pack's copy is
+  // hand-curated, and a generated copy is what the previous turn left, which a person
+  // may have edited since. `replaceGenerated` is the explicit "Ask again" action --
+  // it may replace the generated copy but still never the pack's, because that one is
+  // not ours to discard.
+  const SpriteDSLDocument existing = FindSpriteDSLDocument(conventionId);
+  if (existing.found && (!replaceGenerated || existing.inArtPack)) {
+    if (replaceGenerated && existing.inArtPack) {
+      statusIsError = true;
+      statusLine = "That document is hand-authored in the art pack (" +
+                   existing.path +
+                   "). Edit it there; a generated document would never win over it.";
+      return;
+    }
+    std::string reason;
+    const bool queued = game->RequestTileArt(name, &reason);
+    statusIsError = !queued;
+    statusLine = queued ? "Compiling the existing document " + existing.path
+                        : reason;
+    LogEvent("DSL DOCUMENT EXISTS (not overwriting): " + existing.path);
+    return;
+  }
+
+  const std::string destination = ArtDocumentPath(name, kind);
+  if (destination.empty()) {
+    statusIsError = true;
+    statusLine =
+        "No generated layer is configured, so there is nowhere to write a "
+        "document. Set art.pack (or art.generated) in settings.json.";
+    return;
+  }
+
+  // The brief comes from the catalog, not from the window's editor buffers: the
+  // definition is the authority, and an in-place colour tweak is not part of what
+  // the agent is being asked to draw.
+  artBrief = TileDesigner::SpriteDocumentBrief{};
+  artBrief.kind = kind;
+  artBrief.name = name;
+  if (kind == SpriteKinds::Kind::Tile) {
+    if (const TileDef *definition = game->tileRegistry.Get(name)) {
+      artBrief.description = definition->description;
+      artBrief.blocksTile = definition->blocksTile;
+    }
+  } else if (ObjectFactory *objects = Objects()) {
+    const auto &templates = objects->GetTemplates();
+    const auto found = templates.find(conventionId);
+    if (found != templates.end()) {
+      artBrief.description = found->second.value("description", std::string());
+    }
+  }
+
+  artAttempts = 0;
+  artVerdict.clear();
+  artHistory.clear();
+  artSystemPrompt = TileDesigner::BuildSpriteDocumentSystemPrompt(
+      Settings().content.spriteDSLPromptFile,
+      PixelDSL::Config{}.rampsPath);
+
+  statusIsError = false;
+  statusLine = "Asking for a sprite document for '" + name + "'. It will be compiled "
+               "before anything is written.";
+  LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + conventionId + ")");
+  SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""));
+}
+
+void TileDesignerWindow::SendArtTurn(const std::string &prompt) {
+  if (ai == nullptr || prompt.empty() || IsBusy()) return;
+
+  Exchange exchange;
+  exchange.prompt = prompt;
+  exchange.fromUser = true;
+  exchange.isArtDocument = true;
+
+  size_t index = 0;
+  {
+    std::lock_guard<std::mutex> lock(transcriptMutex);
+    exchanges.push_back(std::move(exchange));
+    index = exchanges.size() - 1;
+  }
+
+  // Logged in the same designer log as the definition turn: a document and the
+  // definition it belongs to are one story, and a second log file would split it.
+  LogEvent("SPRITE DOCUMENT REQUEST (attempt " +
+           std::to_string(artAttempts + 1) + " of " +
+           std::to_string(Settings().art.generation.dslAttempts) + ")");
+  Log(prompt);
+  Log("\n");
+
+  GenerateResponse(index, prompt, /*artConversation=*/true);
+}
+
+void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
+                                                    const Exchange &finished) {
+  // Published under the mutex once, at the end of each path, for the same reason the
+  // definition path does it that way: the Draw thread reads these fields.
+  auto publish = [this, index](bool ok, const std::string &failure,
+                               const std::string &savedPath,
+                               const std::string &note) {
+    std::lock_guard<std::mutex> lock(transcriptMutex);
+    if (index >= exchanges.size()) return;
+    Exchange &exchange = exchanges[index];
+    exchange.inspected = true;
+    exchange.ok = ok;
+    exchange.failureReason = failure;
+    exchange.savedPath = savedPath;
+    exchange.artNote = note;
+  };
+
+  if (finished.failed) {
+    {
+      std::lock_guard<std::mutex> lock(transcriptMutex);
+      artHistory.push_back({"user", finished.prompt});
+    }
+    publish(false, finished.error, "", "no document: " + finished.error);
+    LogEvent("SPRITE DOCUMENT TRANSPORT FAILURE: " + finished.error);
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(transcriptMutex);
+    artHistory.push_back({"user", finished.prompt});
+    artHistory.push_back({"assistant", finished.answer});
+  }
+
+  const std::string document = TileDesigner::ExtractSpriteDocument(finished.answer);
+  PixelDSL::Config config;
+  config.palettePath.clear();  // informational only; not worth a file read here
+  const PixelDSL::Result result = PixelDSL::Compile(document, config);
+
+  if (!result.ok) {
+    artVerdict = PixelDSL::Describe(result);
+    const int budget = std::max(1, Settings().art.generation.dslAttempts);
+    LogEvent("SPRITE DOCUMENT REFUSED (attempt " + std::to_string(artAttempts + 1) +
+             " of " + std::to_string(budget) + ")");
+
+    if (artAttempts + 1 >= budget) {
+      publish(false,
+              "the document was refused on all " + std::to_string(budget) +
+                  " attempt(s)",
+              "", artVerdict);
+      statusIsError = true;
+      statusLine = "The sprite document was refused " + std::to_string(budget) +
+                   " time(s); the last reason is in the transcript. Nothing was "
+                   "written.";
+      return;
+    }
+
+    ++artAttempts;
+    // The failed attempt is published first, then the retry is sent -- so the
+    // transcript reads as the conversation that happened rather than as one slow
+    // request. The verdict goes back verbatim: it already names the line and says
+    // what to do.
+    publish(false, "refused; retrying", "", artVerdict);
+    statusIsError = false;
+    statusLine = "Document refused; asking again (attempt " +
+                 std::to_string(artAttempts + 1) + " of " +
+                 std::to_string(budget) + ").";
+    SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, artVerdict));
+    return;
+  }
+
+  const std::string destination = ArtDocumentPath(artBrief.name, artBrief.kind);
+  if (destination.empty()) {
+    artVerdict = PixelDSL::Describe(result);
+    publish(false, "no generated layer to write the document to", "", artVerdict);
+    statusIsError = true;
+    statusLine = "The document compiled but there is nowhere to write it.";
+    return;
+  }
+
+  std::error_code error;
+  const std::filesystem::path path(destination);
+  std::filesystem::create_directories(path.parent_path(), error);
+  std::ofstream out(destination);
+  if (!out.is_open()) {
+    artVerdict = PixelDSL::Describe(result);
+    publish(false, "could not write " + destination, "", artVerdict);
+    statusIsError = true;
+    statusLine = "Could not write " + destination + ".";
+    return;
+  }
+  out << document;
+  if (document.empty() || document.back() != '\n') out << "\n";
+  out.close();
+  if (!out) {
+    publish(false, "could not write " + destination, "", artVerdict);
+    statusIsError = true;
+    statusLine = "Could not write " + destination + ".";
+    return;
+  }
+
+  artVerdict = PixelDSL::Describe(result);
+  publish(true, "", destination,
+          artVerdict + "  document: " + destination);
+  LogEvent("SPRITE DOCUMENT ACCEPTED: " + destination);
+
+  // The compile goes through the queue like any other art request, so placement and
+  // the hot-swap are one code path whether a person wrote the document or an agent
+  // did.
+  std::string reason;
+  if (game != nullptr &&
+      game->RequestSpriteArt(artBrief.kind, artBrief.name, &reason)) {
+    statusIsError = false;
+    statusLine = "Document accepted and saved to " + destination +
+                 "; compiling it now.";
+    LogEvent("SPRITE COMPILE QUEUED for " + artBrief.name);
+  } else {
+    statusIsError = true;
+    statusLine = "Document accepted and saved, but the compile was refused: " + reason;
+    LogEvent("SPRITE COMPILE REFUSED: " + reason);
+  }
+}
+
 void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   Exchange finished;
   {
@@ -710,6 +974,14 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
            ")");
   Log(finished.answer);
   Log("\n");
+
+  // A pixel-document reply is inspected by the compiler, not by the definition
+  // validators: it has no `name`, no components and no glyph, and handing it to
+  // ApplyReply would refuse it for the wrong reason.
+  if (finished.isArtDocument) {
+    InspectFinishedArtDocument(index, finished);
+    return;
+  }
 
   if (finished.failed) {
     LogEvent("TRANSPORT FAILURE: " + finished.error);
@@ -976,7 +1248,26 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
       artNames.push_back(applied.name);
     }
 
-    if (game != nullptr && !artNames.empty()) {
+    if (game != nullptr && !artNames.empty() && DslArtSourceActive()) {
+      // The DSL source has nothing to compile until a document exists, so the
+      // automatic path asks for that document instead of queueing a compile. A set
+      // asks for its first entry: one conversation is in flight at a time, and
+      // saying so beats drawing one entry of a set and staying quiet.
+      if (!autoRequestArt) {
+        artNote = "no sprite document was requested (turn on \"Art "
+                  "automatically\" to ask for it as tiles are accepted)";
+      } else {
+        const std::string &subject = artNames.front();
+        RequestSpriteDocument(subject, designMode);
+        artNote = "asked for a sprite document for '" + subject +
+                  "' -- it is compiled before anything is written";
+        if (artNames.size() > 1) {
+          artNote += "; the other " + std::to_string(artNames.size() - 1) +
+                     " of the set need their own request";
+        }
+        LogEvent("SPRITE DOCUMENT REQUESTED (automatic): " + subject);
+      }
+    } else if (game != nullptr && !artNames.empty()) {
       const TileArtQueue &queue = game->TileArtQueueState();
       const std::string unavailable = queue.UnavailableReason();
 
@@ -1315,74 +1606,78 @@ void TileDesignerWindow::DrawObjectPreview() {
   ImGui::Separator();
   ImGui::TextDisabled("Appearance");
 
-  // The glyph fallback, tinted the way the world draws it.
-  if (editedObject.contains("character")) {
-    const std::string glyph = editedObject.value("character", std::string("?"));
-    const auto colourFor = [&](const char *key, Color fallback) {
-      if (!editedObject.contains(key) || !editedObject[key].is_array() ||
-          editedObject[key].size() < 3) {
-        return fallback;
-      }
-      return Color{static_cast<unsigned char>(editedObject[key][0].get<int>()),
-                   static_cast<unsigned char>(editedObject[key][1].get<int>()),
-                   static_cast<unsigned char>(editedObject[key][2].get<int>()),
-                   static_cast<unsigned char>(
-                       editedObject[key].size() > 3 ? editedObject[key][3].get<int>()
-                                                    : 255)};
-    };
-    const Color foreground =
-        colourFor("characterColor", Color{255, 255, 255, 255});
-    const Color background = colourFor("backgroundColor", Color{0, 0, 0, 0});
-    ImGui::TextDisabled("glyph");
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(foreground.r / 255.0f, foreground.g / 255.0f,
-                              foreground.b / 255.0f, 1.0f),
-                       "'%s'", glyph.empty() ? "?" : glyph.c_str());
-    ImGui::SameLine();
-    ImGui::TextDisabled("on");
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(background.r / 255.0f, background.g / 255.0f,
-                              background.b / 255.0f, 1.0f),
-                       "  ");
+  // The look, exactly as the world would draw it: the template's sprite, or the
+  // Unknown placeholder. There is no glyph and no art block to preview any more --
+  // both were removed from rendering (docs/appearance.md) -- so showing them here
+  // would promise a look the world will not deliver.
+  const std::string objectName =
+      editedObject.value("name", editedObjectKey);
+  const Texture2D *look = nullptr;
+  if (game != nullptr) {
+    std::string explicitSprite;
+    if (editedObject.contains("sprite") && editedObject["sprite"].is_string()) {
+      explicitSprite = editedObject["sprite"].get<std::string>();
+    }
+    look = ResolveSpriteTexture(explicitSprite, editedObjectKey,
+                                game->resourceManager, game->debugLog.get());
+    if (look == nullptr) {
+      look = game->resourceManager.GetTexture(UnknownSpritePath());
+    }
   }
 
-  // The art block, drawn in its own palette colours -- the same reading the map editor's
-  // palette gives it, so the preview cannot promise a look the world would not deliver.
-  if (editedObject.contains("art") && editedObject["art"].is_array()) {
-    ImGui::TextDisabled("art");
-    const nlohmann::json &palette =
-        editedObject.contains("palette") && editedObject["palette"].is_object()
-            ? editedObject["palette"]
-            : nlohmann::json::object();
-    for (const auto &line : editedObject["art"]) {
-      if (!line.is_string()) continue;
-      const std::string text = line.get<std::string>();
-      // Per codepoint, because a palette key is one character and the art may use
-      // multi-byte block characters.
-      for (size_t i = 0; i < text.size();) {
-        const unsigned char c = static_cast<unsigned char>(text[i]);
-        const size_t length = (c < 0x80) ? 1 : (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
-        const std::string glyph = text.substr(i, length);
-        i += length;
-        if (glyph == " ") {
-          ImGui::SameLine();
-          ImGui::TextDisabled(" ");
-          continue;
+  // Is there a sprite at all? The placeholder is what the world shows when there is
+  // not, and saying which of the two is on screen is the whole point of the pane.
+  std::string resolved;
+  const bool hasSprite =
+      game != nullptr && SpriteResolves("", editedObjectKey, &resolved);
+
+  const float lookSize = 64.0f;
+  ImGui::Dummy(ImVec2(lookSize, lookSize));
+  if (look != nullptr) {
+    DrawSpriteImGui(*look, ImGui::GetItemRectMin(),
+                    ImVec2(lookSize, lookSize));
+  }
+  ImGui::SameLine();
+  ImGui::BeginGroup();
+  if (hasSprite) {
+    ImGui::TextDisabled("drawn as %s", resolved.c_str());
+  } else {
+    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.35f, 1.0f),
+                       "no sprite yet -- drawn as the Unknown placeholder");
+  }
+
+  const bool objectDsl = DslArtSourceActive();
+  if (game != nullptr) {
+    const TileArtQueue &objectQueue = game->TileArtQueueState();
+    const bool objectGenerating =
+        objectQueue.CountInState(TileArtQueue::State::Queued) > 0 ||
+        objectQueue.CountInState(TileArtQueue::State::Running) > 0;
+    ImGui::BeginDisabled(objectGenerating || !objectQueue.Enabled());
+    if (ImGui::Button(objectDsl ? "Describe art (DSL)" : "Generate art")) {
+      if (objectDsl) {
+        RequestSpriteDocument(objectName, SpriteKinds::Kind::Object);
+      } else {
+        std::string reason;
+        // Explicit kind: this pane means the object even if a tile shares its name.
+        if (game->RequestSpriteArt(SpriteKinds::Kind::Object, objectName,
+                                   &reason)) {
+          statusIsError = false;
+          statusLine = "Queued art for '" + objectName + "'.";
+        } else {
+          statusIsError = true;
+          statusLine = reason;
         }
-        Color colour{255, 255, 255, 255};
-        if (palette.contains(glyph) && palette[glyph].is_array() &&
-            palette[glyph].size() >= 3) {
-          colour = Color{static_cast<unsigned char>(palette[glyph][0].get<int>()),
-                         static_cast<unsigned char>(palette[glyph][1].get<int>()),
-                         static_cast<unsigned char>(palette[glyph][2].get<int>()), 255};
-        }
-        ImGui::SameLine();
-        ImGui::TextColored(
-            ImVec4(colour.r / 255.0f, colour.g / 255.0f, colour.b / 255.0f, 1.0f),
-            "%s", glyph.c_str());
       }
-      ImGui::NewLine();
     }
+    ImGui::EndDisabled();
+  }
+  ImGui::EndGroup();
+
+  if (objectDsl) {
+    if (!artVerdict.empty()) {
+      ImGui::TextWrapped("last attempt: %s", artVerdict.c_str());
+    }
+    DrawDslPanels(objectName, SpriteKinds::Kind::Object);
   }
 
   if (!editedObjectOverlayPath.empty()) {
@@ -1571,6 +1866,163 @@ std::string TileDesignerWindow::DescribeArtState() const {
   return out;
 }
 
+void TileDesignerWindow::DrawDslPanels(const std::string &name,
+                                       SpriteKinds::Kind kind) {
+  const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
+  const SpriteDSLDocument document = FindSpriteDSLDocument(conventionId);
+
+  if (!document.found) {
+    ImGui::Separator();
+    ImGui::TextDisabled("No sprite document for this tile yet.");
+    const std::string destination = GeneratedSpriteDocumentPath(conventionId);
+    if (!destination.empty()) {
+      ImGui::TextWrapped("One would be written to:\n%s", destination.c_str());
+    }
+    ImGui::TextWrapped(
+        "\"Describe art (DSL)\" above asks the designer for one. The compiler "
+        "decides whether it is accepted, and nothing is written until it compiles.");
+    return;
+  }
+
+  // Read + compile only when the file changed. This runs every frame, and the pane's
+  // whole job is to show a file that changes rarely -- a per-frame compile would be
+  // affordable but pointless, and a per-frame *read* would fight the file lock.
+  std::error_code stampError;
+  const auto stamp = std::filesystem::last_write_time(document.path, stampError);
+  const std::string key =
+      document.path + ":" +
+      std::to_string(stampError ? 0 : stamp.time_since_epoch().count());
+  if (key != dslCacheKey) {
+    dslCacheKey = key;
+    std::ifstream input(document.path);
+    std::stringstream buffer;
+    buffer << input.rdbuf();
+    dslText = buffer.str();
+    PixelDSL::Config config;
+    config.palettePath.clear();
+    dslResult = PixelDSL::Compile(dslText, config);
+    dslCompiled = dslResult.ok;
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled("%s", document.path.c_str());
+  if (document.inArtPack) {
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f),
+                       "(art pack: hand-authored, never overwritten)");
+  }
+
+  const TileArtQueue &queue = game->TileArtQueueState();
+  const bool generating = queue.CountInState(TileArtQueue::State::Queued) > 0 ||
+                          queue.CountInState(TileArtQueue::State::Running) > 0;
+  ImGui::BeginDisabled(generating || !queue.Enabled());
+  if (ImGui::Button("Recompile")) {
+    std::string reason;
+    if (game->RecompileSpriteArt(kind, name, &reason)) {
+      statusIsError = false;
+      statusLine = "Compiling " + document.path + ".";
+    } else {
+      statusIsError = true;
+      statusLine = reason;
+    }
+  }
+  ImGui::SameLine();
+  ImGui::BeginDisabled(document.inArtPack);
+  if (ImGui::Button("Ask again")) {
+    RequestSpriteDocument(name, kind, /*replaceGenerated=*/true);
+  }
+  ImGui::EndDisabled();
+  ImGui::EndDisabled();
+  if (document.inArtPack) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("(Ask again is off: the pack's document is not ours)");
+  }
+
+  // Staleness: a document edited after its sprite was compiled must not be shown next
+  // to a sprite that no longer matches it.
+  const TileArt::Target target =
+      TileArt::PlanFor(TileArt::Request{kind, name});
+  if (!target.generatedPath.empty() && !stampError) {
+    std::error_code pngError;
+    const auto pngStamp =
+        std::filesystem::last_write_time(target.generatedPath, pngError);
+    if (!pngError && stamp > pngStamp) {
+      ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
+                         "The document is newer than the sprite; press Recompile.");
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Document", ImGuiTreeNodeFlags_DefaultOpen)) {
+    int lines = 1;
+    for (const char c : dslText) {
+      if (c == '\n') ++lines;
+    }
+    ImGui::TextDisabled("%d line(s), %d byte(s)", lines,
+                        static_cast<int>(dslText.size()));
+    // Read-only by construction rather than by a flag: a text box the user can type
+    // into would be a second, worse editor for a format with a compiler.
+    ImGui::BeginChild("##dsl_document", ImVec2(0, 150), true,
+                      ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::TextUnformatted(dslText.c_str());
+    ImGui::EndChild();
+  }
+
+  if (ImGui::CollapsingHeader("Verdict", ImGuiTreeNodeFlags_DefaultOpen)) {
+    for (const PixelDSL::Diagnostic &diagnostic : dslResult.diagnostics) {
+      const bool error = diagnostic.severity == PixelDSL::Severity::Error;
+      ImGui::PushStyleColor(ImGuiCol_Text,
+                            error ? ImVec4(1.0f, 0.45f, 0.4f, 1.0f)
+                                  : ImVec4(1.0f, 0.85f, 0.45f, 1.0f));
+      if (diagnostic.line > 0) {
+        ImGui::TextWrapped("line %d: %s", diagnostic.line,
+                           diagnostic.message.c_str());
+      } else {
+        ImGui::TextWrapped("%s", diagnostic.message.c_str());
+      }
+      ImGui::PopStyleColor();
+    }
+    if (dslResult.diagnostics.empty()) {
+      ImGui::TextDisabled("no diagnostics");
+    }
+    ImGui::Separator();
+    for (const std::string &line : dslResult.summary) {
+      ImGui::TextDisabled("%s", line.c_str());
+    }
+  }
+
+  if (ImGui::CollapsingHeader("Sprite", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (!dslCompiled || dslResult.frames.empty()) {
+      ImGui::TextDisabled("not compiled -- see the verdict above");
+    } else {
+      const PixelDSL::Frame &frame = dslResult.frames.front();
+      const float cell = 7.0f;
+      const ImVec2 origin = ImGui::GetCursorScreenPos();
+      const ImVec2 size(frame.width * cell, frame.height * cell);
+      ImDrawList *draw = ImGui::GetWindowDrawList();
+      // A flat plate first, so transparent pixels read as "nothing here" rather than
+      // as the window background showing through a hole.
+      draw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y),
+                          IM_COL32(32, 32, 38, 255));
+      for (int y = 0; y < frame.height; ++y) {
+        for (int x = 0; x < frame.width; ++x) {
+          const size_t index =
+              (static_cast<size_t>(y) * frame.width + x) * 4;
+          const unsigned char alpha = frame.rgba[index + 3];
+          if (alpha == 0) continue;
+          const ImVec2 topLeft(origin.x + x * cell, origin.y + y * cell);
+          draw->AddRectFilled(
+              topLeft, ImVec2(topLeft.x + cell, topLeft.y + cell),
+              IM_COL32(frame.rgba[index], frame.rgba[index + 1],
+                       frame.rgba[index + 2], alpha));
+        }
+      }
+      ImGui::Dummy(size);
+      ImGui::TextDisabled("%dx%d, one rectangle per pixel", frame.width,
+                          frame.height);
+    }
+  }
+}
+
 void TileDesignerWindow::DrawArtSection() {
   if (game == nullptr || edited == nullptr) return;
 
@@ -1630,18 +2082,33 @@ void TileDesignerWindow::DrawArtSection() {
 
   ImGui::TextDisabled("%s", DescribeArtState().c_str());
 
+  if (DslArtSourceActive() && !artVerdict.empty()) {
+    // The *last attempt's* verdict, which is not the same thing as the on-disk
+    // document's: a refused attempt never wrote a file, so the panes below have
+    // nothing to show and this is the only trace of why.
+    ImGui::Separator();
+    ImGui::TextWrapped("last attempt: %s", artVerdict.c_str());
+  }
+
   const bool generating = queue.CountInState(TileArtQueue::State::Queued) > 0 ||
                           queue.CountInState(TileArtQueue::State::Running) > 0;
+  const bool dslSource = DslArtSourceActive();
   ImGui::BeginDisabled(!editedIsRuntime || generating || !queue.Enabled());
-  if (ImGui::Button("Generate art")) {
-    std::string reason;
-    if (game->RequestTileArt(definition.name, &reason)) {
-      statusIsError = false;
-      statusLine = "Queued art for '" + definition.name +
-                   "'. It draws as its glyph until the sprite lands.";
+  if (ImGui::Button(dslSource ? "Describe art (DSL)" : "Generate art")) {
+    if (dslSource) {
+      // The tile pane, so the kind is Tile even when the dropdown is on object: the
+      // definition being edited is a TileDef and there is no object editor here.
+      RequestSpriteDocument(definition.name, SpriteKinds::Kind::Tile);
     } else {
-      statusIsError = true;
-      statusLine = reason;
+      std::string reason;
+      if (game->RequestTileArt(definition.name, &reason)) {
+        statusIsError = false;
+        statusLine = "Queued art for '" + definition.name +
+                     "'. It draws as its glyph until the sprite lands.";
+      } else {
+        statusIsError = true;
+        statusLine = reason;
+      }
     }
   }
   ImGui::EndDisabled();
@@ -1659,6 +2126,15 @@ void TileDesignerWindow::DrawArtSection() {
                         : "Ask for one sprite for this tile.\nRequests are "
                           "batched, because one request costs the same whether it "
                           "carries one tile or several.");
+  }
+
+  // The DSL source has no pipeline to show: its document *is* the pipeline's
+  // input, and its compile verdict is the output that can be wrong. The three views
+  // below describe sheet generation and do not apply, so they are replaced rather
+  // than hidden -- a "Pipeline stages" header over an empty pane reads as a bug.
+  if (DslArtSourceActive()) {
+    DrawDslPanels(definition.name, SpriteKinds::Kind::Tile);
+    return;
   }
 
   // The three views of the pipeline, in the order the pipeline runs. Each is

@@ -153,6 +153,101 @@ GraphBounds CollectGraphBounds(const NavigationDebugState &state) {
   return bounds;
 }
 
+// The union of every graph up to `lastIndex`, with the latest live observation
+// appended when `includeObservation` is true.
+//
+// A graph snapshot only contains what the agent could see and fit at that call
+// (radius, maxNodes/maxEdges, candidates). Drawing one snapshot therefore made a
+// node disappear as soon as the character walked away from it, even though the
+// navigator still remembered it. The graph view is a picture of the episode's
+// accumulated knowledge, so nodes are merged by key and never dropped: the first
+// sighting establishes the node, a later sighting refreshes its label/position
+// and preserves the monotonic `visited` flag. Edges are merged the same way.
+//
+// `current`, `frontier` and `dead_ends` come from the newest graph in the merge,
+// not from the union: they describe the state at the selected decision, while the
+// nodes describe everything seen up to it.
+nlohmann::json MergeGraphSnapshots(
+    const std::vector<NavigationDebugStrategistThought> &thoughts,
+    int lastIndex, const nlohmann::json &latestObservation,
+    bool includeObservation) {
+  nlohmann::json nodes = nlohmann::json::array();
+  nlohmann::json edges = nlohmann::json::array();
+  std::unordered_map<std::string, std::size_t> nodeIndex;
+  std::unordered_map<std::string, std::size_t> edgeIndex;
+  nlohmann::json meta = nlohmann::json::object();
+
+  const auto mergeGraph = [&](const nlohmann::json &graph) {
+    if (!graph.is_object()) return;
+    if (graph.contains("nodes") && graph["nodes"].is_array()) {
+      for (const nlohmann::json &jsonNode : graph["nodes"]) {
+        if (!jsonNode.is_object()) continue;
+        const std::string key = jsonNode.value("key", std::string());
+        if (key.empty()) continue;
+        const auto found = nodeIndex.find(key);
+        if (found == nodeIndex.end()) {
+          nodeIndex.emplace(key, nodes.size());
+          nodes.push_back(jsonNode);
+          continue;
+        }
+        nlohmann::json &existing = nodes[found->second];
+        const bool wasVisited = existing.value("visited", false);
+        existing = jsonNode;
+        if (wasVisited) existing["visited"] = true;
+      }
+    }
+
+    if (graph.contains("edges") && graph["edges"].is_array()) {
+      for (const nlohmann::json &jsonEdge : graph["edges"]) {
+        if (!jsonEdge.is_object()) continue;
+        const std::string from = jsonEdge.value("from", std::string());
+        const std::string to = jsonEdge.value("to", std::string());
+        if (from.empty() || to.empty()) continue;
+        const std::string key =
+            from + ">" + to + ">" + jsonEdge.value("rel", std::string()) + ">" +
+            jsonEdge.value("direction", std::string()) + ">" +
+            jsonEdge.value("source", std::string());
+        const auto found = edgeIndex.find(key);
+        if (found == edgeIndex.end()) {
+          edgeIndex.emplace(key, edges.size());
+          edges.push_back(jsonEdge);
+        } else {
+          edges[found->second] = jsonEdge;
+        }
+      }
+    }
+
+    for (const char *field : {"current", "frontier", "dead_ends", "route"}) {
+      if (graph.contains(field)) {
+        meta[field] = graph[field];
+      }
+    }
+  };
+
+  for (int i = 0; i <= lastIndex && i < static_cast<int>(thoughts.size());
+       ++i) {
+    if (thoughts[i].graphJson.empty()) continue;
+    const nlohmann::json graph =
+        nlohmann::json::parse(thoughts[i].graphJson, nullptr, false);
+    if (!graph.is_discarded()) mergeGraph(graph);
+  }
+  if (includeObservation && latestObservation.is_object() &&
+      latestObservation.contains("graph")) {
+    mergeGraph(latestObservation["graph"]);
+  }
+
+  if (nodes.empty()) {
+    return nlohmann::json::object();
+  }
+  nlohmann::json merged = nlohmann::json::object();
+  merged["nodes"] = std::move(nodes);
+  merged["edges"] = std::move(edges);
+  for (auto &[field, value] : meta.items()) {
+    merged[field] = std::move(value);
+  }
+  return merged;
+}
+
 // A spatial drawing of the strategist's observed place/object graph. Nodes are
 // at their observed world positions, so the picture is the world the agent has
 // built, not a force-directed abstraction of it.
@@ -628,24 +723,116 @@ void NavigationDebugWindow::Draw() {
         ImGui::TextDisabled("Subtask: %s", subtaskText.c_str());
       }
 
-      std::string graphJson;
-      if (selectedCall != nullptr) {
-        graphJson = selectedCall->graphJson;
-      } else {
-        // No call history (e.g. the strategist is disabled): show the latest
-        // observation's graph so the panel is still useful.
-        const nlohmann::json observation =
-            nlohmann::json::parse(state->strategistObservation, nullptr, false);
-        if (!observation.is_discarded() && observation.contains("graph")) {
-          graphJson = observation["graph"].dump();
+      ImGui::Checkbox("Full context", &showFullContext);
+      if (showFullContext) {
+        if (state->fullContext.empty()) {
+          ImGui::TextDisabled(
+              "(no single-navigator message context in this snapshot)");
+        } else {
+          ImGui::TextDisabled(
+              "The latest single-navigator decision, including the system "
+              "prompt and every retry correction.");
+          DrawTextBlock("Navigator context", state->fullContext, 280.0f);
         }
       }
+
+      // Stage 1 debug view: the grouped object profiles the navigator will use
+      // once the prompt switches to the new grammar. The current prompt still
+      // carries the per-instance examine list, so this is informational only.
+      ImGui::SeparatorText("Object groups (debug)");
+      if (state->objectGroups.empty()) {
+        ImGui::TextDisabled("(none)");
+      } else if (ImGui::BeginTable("NavigationObjectGroups", 4,
+                                   ImGuiTableFlags_Borders |
+                                       ImGuiTableFlags_RowBg |
+                                       ImGuiTableFlags_SizingStretchProp)) {
+        ImGui::TableSetupColumn("Group");
+        ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed,
+                                55.0f);
+        ImGui::TableSetupColumn("Verbs");
+        ImGui::TableSetupColumn("Nearest", ImGuiTableColumnFlags_WidthFixed,
+                                110.0f);
+        ImGui::TableHeadersRow();
+        for (const NavigationDebugObjectGroup &group : state->objectGroups) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(group.label.c_str());
+          if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("key: %s", group.key.c_str());
+          }
+          if (group.structural) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(structure)");
+          }
+          ImGui::TableNextColumn();
+          ImGui::Text("x%d", group.count);
+          ImGui::TableNextColumn();
+          if (group.interactions.empty()) {
+            ImGui::TextDisabled("-");
+          } else {
+            std::string verbs;
+            for (std::size_t i = 0; i < group.interactions.size(); ++i) {
+              if (i > 0) verbs += ", ";
+              verbs += group.interactions[i];
+            }
+            ImGui::TextUnformatted(verbs.c_str());
+          }
+          ImGui::TableNextColumn();
+          if (group.nearestAlias.empty()) {
+            ImGui::TextDisabled("-");
+          } else {
+            ImGui::TextUnformatted(group.nearestAlias.c_str());
+          }
+          ImGui::TextDisabled("%s %d", group.nearestDirection.c_str(),
+                              group.nearestDistance);
+        }
+        ImGui::EndTable();
+      }
+
+      // The graph is the accumulated picture up to the selected call, not that
+      // one snapshot: walking away from a node must not erase it from the view.
+      // A pinned older call shows the episode as it stood at that call; the
+      // latest view also folds in the live observation.
+      const int thoughtCount =
+          static_cast<int>(state->strategistThoughts.size());
+      int lastGraphIndex = -1;
+      bool includeObservation = state->strategistThoughts.empty();
+      if (selectedCall != nullptr) {
+        lastGraphIndex =
+            followLatestThought ? thoughtCount - 1 : selectedThought;
+        includeObservation = followLatestThought;
+      }
+      if (lastGraphIndex < 0 && !state->strategistThoughts.empty()) {
+        lastGraphIndex = thoughtCount - 1;
+        includeObservation = true;
+      }
+      const nlohmann::json latestObservation =
+          nlohmann::json::parse(state->strategistObservation, nullptr, false);
       if (state->snapshotVersion != cachedGraphBoundsVersion) {
         cachedGraphBounds = CollectGraphBounds(*state);
         cachedGraphBoundsVersion = state->snapshotVersion;
       }
-      DrawLocationGraph(graphJson, 300.0f, hideGraphObjects, hideGraphNames,
-                        cachedGraphBounds);
+      if (state->snapshotVersion != cachedMergedGraphVersion ||
+          lastGraphIndex != cachedMergedGraphLastIndex ||
+          includeObservation != cachedMergedGraphIncludeObservation) {
+        const nlohmann::json merged = MergeGraphSnapshots(
+            state->strategistThoughts, lastGraphIndex, latestObservation,
+            includeObservation);
+        cachedMergedGraphJson = merged.empty() ? std::string() : merged.dump();
+        cachedMergedGraphVersion = state->snapshotVersion;
+        cachedMergedGraphLastIndex = lastGraphIndex;
+        cachedMergedGraphIncludeObservation = includeObservation;
+      }
+      DrawLocationGraph(cachedMergedGraphJson, 300.0f, hideGraphObjects,
+                        hideGraphNames, cachedGraphBounds);
+
+      // The raw assistant stream, before it has been parsed into thought/plan/
+      // move. This updates without republishing the snapshot, so it follows the
+      // model token by token while it is thinking.
+      if (!state->liveThought.empty()) {
+        ImGui::SeparatorText("Live navigator output");
+        DrawTextBlock("Streaming", state->liveThought, 240.0f);
+      }
 
       ImGui::SeparatorText("Navigator thoughts");
       if (state->strategistThoughts.empty()) {
@@ -696,6 +883,47 @@ void NavigationDebugWindow::Draw() {
                                "This call failed: %s",
                                record.error.empty() ? "(no reason)"
                                                     : record.error.c_str());
+          }
+          if (record.failed && !record.attempts.empty()) {
+            if (selectedAttemptThought != index) {
+              selectedAttemptThought = index;
+              selectedAttempt = -1;
+            }
+            ImGui::SeparatorText("Failed attempts");
+            for (std::size_t attemptIndex = 0;
+                 attemptIndex < record.attempts.size(); ++attemptIndex) {
+              if (attemptIndex > 0) ImGui::SameLine();
+              const NavigationDebugAttempt &attempt =
+                  record.attempts[attemptIndex];
+              const std::string label =
+                  "Attempt " + std::to_string(attempt.number) + "##attempt" +
+                  std::to_string(index) + "_" + std::to_string(attemptIndex);
+              const bool selected =
+                  selectedAttempt == static_cast<int>(attemptIndex);
+              if (selected) {
+                ImGui::PushStyleColor(ImGuiCol_Button,
+                                      ImVec4(0.42f, 0.26f, 0.16f, 1.0f));
+              }
+              if (ImGui::Button(label.c_str())) {
+                selectedAttempt = static_cast<int>(attemptIndex);
+              }
+              if (selected) ImGui::PopStyleColor();
+              if (ImGui::IsItemHovered() && !attempt.error.empty()) {
+                ImGui::SetTooltip("%s", attempt.error.c_str());
+              }
+            }
+            if (selectedAttempt >= 0 &&
+                selectedAttempt < static_cast<int>(record.attempts.size())) {
+              const NavigationDebugAttempt &attempt =
+                  record.attempts[selectedAttempt];
+              if (!attempt.error.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.45f, 1.0f),
+                                   "Error: %s", attempt.error.c_str());
+              }
+              const std::string label =
+                  "Attempt " + std::to_string(attempt.number);
+              DrawTextBlock(label.c_str(), attempt.response, 220.0f);
+            }
           }
           if (record.thought.empty()) {
             if (record.complete && !record.failed) {

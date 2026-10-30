@@ -357,27 +357,19 @@ void DebugConsoleWindow::Draw() {
 
 namespace {
 
-// A small coloured plate showing what the tile actually looks like: the DrawAscii
-// background as a filled square with the glyph centred on it in the character
-// colour, so the window shows the tile's look and not just its name.
-void DrawGlyphSwatch(const DrawAscii &ascii, float size) {
+// A small plate showing what the tile actually looks like: its sprite, or the
+// Unknown placeholder when it has none. A glyph is no longer a look, so there is
+// nothing else this can draw.
+void DrawLookSwatch(const Texture2D *texture, float size) {
   ImDrawList *drawList = ImGui::GetWindowDrawList();
   const ImVec2 topLeft = ImGui::GetCursorScreenPos();
   const ImVec2 bottomRight(topLeft.x + size, topLeft.y + size);
 
-  drawList->AddRectFilled(
-      topLeft, bottomRight,
-      IM_COL32(ascii.backgroundColor.r, ascii.backgroundColor.g,
-               ascii.backgroundColor.b, ascii.backgroundColor.a));
+  drawList->AddRectFilled(topLeft, bottomRight, IM_COL32(20, 20, 26, 255));
+  if (texture != nullptr) {
+    DrawSpriteImGui(*texture, topLeft, ImVec2(size, size));
+  }
   drawList->AddRect(topLeft, bottomRight, IM_COL32(140, 140, 140, 255));
-
-  const char glyph[2] = {ascii.ch, '\0'};
-  const ImVec2 glyphSize = ImGui::CalcTextSize(glyph);
-  drawList->AddText(ImVec2(topLeft.x + (size - glyphSize.x) * 0.5f,
-                           topLeft.y + (size - glyphSize.y) * 0.5f),
-                    IM_COL32(ascii.characterColor.r, ascii.characterColor.g,
-                             ascii.characterColor.b, ascii.characterColor.a),
-                    glyph);
 
   // Reserve the space the plate was drawn into so the layout flows beside and
   // below it instead of drawing on top of it.
@@ -488,18 +480,18 @@ void TileInfoWindow::Draw() {
       game->validTileSelected ? game->selectedTile : flecs::entity::null();
   const bool hasTileEntity = tileEntity.is_alive();
 
-  // The tile entity's DrawAscii is the live look -- the map editor rewrites it
-  // when a tile is painted -- so it wins over the authored copy on the Tile.
-  const DrawAscii *glyph = terrain->ascii;
-  if (hasTileEntity) {
-    if (const DrawAscii *entityGlyph = tileEntity.get<DrawAscii>()) {
-      glyph = entityGlyph;
-    }
-  }
-
   ImGui::TextUnformatted("Terrain");
-  if (glyph != nullptr) {
-    DrawGlyphSwatch(*glyph, 52.0f);
+  // What the cell draws: the tile's sprite, or the placeholder. Resolved through
+  // the same helper the world uses, so this window cannot show a look the map
+  // would not.
+  const Texture2D *terrainLook = ResolveSpriteTexture(
+      "", TileSpriteId(terrain->name), game->resourceManager,
+      game->debugLog.get());
+  if (terrainLook == nullptr) {
+    terrainLook = game->resourceManager.GetTexture(UnknownSpritePath());
+  }
+  if (terrainLook != nullptr) {
+    DrawLookSwatch(terrainLook, 52.0f);
     ImGui::SameLine();
   }
   ImGui::BeginGroup();
@@ -512,7 +504,7 @@ void TileInfoWindow::Draw() {
   ImGui::Text("Collision Hitbox: %zu x %zu px", terrain->hitbox.width,
               terrain->hitbox.height);
   if (terrain->sprite.empty()) {
-    ImGui::TextDisabled("Sprite: none (convention path or glyph)");
+    ImGui::TextDisabled("Sprite: none (convention path, or the Unknown placeholder)");
   } else {
     ImGui::Text("Sprite: %s", terrain->sprite.c_str());
   }
@@ -528,7 +520,7 @@ void TileInfoWindow::Draw() {
     if (const Sprite *sprite = tileEntity.get<Sprite>()) {
       ImGui::Text("Attached Sprite: %s", sprite->path.c_str());
     } else {
-      ImGui::TextDisabled("Attached Sprite: none (drawn from the glyph)");
+      ImGui::TextDisabled("Attached Sprite: none (drawn as the Unknown placeholder)");
     }
   } else {
     ImGui::TextDisabled("No tile entity found at this position.");
@@ -1891,8 +1883,6 @@ void MapEditorWindow::Draw() {
         const Color fg =
             definition->hasCharacterColor ? definition->characterColor
                                           : Color{255, 255, 255, 255};
-        const char glyph =
-            definition->hasCharacter ? definition->character : '?';
 
         const auto used = cellsInUse.find(definition->name);
         const size_t cellCount = used == cellsInUse.end() ? 0 : used->second;
@@ -1922,18 +1912,20 @@ void MapEditorWindow::Draw() {
             definition->sprite, TileSpriteId(definition->name),
             game->resourceManager, game->debugLog.get());
 
-        const std::string label =
-            sprite != nullptr
-                ? ("##" + definition->name)
-                : (std::string(1, glyph) + "##" + definition->name);
+        // Sprite or Unknown, always an image: a glyph is no longer a look.
+        const Texture2D *look = sprite;
+        if (look == nullptr) {
+          look = game->resourceManager.GetTexture(UnknownSpritePath());
+        }
+        const std::string label = "##" + definition->name;
         if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
           game->editorSelection.type = EditorSelectionType::Tile;
           game->editorSelection.name = definition->name;
         }
-        // Drawn over the button's own plate, so the tile's background colour still
-        // shows through any transparency in the texture.
-        if (sprite != nullptr) {
-          DrawSpriteImGui(*sprite, ImGui::GetItemRectMin(),
+        // Drawn over the button's own plate, so transparency in the texture still
+        // shows through.
+        if (look != nullptr) {
+          DrawSpriteImGui(*look, ImGui::GetItemRectMin(),
                           ImGui::GetItemRectSize());
         }
 
@@ -2035,86 +2027,43 @@ void MapEditorWindow::Draw() {
         const auto &pair = *entry;
         ImGui::TableNextColumn();
         
-        char ch = '?';
-        ImVec4 bgColor(0,0,0,0);
-        ImVec4 fgColor(1,1,1,1);
-        
-        if (pair.second.contains("character")) {
-           std::string charStr = pair.second["character"];
-           if (!charStr.empty()) ch = charStr[0];
-        }
-
-        // Parsed once, here, because the art preview's fallback colour is the
-        // template's characterColor and the ImGui text style wants the same value.
-        Color characterColor = {255, 255, 255, 255};
-        if (pair.second.contains("characterColor")) {
-           characterColor = ParseAsciiColor(pair.second["characterColor"], characterColor);
-           fgColor = ImVec4(characterColor.r/255.0f, characterColor.g/255.0f, characterColor.b/255.0f, characterColor.a/255.0f);
-        }
-        if (pair.second.contains("backgroundColor")) {
-           const Color backgroundColor =
-               ParseAsciiColor(pair.second["backgroundColor"], Color{0, 0, 0, 0});
-           bgColor = ImVec4(backgroundColor.r/255.0f, backgroundColor.g/255.0f, backgroundColor.b/255.0f, backgroundColor.a/255.0f);
-        }
-
-        // Authored art is previewed through the same layout the world renderer
-        // uses, so the palette button shows what placing the object will actually
-        // look like. A template whose art is unusable falls back to its glyph
-        // here; ObjectFactory already reported why at load time.
-        AsciiArt art;
-        std::string artWarning;
-        const bool hasArt = ParseAsciiArt(pair.second, art, artWarning);
-
-        // A raster sprite wins over that art, resolved through the very same
-        // helper the world uses -- an explicit "sprite" key, then
-        // data/sprites/<templateKey>.png. Sharing the resolver is the point: the
-        // palette cannot promise a look the map would not deliver.
+        // The palette's promise is "what placing this looks like", and after the
+        // sprite-or-Unknown rule that is always an image: no glyph plate, no ASCII
+        // art. A template with neither gets the placeholder, so a missing asset is
+        // visible in the palette before it is placed rather than after.
         std::string spriteKey;
         if (pair.second.contains("sprite") && pair.second["sprite"].is_string()) {
           spriteKey = pair.second["sprite"].get<std::string>();
         }
-        const Texture2D *sprite = ResolveSpriteTexture(
+        const Texture2D *look = ResolveSpriteTexture(
             spriteKey, pair.first, game->resourceManager, game->debugLog.get());
-        const bool hasSprite = sprite != nullptr;
+        if (look == nullptr) {
+          look = game->resourceManager.GetTexture(UnknownSpritePath());
+        }
 
-        // The plate is the glyph/art backdrop, and it follows the same rule as the
-        // world renderer (Game::DrawEntityVisual): drawn when there is no sprite,
-        // skipped when a sprite covers the cell. This palette's promise is "what
-        // placing the object will look like", so a plate under a cut-out sprite
-        // would make the object look opaque here right up until it was placed.
-        //
-        // There is no map tile behind a palette button, so what shows through a
-        // sprite's transparent pixels is the window. That is the honest equivalent --
-        // it is *a* background with no claim about which one -- where the world shows
-        // the tile the object is standing on.
-        ImGui::PushStyleColor(
-            ImGuiCol_Button, hasSprite ? ImVec4(0.0f, 0.0f, 0.0f, 0.0f) : bgColor);
-        ImGui::PushStyleColor(ImGuiCol_Text, fgColor);
-        
+        // A transparent button under the image: the plate used to carry the
+        // template's background colour, which is exactly the field that no longer
+        // affects the look.
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
+
         bool isSelected = (game->editorSelection.type == EditorSelectionType::ObjectTemplate && game->editorSelection.name == pair.first);
         if (isSelected) {
           ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1, 1, 0, 1));
           ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2.0f);
         }
 
-        // Both image paths draw over an empty label: the label is the button's click
-        // target and its text would show through a sprite that has the same glyph, so
-        // only the plain-glyph case carries one.
-        const std::string label =
-            (hasSprite || hasArt) ? ("##" + pair.first)
-                                  : (std::string(1, ch) + "##" + pair.first);
+        // Always an empty label: the click target, with the image drawn over it.
+        const std::string label = "##" + pair.first;
         if (ImGui::Button(label.c_str(), ImVec2(32, 32))) {
           game->editorSelection.type = EditorSelectionType::ObjectTemplate;
           game->editorSelection.name = pair.first;
         }
-        if (hasSprite) {
-          DrawSpriteImGui(*sprite, ImGui::GetItemRectMin(),
+        if (look != nullptr) {
+          DrawSpriteImGui(*look, ImGui::GetItemRectMin(),
                           ImGui::GetItemRectSize());
-        } else if (hasArt) {
-          DrawAsciiArtImGui(art, characterColor, ImGui::GetItemRectMin(),
-                            ImGui::GetItemRectSize());
         }
-        
+
         ImGui::PopStyleColor(2);
         if (isSelected) {
           ImGui::PopStyleColor();

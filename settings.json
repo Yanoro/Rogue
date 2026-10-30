@@ -7,6 +7,12 @@
     "mapsDirectory": "./maps"
   },
 
+  "art": {
+    "generation": {
+      "source": "dsl"
+    }
+  },
+
   "model": {
     "type": "openrouter",
     "model": "deepseek/deepseek-v4-flash",
@@ -55,6 +61,36 @@
     }
   },
 
+  "navigation": {
+    "agent": "single",
+    "single": {
+      "maxTokens": 500,
+      "timeoutSeconds": 60,
+      "fallbackToTwo": false,
+      "mapRadius": 6,
+      "useMainModel": false,
+      "model": {
+        "type": "ollama",
+        "model": "phi4-mini:latest",
+        "endpoint": "http://localhost:11434/api/generate",
+        "keepAlive": "30m",
+        "temperature": 0
+      },
+      "dedicatedBackend": true,
+      "disableReasoning": true,
+      "compactJson": true,
+      "historyTurns": 3,
+      "concise": true,
+      "objectSummary": true,
+      "maxObjectGroups": 6,
+      "maxGroupDetails": 8
+    }
+  },
+
+  "regions": {
+      "farRadius": 48
+  },
+
   "system1": {
     "useMainModel": true,
     "disableReasoning": true,
@@ -70,7 +106,6 @@
       }
     ]
   },
-
   "window": {
     "title": "AIRogue",
     "width": 1920,

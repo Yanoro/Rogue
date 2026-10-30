@@ -1,0 +1,42 @@
+{
+  "map": "Map_Nav_Threshold.json",
+  "scenario": "threshold",
+  "headline": "Open ground: the compass only exists inside a place.",
+  "purpose": "Open ground between the character and the road. The compass is only built when the character stands in a place, so this isolates the distant-place fallback and the action list the model actually sees.",
+  "spawn": [
+    10,
+    8
+  ],
+  "goal": "find the road",
+  "goalRegion": {
+    "x": [
+      2,
+      21
+    ],
+    "y": [
+      12,
+      12
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find the road]"
+  ],
+  "expected": {
+    "maxLegs": 2,
+    "surveysAllowed": 1,
+    "note": "The road is four tiles away and the character is in no place, so the only moves offered should be distant places (pN)."
+  },
+  "metrics": {
+    "optimalSteps": 4,
+    "reachableCells": 563,
+    "goalCellsWalkable": 20,
+    "objects": 13,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Threshold.json",
+  "notes": [
+    "If the list has no here:* line, that is the documented compass rule, not a failure: BuildCandidates skips the compass when PlaceQuery::At returns nothing.",
+    "Score: reached a road cell in at most two legs, and no survey after the opening LOOK around."
+  ]
+}

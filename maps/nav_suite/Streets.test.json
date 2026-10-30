@@ -1,0 +1,42 @@
+{
+  "map": "Map_Nav_Streets.json",
+  "scenario": "streets",
+  "headline": "Two-tile stubs: runs shorter than the minimum are dropped.",
+  "purpose": "A village of two-tile path stubs. A compass run shorter than two tiles is dropped, so this is the degenerate case where the local list is nearly empty while the character stands on a road.",
+  "spawn": [
+    4,
+    10
+  ],
+  "goal": "find the market",
+  "goalRegion": {
+    "x": [
+      12,
+      13
+    ],
+    "y": [
+      12,
+      13
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find the market]"
+  ],
+  "expected": {
+    "maxLegs": 4,
+    "surveysAllowed": 2,
+    "note": "The only local run from the spawn should be about one tile; the market has to come from the distant list."
+  },
+  "metrics": {
+    "optimalSteps": 9,
+    "reachableCells": 375,
+    "goalCellsWalkable": 1,
+    "objects": 27,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Streets.json",
+  "notes": [
+    "Distance from the spawn to the market is about nine tiles, past the compass radius, so the two systems do not compete here.",
+    "Score: reaches the market without shuffling inside the stub, and the route does not revisit the same stub cell twice."
+  ]
+}
