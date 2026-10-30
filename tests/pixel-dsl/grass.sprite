@@ -1,0 +1,28 @@
+version 1
+sprite 32x32
+kind tile
+material grass
+
+// A grass tile in the pack's own tones: the base from the ramp, grain from
+// scattered ramp entries, and a handful of deep tufts placed by hand for the
+// larger shapes a scatter cannot make.
+palette {
+    deep  = grass.0
+    base  = grass.2
+    light = grass.4
+}
+
+fill base
+scatter color=grass.1,grass.3 density=0.26 seed=11 cluster=2
+scatter color=light density=0.05 seed=12 cluster=1
+
+pixel (4,6) color=deep
+pixel (5,6) color=deep
+pixel (4,7) color=deep
+pixel (19,22) color=deep
+pixel (20,22) color=deep
+pixel (27,9) color=deep
+pixel (10,17) color=deep
+pixel (11,17) color=deep
+pixel (11,18) color=deep
+pixel (30,3) color=deep

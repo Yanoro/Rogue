@@ -1,0 +1,10 @@
+<think>
+The user wants grass. I will use a base from the grass ramp and scatter two nearby
+tones, then add a few deep tufts so it is not uniform.
+</think>
+sprite 32x32
+kind tile
+material grass
+fill grass.2
+scatter color=grass.1,grass.3 density=0.26 seed=11 cluster=2
+pixel (4,6) color=grass.0

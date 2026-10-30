@@ -1,0 +1,28 @@
+version 1
+sprite 32x32
+kind object
+material wood
+
+// A crate: the pack's prop convention is a 1px transparent margin, a dark
+// outline, a lit top plane and two darker stiles. Nothing here is generated;
+// every tone is a ramp entry the art pack itself uses.
+palette {
+    ink = ink.base
+}
+
+rect (3,6) (28,30) color=ink
+rect (4,7) (27,29) color=wood.2
+rect (4,7) (27,11) color=wood.4
+rect (4,12) (27,12) color=ink
+rect (9,13) (10,29) color=wood.0
+rect (21,13) (22,29) color=wood.0
+rect (4,24) (27,25) color=wood.1
+
+line (5,14) (8,23) color=wood.1
+line (26,14) (23,23) color=wood.1
+pixel (5,15) color=wood.4
+pixel (26,15) color=wood.4
+
+scatter color=wood.1,wood.4 density=0.05 seed=3 cluster=1 inside
+
+line (4,30) (27,30) color=ink

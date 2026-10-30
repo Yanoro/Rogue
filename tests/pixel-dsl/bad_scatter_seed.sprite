@@ -1,0 +1,4 @@
+sprite 32x32
+kind tile
+fill grass.2
+scatter color=grass.1 density=0.2

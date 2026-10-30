@@ -1,0 +1,6 @@
+sprite 32x32
+kind object
+fill wood.1
+frame "one" {
+    rect (2,2) (20,20) color=wood.1
+}

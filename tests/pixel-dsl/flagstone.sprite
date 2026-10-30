@@ -1,0 +1,65 @@
+version 1
+sprite 32x32
+kind tile
+material stone
+
+// Flagstone, built the way the experiment found works best: fill one slab, draw
+// the joints as 1px lines, then tone each enclosed region with fill_area. Moss is
+// a hand-placed clump because a scatter cannot be aimed at the joints.
+palette {
+    joint = stone.0
+    slab  = stone.2
+
+    moss      = grass.0
+    moss_dark = grass.1
+}
+
+fill slab
+
+line (0,12) (10,11)  color=joint
+line (10,11) (21,13) color=joint
+line (21,13) (31,12) color=joint
+line (0,24) (11,23)  color=joint
+line (11,23) (22,25) color=joint
+line (22,25) (31,24) color=joint
+
+line (11,0) (10,11)  color=joint
+line (10,11) (11,23) color=joint
+line (11,23) (13,31) color=joint
+line (23,0) (21,13)  color=joint
+line (21,13) (22,25) color=joint
+line (22,25) (24,31) color=joint
+
+line (0,6) (10,7)    color=joint
+line (17,6) (23,5)   color=joint
+line (26,7) (31,8)   color=joint
+line (0,18) (6,19)   color=joint
+line (15,19) (21,18) color=joint
+line (27,18) (31,19) color=joint
+
+fill_area (5,4)   color=stone.3
+fill_area (16,4)  color=stone.4
+fill_area (28,4)  color=stone.3
+fill_area (5,16)  color=stone.4
+fill_area (16,16) color=stone.2
+fill_area (28,16) color=stone.3
+fill_area (4,27)  color=stone.4
+fill_area (16,27) color=stone.3
+fill_area (28,27) color=stone.4
+
+// Grain inside the slab, then the moss in the joints.
+scatter color=stone.1,stone.2 density=0.10 seed=5 cluster=2
+
+pixel (11,11) color=moss_dark
+pixel (12,11) color=moss
+pixel (12,12) color=moss_dark
+pixel (21,13) color=moss_dark
+pixel (22,13) color=moss
+pixel (11,23) color=moss
+pixel (12,23) color=moss_dark
+pixel (22,25) color=moss_dark
+pixel (23,25) color=moss
+pixel (0,24)  color=moss
+pixel (1,24)  color=moss_dark
+pixel (30,12) color=moss
+pixel (30,13) color=moss_dark

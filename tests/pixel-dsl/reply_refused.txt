@@ -1,0 +1,8 @@
+Here is the floor tile.
+
+```sprite
+sprite 32x32
+kind tile
+material wood
+rect (8,8) (24,24) color=wood.2
+```
