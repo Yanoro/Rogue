@@ -12,6 +12,7 @@
 #include "RaylibException.hpp"
 #include "RewriteBriefs.hpp"
 #include "Settings.h"
+#include "SettingsSchema.h"
 #include "SpritePaths.hpp"
 #include "SystemOneRecorder.h"
 #include "TileArt.hpp"
@@ -22,8 +23,13 @@
 #include "raylib.h"
 #include "rlImGui.h"
 
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -32,6 +38,26 @@
 #include <string>
 
 namespace {
+
+// Marks every descriptor above the standard streams close-on-exec. Used only by
+// the restart path, which replaces the process image without tearing the game
+// down: without this, the flecs REST server's listening socket would survive into
+// the new process and keep its port bound, so the restarted server could not bind.
+void MarkDescriptorsCloseOnExec() {
+  std::error_code ec;
+  std::filesystem::directory_iterator entries("/proc/self/fd", ec);
+  if (ec) {
+    std::cerr << "AIRogue: could not inspect open descriptors before restarting: "
+              << ec.message() << " (the restarted process may inherit them)\n";
+    return;
+  }
+  for (const std::filesystem::directory_entry &entry : entries) {
+    const int fd = std::atoi(entry.path().filename().c_str());
+    if (fd > STDERR_FILENO) {
+      fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
+  }
+}
 
 // The headless half of --gaps: build the art gap report and exit, without ever
 // creating a window.
@@ -1431,21 +1457,24 @@ int main(int argc, char *argv[]) {
   // defaults in place.
   LoadGameSettings(settingsPath);
 
-  // Applied after the load, because LoadGameSettings resets to defaults first.
+  // Registered rather than assigned, so the settings window can show that the
+  // value came from the command line and so a reload keeps it. Applied after the
+  // load, because LoadGameSettings resets to defaults first.
   if (!mapOverride.empty()) {
-    MutableSettings().map.file = mapOverride;
+    SettingsSchema::SetCommandLineOverride("map.file", mapOverride);
   }
   // Must be set before the first sprite resolves: SpritePaths reads the art roots
   // once and caches them.
   if (!artPackOverride.empty()) {
-    MutableSettings().art.pack = artPackOverride;
+    SettingsSchema::SetCommandLineOverride("art.pack", artPackOverride);
   }
   // Kept out of the settings file on purpose: this is a request about *this* run, so it
   // goes into cliProfile, which outranks both the remembered selection and
   // system1.activeProfile.
   if (!system1Profile.empty()) {
-    MutableSettings().system1.cliProfile = system1Profile;
+    SettingsSchema::SetCommandLineOverride("system1.cliProfile", system1Profile);
   }
+  SettingsSchema::ApplyCommandLineOverrides();
 
   // Before the window: it asks a decision model one question and prints the answer, so it
   // needs no display and no world.
@@ -1644,8 +1673,10 @@ int main(int argc, char *argv[]) {
 
   raylib::Window *window = game.getWindow();
 
-  // Detect window close button or ESC key
-  while (!game.shouldClose()) {
+  // Detect window close button or ESC key. The Settings window's Restart button
+  // ends this loop the same way a window close does; the relaunch itself happens
+  // after Shutdown below.
+  while (!game.shouldClose() && !game.restartRequested()) {
     game.Update();
     game.handleInput();
 
@@ -1663,6 +1694,28 @@ int main(int argc, char *argv[]) {
     window->EndDrawing();
   }
 
+  const bool restart = game.restartRequested();
   game.Shutdown();
+  if (restart) {
+    // `game` is deliberately *not* destroyed here. The AI providers' request threads
+    // are detached and capture their provider, so tearing the game down under them is
+    // the one thing this path must not do; the exec is what ends them. Nothing is
+    // lost by skipping the teardown: the process image is replaced, so the kernel
+    // releases the world, the GL context and the audio device anyway.
+    std::cout.flush();
+    std::cerr.flush();
+    // What the kernel does *not* release on exec is an inherited descriptor, and the
+    // flecs REST server's listening socket would keep its port bound in the restarted
+    // process. Marking everything above the standard streams close-on-exec makes the
+    // new process start with the descriptor table a fresh launch has.
+    MarkDescriptorsCloseOnExec();
+    // The same binary, the same arguments and the same environment -- exactly what
+    // relaunching from the shell would give, including --settings and any mode
+    // flags. /proc/self/exe is used rather than argv[0] because argv[0] is only a
+    // hint about where the binary is.
+    execv("/proc/self/exe", argv);
+    perror("AIRogue: could not restart");
+    return 1;
+  }
   return 0;
 }

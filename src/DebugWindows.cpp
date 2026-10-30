@@ -16,6 +16,7 @@
 #include "StringUtils.hpp"
 #include "SpatialMemory.hpp"
 #include "MapReloader.h"
+#include "SettingsWindow.h"
 #include "DrawAsciiDebug.h"
 #include "PlaceCategoriesJson.hpp"
 #include "PlaceCategoryRegistry.h"
@@ -184,6 +185,17 @@ void DebugConsoleWindow::Draw() {
       game->mapReloadWindowEntity.remove<ActiveWindow>();
     }
   }
+
+  bool showSettings = game->settingsWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Settings", &showSettings)) {
+    if (showSettings) {
+      game->settingsWindowEntity.set<ActiveWindow>(
+          {std::make_shared<SettingsWindow>(game)});
+    } else {
+      game->settingsWindowEntity.remove<ActiveWindow>();
+    }
+  }
+  ImGui::SameLine();
 
   bool showAscii = game->drawAsciiToggleWindowEntity.has<ActiveWindow>();
   if (ImGui::Checkbox("DrawAscii Toggle", &showAscii)) {

@@ -3,3 +3,4 @@ router-key
 agent_tasks.txt
 .agents/
 model.json
+settings.local.json

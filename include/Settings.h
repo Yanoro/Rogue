@@ -290,10 +290,42 @@ struct GameSettings {
   // plan and the next move each decision. `two` restores the strategist + Jev
   // pilot from before this experiment.
   struct NavigationSingleSection {
-    int maxTokens = 500;
+    int maxTokens = 350;
     float timeoutSeconds = 60.0f;
     bool fallbackToTwo = true;
     int mapRadius = 6;
+    // Which model settings the dedicated navigator instance uses. True keeps the
+    // NPC model (still a separate instance, so reasoning/token options do not
+    // leak to NPC requests). False reads `model` below; that is how a local
+    // Ollama navigator or a different hosted model is configured.
+    bool useMainModel = true;
+    // Only read when useMainModel is false. Same shape and meaning as the
+    // top-level `model` block, including `type`, `model`, `endpoint`, `keepAlive`,
+    // `temperature` and `provider`. The default type is ollama, so a local model
+    // needs only its tag.
+    ModelSection model;
+    // Build a dedicated AI instance for the single navigator instead of sharing
+    // the NPC backend. The separate instance is what makes `disableReasoning`
+    // safe: toggling it on the shared backend would mutate options for NPC
+    // requests running at the same time.
+    bool dedicatedBackend = true;
+    // Turn the dedicated backend's chain-of-thought off. OpenRouter enables
+    // reasoning by default on the models used here, and reasoning can consume
+    // the entire completion budget before any JSON is emitted. Ignored when
+    // `dedicatedBackend` is false (the shared backend is left untouched).
+    bool disableReasoning = true;
+    // Send compact JSON in the single prompt. The pretty-printed form is useful
+    // in the debug window, but every space and newline is a prompt token. Off
+    // reproduces the previous prompt for A/B comparison.
+    bool compactJson = true;
+    // Previous decision turns kept in the single navigator's context. The state
+    // already carries the route and last result, so long histories mostly repeat
+    // observations the model has already acted on. 0 keeps the whole episode.
+    int historyTurns = 3;
+    // Ask for a one-sentence strategy and a 1-2 sentence think block instead of
+    // the previous "a few sentences" / "2-6 sentences" wording. Shorter output is
+    // the cheapest latency win after reasoning is off.
+    bool concise = true;
     // All eight compass sectors are offered to the main LLM, and there is room
     // for four distant places after them. The two-context S1 keeps its smaller
     // system1.navigation caps.
@@ -546,6 +578,13 @@ struct GameSettings {
     // this is the part that must not drift: a tile and an object are refused the same
     // way or the model has learned two contracts.
     std::string spriteContractFile = "data/prompts/SPRITE_CONTRACT.md";
+
+    // The system prompt for the turn that writes a *pixel document* (the sprite
+    // DSL) for a definition the designer already accepted. Separate from the two
+    // definition prompts because it answers a different question -- how the sprite
+    // is drawn, not what it is -- and because its `%SPRITE_DSL%` and `%RAMPS%`
+    // substitutions come from the compiler itself.
+    std::string spriteDSLPromptFile = "data/style/SPRITEDESIGNER.md";
     // The prompt-improver's instructions, shared by every window that offers the
     // Improve button -- the rules for rewriting a user's request are about rewriting,
     // not about tiles or buildings, so there is one file rather than one per window.
@@ -612,6 +651,20 @@ struct GameSettings {
       // thing in this feature that costs money to reproduce, so it is kept on disk
       // but never committed.
       std::string workDirectory;
+
+      // Which producer makes a sprite: "image" (the sheet API behind
+      // art.generation.command) or "dsl" (src/PixelDSL.cpp compiling the
+      // <conventionId>.sprite document next to it). Defaults to "image" so
+      // upgrading does not change what any existing checkout does.
+      //
+      // A source, not a mode: both write the same PNG through the same placement
+      // and the same hot-swap, so everything downstream is shared.
+      std::string source = "image";
+      // How many compile/describe attempts a designer agent gets when the DSL is
+      // the source. Compiles are free and instant, so this is much higher than the
+      // image path's maxDesignAttempts -- the cost of a retry is a text request,
+      // not $0.04.
+      int dslAttempts = 5;
     } generation;
   } art;
 
@@ -664,6 +717,52 @@ const std::string &SettingsFilePath();
 bool SaveStartupMapToSettingsFile(const std::string &path,
                                   const std::string &mapPath,
                                   std::string &message);
+
+// --- the settings window's write path -------------------------------------
+//
+// Everything below writes `settings.local.json` beside the loaded settings
+// file, never the tracked one. That layer is merge-patched on top at load, so an
+// edit is durable without reflowing the hand-authored file, and it is where a
+// value this machine disagrees about belongs.
+//
+// The running object is the same one the window displays, so an edit applies
+// immediately. Whether the subsystem that consumed the old value notices is a
+// different question: see SettingsSchema::Apply in SettingsSchema.h.
+
+// The override file this run writes: `settings.local.json` in the settings
+// file's directory.
+std::string SettingsOverrideFilePath(const std::string &settingsPath);
+
+// Whether the override file currently carries this field.
+bool HasSettingOverride(const std::string &settingsPath,
+                        const std::string &fieldPath);
+
+// Applies `value` to the running settings, then records it in the override file.
+// A JSON null on a field with a presence flag means "unset": the flag is
+// cleared and the key is removed, which is how `temperature` goes back to
+// "absent". `message` always describes what happened, including any correction
+// the schema applied (a clamped or rejected value is written as corrected).
+bool ApplySettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath,
+                       const nlohmann::json &value, std::string &message);
+
+// Removes a field from the override file and reloads, so the value comes back
+// from settings.json or the compiled default -- exactly what the next launch
+// would see. Reloading is why this is not just an erase.
+bool ResetSettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath, std::string &message);
+
+// The one collection, system1.profiles. The whole list is written, because a
+// merge patch cannot delete an element of an array. `profiles` is the effective
+// list (settings.json's entries plus the override's), so what is written is what
+// the window shows.
+bool ApplyProfilesValue(
+    const std::string &settingsPath,
+    const std::vector<GameSettings::SystemOneProfileSection> &profiles,
+    std::string &message);
+
+// Regenerates the field reference (SETTINGS.md) from the schema table.
+bool WriteSettingsReference(const std::string &path, std::string &message);
 
 // The command `art.generation.command` falls back to when it is empty but
 // generation is enabled: `tools/gen_tile_art.py --from-worklist {worklist}`, run

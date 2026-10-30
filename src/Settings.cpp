@@ -1,5 +1,7 @@
 #include "Settings.h"
 
+#include "SettingsSchema.h"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
@@ -8,19 +10,6 @@
 #include <sstream>
 
 namespace {
-
-// Returns the named object member, or a shared empty object when the key is
-// missing or holds something else. Every section read below starts here, so a
-// settings file that omits whole sections behaves as if each key in them were
-// absent.
-const nlohmann::json &Section(const nlohmann::json &root, const char *key) {
-  static const nlohmann::json empty = nlohmann::json::object();
-  const auto it = root.find(key);
-  if (it == root.end() || !it->is_object()) {
-    return empty;
-  }
-  return *it;
-}
 
 // Reads a whole text file into `out`. Returns false and leaves `out` untouched
 // when the path is empty or the file cannot be opened.
@@ -190,751 +179,122 @@ bool LoadGameSettings(const std::string &path) {
     }
   }
 
-  // Every field read lives in this block: a wrong JSON type (a string where a
-  // number belongs) throws inside nlohmann, and catching here turns that into a
-  // report plus whatever was already read rather than a failed start.
-  try {
-    const nlohmann::json &map = Section(root, "map");
-    settings.map.file = map.value("file", settings.map.file);
-    settings.map.spawnNPCs = map.value("spawnNPCs", settings.map.spawnNPCs);
-    settings.map.mapsDirectory =
-        map.value("mapsDirectory", settings.map.mapsDirectory);
-
-    const nlohmann::json &model = Section(root, "model");
-    settings.model.type = ToLower(model.value("type", settings.model.type));
-    settings.model.model = model.value("model", settings.model.model);
-    settings.model.apiKey = model.value("apiKey", settings.model.apiKey);
-    settings.model.endpoint = model.value("endpoint", settings.model.endpoint);
-    if (model.contains("temperature")) {
-      settings.model.hasTemperature = true;
-      settings.model.temperature = model["temperature"].get<double>();
+  // File defaults that differ from the member's own value. A missing key leaves
+  // the member as GameSettings{} built it, which for a sub-object that inherits
+  // from the main backend is the chat backend's default ("llama3") rather than
+  // the empty string that means "inherit". Those fields say so in the table, and
+  // this is where that spelling is applied before anything is read.
+  for (const SettingsSchema::FieldSpec &field : SettingsSchema::Fields()) {
+    if (field.stringDefault) {
+      *static_cast<std::string *>(field.access(settings)) = *field.stringDefault;
     }
-    // Both spellings are accepted: settings.json is camelCase, but model.json
-    // used max_tokens and a hand-written file should not have to know that.
-    if (model.contains("maxTokens")) {
-      settings.model.hasMaxTokens = true;
-      settings.model.maxTokens = model["maxTokens"].get<int>();
-    } else if (model.contains("max_tokens")) {
-      settings.model.hasMaxTokens = true;
-      settings.model.maxTokens = model["max_tokens"].get<int>();
-    }
-    if (model.contains("provider")) {
-      settings.model.hasProvider = true;
-      settings.model.provider = model["provider"];
-    }
-    settings.model.keepAlive = model.value("keepAlive", settings.model.keepAlive);
-    if (settings.model.apiKey.empty()) {
-      settings.model.apiKey = ReadLegacyApiKey();
-    }
-
-    // The vision backend is a separate, independent Ollama model behind the
-    // Vision Chat window. An absent section keeps the built-in defaults, which
-    // already point at moondream on the default Ollama port.
-    const nlohmann::json &vision = Section(root, "vision");
-    settings.vision.enabled = vision.value("enabled", settings.vision.enabled);
-    settings.vision.model = vision.value("model", settings.vision.model);
-    settings.vision.endpoint = vision.value("endpoint", settings.vision.endpoint);
-    settings.vision.keepAlive = vision.value("keepAlive", settings.vision.keepAlive);
-    if (vision.contains("temperature")) {
-      settings.vision.hasTemperature = true;
-      settings.vision.temperature = vision["temperature"].get<double>();
-    }
-
-    // The designer backend. Absent keeps useMainModel on, so an unconfigured run
-    // has the designer share the NPC backend rather than failing to start.
-    const nlohmann::json &designer = Section(root, "designer");
-    settings.designer.useMainModel =
-        designer.value("useMainModel", settings.designer.useMainModel);
-    settings.designer.promptFile =
-        designer.value("promptFile", settings.designer.promptFile);
-    settings.designer.maxDesignAttempts = designer.value(
-        "maxDesignAttempts", settings.designer.maxDesignAttempts);
-    if (settings.designer.maxDesignAttempts < 1) {
-      std::cerr << "Settings: designer.maxDesignAttempts must be at least 1; "
-                   "using 1." << std::endl;
-      settings.designer.maxDesignAttempts = 1;
-    }
-    // The designer's own output budget, independent of the agents' that it would
-    // otherwise inherit (see DesignerSection::maxTokens). 0 stays the "inherit"
-    // sentinel, so a negative value is a mistake rather than a small budget.
-    settings.designer.maxTokens =
-        designer.value("maxTokens", settings.designer.maxTokens);
-    if (settings.designer.maxTokens < 0) {
-      std::cerr << "Settings: designer.maxTokens must not be negative; using 0 "
-                   "(inherit the backend's own limit)." << std::endl;
-      settings.designer.maxTokens = 0;
-    }
-    if (designer.contains("model")) {
-      const nlohmann::json &designerModel = designer["model"];
-      GameSettings::ModelSection &target = settings.designer.model;
-      target.type = designerModel.value("type", target.type);
-      target.model = designerModel.value("model", target.model);
-      target.apiKey = designerModel.value("apiKey", target.apiKey);
-      target.endpoint = designerModel.value("endpoint", target.endpoint);
-      target.keepAlive = designerModel.value("keepAlive", target.keepAlive);
-      if (designerModel.contains("temperature")) {
-        target.hasTemperature = true;
-        target.temperature = designerModel["temperature"].get<double>();
-      }
-      if (designerModel.contains("maxTokens")) {
-        target.hasMaxTokens = true;
-        target.maxTokens = designerModel["maxTokens"].get<int>();
-      }
-      if (designerModel.contains("provider")) {
-        target.hasProvider = true;
-        target.provider = designerModel["provider"];
-      }
-    }
-
-    // The System 1 backend. Absent keeps useMainModel on, so an unconfigured run
-    // has System 1 share the NPC backend rather than failing to start. See
-    // Settings.h: SystemOneSection for why it is a separate section.
-    const nlohmann::json &system1 = Section(root, "system1");
-    settings.system1.useMainModel =
-        system1.value("useMainModel", settings.system1.useMainModel);
-
-    // Empty is the "inherit the main model" sentinel, and ModelSection's default
-    // is "llama3", so the field is cleared here unless the file actually names
-    // one. Otherwise a system1 block that sets only a key or an endpoint would
-    // inherit llama3 and be rejected by the endpoint -- which is exactly what
-    // happened the first time this was wired.
-    settings.system1.model.model.clear();
-    settings.system1.disableReasoning =
-        system1.value("disableReasoning", settings.system1.disableReasoning);
-    settings.system1.maxRecords =
-        system1.value("maxRecords", settings.system1.maxRecords);
-    if (settings.system1.maxRecords < 1) {
-      std::cerr << "Settings: system1.maxRecords must be at least 1; using 1."
-                << std::endl;
-      settings.system1.maxRecords = 1;
-    }
-    settings.system1.timeoutSeconds =
-        system1.value("timeoutSeconds", settings.system1.timeoutSeconds);
-    // Recorded before the clamp below, so a malformed value still counts as "the file
-    // said something" and gets the warning rather than silently falling back to the
-    // endpoint-derived default.
-    settings.system1.hasTimeoutSeconds = system1.contains("timeoutSeconds");
-    if (settings.system1.timeoutSeconds < 1) {
-      std::cerr << "Settings: system1.timeoutSeconds must be at least 1; using 30."
-                << std::endl;
-      settings.system1.timeoutSeconds = 30;
-    }
-    // Selectable backends. An array rather than an object map so authoring order is
-    // stable -- the picker lists them in the order the file does, which is the order
-    // the person who wrote the file expects.
-    settings.system1.profiles.clear();
-    settings.system1.activeProfile =
-        system1.value("activeProfile", settings.system1.activeProfile);
-    if (system1.contains("profiles") && system1["profiles"].is_array()) {
-      for (const auto &entry : system1["profiles"]) {
-        if (!entry.is_object()) {
-          std::cerr << "Settings: system1.profiles entry is not an object; skipping"
-                    << std::endl;
-          continue;
-        }
-        GameSettings::SystemOneProfileSection profile;
-        profile.id = entry.value("id", std::string());
-        if (profile.id.empty()) {
-          // An unnamed profile cannot be selected or persisted, so it is reported
-          // rather than silently added under an empty id.
-          std::cerr << "Settings: system1.profiles entry has no 'id'; skipping"
-                    << std::endl;
-          continue;
-        }
-        profile.label = entry.value("label", std::string());
-        profile.preset = entry.value("preset", std::string());
-        profile.timeoutSeconds = entry.value("timeoutSeconds", profile.timeoutSeconds);
-        if (profile.timeoutSeconds < 0) {
-          std::cerr << "Settings: system1 profile '" << profile.id
-                    << "' has a negative timeoutSeconds; using the default"
-                    << std::endl;
-          profile.timeoutSeconds = 0;
-        }
-        profile.minConfidence =
-            entry.value("minConfidence", profile.minConfidence);
-        // Every connection field is cleared before the file is read, because
-        // ModelSection's defaults are a *chat* backend: `endpoint` is Ollama's
-        // /api/generate and `model` is llama3. Left in place they would silently
-        // override a preset -- a profile saying only `"preset": "local_kev"` would
-        // resolve to the hosted endpoint with model llama3, which is exactly what
-        // happened the first time this parsed. Absent must mean "use the preset".
-        profile.model.endpoint.clear();
-        profile.model.model.clear();
-        profile.model.apiKey.clear();
-        if (entry.contains("model") && entry["model"].is_object()) {
-          const nlohmann::json &model = entry["model"];
-          GameSettings::ModelSection &target = profile.model;
-          target.type = model.value("type", target.type);
-          target.model = model.value("model", target.model);
-          target.apiKey = model.value("apiKey", target.apiKey);
-          target.endpoint = model.value("endpoint", target.endpoint);
-          target.keepAlive = model.value("keepAlive", target.keepAlive);
-          if (model.contains("temperature")) {
-            target.hasTemperature = true;
-            target.temperature = model["temperature"].get<double>();
-          }
-          if (model.contains("maxTokens")) {
-            target.hasMaxTokens = true;
-            target.maxTokens = model["maxTokens"].get<int>();
-          }
-          if (model.contains("provider")) {
-            target.hasProvider = true;
-            target.provider = model["provider"];
-          }
-        }
-        settings.system1.profiles.push_back(std::move(profile));
-      }
-    }
-
-    settings.system1.routeRequests =
-        system1.value("routeRequests", settings.system1.routeRequests);
-    settings.system1.minConfidence =
-        system1.value("minConfidence", settings.system1.minConfidence);
-
-    // Navigation by System 1 (docs/navigation-subagent-design.md §12). Clamped
-    // rather than trusted: a zero candidate cap or a negative budget is a config
-    // mistake that would otherwise show up as a navigation that cannot decide.
-    {
-      const nlohmann::json &navigation = Section(system1, "navigation");
-      GameSettings::SystemOneNavigationSection &nav =
-          settings.system1.navigation;
-      nav.enabled = navigation.value("enabled", nav.enabled);
-      nav.maxCandidates = navigation.value("maxCandidates", nav.maxCandidates);
-      nav.maxDirections = navigation.value("maxDirections", nav.maxDirections);
-      nav.compassRadius = navigation.value("compassRadius", nav.compassRadius);
-      nav.maxSurveys = navigation.value("maxSurveys", nav.maxSurveys);
-      nav.maxSeconds = navigation.value("maxSeconds", nav.maxSeconds);
-      nav.legTimeoutSeconds =
-          navigation.value("legTimeoutSeconds", nav.legTimeoutSeconds);
-      nav.minProbability =
-          navigation.value("minProbability", nav.minProbability);
-      nav.minMargin = navigation.value("minMargin", nav.minMargin);
-      nav.mapMode = ToLower(navigation.value("mapMode", nav.mapMode));
-      nav.mapRadius = navigation.value("mapRadius", nav.mapRadius);
-      nav.examineRadius =
-          navigation.value("examineRadius", nav.examineRadius);
-      nav.maxExamine = navigation.value("maxExamine", nav.maxExamine);
-      if (nav.mapMode != "off" && nav.mapMode != "append" &&
-          nav.mapMode != "replace") {
-        std::cerr << "Settings: system1.navigation.mapMode must be off, append "
-                     "or replace; using off."
-                  << std::endl;
-        nav.mapMode = "off";
-      }
-      if (nav.mapRadius < 3 || nav.mapRadius > 12) {
-        std::cerr << "Settings: system1.navigation.mapRadius must be 3..12; "
-                     "using 6."
-                  << std::endl;
-        nav.mapRadius = 6;
-      }
-      if (nav.examineRadius < 1 || nav.examineRadius > 64) {
-        std::cerr << "Settings: system1.navigation.examineRadius must be "
-                     "1..64; using 22."
-                  << std::endl;
-        nav.examineRadius = static_cast<int>(DEFAULT_VISION_RANGE);
-      }
-      if (nav.maxExamine < 0 || nav.maxExamine > 12) {
-        std::cerr << "Settings: system1.navigation.maxExamine must be 0..12; "
-                     "using 2."
-                  << std::endl;
-        nav.maxExamine = 2;
-      }
-      if (nav.maxCandidates < 1) {
-        std::cerr << "Settings: system1.navigation.maxCandidates must be at "
-                     "least 1; using 1."
-                  << std::endl;
-        nav.maxCandidates = 1;
-      }
-      if (nav.maxDirections < 0) {
-        std::cerr << "Settings: system1.navigation.maxDirections cannot be "
-                     "negative; using 0."
-                  << std::endl;
-        nav.maxDirections = 0;
-      }
-      if (nav.compassRadius < 1) {
-        std::cerr << "Settings: system1.navigation.compassRadius must be at "
-                     "least 1; using 1."
-                  << std::endl;
-        nav.compassRadius = 1;
-      }
-      if (nav.maxSurveys < 0) {
-        std::cerr << "Settings: system1.navigation.maxSurveys cannot be "
-                     "negative; using 0."
-                  << std::endl;
-        nav.maxSurveys = 0;
-      }
-      if (nav.maxSeconds <= 0.0f) {
-        std::cerr << "Settings: system1.navigation.maxSeconds must be positive; "
-                     "using the default."
-                  << std::endl;
-        nav.maxSeconds = DEFAULT_NAVIGATION_MAX_SECONDS;
-      }
-      if (nav.legTimeoutSeconds <= 0.0f) {
-        std::cerr << "Settings: system1.navigation.legTimeoutSeconds must be "
-                     "positive; using the default."
-                  << std::endl;
-        nav.legTimeoutSeconds = DEFAULT_NAVIGATION_LEG_TIMEOUT_SECONDS;
-      }
-      nav.minProbability = std::clamp(nav.minProbability, 0.0f, 1.0f);
-      nav.minMargin = std::clamp(nav.minMargin, 0.0f, 1.0f);
-    }
-
-    if (system1.contains("model")) {
-      const nlohmann::json &system1Model = system1["model"];
-      GameSettings::ModelSection &target = settings.system1.model;
-      target.type = system1Model.value("type", target.type);
-      target.model = system1Model.value("model", target.model);
-      target.apiKey = system1Model.value("apiKey", target.apiKey);
-      target.endpoint = system1Model.value("endpoint", target.endpoint);
-      target.keepAlive = system1Model.value("keepAlive", target.keepAlive);
-      if (system1Model.contains("temperature")) {
-        target.hasTemperature = true;
-        target.temperature = system1Model["temperature"].get<double>();
-      }
-      if (system1Model.contains("maxTokens")) {
-        target.hasMaxTokens = true;
-        target.maxTokens = system1Model["maxTokens"].get<int>();
-      }
-      if (system1Model.contains("provider")) {
-        target.hasProvider = true;
-        target.provider = system1Model["provider"];
-      }
-    }
-
-    // The Improve button's model. Separate from the designer's because rewriting is a
-    // short text edit: a reasoning model makes it slow and can spend its whole
-    // completion budget thinking and return nothing -- measured on this repo's default
-    // backend, see Settings.h.
-    {
-      const nlohmann::json &rewriter = Section(designer, "rewriter");
-      settings.designer.rewriter.enabled =
-          rewriter.value("enabled", settings.designer.rewriter.enabled);
-      settings.designer.rewriter.disableReasoning =
-          rewriter.value("disableReasoning",
-                         settings.designer.rewriter.disableReasoning);
-      if (rewriter.contains("model")) {
-        const nlohmann::json &rewriterModel = rewriter["model"];
-        GameSettings::ModelSection &target = settings.designer.rewriter.model;
-        target.type = rewriterModel.value("type", target.type);
-        target.model = rewriterModel.value("model", target.model);
-        target.apiKey = rewriterModel.value("apiKey", target.apiKey);
-        target.endpoint = rewriterModel.value("endpoint", target.endpoint);
-        target.keepAlive = rewriterModel.value("keepAlive", target.keepAlive);
-        if (rewriterModel.contains("temperature")) {
-          target.hasTemperature = true;
-          target.temperature = rewriterModel["temperature"].get<double>();
-        }
-        if (rewriterModel.contains("maxTokens")) {
-          target.hasMaxTokens = true;
-          target.maxTokens = rewriterModel["maxTokens"].get<int>();
-        }
-        if (rewriterModel.contains("provider")) {
-          target.hasProvider = true;
-          target.provider = rewriterModel["provider"];
-        }
-      }
-    }
-
-    // Reading the reply aloud. Nested one level deeper than everything else in
-    // this section, so that the whole `tts` object can be absent and the defaults
-    // still describe a working run -- just a silent one.
-    const nlohmann::json &tts = Section(designer, "tts");    settings.designer.tts.enabled =
-        tts.value("enabled", settings.designer.tts.enabled);
-    settings.designer.tts.binary = tts.value("binary", settings.designer.tts.binary);
-    settings.designer.tts.voice = tts.value("voice", settings.designer.tts.voice);
-    settings.designer.tts.volume =
-        tts.value("volume", settings.designer.tts.volume);
-    settings.designer.tts.content = tts.value("content", settings.designer.tts.content);
-
-    // Clamped rather than rejected: the failure modes are both quiet and nasty.
-    // Above 1.0 raylib amplifies into clipping, which sounds like a broken voice
-    // rather than like a loud one; below 0 it inverts the signal phase.
-    if (settings.designer.tts.volume < 0.0f) {
-      std::cerr << "Settings: designer.tts.volume must not be negative; using 0."
-                << std::endl;
-      settings.designer.tts.volume = 0.0f;
-    } else if (settings.designer.tts.volume > 1.0f) {
-      std::cerr << "Settings: designer.tts.volume is above 1.0 and would clip; "
-                   "using 1.0." << std::endl;
-      settings.designer.tts.volume = 1.0f;
-    }
-
-    // Validated here, at load, so the designer window never has to guess what an
-    // unrecognised value meant. Unknown content falls back to the default rather
-    // than to "everything", because "everything" reads the JSON aloud.
-    if (settings.designer.tts.content != "notes" &&
-        settings.designer.tts.content != "prose_and_notes" &&
-        settings.designer.tts.content != "everything") {
-      std::cerr << "Settings: designer.tts.content is '" +
-                       settings.designer.tts.content +
-                       "', which is not one of notes, prose_and_notes or "
-                       "everything; using notes." << std::endl;
-      settings.designer.tts.content = "notes";
-    }
-
-    const nlohmann::json &ai = Section(root, "ai");
-    settings.ai.npcPromptFile = ai.value("npcPromptFile", settings.ai.npcPromptFile);
-    settings.ai.memoryDigest = ai.value("memoryDigest", settings.ai.memoryDigest);
-    settings.ai.memoryDigestMinAgeSeconds = ai.value(
-        "memoryDigestMinAgeSeconds", settings.ai.memoryDigestMinAgeSeconds);
-    settings.ai.memoryDigestCandidates = ai.value(
-        "memoryDigestCandidates", settings.ai.memoryDigestCandidates);
-    settings.ai.memoryDigestStartupGraceSeconds = ai.value(
-        "memoryDigestStartupGraceSeconds",
-        settings.ai.memoryDigestStartupGraceSeconds);
-    settings.ai.memoryDigestMinCells = ai.value(
-        "memoryDigestMinCells", settings.ai.memoryDigestMinCells);
-    settings.ai.memoryDigestMaxTokens = ai.value(
-        "memoryDigestMaxTokens", settings.ai.memoryDigestMaxTokens);
-    settings.ai.memorySalience =
-        ai.value("memorySalience", settings.ai.memorySalience);
-    if (!settings.ai.npcPromptFile.empty()) {
-      if (ReadTextFile(settings.ai.npcPromptFile, settings.ai.npcPromptTemplate)) {
-        std::cout << "Settings: NPC prompt template loaded from "
-                  << settings.ai.npcPromptFile << std::endl;
-      } else {
-        std::cerr << "Settings: could not read NPC prompt template "
-                  << settings.ai.npcPromptFile
-                  << "; the built-in prompt will be used." << std::endl;
-        settings.ai.npcPromptTemplate.clear();
-      }
-    }
-
-    const nlohmann::json &window = Section(root, "window");
-    settings.window.title = window.value("title", settings.window.title);
-    settings.window.width = window.value("width", settings.window.width);
-    settings.window.height = window.value("height", settings.window.height);
-    settings.window.fullscreen =
-        window.value("fullscreen", settings.window.fullscreen);
-    settings.window.vsync = window.value("vsync", settings.window.vsync);
-    settings.window.targetFPS = window.value("targetFPS", settings.window.targetFPS);
-    settings.window.monitor = window.value("monitor", settings.window.monitor);
-
-    const nlohmann::json &render = Section(root, "render");
-    settings.render.fontPath = render.value("fontPath", settings.render.fontPath);
-    settings.render.fontSize = render.value("fontSize", settings.render.fontSize);
-    settings.render.cameraMode =
-        ToLower(render.value("cameraMode", settings.render.cameraMode));
-    settings.render.cameraZoom =
-        render.value("cameraZoom", settings.render.cameraZoom);
-
-    const nlohmann::json &perception = Section(root, "perception");
-    settings.perception.range =
-        perception.value("range", settings.perception.range);
-    settings.perception.angleDegrees =
-        perception.value("angleDegrees", settings.perception.angleDegrees);
-    settings.perception.radarRadius =
-        perception.value("radarRadius", settings.perception.radarRadius);
-    if (settings.perception.range < 1.0f || settings.perception.range > 40.0f) {
-      std::cerr << "Settings: perception.range must be 1..40; using "
-                << DEFAULT_VISION_RANGE << "." << std::endl;
-      settings.perception.range = DEFAULT_VISION_RANGE;
-    }
-    if (settings.perception.angleDegrees < 10.0f ||
-        settings.perception.angleDegrees > 360.0f) {
-      std::cerr << "Settings: perception.angleDegrees must be 10..360; using "
-                << DEFAULT_VISION_ANGLE_DEGREES << "." << std::endl;
-      settings.perception.angleDegrees = DEFAULT_VISION_ANGLE_DEGREES;
-    }
-    if (settings.perception.radarRadius < 0 ||
-        settings.perception.radarRadius > 10) {
-      std::cerr << "Settings: perception.radarRadius must be 0..10; using "
-                << DEFAULT_VISION_RADAR_RADIUS << "." << std::endl;
-      settings.perception.radarRadius = DEFAULT_VISION_RADAR_RADIUS;
-    }
-
-    const nlohmann::json &regions = Section(root, "regions");
-    settings.regions.enabled =
-        regions.value("enabled", settings.regions.enabled);
-    settings.regions.nearSize =
-        regions.value("nearSize", settings.regions.nearSize);
-    settings.regions.nearRadius =
-        regions.value("nearRadius", settings.regions.nearRadius);
-    settings.regions.midSize =
-        regions.value("midSize", settings.regions.midSize);
-    settings.regions.midRadius =
-        regions.value("midRadius", settings.regions.midRadius);
-    settings.regions.farSize =
-        regions.value("farSize", settings.regions.farSize);
-    settings.regions.farRadius =
-        regions.value("farRadius", settings.regions.farRadius);
-    settings.regions.maxRegions =
-        regions.value("maxRegions", settings.regions.maxRegions);
-    settings.regions.modelNearCount =
-        regions.value("modelNearCount", settings.regions.modelNearCount);
-    if (settings.regions.nearSize < 1 || settings.regions.nearSize > 64) {
-      std::cerr << "Settings: regions.nearSize must be 1..64; using "
-                << DEFAULT_REGION_NEAR_SIZE << "." << std::endl;
-      settings.regions.nearSize = DEFAULT_REGION_NEAR_SIZE;
-    }
-    if (settings.regions.nearRadius < 0 || settings.regions.nearRadius > 40) {
-      std::cerr << "Settings: regions.nearRadius must be 0..40; using "
-                << DEFAULT_REGION_NEAR_RADIUS << "." << std::endl;
-      settings.regions.nearRadius = DEFAULT_REGION_NEAR_RADIUS;
-    }
-    if (settings.regions.midSize < 1 || settings.regions.midSize > 128) {
-      std::cerr << "Settings: regions.midSize must be 1..128; using "
-                << DEFAULT_REGION_MID_SIZE << "." << std::endl;
-      settings.regions.midSize = DEFAULT_REGION_MID_SIZE;
-    }
-    if (settings.regions.midRadius < 0 || settings.regions.midRadius > 80) {
-      std::cerr << "Settings: regions.midRadius must be 0..80; using "
-                << DEFAULT_REGION_MID_RADIUS << "." << std::endl;
-      settings.regions.midRadius = DEFAULT_REGION_MID_RADIUS;
-    }
-    if (settings.regions.farSize < 1 || settings.regions.farSize > 256) {
-      std::cerr << "Settings: regions.farSize must be 1..256; using "
-                << DEFAULT_REGION_FAR_SIZE << "." << std::endl;
-      settings.regions.farSize = DEFAULT_REGION_FAR_SIZE;
-    }
-    if (settings.regions.farRadius < 1 || settings.regions.farRadius > 512) {
-      std::cerr << "Settings: regions.farRadius must be 1..512; using "
-                << DEFAULT_REGION_FAR_RADIUS << "." << std::endl;
-      settings.regions.farRadius = DEFAULT_REGION_FAR_RADIUS;
-    }
-    if (settings.regions.farRadius < settings.regions.midRadius) {
-      std::cerr << "Settings: regions.farRadius must be at least midRadius; "
-                   "using midRadius."
-                << std::endl;
-      settings.regions.farRadius = settings.regions.midRadius;
-    }
-    if (settings.regions.maxRegions < 0 || settings.regions.maxRegions > 512) {
-      std::cerr << "Settings: regions.maxRegions must be 0..512; using "
-                << DEFAULT_MEMORY_REGIONS_MAX << "." << std::endl;
-      settings.regions.maxRegions = DEFAULT_MEMORY_REGIONS_MAX;
-    }
-    if (settings.regions.modelNearCount < 0 ||
-        settings.regions.modelNearCount > 32) {
-      std::cerr << "Settings: regions.modelNearCount must be 0..32; using "
-                << DEFAULT_REGION_MODEL_NEAR_COUNT << "." << std::endl;
-      settings.regions.modelNearCount = DEFAULT_REGION_MODEL_NEAR_COUNT;
-    }
-
-    const nlohmann::json &player = Section(root, "player");
-    settings.player.name = player.value("name", settings.player.name);
-    settings.player.startX = player.value("startX", settings.player.startX);
-    settings.player.startY = player.value("startY", settings.player.startY);
-    settings.player.race = player.value("race", settings.player.race);
-
-    const nlohmann::json &world = Section(root, "world");
-    if (world.contains("seed") && world["seed"].is_number()) {
-      const int64_t seed = world["seed"].get<int64_t>();
-      if (seed < 0) {
-        std::cerr << "Settings: world.seed must not be negative; using the clock "
-                     "seed instead."
-                  << std::endl;
-      } else {
-        settings.world.seed = static_cast<uint64_t>(seed);
-      }
-    }
-
-    const nlohmann::json &content = Section(root, "content");
-    settings.content.objects = content.value("objects", settings.content.objects);
-    settings.content.recipes = content.value("recipes", settings.content.recipes);
-    settings.content.stats = content.value("stats", settings.content.stats);
-    settings.content.skills = content.value("skills", settings.content.skills);
-    settings.content.items = content.value("items", settings.content.items);
-    settings.content.races = content.value("races", settings.content.races);
-    settings.content.tiles = content.value("tiles", settings.content.tiles);
-    settings.content.generatedTiles =
-        content.value("generatedTiles", settings.content.generatedTiles);
-    settings.content.tileDesignerPromptFile = content.value(
-        "tileDesignerPromptFile", settings.content.tileDesignerPromptFile);
-    settings.content.objectDesignerPromptFile = content.value(
-        "objectDesignerPromptFile", settings.content.objectDesignerPromptFile);
-    settings.content.generatedObjects = content.value(
-        "generatedObjects", settings.content.generatedObjects);
-    settings.content.spriteContractFile = content.value(
-        "spriteContractFile", settings.content.spriteContractFile);
-    settings.content.rewritePromptFile =
-        content.value("rewritePromptFile", settings.content.rewritePromptFile);
-    settings.content.blueprints =
-        content.value("blueprints", settings.content.blueprints);
-
-    const nlohmann::json &art = Section(root, "art");
-    settings.art.pack = art.value("pack", settings.art.pack);
-    settings.art.generated = art.value("generated", settings.art.generated);
-    {
-      const nlohmann::json &generation = Section(art, "generation");
-      settings.art.generation.enabled =
-          generation.value("enabled", settings.art.generation.enabled);
-      settings.art.generation.command =
-          generation.value("command", settings.art.generation.command);
-      settings.art.generation.batchDelaySeconds = generation.value(
-          "batchDelaySeconds", settings.art.generation.batchDelaySeconds);
-      settings.art.generation.maxRequestsPerSession =
-          generation.value("maxRequestsPerSession",
-                           settings.art.generation.maxRequestsPerSession);
-      settings.art.generation.workDirectory = generation.value(
-          "workDirectory", settings.art.generation.workDirectory);
-      if (settings.art.generation.enabled &&
-          settings.art.generation.command.empty()) {
-        settings.art.generation.command = BuiltinTileArtCommand();
-      }
-      settings.art.generation.maxCellsPerRequest =
-          generation.value("maxCellsPerRequest",
-                           settings.art.generation.maxCellsPerRequest);
-      if (settings.art.generation.maxCellsPerRequest < 1) {
-        std::cerr << "Settings: art.generation.maxCellsPerRequest must be at least 1; "
-                     "using 1."
-                  << std::endl;
-        settings.art.generation.maxCellsPerRequest = 1;
-      }
-      if (settings.art.generation.maxRequestsPerSession < 1) {
-        std::cerr << "Settings: art.generation.maxRequestsPerSession must be at "
-                     "least 1; using 1." << std::endl;
-        settings.art.generation.maxRequestsPerSession = 1;
-      }
-    }
-
-    const nlohmann::json &debug = Section(root, "debug");
-    settings.debug.windowStateFile =
-        debug.value("windowStateFile", settings.debug.windowStateFile);
-    settings.debug.restServer = debug.value("restServer", settings.debug.restServer);
-    settings.debug.logMaxEntries =
-        debug.value("logMaxEntries", settings.debug.logMaxEntries);
-
-    // LLM strategist + S1 pilot (docs/llm-s1-navigation-design.md). The strategist
-    // uses the main AI backend, so there is no provider/model here; these are the
-    // bounds on the outer navigation layer.
-    {
-      const nlohmann::json &navigationRoot = Section(root, "navigation");
-      auto &agent = settings.navigation.agent;
-      agent = ToLower(navigationRoot.value("agent", agent));
-      if (agent != "single" && agent != "two") {
-        std::cerr << "Settings: navigation.agent must be single or two; "
-                     "using single."
-                  << std::endl;
-        agent = "single";
-      }
-      const nlohmann::json &single = Section(navigationRoot, "single");
-      settings.navigation.single.maxTokens =
-          single.value("maxTokens", settings.navigation.single.maxTokens);
-      settings.navigation.single.timeoutSeconds = single.value(
-          "timeoutSeconds", settings.navigation.single.timeoutSeconds);
-      settings.navigation.single.fallbackToTwo = single.value(
-          "fallbackToTwo", settings.navigation.single.fallbackToTwo);
-      settings.navigation.single.mapRadius = single.value(
-          "mapRadius", settings.navigation.single.mapRadius);
-      settings.navigation.single.maxAttempts = single.value(
-          "maxAttempts", settings.navigation.single.maxAttempts);
-      settings.navigation.single.maxDirections = single.value(
-          "maxDirections", settings.navigation.single.maxDirections);
-      settings.navigation.single.maxCandidates = single.value(
-          "maxCandidates", settings.navigation.single.maxCandidates);
-      if (settings.navigation.single.maxTokens < 64 ||
-          settings.navigation.single.maxTokens > 8192) {
-        std::cerr << "Settings: navigation.single.maxTokens must be 64..8192; "
-                     "using 500."
-                  << std::endl;
-        settings.navigation.single.maxTokens = 500;
-      }
-      if (settings.navigation.single.timeoutSeconds < 1.0f) {
-        std::cerr << "Settings: navigation.single.timeoutSeconds must be at "
-                     "least 1; using 60."
-                  << std::endl;
-        settings.navigation.single.timeoutSeconds = 60.0f;
-      }
-      if (settings.navigation.single.mapRadius < 3 ||
-          settings.navigation.single.mapRadius > 12) {
-        std::cerr << "Settings: navigation.single.mapRadius must be 3..12; "
-                     "using 6."
-                  << std::endl;
-        settings.navigation.single.mapRadius = 6;
-      }
-      if (settings.navigation.single.maxAttempts < 1 ||
-          settings.navigation.single.maxAttempts > 8) {
-        std::cerr << "Settings: navigation.single.maxAttempts must be 1..8; "
-                     "using 3."
-                  << std::endl;
-        settings.navigation.single.maxAttempts = 3;
-      }
-      if (settings.navigation.single.maxDirections < 1 ||
-          settings.navigation.single.maxDirections > 8) {
-        std::cerr << "Settings: navigation.single.maxDirections must be 1..8; "
-                     "using 8."
-                  << std::endl;
-        settings.navigation.single.maxDirections = 8;
-      }
-      if (settings.navigation.single.maxCandidates < 1 ||
-          settings.navigation.single.maxCandidates > 32) {
-        std::cerr << "Settings: navigation.single.maxCandidates must be "
-                     "1..32; using 12."
-                  << std::endl;
-        settings.navigation.single.maxCandidates = 12;
-      }
-      const nlohmann::json &strategist = Section(navigationRoot, "strategist");
-      auto &s = settings.navigation.strategist;
-      s.enabled = strategist.value("enabled", s.enabled);
-      s.fallbackToS1 = strategist.value("fallbackToS1", s.fallbackToS1);
-      s.maxStrategies = strategist.value("maxStrategies", s.maxStrategies);
-      s.maxAttempts = strategist.value("maxAttempts", s.maxAttempts);
-      s.maxMonitors = strategist.value("maxMonitors", s.maxMonitors);
-      s.monitorMinConfidence =
-          strategist.value("monitorMinConfidence", s.monitorMinConfidence);
-      s.timeoutSeconds = strategist.value("timeoutSeconds", s.timeoutSeconds);
-      const nlohmann::json &observation = Section(strategist, "observation");
-      s.observation.localGridRadius =
-          observation.value("localGridRadius", s.observation.localGridRadius);
-      s.observation.maxGraphNodes =
-          observation.value("maxGraphNodes", s.observation.maxGraphNodes);
-      s.observation.maxGraphEdges =
-          observation.value("maxGraphEdges", s.observation.maxGraphEdges);
-      s.observation.maxTokens =
-          observation.value("maxTokens", s.observation.maxTokens);
-
-      if (s.maxStrategies < 1) {
-        std::cerr << "Settings: navigation.strategist.maxStrategies must be at "
-                     "least 1; using 1."
-                  << std::endl;
-        s.maxStrategies = 1;
-      }
-      if (s.maxAttempts < 1) {
-        std::cerr << "Settings: navigation.strategist.maxAttempts must be at "
-                     "least 1; using 1."
-                  << std::endl;
-        s.maxAttempts = 1;
-      }
-      if (s.maxMonitors < 0) {
-        std::cerr << "Settings: navigation.strategist.maxMonitors cannot be "
-                     "negative; using 0."
-                  << std::endl;
-        s.maxMonitors = 0;
-      }
-      s.monitorMinConfidence =
-          std::clamp(s.monitorMinConfidence, 0.0f, 1.0f);
-      if (s.timeoutSeconds <= 0.0f) {
-        std::cerr << "Settings: navigation.strategist.timeoutSeconds must be "
-                     "positive; using 30."
-                  << std::endl;
-        s.timeoutSeconds = 30.0f;
-      }
-      if (s.observation.localGridRadius < 1) {
-        std::cerr << "Settings: navigation.strategist.observation.localGridRadius "
-                     "must be at least 1; using 1."
-                  << std::endl;
-        s.observation.localGridRadius = 1;
-      }
-      if (s.observation.maxGraphNodes < 0) {
-        s.observation.maxGraphNodes = 0;
-      }
-      if (s.observation.maxGraphEdges < 0) {
-        s.observation.maxGraphEdges = 0;
-      }
-      if (s.observation.maxTokens < 0) {
-        s.observation.maxTokens = 0;
-      }
-    }
-  } catch (const std::exception &e) {
-    std::cerr << "Settings: a value in " << path
-              << " has the wrong type: " << e.what()
-              << "; every field before it was applied." << std::endl;
-    ok = false;
   }
 
-  // Range checks. These keep a plausible-looking typo from producing a window
-  // that cannot be created or a registry scan of an empty path, and they report
-  // rather than silently rewriting the file.
+  bool aborted = false;
+  for (const SettingsSchema::FieldSpec &field : SettingsSchema::Fields()) {
+    if (!field.persisted) {
+      continue;
+    }
+    const nlohmann::json *value = SettingsSchema::JsonAt(root, field.path);
+    for (const std::string &alias : field.aliases) {
+      if (value) break;
+      value = SettingsSchema::JsonAt(root, alias);
+    }
+    if (!value) {
+      continue;
+    }
+    // Recorded before the value is read, so a present-but-wrong-typed value still
+    // counts as "the file said something" exactly as it did inline.
+    if (field.presence) {
+      *field.presence(settings) = true;
+    }
+    std::string messages;
+    if (!SettingsSchema::ApplyJson(field, settings, *value, messages)) {
+      std::cerr << messages
+                << "Settings: every setting before " << field.path
+                << " was applied; the rest keep their defaults." << std::endl;
+      ok = false;
+      aborted = true;
+      break;
+    }
+    if (!messages.empty()) {
+      std::cerr << messages;
+    }
+  }
+
+  // The one collection. Read after the scalars because an entry is an object of
+  // fields rather than a leaf, and because a bad entry must not stop the
+  // scalars around it from loading.
+  if (!aborted) {
+    if (const nlohmann::json *profiles =
+            SettingsSchema::JsonAt(root, "system1.profiles");
+        profiles && profiles->is_array()) {
+      settings.system1.profiles.clear();
+      for (const nlohmann::json &entry : *profiles) {
+        std::string error;
+        bool usable = true;
+        GameSettings::SystemOneProfileSection profile =
+            SettingsSchema::ProfileFromJson(entry, error, usable);
+        if (!error.empty()) {
+          std::cerr << error;
+        }
+        if (usable) {
+          settings.system1.profiles.push_back(std::move(profile));
+        }
+      }
+    }
+  }
+
+  // --- rules that need more than one field --------------------------------
+
+  // The last-resort key source, kept so a checkout that still has model.json
+  // works after settings.json took over the rest of the model block.
+  if (settings.model.apiKey.empty()) {
+    settings.model.apiKey = ReadLegacyApiKey();
+  }
+
+  if (!settings.ai.npcPromptFile.empty()) {
+    if (ReadTextFile(settings.ai.npcPromptFile, settings.ai.npcPromptTemplate)) {
+      std::cout << "Settings: NPC prompt template loaded from "
+                << settings.ai.npcPromptFile << std::endl;
+    } else {
+      std::cerr << "Settings: could not read NPC prompt template "
+                << settings.ai.npcPromptFile
+                << "; the built-in prompt will be used." << std::endl;
+      settings.ai.npcPromptTemplate.clear();
+    }
+  }
+
+  if (settings.art.generation.enabled &&
+      settings.art.generation.command.empty()) {
+    settings.art.generation.command = BuiltinTileArtCommand();
+  }
+
+  // Empty is the "not configured" sentinel for a navigator that owns its model,
+  // so asking it to use a model block with no model id is a config mistake worth
+  // reporting rather than sending "llama3" to somebody else's endpoint.
+  if (!settings.navigation.single.useMainModel &&
+      settings.navigation.single.model.model.empty()) {
+    std::cerr << "Settings: navigation.single.useMainModel is false but "
+                 "navigation.single.model.model is empty; using the main "
+                 "model settings."
+              << std::endl;
+    settings.navigation.single.useMainModel = true;
+  }
+
+  // The far ring has to contain the mid one, or a place can be observed at a
+  // distance its region never covers.
+  if (settings.regions.farRadius < settings.regions.midRadius) {
+    std::cerr << "Settings: regions.farRadius must be at least midRadius; "
+                 "using midRadius."
+              << std::endl;
+    settings.regions.farRadius = settings.regions.midRadius;
+  }
+
+  // Range checks that keep a plausible-looking typo from producing a window that
+  // cannot be created or a font that cannot be loaded. These report by setting
+  // ok = false, which is how a caller has always been told the file was used but
+  // corrected.
   if (settings.window.width <= 0 || settings.window.height <= 0) {
     std::cerr << "Settings: window.width/height must be positive; using "
               << GameSettings{}.window.width << "x" << GameSettings{}.window.height
@@ -955,7 +315,8 @@ bool LoadGameSettings(const std::string &path) {
     settings.render.fontSize = GameSettings{}.render.fontSize;
     ok = false;
   }
-  if (settings.render.cameraMode != "follow" && settings.render.cameraMode != "free") {
+  if (settings.render.cameraMode != "follow" &&
+      settings.render.cameraMode != "free") {
     std::cerr << "Settings: render.cameraMode '" << settings.render.cameraMode
               << "' is not 'follow' or 'free'; using 'follow'." << std::endl;
     settings.render.cameraMode = "follow";
@@ -967,6 +328,13 @@ bool LoadGameSettings(const std::string &path) {
     settings.debug.logMaxEntries = GameSettings{}.debug.logMaxEntries;
     ok = false;
   }
+
+  // Last, because these are not in any file: a map argument, --art-pack and
+  // --system1-profile are registered by main() and re-applied here so that a
+  // reload (the window's Reload and Reset both call this function) cannot undo
+  // them. With nothing registered -- the harness, the headless modes -- this is
+  // a no-op.
+  SettingsSchema::ApplyCommandLineOverrides();
 
   return ok;
 }
@@ -1211,5 +579,257 @@ bool SaveStartupMapToSettingsFile(const std::string &path,
     message +=
         " settings.local.json also sets map.file, and that file wins at startup.";
   }
+  return true;
+}
+
+//
+// The settings window's write path.
+//
+// Edits go to `settings.local.json` beside the loaded settings file, not to
+// settings.json. That layer is already merged on top at load (RFC 7396), so a
+// value written here wins without touching the hand-grouped tracked file -- and
+// it is the documented home for the things a run differs in, the API key above
+// all. Writes are whole-file and atomic through the same temporary-and-rename
+// as the map writer, and the file keeps its key order because it is held as
+// ordered_json.
+//
+
+namespace {
+
+std::string OverridePath(const std::string &settingsPath) {
+  return (std::filesystem::path(settingsPath).parent_path() / "settings.local.json")
+      .string();
+}
+
+bool ReadOverrideFile(const std::string &path, nlohmann::ordered_json &out,
+                      std::string &message) {
+  out = nlohmann::ordered_json::object();
+  if (!std::filesystem::exists(path)) {
+    return true;
+  }
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    message = "Could not open " + path + " to read it.";
+    return false;
+  }
+  try {
+    file >> out;
+  } catch (const std::exception &e) {
+    message = "Could not parse " + path + ": " + e.what() + ".";
+    return false;
+  }
+  if (!out.is_object()) {
+    message = path + " does not contain a JSON object.";
+    return false;
+  }
+  return true;
+}
+
+// The value settings.json alone supplies for `path`. `found` is false when the
+// key is absent, which is what lets the writer stop recording an override that
+// merely repeats the file or the built-in default.
+bool ReadMainValue(const std::string &settingsPath, const std::string &path,
+                   nlohmann::json &value, bool &found) {
+  found = false;
+  value = nullptr;
+  std::ifstream file(settingsPath);
+  if (!file.is_open()) {
+    return false;
+  }
+  try {
+    nlohmann::json root;
+    file >> root;
+    if (!root.is_object()) {
+      return false;
+    }
+    const nlohmann::json *at = SettingsSchema::JsonAt(root, path);
+    if (at) {
+      value = *at;
+      found = true;
+    }
+    return true;
+  } catch (const std::exception &) {
+    return false;
+  }
+}
+
+bool WriteOverrideFile(const std::string &path, const nlohmann::ordered_json &root,
+                       std::string &message) {
+  // Removing the last override leaves `{}`, which is a file that says nothing.
+  // Deleting it restores the state the run started in, and keeps the question
+  // "is anything overridden?" answerable by looking at the directory.
+  if (root.empty()) {
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+    if (ec) {
+      message = "Could not remove " + path + ": " + ec.message() + ".";
+      return false;
+    }
+    return true;
+  }
+  std::string writeError;
+  if (!WriteWholeFile(path, root.dump(2) + "\n", writeError)) {
+    message = "Could not update " + path + ": " + writeError + ".";
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
+std::string SettingsOverrideFilePath(const std::string &settingsPath) {
+  return OverridePath(settingsPath);
+}
+
+bool HasSettingOverride(const std::string &settingsPath,
+                        const std::string &fieldPath) {
+  nlohmann::ordered_json overrides;
+  std::string ignored;
+  if (!ReadOverrideFile(OverridePath(settingsPath), overrides, ignored)) {
+    return false;
+  }
+  return SettingsSchema::JsonAt(overrides, fieldPath) != nullptr;
+}
+
+bool ApplySettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath,
+                       const nlohmann::json &value, std::string &message) {
+  message.clear();
+  const SettingsSchema::FieldSpec *field = SettingsSchema::FindField(fieldPath);
+  if (!field) {
+    message = fieldPath + " is not a known settings field.";
+    return false;
+  }
+  if (!field->persisted) {
+    message = fieldPath + " is produced at load and cannot be set here.";
+    return false;
+  }
+
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json overrides;
+  if (!ReadOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+
+  GameSettings &settings = MutableSettings();
+
+  // A JSON null on a field with a presence flag means "unset", which is a real
+  // state distinct from the member's value. The key is removed rather than
+  // written as null: RFC 7396 would read a null as a deletion anyway, but an
+  // explicit absence is easier to see in the file.
+  if (value.is_null() && field->presence) {
+    *field->presence(settings) = false;
+    static GameSettings compiledDefaults;
+    const nlohmann::json fallback =
+        SettingsSchema::CurrentJson(*field, compiledDefaults);
+    std::string ignored;
+    SettingsSchema::ApplyJson(*field, settings, fallback, ignored);
+    SettingsSchema::EraseJsonAt(overrides, field->path);
+    if (!WriteOverrideFile(overridePath, overrides, message)) {
+      return false;
+    }
+    message = field->path + " is unset; the backend's own default applies.";
+    return true;
+  }
+
+  std::string corrections;
+  if (!SettingsSchema::ApplyJson(*field, settings, value, corrections)) {
+    message = corrections;
+    return false;
+  }
+  if (field->presence) {
+    *field->presence(settings) = true;
+  }
+  // The corrected value is what gets written, so a value the table clamps into
+  // range is recorded as the value the game will actually run with.
+  const nlohmann::json recorded =
+      SettingsSchema::CurrentJson(*field, settings);
+
+  bool redundant = false;
+  nlohmann::json mainValue;
+  bool mainFound = false;
+  if (ReadMainValue(settingsPath, field->path, mainValue, mainFound)) {
+    if (mainFound) {
+      redundant = (mainValue == recorded);
+    } else if (!field->presence) {
+      redundant = (recorded == SettingsSchema::DefaultJson(*field));
+    }
+  }
+
+  if (redundant) {
+    SettingsSchema::EraseJsonAt(overrides, field->path);
+  } else {
+    SettingsSchema::SetJsonAt(overrides, field->path, recorded);
+  }
+  if (!WriteOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  message = corrections;
+  message += redundant ? field->path + " matches the settings file; the override was removed."
+                       : field->path + " set to " + recorded.dump() + " in " +
+                             overridePath + ".";
+  return true;
+}
+
+bool ResetSettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath, std::string &message) {
+  message.clear();
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json overrides;
+  if (!ReadOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  const bool removed = SettingsSchema::EraseJsonAt(overrides, fieldPath);
+  if (removed && !WriteOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  // Reload rather than patching the one member: the value that should come back
+  // may come from settings.json, from another key it interacts with, or from a
+  // rule in the loader, and only a reload answers that the same way the next
+  // launch will.
+  LoadGameSettings(settingsPath);
+  message = removed ? fieldPath + " no longer overridden; " + settingsPath +
+                          " supplies it again."
+                    : fieldPath + " was not overridden; settings reloaded.";
+  return true;
+}
+
+bool ApplyProfilesValue(
+    const std::string &settingsPath,
+    const std::vector<GameSettings::SystemOneProfileSection> &profiles,
+    std::string &message) {
+  message.clear();
+  nlohmann::json array = nlohmann::json::array();
+  for (const GameSettings::SystemOneProfileSection &profile : profiles) {
+    array.push_back(SettingsSchema::ProfileToJson(profile));
+  }
+
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json overrides;
+  if (!ReadOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  // An array replaces the whole array under RFC 7396, so the effective list is
+  // written in full rather than diffed. That is also what makes removing an
+  // entry work: a merge patch cannot express a deletion inside an array.
+  SettingsSchema::SetJsonAt(overrides, "system1.profiles", array);
+  if (!WriteOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  MutableSettings().system1.profiles = profiles;
+  message = "system1.profiles written to " + overridePath +
+            ". The System 1 resolver is built at startup, so a restart makes it "
+            "effective.";
+  return true;
+}
+
+bool WriteSettingsReference(const std::string &path, std::string &message) {
+  message.clear();
+  std::string writeError;
+  if (!WriteWholeFile(path, SettingsSchema::MarkdownReference(), writeError)) {
+    message = "Could not write " + path + ": " + writeError + ".";
+    return false;
+  }
+  message = "Wrote the settings reference to " + path + ".";
   return true;
 }
