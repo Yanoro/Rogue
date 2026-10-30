@@ -739,6 +739,52 @@ bool SaveStartupMapToSettingsFile(const std::string &path,
                                   const std::string &mapPath,
                                   std::string &message);
 
+// --- the settings window's write path -------------------------------------
+//
+// Everything below writes `settings.local.json` beside the loaded settings
+// file, never the tracked one. That layer is merge-patched on top at load, so an
+// edit is durable without reflowing the hand-authored file, and it is where a
+// value this machine disagrees about belongs.
+//
+// The running object is the same one the window displays, so an edit applies
+// immediately. Whether the subsystem that consumed the old value notices is a
+// different question: see SettingsSchema::Apply in SettingsSchema.h.
+
+// The override file this run writes: `settings.local.json` in the settings
+// file's directory.
+std::string SettingsOverrideFilePath(const std::string &settingsPath);
+
+// Whether the override file currently carries this field.
+bool HasSettingOverride(const std::string &settingsPath,
+                        const std::string &fieldPath);
+
+// Applies `value` to the running settings, then records it in the override file.
+// A JSON null on a field with a presence flag means "unset": the flag is
+// cleared and the key is removed, which is how `temperature` goes back to
+// "absent". `message` always describes what happened, including any correction
+// the schema applied (a clamped or rejected value is written as corrected).
+bool ApplySettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath,
+                       const nlohmann::json &value, std::string &message);
+
+// Removes a field from the override file and reloads, so the value comes back
+// from settings.json or the compiled default -- exactly what the next launch
+// would see. Reloading is why this is not just an erase.
+bool ResetSettingValue(const std::string &settingsPath,
+                       const std::string &fieldPath, std::string &message);
+
+// The one collection, system1.profiles. The whole list is written, because a
+// merge patch cannot delete an element of an array. `profiles` is the effective
+// list (settings.json's entries plus the override's), so what is written is what
+// the window shows.
+bool ApplyProfilesValue(
+    const std::string &settingsPath,
+    const std::vector<GameSettings::SystemOneProfileSection> &profiles,
+    std::string &message);
+
+// Regenerates the field reference (SETTINGS.md) from the schema table.
+bool WriteSettingsReference(const std::string &path, std::string &message);
+
 // The command `art.generation.command` falls back to when it is empty but
 // generation is enabled: `tools/gen_tile_art.py --from-worklist {worklist}`, run
 // under `nix-shell -p python3Packages.pillow imagemagick` because neither tool is

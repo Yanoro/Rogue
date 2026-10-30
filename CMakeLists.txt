@@ -162,6 +162,9 @@ set(SOURCES
     src/PathFinding.cpp
     src/DebugWindowState.cpp
     src/Settings.cpp
+    src/SettingsSchema.cpp
+    src/SettingsReference.cpp
+    src/SettingsWindow.cpp
     src/DebugLog.cpp
     src/MapReloader.cpp
     src/DrawAsciiDebug.cpp

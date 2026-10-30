@@ -131,6 +131,17 @@ public:
 
   bool shouldClose() const;
 
+  // Asks the frame loop to end so main() can re-execute the binary with the same
+  // arguments. Set by the Settings window's Restart button and nowhere else.
+  //
+  // Re-executing rather than re-initialising in place is deliberate: a fresh launch
+  // is the only thing that reproduces "start the game again" exactly. Sprite roots,
+  // the System 1 recorder, the GL context and every static cache are built once per
+  // process, so an in-place reset would apply the settings and then run on stale
+  // state -- which is the failure this button exists to avoid.
+  void requestRestart() { restartRequestedFlag = true; }
+  bool restartRequested() const { return restartRequestedFlag; }
+
   raylib::Window *getWindow() { return &window; }
 
   // The designer's system prompt: its instructions from settings.designer.promptFile
@@ -309,6 +320,9 @@ private:
   int astarClickCount = 0;
   int currentMonitor = 0;
   bool isSettingPlayerTarget = false;
+  // Session-only, like the other flags here: a restart does not start with one
+  // already requested.
+  bool restartRequestedFlag = false;
   Acceleration lastAccel = {};
   Velocity lastVel = {};
 
@@ -332,6 +346,9 @@ private:
   flecs::entity entityOverviewWindowEntity;
   flecs::entity debugLogWindowEntity;
   flecs::entity mapReloadWindowEntity;
+  // The Settings window. Not persisted in debug_windows_state.json; see
+  // include/SettingsWindow.h for why.
+  flecs::entity settingsWindowEntity;
   flecs::entity drawAsciiToggleWindowEntity;
   flecs::entity fontSelectionWindowEntity;
   flecs::entity mapEditorWindowEntity;
@@ -433,6 +450,7 @@ private:
   friend class EntityOverviewWindow;
   friend class DebugLogWindow;
   friend class MapReloadWindow;
+  friend class SettingsWindow;
   friend class DrawAsciiDebugWindow;
   friend class FontSelectionWindow;
   friend class MapEditorWindow;

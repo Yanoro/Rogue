@@ -3693,6 +3693,7 @@ void Game::ECSInit() {
   visionChatWindowEntity = ecs.entity("Vision Chat Window");
   designerWindowEntity = ecs.entity("Designer Window");
   tileDesignerWindowEntity = ecs.entity("Tile Designer Window");
+  settingsWindowEntity = ecs.entity("Settings Window");
 
   // Built once and kept, unlike the other debug windows: a rebuilt window would
   // throw away its transcript, and Game::Draw needs a stable pointer to hand the
