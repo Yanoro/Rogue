@@ -222,6 +222,11 @@ FieldSpec &FieldSpec::Enum(std::initializer_list<const char *> values,
   return *this;
 }
 
+FieldSpec &FieldSpec::ProfileSource(const char *kind) {
+  enumSource = std::string("profile:") + kind;
+  return *this;
+}
+
 FieldSpec &FieldSpec::Default(std::string value) {
   stringDefault = std::move(value);
   return *this;
@@ -447,6 +452,11 @@ std::string TypeDescription(const FieldSpec &field) {
     text = "string";
     break;
   case ValueType::EnumString:
+    if (!field.enumSource.empty()) {
+      // Values come from the registry at draw time, not from the table.
+      text = "profile";
+      break;
+    }
     text = "string";
     for (std::size_t i = 0; i < field.enumValues.size(); ++i) {
       text += (i == 0 ? ": " : " | ");
@@ -586,6 +596,7 @@ const std::vector<SectionSpec> &Sections() {
       {"model", "model", "The backend the agents talk to. Read when the ECS world builds its AI instance.", ""},
       {"vision", "vision", "A second, independent Ollama backend behind the Vision Chat window. Separate from `model` because one Ollama instance keys conversation context by id alone, so it cannot serve two models.", ""},
       {"ai", "ai", "The NPC prompt source and the spatial-memory digest.", ""},
+      {"ai.profiles", "ai.profiles", "Named AI backends: the endpoint, model, key and options for one model, declared once and referenced by id from any model block. A block's inline fields override the profile; a profile of kind s1, s2 or vision is offered only in the pickers it belongs to.", ""},
       {"designer", "designer", "The blueprint designer's backend, prompt and output budget.", ""},
       {"designer.tts", "designer.tts", "Reading the designer's reply aloud.", ""},
       {"designer.rewriter", "designer.rewriter", "The model behind the Improve button. A short text edit wants a fast, cheap, non-reasoning model, which is usually not the designer's.", ""},
@@ -633,7 +644,11 @@ const std::vector<FieldSpec> &Fields() {
         .Restart();
 
     // --- model ------------------------------------------------------------
-    add(Field<ValueType::EnumString>("model", "model.type",
+        add(Field<ValueType::EnumString>("model", "model.profile",
+            "Name of an ai.profiles entry to take this block's settings from; any inline field overrides it. Empty uses the inline fields alone.", &GameSettings::model, &ModelSection::profile))
+        .ProfileSource("s2")
+        .Restart();
+add(Field<ValueType::EnumString>("model", "model.type",
             "Backend to use. Anything other than the three known names is treated as ollama.", &GameSettings::model, &ModelSection::type))
         .Enum({"ollama", "gemini", "openrouter"}, false)
         .Lower()
@@ -666,7 +681,11 @@ const std::vector<FieldSpec> &Fields() {
         .Restart();
 
     // --- vision -----------------------------------------------------------
-    add(Field<ValueType::Bool>("vision", "vision.enabled",
+        add(Field<ValueType::EnumString>("vision", "vision.profile",
+            "Name of an ai.profiles entry of kind vision. model, endpoint, keepAlive and temperature come from it; maxTokens and provider have no meaning for vision and are reported.", &GameSettings::vision, &VisionSection::profile))
+        .ProfileSource("vision")
+        .Restart();
+add(Field<ValueType::Bool>("vision", "vision.enabled",
             "Off leaves the Vision Chat window usable but reporting that no backend is configured.", &GameSettings::vision, &VisionSection::enabled))
         .Restart();
     add(Field<ValueType::String>("vision", "vision.model",
@@ -720,7 +739,11 @@ const std::vector<FieldSpec> &Fields() {
             "The designer's own completion budget, overriding the backend's. 0 inherits it.", &GameSettings::designer, &DesignerSection::maxTokens))
         .Min(0, 0)
         .Restart();
-    add(Field<ValueType::EnumString>("designer", "designer.model.type",
+        add(Field<ValueType::EnumString>("designer", "designer.model.profile",
+            "Name of an ai.profiles entry for the designer's own model block; inline fields override it.", &GameSettings::designer, &DesignerSection::model, &ModelSection::profile))
+        .ProfileSource("s2")
+        .Restart();
+add(Field<ValueType::EnumString>("designer", "designer.model.type",
             "Backend for the designer's own model block.", &GameSettings::designer, &DesignerSection::model, &ModelSection::type))
         .Enum({"ollama", "gemini", "openrouter"}, false)
         .Restart();
@@ -757,7 +780,11 @@ const std::vector<FieldSpec> &Fields() {
     add(Field<ValueType::Bool>("designer.rewriter", "designer.rewriter.disableReasoning",
             "Turn reasoning off on the rewriter's backend when it shares the designer's.", &GameSettings::designer, &DesignerSection::rewriter, &RewriterSection::disableReasoning))
         .Restart();
-    add(Field<ValueType::EnumString>("designer.rewriter", "designer.rewriter.model.type",
+        add(Field<ValueType::EnumString>("designer.rewriter", "designer.rewriter.model.profile",
+            "Name of an ai.profiles entry for the rewriter's own model block; inline fields override it.", &GameSettings::designer, &DesignerSection::rewriter, &DesignerSection::RewriterSection::model, &ModelSection::profile))
+        .ProfileSource("s2")
+        .Restart();
+add(Field<ValueType::EnumString>("designer.rewriter", "designer.rewriter.model.type",
             "Backend for the rewriter's own model block.", &GameSettings::designer, &DesignerSection::rewriter, &RewriterSection::model, &ModelSection::type))
         .Enum({"ollama", "gemini", "openrouter"}, false)
         .Restart();
@@ -807,7 +834,11 @@ const std::vector<FieldSpec> &Fields() {
     add(Field<ValueType::Bool>("system1", "system1.useMainModel",
             "Share the NPC backend instead of using the model block below.", &GameSettings::system1, &SystemOneSection::useMainModel))
         .Restart();
-    add(Field<ValueType::String>("system1", "system1.model.model",
+        add(Field<ValueType::EnumString>("system1", "system1.model.profile",
+            "Name of an ai.profiles entry of kind s1 for the System 1 block; inline fields override it.", &GameSettings::system1, &SystemOneSection::model, &ModelSection::profile))
+        .ProfileSource("s1")
+        .Restart();
+add(Field<ValueType::String>("system1", "system1.model.model",
             "Model id. Empty means inherit the main model's id rather than ModelSection's llama3 default.", &GameSettings::system1, &SystemOneSection::model, &ModelSection::model))
         .Default("")
         .Restart();
@@ -949,7 +980,11 @@ const std::vector<FieldSpec> &Fields() {
     add(Field<ValueType::Bool>("navigation.single", "navigation.single.useMainModel",
             "Keep the NPC model settings. False reads the model block below.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::useMainModel))
         .Restart();
-    add(Field<ValueType::String>("navigation.single", "navigation.single.model.model",
+        add(Field<ValueType::EnumString>("navigation.single", "navigation.single.model.profile",
+            "Name of an ai.profiles entry for the navigator's own model block; inline fields override it.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::model, &ModelSection::profile))
+        .ProfileSource("s2")
+        .Restart();
+add(Field<ValueType::String>("navigation.single", "navigation.single.model.model",
             "Model id for the navigator's own model block. Empty is not configured.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::model, &ModelSection::model))
         .Default("")
         .Restart();
@@ -1227,7 +1262,8 @@ const CollectionSpec &Profiles() {
     spec.section = "system1.profiles";
     spec.path = "system1.profiles";
     spec.title = "system1.profiles";
-    spec.doc = Sections()[8].doc;
+    const SectionSpec *section = FindSection("system1.profiles");
+    spec.doc = section ? section->doc : "";
     auto add = [&spec](CollectionFieldSpec field) -> CollectionFieldSpec & {
       spec.fields.push_back(std::move(field));
       return spec.fields.back();
@@ -1235,6 +1271,9 @@ const CollectionSpec &Profiles() {
     add(ElementField<ValueType::String>("id", "id",
         "Identifier used to select this profile: system1.activeProfile, the --system1-profile flag and every status line. Required.",
         &GameSettings::SystemOneProfileSection::id));
+    add(ElementField<ValueType::String>("profile", "profile",
+        "Name of an ai.profiles entry to take the model settings from. Its preset and fields are applied before this entry's own model block, so calibration and timeout can sit on top of a shared backend.",
+        &GameSettings::SystemOneProfileSection::profile));
     add(ElementField<ValueType::String>("label", "label",
         "Display name. Falls back to the id.",
         &GameSettings::SystemOneProfileSection::label));
@@ -1359,6 +1398,61 @@ const SectionSpec *FindSection(const std::string &key) {
     if (section.key == key) return &section;
   }
   return nullptr;
+}
+
+const std::vector<AIProfileFieldSpec> &AIProfileFields() {
+  static const std::vector<AIProfileFieldSpec> fields = {
+      {"label", ValueType::String, "label", "Display name in the pickers.", {}, false, std::nullopt},
+      {"kind", ValueType::EnumString, "kind", "What the model is for. The picker for a block only offers matching kinds; a hand-written mismatch is reported and still used.", {"s1", "s2", "vision"}, false, std::nullopt},
+      {"preset", ValueType::String, "preset", "S1 only: hosted_jev or local_kev seeds endpoint, model and key before the fields below.", {}, false, std::nullopt},
+      {"model.type", ValueType::EnumString, "type", "Backend: ollama, gemini or openrouter. Anything else is treated as ollama.", {"ollama", "gemini", "openrouter"}, false, std::nullopt},
+      {"model.model", ValueType::String, "model", "Model id passed to the backend.", {}, false, std::nullopt},
+      {"model.apiKey", ValueType::String, "apiKey", "Key for gemini and openrouter. Empty falls back to the block's own key and then the main key.", {}, false, std::nullopt},
+      {"model.endpoint", ValueType::String, "endpoint", "Ollama endpoint. Ignored by the other backends.", {}, false, std::nullopt},
+      {"model.keepAlive", ValueType::String, "keepAlive", "How long Ollama keeps the model resident, e.g. 30m.", {}, false, std::nullopt},
+      {"model.temperature", ValueType::Double, "temperature", "Sampling temperature. Absent leaves the provider's own default in charge.", {}, true, std::nullopt},
+      {"model.maxTokens", ValueType::Int, "maxTokens", "Completion budget. Absent leaves the provider's own default in charge.", {}, true, std::nullopt},
+      {"model.provider", ValueType::Json, "provider", "OpenRouter provider routing object, passed through verbatim.", {}, true, std::nullopt},
+  };
+  return fields;
+}
+
+const SectionSpec *FindAISection() { return FindSection("ai.profiles"); }
+
+void *AIProfileLeaf(GameSettings::AIProfileSection &profile,
+                    const std::string &path) {
+  if (path == "label") return &profile.label;
+  if (path == "kind") return &profile.kind;
+  if (path == "preset") return &profile.preset;
+  if (path == "model.type") return &profile.model.type;
+  if (path == "model.model") return &profile.model.model;
+  if (path == "model.apiKey") return &profile.model.apiKey;
+  if (path == "model.endpoint") return &profile.model.endpoint;
+  if (path == "model.keepAlive") return &profile.model.keepAlive;
+  if (path == "model.temperature") return &profile.model.temperature;
+  if (path == "model.maxTokens") return &profile.model.maxTokens;
+  if (path == "model.provider") return &profile.model.provider;
+  return nullptr;
+}
+
+bool *AIProfilePresence(GameSettings::AIProfileSection &profile,
+                        const std::string &path) {
+  if (path == "model.temperature") return &profile.model.hasTemperature;
+  if (path == "model.maxTokens") return &profile.model.hasMaxTokens;
+  if (path == "model.provider") return &profile.model.hasProvider;
+  return nullptr;
+}
+
+nlohmann::json AIProfileDefaultJson(const AIProfileFieldSpec &field) {
+  static GameSettings::AIProfileSection defaults;
+  if (field.presence) {
+    const bool *flag = AIProfilePresence(defaults, field.path);
+    if (flag != nullptr && !*flag) {
+      return nullptr;
+    }
+  }
+  void *leaf = AIProfileLeaf(defaults, field.path);
+  return leaf == nullptr ? nullptr : ReadLeaf(leaf, field.type);
 }
 
 const CollectionFieldSpec *FindProfileField(const std::string &path) {

@@ -35,6 +35,55 @@ void CollectPaths(const nlohmann::json &node, const std::string &prefix,
   }
 }
 
+// The model blocks a profile can drive. Longest prefix wins, so
+// navigation.single.model is not mistaken for `model`.
+const char *const kModelBlocks[] = {"model",
+                                    "designer.model",
+                                    "designer.rewriter.model",
+                                    "navigation.single.model",
+                                    "system1.model",
+                                    "vision"};
+
+std::string BlockOf(const std::string &path) {
+  std::string best;
+  for (const char *block : kModelBlocks) {
+    const std::string prefix = std::string(block) + ".";
+    if (path.rfind(prefix, 0) == 0 && std::string(block).size() > best.size()) {
+      best = block;
+    }
+  }
+  return best;
+}
+
+// Whether a profile seeds this field. Vision is the exception: `enabled` belongs
+// to the window's own switch, not to the backend definition.
+bool ProfileGoverns(const SettingsSchema::FieldSpec &field,
+                    const std::string &block) {
+  if (block.empty() || field.path == block + ".profile") {
+    return false;
+  }
+  if (block == "vision") {
+    return field.path == "vision.model" || field.path == "vision.endpoint" ||
+           field.path == "vision.keepAlive" ||
+           field.path == "vision.temperature";
+  }
+  return field.path.rfind(block + ".", 0) == 0;
+}
+
+// True when the block's consumer ignores it because it shares the main backend.
+bool BlockInactive(const std::string &block, const GameSettings &settings) {
+  if (block == "designer.model") {
+    return settings.designer.useMainModel;
+  }
+  if (block == "system1.model") {
+    return settings.system1.useMainModel;
+  }
+  if (block == "navigation.single.model") {
+    return settings.navigation.single.useMainModel;
+  }
+  return false;
+}
+
 std::string DefaultLabel(const SettingsSchema::FieldSpec &field) {
   const nlohmann::json value = SettingsSchema::DefaultJson(field);
   return value.is_null() ? "*absent*" : value.dump();
@@ -114,6 +163,13 @@ void SettingsWindow::Draw() {
 
   if (overrideCacheDirty) {
     ReadOverridePaths(SettingsFilePath(), overrides);
+    explicitBlockKeys.clear();
+    for (const char *block : kModelBlocks) {
+      const int count = CountExplicitBlockKeys(SettingsFilePath(), block);
+      if (count > 0) {
+        explicitBlockKeys[block] = count;
+      }
+    }
     overrideCacheDirty = false;
   }
 
@@ -250,6 +306,16 @@ void SettingsWindow::DrawTree(int &index) {
 }
 
 void SettingsWindow::DrawFieldsFor(const std::string &sectionKey) {
+  if (sectionKey == "ai.profiles") {
+    const SettingsSchema::SectionSpec *section =
+        SettingsSchema::FindAISection();
+    if (section) {
+      ImGui::TextWrapped("%s", section->doc.c_str());
+      ImGui::Separator();
+    }
+    DrawAIProfiles();
+    return;
+  }
   if (sectionKey == SettingsSchema::Profiles().section) {
     const SettingsSchema::SectionSpec *section =
         SettingsSchema::FindSection(sectionKey);
@@ -300,6 +366,28 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     return;
   }
 
+  // A block that names a profile shows the picker and hides the fields the
+  // profile supplies, unless the user asked to see them. The picker row reports
+  // any explicit override that the file carries, so nothing is hidden silently.
+  const std::string block = BlockOf(field.path);
+  const bool isProfileRow = !block.empty() && field.path == block + ".profile";
+  std::string profileId;
+  if (!block.empty()) {
+    if (const SettingsSchema::FieldSpec *reference =
+            SettingsSchema::FindField(block + ".profile")) {
+      const nlohmann::json value =
+          SettingsSchema::CurrentJson(*reference, settings);
+      if (value.is_string()) {
+        profileId = value.get<std::string>();
+      }
+    }
+  }
+  if (!block.empty() && !isProfileRow && !profileId.empty() &&
+      revealedBlocks.find(block) == revealedBlocks.end()) {
+    return;
+  }
+  const bool inactive = BlockInactive(block, settings);
+
   const bool fromCommandLine =
       SettingsSchema::IsCommandLineOverride(field.path);
 
@@ -344,7 +432,7 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     ImGui::SameLine();
   }
 
-  ImGui::BeginDisabled(!present);
+  ImGui::BeginDisabled(!present || inactive);
   ImGui::SetNextItemWidth(260.0f);
   void *leaf = field.access(settings);
 
@@ -410,6 +498,50 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
   }
   case SettingsSchema::ValueType::EnumString: {
     std::string value = *static_cast<std::string *>(leaf);
+    if (!field.enumSource.empty()) {
+      // A dynamic list: the ids of ai.profiles entries of the kind this block
+      // expects, plus the empty choice for an inline block.
+      const std::string kind = field.enumSource.substr(
+          field.enumSource.find(':') == std::string::npos
+              ? field.enumSource.size()
+              : field.enumSource.find(':') + 1);
+      // The choice is applied after the combo closes: selecting one reloads the
+      // registry (references resolve at load), which would invalidate the loop.
+      std::string chosen;
+      bool chooseNone = false;
+      bool createNew = false;
+      if (ImGui::BeginCombo("##v", value.empty() ? "(no profile)"
+                                                 : value.c_str())) {
+        if (ImGui::Selectable("(no profile)", value.empty())) {
+          chooseNone = true;
+        }
+        for (const auto &[id, profile] : Settings().ai.profiles) {
+          if (profile.kind != kind) {
+            continue;
+          }
+          const std::string label =
+              id + (profile.label.empty() || profile.label == id
+                        ? ""
+                        : "  (" + profile.label + ")");
+          if (ImGui::Selectable(label.c_str(), value == id)) {
+            chosen = id;
+          }
+        }
+        ImGui::Separator();
+        if (ImGui::Selectable("+ New profile...", false)) {
+          createNew = true;
+        }
+        ImGui::EndCombo();
+      }
+      if (!chosen.empty()) {
+        AssignProfile(field, chosen, kind);
+      } else if (chooseNone) {
+        AssignProfile(field, std::string(), kind);
+      } else if (createNew) {
+        NewProfileForBlock(field, kind);
+      }
+      break;
+    }
     if (ImGui::BeginCombo("##v", value.c_str())) {
       for (const std::string &option : field.enumValues) {
         const bool selected = (option == value);
@@ -485,6 +617,36 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     ImGui::TextDisabled("(default %s)", DefaultLabel(field).c_str());
   }
 
+  if (isProfileRow) {
+    if (!profileId.empty()) {
+      const auto found = settings.ai.profiles.find(profileId);
+      if (found == settings.ai.profiles.end()) {
+        ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.45f, 1.0f),
+                           "unknown profile '%s'", profileId.c_str());
+      } else {
+        ImGui::TextDisabled("  %s / %s", found->second.model.type.c_str(),
+                            found->second.model.model.c_str());
+        const auto count = explicitBlockKeys.find(block);
+        if (count != explicitBlockKeys.end() && count->second > 0) {
+          ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f),
+                             "  %d explicit field(s) override it",
+                             count->second);
+        }
+      }
+      bool reveal = revealedBlocks.find(block) != revealedBlocks.end();
+      if (ImGui::Checkbox("override fields", &reveal)) {
+        if (reveal) {
+          revealedBlocks.insert(block);
+        } else {
+          revealedBlocks.erase(block);
+        }
+      }
+    }
+    if (inactive) {
+      ImGui::TextDisabled("inactive: this block shares the main model");
+    }
+  }
+
   ImGui::PopID();
 }
 
@@ -510,6 +672,60 @@ void SettingsWindow::DrawProfileField(
   }
 
   void *leaf = field.access(profile);
+
+  if (field.path == "profile") {
+    // The same picker the model blocks use, restricted to s1. Clearing it forks
+    // the profile into the entry's model block, matching the block behaviour.
+    std::string current = *static_cast<std::string *>(leaf);
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::BeginCombo("##profile", current.empty() ? "(no profile)"
+                                                       : current.c_str())) {
+      if (ImGui::Selectable("(no profile)", current.empty())) {
+        if (!current.empty()) {
+          const auto found = Settings().ai.profiles.find(current);
+          if (found != Settings().ai.profiles.end()) {
+            profile.model = found->second.model;
+          }
+        }
+        *static_cast<std::string *>(leaf) = std::string();
+        CommitProfiles();
+      }
+      for (const auto &[id, candidate] : Settings().ai.profiles) {
+        if (candidate.kind != "s1") {
+          continue;
+        }
+        if (ImGui::Selectable(id.c_str(), current == id)) {
+          *static_cast<std::string *>(leaf) = id;
+          CommitProfiles();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    if (!current.empty()) {
+      const auto found = Settings().ai.profiles.find(current);
+      if (found == Settings().ai.profiles.end()) {
+        ImGui::TextColored(ImVec4(0.95f, 0.55f, 0.45f, 1.0f),
+                           "unknown profile '%s'", current.c_str());
+      } else {
+        ImGui::TextDisabled("  %s / %s", found->second.model.type.c_str(),
+                            found->second.model.model.c_str());
+      }
+      bool reveal = revealedEntries.find(profile.id) != revealedEntries.end();
+      if (ImGui::Checkbox("override fields", &reveal)) {
+        if (reveal) {
+          revealedEntries.insert(profile.id);
+        } else {
+          revealedEntries.erase(profile.id);
+        }
+      }
+    }
+    // The caller opened a disabled scope for the presence flag; this branch
+    // returns early, so it has to close it before the ID stack.
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    return;
+  }
+
   switch (field.type) {
   case SettingsSchema::ValueType::Bool: {
     bool value = *static_cast<bool *>(leaf);
@@ -615,6 +831,266 @@ void SettingsWindow::DrawProfileField(
   ImGui::PopID();
 }
 
+void SettingsWindow::AssignProfile(const SettingsSchema::FieldSpec &field,
+                                   const std::string &id,
+                                   const std::string &kind) {
+  (void)kind;
+  GameSettings &settings = MutableSettings();
+  const nlohmann::json current =
+      SettingsSchema::CurrentJson(field, settings);
+  const std::string previous = current.is_string() ? current.get<std::string>() : "";
+
+  if (id.empty() && !previous.empty()) {
+    // Fork: copy the profile's effective values into the inline block before the
+    // reference is cleared, so the configuration that was working survives the
+    // switch and can be tuned from there.
+    const std::string block = BlockOf(field.path);
+    for (const SettingsSchema::FieldSpec &candidate : SettingsSchema::Fields()) {
+      if (!ProfileGoverns(candidate, block)) {
+        continue;
+      }
+      if (candidate.presence && !*candidate.presence(settings)) {
+        continue;
+      }
+      const nlohmann::json value =
+          SettingsSchema::CurrentJson(candidate, settings);
+      // Never write an empty apiKey: it would sit in the override file and mask
+      // the key settings.local.json or model.json supplies.
+      if (value.is_string() && value.get<std::string>().empty()) {
+        continue;
+      }
+      std::string ignored;
+      ApplySettingValue(SettingsFilePath(), candidate.path, value, ignored);
+    }
+  }
+  CommitProfileReference(field, id);
+  revealedBlocks.erase(BlockOf(field.path));
+}
+
+void SettingsWindow::NewProfileForBlock(const SettingsSchema::FieldSpec &field,
+                                        const std::string &kind) {
+  GameSettings &settings = MutableSettings();
+  std::string id = "profile";
+  for (int suffix = 2; settings.ai.profiles.count(id) != 0; ++suffix) {
+    id = "profile_" + std::to_string(suffix);
+  }
+  nlohmann::json entry = nlohmann::json::object();
+  entry["label"] = id;
+  entry["kind"] = kind;
+  if (kind == "s1") {
+    // A decisions model is defined by its preset far more than by a model id.
+    entry["preset"] = "hosted_jev";
+  } else if (kind == "vision") {
+    entry["model"] = {{"type", "ollama"}, {"model", "moondream"},
+                      {"keepAlive", "30m"}};
+  } else {
+    entry["model"] = {{"type", "ollama"},
+                      {"model", "llama3"},
+                      {"endpoint", "http://localhost:11434/api/generate"}};
+  }
+  std::string message;
+  bool ok = ApplyAIProfileValue(SettingsFilePath(), id, entry, message);
+  if (ok) {
+    ok = ApplySettingValue(SettingsFilePath(), field.path, id, message);
+  }
+  Report(ok, message);
+  overrideCacheDirty = true;
+  if (ok) {
+    LoadGameSettings(SettingsFilePath());
+    selectedSection = "ai.profiles";
+  }
+}
+
+void SettingsWindow::CommitProfileReference(
+    const SettingsSchema::FieldSpec &field, const nlohmann::json &value) {
+  std::string message;
+  const bool ok =
+      ApplySettingValue(SettingsFilePath(), field.path, value, message);
+  Report(ok, message);
+  overrideCacheDirty = true;
+  // A reference is resolved by the loader, so the block's seeded values only
+  // appear after a reload.
+  if (ok) {
+    LoadGameSettings(SettingsFilePath());
+  }
+}
+
+void SettingsWindow::DrawAIProfileField(
+    const SettingsSchema::AIProfileFieldSpec &field,
+    GameSettings::AIProfileSection &profile, const std::string &profileId) {
+  void *leaf = SettingsSchema::AIProfileLeaf(profile, field.path);
+  if (leaf == nullptr) {
+    return;
+  }
+  ImGui::PushID(field.path.c_str());
+  ImGui::TextUnformatted(field.label.c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
+  }
+  ImGui::SameLine(170.0f);
+  ImGui::SetNextItemWidth(260.0f);
+
+  bool *presence = field.presence
+                       ? SettingsSchema::AIProfilePresence(profile, field.path)
+                       : nullptr;
+  bool present = presence ? *presence : true;
+  if (presence != nullptr) {
+    bool ticked = present;
+    if (ImGui::Checkbox("##present", &ticked)) {
+      *presence = ticked;
+    }
+    ImGui::SameLine();
+  }
+  ImGui::BeginDisabled(!present);
+
+  switch (field.type) {
+  case SettingsSchema::ValueType::Bool: {
+    bool value = *static_cast<bool *>(leaf);
+    if (ImGui::Checkbox("##v", &value)) {
+      *static_cast<bool *>(leaf) = value;
+    }
+    break;
+  }
+  case SettingsSchema::ValueType::Int: {
+    int value = *static_cast<int *>(leaf);
+    ImGui::InputInt("##v", &value, 1, 10);
+    *static_cast<int *>(leaf) = value;
+    break;
+  }
+  case SettingsSchema::ValueType::Float: {
+    float value = *static_cast<float *>(leaf);
+    ImGui::InputFloat("##v", &value, 0.1f, 1.0f, "%.4f");
+    *static_cast<float *>(leaf) = value;
+    break;
+  }
+  case SettingsSchema::ValueType::Double: {
+    double value = *static_cast<double *>(leaf);
+    ImGui::InputDouble("##v", &value, 0.1, 1.0, "%.4f");
+    *static_cast<double *>(leaf) = value;
+    break;
+  }
+  case SettingsSchema::ValueType::String: {
+    std::string value = *static_cast<std::string *>(leaf);
+    const bool secret = field.path.size() >= 6 &&
+                        field.path.compare(field.path.size() - 6, 6, "apiKey") == 0;
+    ImGui::InputText("##v", &value,
+                     secret && !showSecrets ? ImGuiInputTextFlags_Password : 0);
+    *static_cast<std::string *>(leaf) = value;
+    break;
+  }
+  case SettingsSchema::ValueType::EnumString: {
+    std::string value = *static_cast<std::string *>(leaf);
+    if (ImGui::BeginCombo("##v", value.c_str())) {
+      for (const std::string &option : field.enumValues) {
+        if (ImGui::Selectable(option.c_str(), option == value)) {
+          *static_cast<std::string *>(leaf) = option;
+        }
+        if (option == value) {
+          ImGui::SetItemDefaultFocus();
+        }
+      }
+      ImGui::EndCombo();
+    }
+    break;
+  }
+  case SettingsSchema::ValueType::Json: {
+    nlohmann::json &value = *static_cast<nlohmann::json *>(leaf);
+    const std::string key = profileId + "|" + field.path;
+    std::string &buffer = jsonBuffers[key];
+    if (buffer.empty()) {
+      buffer = value.is_null() ? "{}" : value.dump(2);
+    }
+    ImGui::InputTextMultiline("##json", &buffer, ImVec2(-1, 80));
+    if (ImGui::Button("Apply JSON")) {
+      try {
+        value = nlohmann::json::parse(buffer);
+      } catch (const std::exception &error) {
+        Report(false, std::string("Invalid JSON: ") + error.what());
+      }
+    }
+    break;
+  }
+  default:
+    break;
+  }
+  ImGui::EndDisabled();
+  ImGui::PopID();
+}
+
+void SettingsWindow::DrawAIProfiles() {
+  GameSettings &settings = MutableSettings();
+  std::string removeId;
+  // Saving reloads the settings (references are resolved at load), which would
+  // rebuild the map being iterated. The request is therefore captured here and
+  // applied after the loop.
+  std::string saveId;
+  nlohmann::json saveEntry;
+
+  for (auto &[id, profile] : settings.ai.profiles) {
+    ImGui::PushID(id.c_str());
+    const std::string header =
+        id + (profile.label.empty() || profile.label == id
+                  ? ""
+                  : "  (" + profile.label + ")");
+    if (ImGui::CollapsingHeader(header.c_str(),
+                                ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::TextDisabled("kind %s%s", profile.kind.c_str(),
+                         profile.preset.empty()
+                             ? ""
+                             : (", preset " + profile.preset).c_str());
+      for (const SettingsSchema::AIProfileFieldSpec &field :
+           SettingsSchema::AIProfileFields()) {
+        DrawAIProfileField(field, profile, id);
+      }
+      if (ImGui::Button("Save profile")) {
+        saveId = id;
+        saveEntry = AIProfileToJson(profile);
+      }
+      ImGui::SameLine();
+      if (ImGui::Button("Remove profile")) {
+        removeId = id;
+      }
+    }
+    ImGui::PopID();
+  }
+
+  if (!saveId.empty()) {
+    std::string message;
+    const bool ok = ApplyAIProfileValue(SettingsFilePath(), saveId, saveEntry,
+                                        message);
+    Report(ok, message);
+    overrideCacheDirty = true;
+  }
+
+  if (!removeId.empty()) {
+    std::string message;
+    const bool ok = RemoveAIProfile(SettingsFilePath(), removeId, message);
+    Report(ok, message);
+    overrideCacheDirty = true;
+  }
+
+  ImGui::Separator();
+  ImGui::SetNextItemWidth(220.0f);
+  ImGui::InputTextWithHint("##newprofile", "new profile id", &newProfileId);
+  ImGui::SameLine();
+  ImGui::BeginDisabled(newProfileId.empty() ||
+                       settings.ai.profiles.count(newProfileId) != 0);
+  if (ImGui::Button("Add profile")) {
+    GameSettings::AIProfileSection profile;
+    profile.kind = "s2";
+    std::string message;
+    const bool ok = ApplyAIProfileValue(
+        SettingsFilePath(), newProfileId, AIProfileToJson(profile), message);
+    Report(ok, message);
+    overrideCacheDirty = true;
+    newProfileId.clear();
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::TextDisabled(
+      "Ids are the key in ai.profiles; model blocks pick one by name.");
+}
+
 void SettingsWindow::DrawProfiles() {
   GameSettings &settings = MutableSettings();
   int removeIndex = -1;
@@ -627,8 +1103,17 @@ void SettingsWindow::DrawProfiles() {
         profile.id + (profile.label.empty() ? "" : " (" + profile.label + ")");
     if (ImGui::CollapsingHeader(header.c_str(),
                                 ImGuiTreeNodeFlags_DefaultOpen)) {
+      const bool entryHasProfile = !profile.profile.empty();
+      const bool entryRevealed =
+          revealedEntries.find(profile.id) != revealedEntries.end();
       for (const SettingsSchema::CollectionFieldSpec &field :
            SettingsSchema::Profiles().fields) {
+        // The profile supplies the model block; calibration and timeout stay
+        // visible because they are per-entry.
+        if (entryHasProfile && !entryRevealed &&
+            field.path.rfind("model.", 0) == 0) {
+          continue;
+        }
         DrawProfileField(field, profile);
       }
       if (ImGui::Button("Remove this profile")) {

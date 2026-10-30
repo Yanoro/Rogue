@@ -105,6 +105,10 @@ struct FieldSpec {
   // False keeps an unrecognised value instead of correcting it (the backend
   // `type` fields pass unknown values through to the backend unchanged).
   bool strictEnum = true;
+  // A dynamic list the window builds at draw time instead of a fixed
+  // `enumValues`. "profile:s2" means "every ai.profiles entry of kind s2", which
+  // is how a model block's `profile` key becomes a picker. Empty means static.
+  std::string enumSource;
   // Overrides the member default for reading, display and reset. Needed where
   // the member's default is a *chat* backend default that must not leak into a
   // sub-object ("system1.model.model": llama3 -> empty means "inherit").
@@ -119,6 +123,7 @@ struct FieldSpec {
 
   // --- chainable modifiers, for the table below ---------------------------
   FieldSpec &Enum(std::initializer_list<const char *> values, bool strict = true);
+  FieldSpec &ProfileSource(const char *kind);
   FieldSpec &Default(std::string value);
   FieldSpec &Alias(const char *spelling);
   FieldSpec &Lower();
@@ -164,6 +169,20 @@ struct CollectionFieldSpec {
   std::optional<RangeRule> range;
 };
 
+// One field of an `ai.profiles` entry, relative to the entry. Kept separate from
+// CollectionFieldSpec because the registry is an object keyed by id and its
+// elements are a different type; the shape is the same, and the window and the
+// reference both describe it from here.
+struct AIProfileFieldSpec {
+  std::string path;  // "label", "kind", "model.type", ...
+  ValueType type = ValueType::String;
+  std::string label;
+  std::string doc;
+  std::vector<std::string> enumValues;
+  bool presence = false;
+  std::optional<RangeRule> range;
+};
+
 struct CollectionSpec {
   std::string section;
   std::string path;
@@ -177,6 +196,22 @@ struct CollectionSpec {
 const std::vector<SectionSpec> &Sections();
 const std::vector<FieldSpec> &Fields();
 const CollectionSpec &Profiles();
+
+// The named AI backends (`ai.profiles`): the same shape as a model block plus
+// label/kind/preset, selected by name from any model block's `profile` key.
+const std::vector<AIProfileFieldSpec> &AIProfileFields();
+const SectionSpec *FindAISection();
+
+// The member one profile field names, and the presence flag guarding it. A path
+// switch rather than a member pointer: an ai.profiles entry is not a GameSettings
+// member, and keeping the switch beside the field list is what keeps the editor
+// and the reference data-driven.
+void *AIProfileLeaf(GameSettings::AIProfileSection &profile,
+                    const std::string &path);
+bool *AIProfilePresence(GameSettings::AIProfileSection &profile,
+                        const std::string &path);
+// The value a fresh profile field has, or null for an absent presence field.
+nlohmann::json AIProfileDefaultJson(const AIProfileFieldSpec &field);
 
 const FieldSpec *FindField(const std::string &path);
 const SectionSpec *FindSection(const std::string &key);

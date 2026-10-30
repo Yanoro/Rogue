@@ -3,6 +3,7 @@
 #include "SettingsSchema.h"
 #include "Window.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -30,6 +31,18 @@ private:
   void DrawTree(int &index);
   void DrawFieldsFor(const std::string &sectionKey);
   void DrawProfiles();
+  void DrawAIProfiles();
+  void DrawAIProfileField(const SettingsSchema::AIProfileFieldSpec &field,
+                          GameSettings::AIProfileSection &profile,
+                          const std::string &profileId);
+  void CommitProfileReference(const SettingsSchema::FieldSpec &field,
+                              const nlohmann::json &value);
+  // Points a model block at `id`; an empty id forks the current profile's values
+  // into the block's inline fields first, so "no profile" keeps what worked.
+  void AssignProfile(const SettingsSchema::FieldSpec &field,
+                     const std::string &id, const std::string &kind);
+  void NewProfileForBlock(const SettingsSchema::FieldSpec &field,
+                          const std::string &kind);
   void DrawField(const SettingsSchema::FieldSpec &field);
   void DrawProfileField(const SettingsSchema::CollectionFieldSpec &field,
                         GameSettings::SystemOneProfileSection &profile);
@@ -43,6 +56,8 @@ private:
   Game *game;
   std::string filter;
   std::string selectedSection;
+  // The id typed into the add row of the ai.profiles section.
+  std::string newProfileId;
   std::string status;
   bool statusOk = true;
   bool showRestartOnly = false;
@@ -56,5 +71,11 @@ private:
   // open, not per row per frame: 150 rows times 60 frames of file reads would be
   // a silly way to answer "is this one overridden".
   std::set<std::string> overrides;
+  // Per block: how many keys the files set besides `profile`, so an override
+  // hidden behind the picker is still reported.
+  std::map<std::string, int> explicitBlockKeys;
+  // Blocks/entries whose inline fields are revealed despite naming a profile.
+  std::set<std::string> revealedBlocks;
+  std::set<std::string> revealedEntries;
   bool overrideCacheDirty = true;
 };

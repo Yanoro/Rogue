@@ -17,6 +17,7 @@
 #include "Defaults.h"
 
 #include <cstdint>
+#include <map>
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
@@ -33,6 +34,11 @@ struct GameSettings {
   } map;
 
   struct ModelSection {
+    // The name of an entry in `ai.profiles`, or empty for an inline block. The
+    // profile seeds every field below at load; an explicitly written field
+    // overrides it. Resolution happens in the loader, so every consumer still
+    // reads a plain ModelSection and no backend code knows profiles exist.
+    std::string profile;
     // "ollama", "gemini" or "openrouter". Anything else is treated as ollama.
     std::string type = "ollama";
     std::string model = "llama3";
@@ -63,6 +69,10 @@ struct GameSettings {
   // contextId alone, so serving both from one instance would replay a vision
   // model's context into a text model's request.
   struct VisionSection {
+    // The name of an `ai.profiles` entry of kind vision, or empty for an inline
+    // block. A vision profile maps model/endpoint/keepAlive/temperature into this
+    // section; maxTokens and provider have no meaning here and are reported.
+    std::string profile;
     // Off leaves the window usable but reporting that no backend is configured,
     // which is friendlier than making the feature look broken when Ollama is not
     // running.
@@ -203,6 +213,10 @@ struct GameSettings {
     // The identifier used to select this profile: `system1.activeProfile`, the
     // `--system1-profile` flag and every status line. Required in the file.
     std::string id;
+    // The `ai.profiles` entry to take the model settings from. The entry's preset
+    // and fields are applied before this profile's own `model` block, so a
+    // per-profile timeout or calibration can sit on top of a shared backend.
+    std::string profile;
     // Display name. Falls back to `id`, so a small config does not have to say the
     // same thing twice.
     std::string label;
@@ -440,6 +454,27 @@ struct GameSettings {
   // LLM strategist + System 1 pilot (docs/llm-s1-navigation-design.md).
   NavigationSection navigation;
 
+  // One named AI backend: everything needed to reach a model, declared once and
+  // referenced by name from any model block.
+  //
+  // The same nine fields a model block already has, plus the three that make a
+  // profile selectable: the id (its key in `ai.profiles`), a display label, and
+  // the kind of model it is. Kind is what keeps a vision model out of the agent
+  // backend's picker -- it is advisory, not isolation: the separate backend
+  // instances remain separate because that is about conversation context, not
+  // configuration.
+  struct AIProfileSection {
+    std::string label;
+    // "s1" (a decisions model), "s2" (a chat/reasoning model) or "vision".
+    // Validated at load; an unknown value is reported and treated as "s2".
+    std::string kind = "s2";
+    // Only meaningful for kind "s1": hosted_jev or local_kev seeds endpoint,
+    // model and key before the fields below, exactly as a System 1 profile's
+    // preset does.
+    std::string preset;
+    ModelSection model;
+  };
+
   struct AISection {
     // Path to a text file holding the NPC system prompt template. Empty means the
     // compiled-in DEFAULT_NPC_PROMPT is used. The template keeps the same
@@ -477,6 +512,12 @@ struct GameSettings {
     int memoryDigestMaxTokens = 1200;
     // The System 1 salience probe at wake. Logged only; nothing acts on it yet.
     bool memorySalience = false;
+
+    // The named backends, keyed by id. A map rather than an array because the
+    // override layer merges objects key by key: a profile edited in the settings
+    // window lands in settings.local.json without replacing the whole registry,
+    // which is what makes an apiKey-override for one profile possible at all.
+    std::map<std::string, AIProfileSection> profiles;
   } ai;
 
   struct WindowSection {
@@ -784,6 +825,24 @@ bool ApplyProfilesValue(
 
 // Regenerates the field reference (SETTINGS.md) from the schema table.
 bool WriteSettingsReference(const std::string &path, std::string &message);
+
+// --- named AI backends ----------------------------------------------------
+//
+// `ai.profiles` entries are written one key at a time, so the override file
+// merges per profile instead of replacing the registry: that is what makes an
+// apiKey override for a single profile possible. Every write reloads, because a
+// model block's `profile` reference is resolved during a load.
+nlohmann::json AIProfileToJson(const GameSettings::AIProfileSection &profile);
+bool ApplyAIProfileValue(const std::string &settingsPath, const std::string &id,
+                         const nlohmann::json &entry, std::string &message);
+bool RemoveAIProfile(const std::string &settingsPath, const std::string &id,
+                     std::string &message);
+
+// How many keys the files (main plus override) set inside `blockPath` other than
+// `profile`. Used by the window to say "N explicit fields override this profile"
+// so a hand-written override is never hidden behind the picker.
+int CountExplicitBlockKeys(const std::string &settingsPath,
+                           const std::string &blockPath);
 
 // The command `art.generation.command` falls back to when it is empty but
 // generation is enabled: `tools/gen_tile_art.py --from-worklist {worklist}`, run

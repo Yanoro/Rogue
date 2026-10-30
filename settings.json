@@ -14,22 +14,7 @@
   },
 
   "model": {
-    "type": "openrouter",
-    "model": "deepseek/deepseek-v4-flash",
-    "apiKey": "",
-    "endpoint": "http://localhost:11434/api/generate",
-    "maxTokens": 1500,
-    "provider": {
-      "order": [
-        "deepinfra",
-        "novita",
-        "siliconflow",
-        "parasail",
-        "gmicloud"
-      ],
-      "allow_fallbacks": false,
-      "require_parameters": true
-    }
+    "profile": "deepseek-v4-flash"
   },
 
   "ai": {
@@ -40,14 +25,76 @@
     "memoryDigestStartupGraceSeconds": 60,
     "memoryDigestMinCells": 400,
     "memoryDigestMaxTokens": 1200,
-    "memorySalience": false
+    "memorySalience": false,
+
+    "profiles": {
+      "deepseek-v4-flash": {
+        "label": "DeepSeek V4 Flash (OpenRouter)",
+        "kind": "s2",
+        "model": {
+          "type": "openrouter",
+          "model": "deepseek/deepseek-v4-flash",
+          "maxTokens": 1500,
+          "provider": {
+            "order": [
+              "deepinfra",
+              "novita",
+              "siliconflow",
+              "parasail",
+              "gmicloud"
+            ],
+            "allow_fallbacks": false,
+            "require_parameters": true
+          }
+        }
+      },
+      "phi4-mini": {
+        "label": "Phi-4 Mini (Ollama, navigator)",
+        "kind": "s2",
+        "model": {
+          "type": "ollama",
+          "model": "phi4-mini:latest",
+          "keepAlive": "30m",
+          "temperature": 0
+        }
+      },
+      "qwen2.5vl": {
+        "label": "Qwen2.5-VL (Ollama vision)",
+        "kind": "vision",
+        "model": {
+          "type": "ollama",
+          "model": "qwen2.5vl",
+          "keepAlive": "30m"
+        }
+      },
+      "moondream": {
+        "label": "Moondream (Ollama vision)",
+        "kind": "vision",
+        "model": {
+          "type": "ollama",
+          "model": "moondream",
+          "keepAlive": "30m"
+        }
+      },
+      "kev": {
+        "label": "Kev-4B (local llama-server)",
+        "kind": "s1",
+        "preset": "local_kev"
+      },
+      "jev": {
+        "label": "Jev (hosted, OpenRouter)",
+        "kind": "s1",
+        "preset": "hosted_jev",
+        "model": {
+          "model": "~typesafe/jev-latest"
+        }
+      }
+    }
   },
 
   "vision": {
     "enabled": true,
-    "model": "qwen2.5vl",
-    "endpoint": "http://localhost:11434/api/generate",
-    "keepAlive": "30m"
+    "profile": "qwen2.5vl"
   },
 
   "designer": {
@@ -71,11 +118,7 @@
       "mapRadius": 6,
       "useMainModel": false,
       "model": {
-        "type": "ollama",
-        "model": "phi4-mini:latest",
-        "endpoint": "http://localhost:11434/api/generate",
-        "keepAlive": "30m",
-        "temperature": 0
+        "profile": "phi4-mini"
       },
       "dedicatedBackend": true,
       "disableReasoning": true,
@@ -105,7 +148,12 @@
       {
         "id": "kev",
         "label": "Kev-4B (this machine)",
-        "preset": "local_kev"
+        "profile": "kev"
+      },
+      {
+        "id": "jev",
+        "label": "Jev (hosted)",
+        "profile": "jev"
       }
     ]
   },
