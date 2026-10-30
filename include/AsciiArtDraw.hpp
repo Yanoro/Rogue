@@ -128,16 +128,12 @@ inline void DrawAsciiArtImGui(const AsciiArt &art, Color fallback,
   // a box-drawing character would come out blank. ArtImGuiFont() is the font
   // Game::Init adds when it can; blocks and shades do not care either way,
   // because they are filled rather than drawn.
-  ImFont *font = ArtImGuiFont() != nullptr ? ArtImGuiFont() : ImGui::GetFont();
-  if (drawList == nullptr || font == nullptr) {
+  if (drawList == nullptr) {
     return;
   }
 
   const AsciiGrid grid =
       ComputeAsciiGrid(art, topLeft.x, topLeft.y, size.x, size.y);
-  const float fontSize =
-      static_cast<float>(std::min(grid.cellWidth, grid.cellHeight));
-
   for (int row = 0; row < grid.rows; ++row) {
     for (int col = 0; col < grid.cols; ++col) {
       const int codepoint = AsciiArtCell(art, col, row);
@@ -174,16 +170,19 @@ inline void DrawAsciiArtImGui(const AsciiArt &art, Color fallback,
         continue;
       }
 
-      // ImGui's text API takes UTF-8, so the codepoint is encoded back for it.
-      char buf[5];
-      EncodeUtf8Codepoint(codepoint, buf);
-      const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf);
-
-      drawList->AddText(
-          font, fontSize,
-          ImVec2(std::round(cellX + (cellWidth - textSize.x) / 2.0f),
-                 std::round(cellY + (cellHeight - textSize.y) / 2.0f)),
-          IM_COL32(color.r, color.g, color.b, color.a), buf);
+      // Text glyphs are deliberately NOT drawn.
+      //
+      // The art font is a bitmap OTB, and ImGui's text path pushes it through
+      // stb_truetype, which parses glyph *outlines*. For a glyph that exists in the
+      // cmap but has no outline data, stb reads past the end of the font buffer:
+      // that was the heap-buffer-overflow in DrawAsciiArtImGui (imstb_truetype.h
+      // stbtt__GetGlyphShapeTT), triggered by a template whose art used a glyph no
+      // earlier template had measured. Blocks and shades above are rectangles and
+      // need no font at all, so they are safe; anything else is skipped rather than
+      // risk the same crash from a codepoint we cannot pre-validate.
+      (void)cellX;
+      (void)cellY;
+      (void)color;
     }
   }
 }

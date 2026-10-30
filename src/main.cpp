@@ -7,6 +7,7 @@
 #include "GapLog.h"
 #include "JevClassifier.h"
 #include "ObjectDesigner.hpp"
+#include "PixelDSL.hpp"
 #include "SpriteRouter.hpp"
 #include "ObjectFactory.h"
 #include "RaylibException.hpp"
@@ -494,6 +495,134 @@ int RunSpriteDesign(const SpriteKinds::Descriptor &kind,
   return 0;
 }
 
+// Prints what the document turn would send. Free, no backend, and the only way to
+// read the prompt without reading the code -- the grammar and the ramps are
+// substituted from the compiler, and an unsubstituted placeholder would be a literal
+// token shipped to the model, which is invisible from "it built".
+int RunSpriteDocumentPrompt() {
+  const GameSettings &settings = Settings();
+  const std::string system = TileDesigner::BuildSpriteDocumentSystemPrompt(
+      settings.content.spriteDSLPromptFile, PixelDSL::Config{}.rampsPath);
+
+  std::cout << "prompt file: " << settings.content.spriteDSLPromptFile << "\n";
+  std::cout << "ramps:       " << PixelDSL::Config{}.rampsPath << "\n";
+  std::cout << "system:      " << system.size() << " byte(s)\n";
+
+  int unsubstituted = 0;
+  for (const char *placeholder : {"%SPRITE_DSL%", "%RAMPS%"}) {
+    if (system.find(placeholder) == std::string::npos) continue;
+    std::cout << "  UNSUBSTITUTED: " << placeholder << "\n";
+    ++unsubstituted;
+  }
+
+  TileDesigner::SpriteDocumentBrief brief;
+  brief.kind = SpriteKinds::Kind::Tile;
+  brief.name = "mossy flagstone";
+  brief.description = "Old stone with moss in the joints.";
+  brief.blocksTile = false;
+
+  std::cout << "\n---------- what would be sent ----------\n";
+  std::cout << system;
+  if (system.empty() || system.back() != '\n') std::cout << "\n";
+  std::cout << "\n---------- user turn (first attempt) ----------\n";
+  std::cout << TileDesigner::BuildSpriteDocumentRequest(brief, "");
+  std::cout << "\n---------- user turn (retry) ----------\n";
+  std::cout << TileDesigner::BuildSpriteDocumentRequest(
+      brief, "REFUSED\n  error:   line 4: tile (default) is not full-bleed: 735 "
+             "pixel(s) are transparent, the first at (0,0).");
+  return unsubstituted == 0 ? 0 : 1;
+}
+
+// The second turn's headless half: a *reply* in, a document out, the compiler's
+// verdict printed. The counterpart of `--tile-design`, one step later in the same
+// pipeline.
+//
+// It exists because the two things that can go wrong in the document turn are both
+// invisible from the window: a reply whose fenced block is extracted wrongly, and a
+// document that compiles differently here than it does in the window. Both are pure
+// functions of the text, so both are checkable without a backend -- which is the only
+// way this loop is verifiable at all, since the send side needs a live model.
+int RunSpriteDocumentCheck(const std::string &replyPath) {
+  std::ifstream file(replyPath);
+  if (!file.is_open()) {
+    std::cerr << "sprite document: could not read " << replyPath << "\n";
+    return 1;
+  }
+  std::stringstream buffer;
+  buffer << file.rdbuf();
+  const std::string reply = buffer.str();
+
+  const std::string document = TileDesigner::ExtractSpriteDocument(reply);
+  std::cout << "reply:      " << replyPath << " (" << reply.size() << " bytes)\n";
+  std::cout << "document:   " << document.size() << " bytes extracted\n";
+
+  PixelDSL::Config config;
+  const PixelDSL::Result result = PixelDSL::Compile(document, config);
+  std::cout << PixelDSL::Describe(result);
+  return result.ok ? 0 : 1;
+}
+
+// Compiles a sprite DSL document and exits. No window, no world, no backend: the
+// same reason --tile-design exists, because the compiler is the half of this
+// feature that has to be verifiable and an ImGui-only entry point would make it
+// not be.
+//
+// `--sprite-compile-out <png>` writes the result. With one frame the path is used
+// verbatim; with several (a `frame` block per variant) the frame name is appended
+// as `<stem>_<name>.png`, so a growth family lands as separate files with no
+// scripting.
+int RunSpriteCompile(const std::string &documentPath,
+                     const std::string &outputPath) {
+  // Defaults are the repo's own paths. They are not read from settings yet
+  // because nothing else does: the DSL is a second source, and giving it a
+  // settings section before it is wired into the tile designer would be a
+  // configuration surface with one consumer and no user.
+  PixelDSL::Config config;
+  // raylib's image writer logs at INFO; this mode's own report is the output that
+  // matters, and two "File saved successfully" lines per frame bury it.
+  SetTraceLogLevel(LOG_WARNING);
+  const PixelDSL::Result result = PixelDSL::CompileFile(documentPath, config);
+
+  std::cout << "document:   " << documentPath << "\n";
+  std::cout << PixelDSL::Describe(result);
+  if (!result.ok) return 1;
+
+  if (!outputPath.empty()) {
+    for (const PixelDSL::Frame &frame : result.frames) {
+      std::filesystem::path path(outputPath);
+      if (result.frames.size() > 1 && !frame.name.empty()) {
+        path = path.parent_path() /
+               (path.stem().string() + "_" + frame.name + path.extension().string());
+      }
+      if (!PixelDSL::WritePng(frame, path.string())) {
+        std::cerr << "sprite compile: could not write " << path.string() << "\n";
+        return 1;
+      }
+      std::cout << "wrote:      " << path.string() << "  (" << frame.width << "x"
+                << frame.height << ")\n";
+    }
+  }
+  return 0;
+}
+
+// Prints the grammar and the ramps available, so a designer prompt can be checked
+// against the parser without a backend. The two halves that can drift -- the ops
+// the compiler accepts and the ops the prompt describes -- are dumped from the same
+// build.
+int RunSpriteGrammar() {
+  PixelDSL::Config config;
+  std::cout << PixelDSL::GrammarReference();
+  std::string error;
+  const std::string ramps = PixelDSL::RampSummary(config, &error);
+  std::cout << "\n## Ramps in " << config.rampsPath << "\n";
+  if (ramps.empty()) {
+    std::cout << "  (none: " << error << ")\n";
+    return 1;
+  }
+  std::cout << ramps;
+  return 0;
+}
+
 // Prints the system prompt for a kind and exits. The counterpart of RunTileDesign for
 // the half that exists before any validator: the prompt assembly, the contract
 // substitution and the vocabulary list are all inspectable with no world and no
@@ -621,6 +750,8 @@ int RunTileArt(const std::string &tileName, const std::string &sourcePng,
   const TileArt::Target target = TileArt::PlanForTile(tileName);
 
   std::cout << "tile:       " << tileName << "\n";
+  std::cout << "source:     " << settings.art.generation.source
+            << " (art.generation.source)\n";
   std::cout << "catalog:    " << tiles.Count() << " tile(s) (" << generated
             << " from the generated overlay)\n";
   std::cout << "convention: " << target.conventionId << "  (tile_<slug>.png)\n";
@@ -706,6 +837,94 @@ int RunTileArt(const std::string &tileName, const std::string &sourcePng,
       return 1;
     }
   }
+  std::cout << "layers:     ok (generated layer, not the art pack)\n";
+  return 0;
+}
+
+// The DSL producer, headlessly: find the sprite document, compile it, place the
+// PNG, and report the same two contracts the image path reports.
+//
+// This is the verification the backend needs before it is ever run in a world.
+// Everything here is the code the queue runs on its worker (`RunDslBatch`), in the
+// same order, so a document that passes here passes there.
+int RunTileArtDsl(const std::string &tileName) {
+  SetTraceLogLevel(LOG_WARNING);
+  // The name may be a tile or an object. The conventions differ -- `tile_<slug>` for
+  // a tile, the bare key for an object -- so trying both is what lets this mode
+  // verify an object's document without a world. A tile wins the tie, because its
+  // name is the older and more common request.
+  SpriteKinds::Kind kind = SpriteKinds::Kind::Tile;
+  TileArt::Target target = TileArt::PlanForTile(tileName);
+  SpriteDSLDocument document = FindSpriteDSLDocument(target.conventionId);
+  if (!document.found) {
+    const TileArt::Target objectTarget =
+        TileArt::PlanFor({SpriteKinds::Kind::Object, tileName});
+    const SpriteDSLDocument objectDocument =
+        FindSpriteDSLDocument(objectTarget.conventionId);
+    if (objectDocument.found) {
+      kind = SpriteKinds::Kind::Object;
+      target = objectTarget;
+      document = objectDocument;
+    }
+  }
+
+  std::cout << "sprite:     " << tileName << " (" << target.conventionId << ", kind "
+            << SpriteKinds::IdOf(kind) << ")\n";
+  std::cout << "dsl:        "
+            << (document.found ? document.path : std::string("(none found)"))
+            << "\n";
+  if (!document.found) {
+    std::cout << "looked in:\n";
+    for (const std::string &candidate : document.candidates) {
+      std::cout << "  " << candidate << "\n";
+    }
+    return 1;
+  }
+  if (target.generatedPath.empty()) {
+    std::cout << "FAILED:     no generated layer is configured, so there is nowhere "
+                 "to place the sprite (set art.pack, or art.generated)\n";
+    return 1;
+  }
+
+  PixelDSL::Config config;
+  config.palettePath.clear();  // the compiler's palette report is not used here
+  const PixelDSL::Result result = PixelDSL::CompileFile(document.path, config);
+  std::cout << PixelDSL::Describe(result);
+  if (!result.ok) return 1;
+
+  std::filesystem::path staging = std::filesystem::path("data/generated/work") /
+                                  (target.conventionId + ".png");
+  std::error_code ec;
+  std::filesystem::create_directories(staging.parent_path(), ec);
+  if (!PixelDSL::WritePng(result.frames.front(), staging.string())) {
+    std::cout << "FAILED:     could not write " << staging.string() << "\n";
+    return 1;
+  }
+
+  const TileArt::CopyResult placed = TileArt::PlaceSprite(target, staging.string());
+  if (!placed.ok) {
+    std::cout << "FAILED:     " << placed.error << "\n";
+    return 1;
+  }
+  std::cout << "placed:     " << placed.path
+            << (placed.replaced ? "  (replaced)" : "  (new)") << "\n";
+
+  // The contract that matters and that the image path checks with palette.py: the
+  // sprite landed in the generated layer, not in the pack. PlaceSprite enforces it;
+  // re-checking the path here is what turns "enforced" into "observed".
+  if (placed.path != target.generatedPath) {
+    std::cout << "FAILED:     placed path is not the planned generated path ("
+              << target.generatedPath << ")\n";
+    return 1;
+  }
+  std::string resolved;
+  if (!SpriteResolves("", target.conventionId, &resolved)) {
+    std::cout << "FAILED:     the sprite does not resolve after placement\n";
+    return 1;
+  }
+  std::cout << "resolves:   " << resolved << "\n";
+  std::cout << "palette:    not checked -- ramp tones are the pack's own, so the "
+               "128-colour lock does not apply (docs/pixel-dsl.md §4)\n";
   std::cout << "layers:     ok (generated layer, not the art pack)\n";
   return 0;
 }
@@ -1260,6 +1479,18 @@ int main(int argc, char *argv[]) {
   //   AIRogue --sprite-prompt <kind> [--sprite-prompt-shape one|set]
   //                                  -> print the system prompt for a kind and exit
   //                                     (no world, no window, no cost)
+  //   AIRogue --sprite-compile <doc> [--sprite-compile-out <png>]
+  //                                  -> compile a sprite DSL document and exit
+  //                                     (no world, no window, no cost)
+  //   AIRogue --sprite-grammar       -> print the DSL reference and the ramps
+  //   AIRogue --sprite-doc-prompt    -> print the system prompt and both user
+  //                                     turns the document turn would send
+  //   AIRogue --sprite-doc-check <reply>
+  //                                  -> extract a ```sprite block from a model
+  //                                     reply and compile it (no backend)
+  //   AIRogue --tile-art <name> --tile-art-dsl
+  //                                  -> compile its .sprite document, place it,
+  //                                     and report the same two contracts
   //   AIRogue --tile-art <name>      -> report where a tile's art would go
   //   AIRogue --tile-art <name> --tile-art-sprite <png>  -> place and verify it
   //   AIRogue --tile-art <name> --tile-art-selftest      -> prove the in-world swap
@@ -1300,11 +1531,17 @@ int main(int argc, char *argv[]) {
   std::string spritePromptShape;
   std::string spriteRouteText;
   std::string spriteDesignOverlay;
+  std::string spriteCompilePath;
+  std::string spriteCompileOut;
+  std::string spriteDocCheckPath;
+  bool spriteGrammar = false;
+  bool spriteDocPrompt = false;
   std::string tileArtName;
   std::string tileArtSource;
   std::string tileArtPalette;
   std::string paintMemoTile;
   bool tileArtSelfTest = false;
+  bool tileArtDsl = false;
   bool tileArtQueueTest = false;
   bool tileDesignerLogTest = false;
   bool tileDesignerArtTest = false;
@@ -1356,6 +1593,22 @@ int main(int argc, char *argv[]) {
       // cost -- the verification for the half of the feature that exists before any
       // validator does.
       spritePromptKind = argv[++i];
+    } else if (arg == "--sprite-compile" && i + 1 < argc) {
+      // Takes a value, so it is checked before the bare flags and consumes its own
+      // argument; otherwise the document path would be read as the map.
+      spriteCompilePath = argv[++i];
+    } else if (arg == "--sprite-compile-out" && i + 1 < argc) {
+      // Separate from --sprite-compile so the common run -- compile and report --
+      // does not have to name a destination.
+      spriteCompileOut = argv[++i];
+    } else if (arg == "--sprite-doc-check" && i + 1 < argc) {
+      // Takes a value, so it is checked before the bare flags and consumes its own
+      // argument rather than reading the reply path as the map.
+      spriteDocCheckPath = argv[++i];
+    } else if (arg == "--sprite-grammar") {
+      spriteGrammar = true;
+    } else if (arg == "--sprite-doc-prompt") {
+      spriteDocPrompt = true;
     } else if (arg == "--tile-art" && i + 1 < argc) {
       tileArtName = argv[++i];
     } else if (arg == "--tile-art-sprite" && i + 1 < argc) {
@@ -1364,6 +1617,10 @@ int main(int argc, char *argv[]) {
       tileArtSource = argv[++i];
     } else if (arg == "--tile-art-palette" && i + 1 < argc) {
       tileArtPalette = argv[++i];
+    } else if (arg == "--tile-art-dsl") {
+      // Produces the sprite from its .sprite document instead of a generation
+      // command. Bare flag, before the value-taking flags it shares a prefix with.
+      tileArtDsl = true;
     } else if (arg == "--tile-art-selftest") {
       // Not a bare flag in spirit: it needs a world, so it runs the game rather
       // than exiting before the window like the other modes.
@@ -1530,6 +1787,27 @@ int main(int argc, char *argv[]) {
       return 1;
     }
     return RunSpritePrompt(*kind, spritePromptShape);
+  }
+  // The DSL compiler is a pure function over a file, so it runs before the
+  // window like --tile-design. It is a second *source* for sprites, not a
+  // replacement: art.generation still decides which producer runs.
+  if (!spriteCompilePath.empty()) {
+    return RunSpriteCompile(spriteCompilePath, spriteCompileOut);
+  }
+  if (spriteGrammar) {
+    return RunSpriteGrammar();
+  }
+  if (spriteDocPrompt) {
+    return RunSpriteDocumentPrompt();
+  }
+  // The document turn's pure half, before the window: reply in, verdict out.
+  if (!spriteDocCheckPath.empty()) {
+    return RunSpriteDocumentCheck(spriteDocCheckPath);
+  }
+  // The DSL producer's file half, before the image one: same name argument, same
+  // placement, different producer.
+  if (!tileArtName.empty() && tileArtDsl) {
+    return RunTileArtDsl(tileArtName);
   }
   // Likewise: the art wiring's file half is provable with no display.
   if (!tileArtName.empty() && !tileArtSelfTest && !tileArtQueueTest) {

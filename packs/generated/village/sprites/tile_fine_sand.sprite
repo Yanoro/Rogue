@@ -1,0 +1,26 @@
+sprite 32x32
+kind tile
+material sand
+fill sand.2
+scatter color=sand.1,sand.3 density=0.35 seed=11 cluster=1
+scatter color=sand.4 density=0.10 seed=23 cluster=1
+scatter color=sand.0 density=0.06 seed=37 cluster=1
+line (0,6) (10,5) color=sand.1
+line (10,5) (21,7) color=sand.1
+line (21,7) (31,6) color=sand.1
+line (0,7) (10,6) color=sand.3
+line (10,6) (21,8) color=sand.3
+line (21,8) (31,7) color=sand.3
+line (0,17) (10,16) color=sand.1
+line (10,16) (21,18) color=sand.1
+line (21,18) (31,17) color=sand.1
+line (0,18) (10,17) color=sand.3
+line (10,17) (21,19) color=sand.3
+line (21,19) (31,18) color=sand.3
+line (0,28) (10,27) color=sand.1
+line (10,27) (21,29) color=sand.1
+line (21,29) (31,28) color=sand.1
+line (0,29) (10,28) color=sand.3
+line (10,28) (21,30) color=sand.3
+line (21,30) (31,29) color=sand.3
+scatter color=#f7edd9 density=0.03 seed=41 cluster=1

@@ -1,0 +1,43 @@
+version 1
+sprite 32x32
+kind object
+material soil
+
+// One document, two growth stages -- the thing image generation cannot do
+// coherently for free. `frame` is the variant mechanism: Evolvable chains
+// templates, and each template's sprite comes from one frame here.
+palette {
+    soil_dark = soil.0
+    soil_lit  = soil.3
+    green     = grass.1
+    green_lit = grass.3
+    gold      = sand.4
+}
+
+frame "sprout" {
+    rect (10,27) (21,29) color=soil_dark
+    rect (11,27) (20,27) color=soil_lit
+    line (14,20) (14,27) color=green
+    line (17,18) (17,27) color=green_lit
+    line (20,21) (20,27) color=green
+    pixel (13,21) color=green
+    pixel (18,19) color=green
+    pixel (21,22) color=green_lit
+}
+
+frame "mature" {
+    rect (10,27) (21,29) color=soil_dark
+    rect (11,27) (20,27) color=soil_lit
+    line (12,12) (12,27) color=green
+    line (15,8)  (15,27) color=green_lit
+    line (18,10) (18,27) color=green
+    line (21,14) (21,27) color=green_lit
+    rect (10,6) (13,9)   color=gold
+    rect (13,4) (16,7)   color=gold
+    rect (16,6) (19,9)   color=gold
+    rect (19,9) (22,12)  color=gold
+    pixel (11,7) color=sand.3
+    pixel (14,5) color=sand.3
+    pixel (17,7) color=sand.3
+    pixel (20,10) color=sand.3
+}

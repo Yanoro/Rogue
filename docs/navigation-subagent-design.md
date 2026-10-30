@@ -22,7 +22,9 @@ sections below are historical; the current behaviour is in `docs/llm-s1-navigati
 **Companions:** `docs/agent-attention-design.md` (what System 1 is, and the rules every call site
 obeys), `docs/systemone-local-models.md` (backends, latency, calibration), `docs/place-derivation-design.md`
 (places and aspects), `docs/spatial-memory-design.md` (cells, places, dump), `docs/agent-exploration-task.md`
-(the fair-test rules this feature must not break).
+(the fair-test rules this feature must not break),
+`docs/navigation-object-interactions-design.md` (proposed grouped object summaries and generic
+interaction actions).
 
 ---
 

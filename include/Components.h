@@ -3,6 +3,7 @@
 #include "AI.h"
 #include "Defaults.h"
 #include "raylib-cpp.hpp"
+#include <cctype>
 #include <cstdint>
 #include <filesystem>
 #include <flecs.h>
@@ -276,6 +277,11 @@ struct PlaceCategories {
 struct SeenObject {
   std::string templateId;  // ItemType::type; empty for a character or a loose drop
   std::string name;
+  // Model-facing, stable instance alias such as "apple_tree-3". Assigned on the
+  // first sighting (and regenerated if the object's content type changes) so the
+  // prompt never has to use a raw flecs entity id. The entity id remains the
+  // internal key in SpatialMemory::objects.
+  std::string alias;
   GamePosition pos;
   bool character = false;  // a person is knowledge of a different kind
   int firstSeenTick = 0;
@@ -287,11 +293,38 @@ struct SeenObject {
   bool portable = false;              // never seeds a place
   bool structural = false;            // bounds a place, contributes qualities
   std::vector<SeedCategory> categories;
+  // Stable InteractionHandler keys available when this object was last seen
+  // ("examine", "harvest"). Refreshed with the other template-derived fields;
+  // the navigation layer groups by this set without doing a live ECS lookup.
+  std::vector<std::string> interactions;
   // Bumped when any template-derived field changes, including vanishing. Lets a
   // derived view detect "this thing is the same as last sample" without hashing
   // its strings. See MemoryCell::contentVersion.
   std::uint32_t contentVersion = 1;
 };
+
+// Stable base for a SeenObject's readable alias. templateId is authored and
+// stable; the display name is the fallback for content without an item type.
+// Kept here so the observation writer and the navigation group builder cannot
+// disagree about what a type is called.
+inline std::string ObjectContentKey(const SeenObject &object) {
+  if (!object.templateId.empty()) return object.templateId;
+  std::string key;
+  key.reserve(object.name.size());
+  bool lastUnderscore = false;
+  for (char c : object.name) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isalnum(uc) != 0) {
+      key += static_cast<char>(std::tolower(uc));
+      lastUnderscore = false;
+    } else if (!key.empty() && !lastUnderscore) {
+      key += '_';
+      lastUnderscore = true;
+    }
+  }
+  while (!key.empty() && key.back() == '_') key.pop_back();
+  return key.empty() ? std::string("object") : key;
+}
 
 // Layer 2: counts, never a verdict. "7 structures" is evidence; "village" is a
 // conclusion the agent draws, and nothing in this struct may draw it.
@@ -495,6 +528,10 @@ struct SpatialMemory {
   std::uint64_t contentRevision = 0;
   std::uint64_t lastPlacesRevision = 0;
   std::uint64_t lastRegionsRevision = 0;
+  // Next serial for each content key's readable aliases ("apple_tree-1",
+  // "apple_tree-2"). Monotonic for the memory's lifetime; an evicted or
+  // destroyed object's alias is never reused.
+  std::unordered_map<std::string, std::uint32_t> nextObjectAlias;
   int nextPlaceId = 1;
 };
 
@@ -589,6 +626,11 @@ struct Tile {
 struct TileDef {
   std::string name;
   bool blocksTile = false;
+  // One sentence saying what this is. Written by the designer agent, stored here, and
+  // read by the sprite-document turn (docs/pixel-dsl.md): it is the only place the
+  // "what is this" of a created tile survives, so a document request that only had a
+  // name would be guessing.
+  std::string description;
   std::string sprite;
   std::vector<SeedCategory> placeCategories;
   size_t hitboxSize = 0;
@@ -750,6 +792,29 @@ struct NavigationDebugCandidate {
   int distance = 0;
 };
 
+// One grouped object profile in the debug snapshot. Stage 1 exposes this in the
+// Navigation window so the grouping can be checked before the prompt changes.
+struct NavigationDebugObjectGroup {
+  std::string key;
+  std::string label;
+  int count = 0;
+  bool structural = false;
+  int nearestDistance = 0;
+  std::string nearestDirection;
+  std::string nearestAlias;
+  std::vector<std::string> interactions;
+};
+
+// One raw assistant reply produced while the single navigator was trying to
+// answer one decision. Only failed decisions expose these in the window; the
+// text is kept verbatim so a rejected JSON/plan/move can be read exactly as the
+// model produced it.
+struct NavigationDebugAttempt {
+  int number = 0;
+  std::string response;
+  std::string error;
+};
+
 // One strategist call's reasoning. The Navigation window shows this as the
 // navigator's thoughts; the JSON plan is deliberately not part of it.
 struct NavigationDebugStrategistThought {
@@ -771,6 +836,9 @@ struct NavigationDebugStrategistThought {
   // the S1 Responses tab's per-call view. The compact `s1Responses` deque on
   // NavigationDebugState remains the newest-8 "All calls" view.
   std::vector<NavigationDebugS1Response> s1Responses;
+  // Raw replies from this decision's failed attempts. Empty on success and for
+  // the two-context navigator, which records one response per strategist call.
+  std::vector<NavigationDebugAttempt> attempts;
   bool complete = false;
   bool failed = false;
   std::string error;
@@ -799,6 +867,7 @@ struct NavigationDebugState {
   std::string strategistError;
   std::string pilotState;
   std::vector<NavigationDebugCandidate> candidates;
+  std::vector<NavigationDebugObjectGroup> objectGroups;
   std::vector<NavigationDebugS1Response> s1Responses;
   std::vector<NavigationDebugStrategistThought> strategistThoughts;
   std::string route;
@@ -806,6 +875,14 @@ struct NavigationDebugState {
   std::string lastSummary;
   std::string lastS1Raw;
   std::string lastS1Error;
+  // Raw assistant text of the single navigator request currently in flight.
+  // Updated on the main thread as the stream advances, without republishing the
+  // whole snapshot (which would re-run the graph cache every token).
+  std::string liveThought;
+  // The single navigator's whole conversation, system prompt first. Filled by
+  // the single navigator's snapshot; empty for the two-context navigator, whose
+  // "context" is the observation/brief pair shown separately.
+  std::string fullContext;
   // The most recent object examination text (signpost, notice, etc.), kept so
   // the window can show what the navigator learned after the arrow.
   std::string recentExamination;
@@ -817,6 +894,10 @@ struct NavigationDebugState {
 
 struct AIBackend {
   std::unique_ptr<AI> ptr;
+  // Optional dedicated single-navigator instance. It exists so the navigator can
+  // switch reasoning off (and use its own token budget) without mutating options
+  // on `ptr`, which NPC requests share concurrently. Null means "use ptr".
+  std::unique_ptr<AI> navigation;
 };
 
 struct AgentSleepTimer {

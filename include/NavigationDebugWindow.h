@@ -4,10 +4,13 @@
 
 #include <flecs.h>
 
+#include <string>
+
 // One world-space frame shared by every call's graph. Without this each graph
 // autofits its own bounding box, so the same node jumps around when the selected
-// call changes. The union of all call graphs (plus the latest observation) keeps
-// every node at the same screen position across calls.
+// call changes. The graph view itself draws the union of every call graph up to
+// the selected one, so nodes the navigator has seen never disappear; this frame
+// is the union's bounds.
 struct GraphBounds {
   bool valid = false;
   float minX = 0.0f;
@@ -37,8 +40,21 @@ private:
   // recreated; the graph snapshots themselves are unchanged.
   bool hideGraphObjects = false;
   bool hideGraphNames = false;
+  // Overview: show the single navigator's full message context (system prompt,
+  // every user/assistant turn and every retry correction).
+  bool showFullContext = false;
+  // Overview: which failed attempt of the selected call is open. Reset when the
+  // selected call changes; attempts only exist for failed single-navigator calls.
+  int selectedAttempt = -1;
+  int selectedAttemptThought = -1;
   // Cached graph bounds. Parsing every call's graph JSON every frame is O(calls)
   // per frame; this only recomputes when a new snapshot is published.
   GraphBounds cachedGraphBounds;
   int cachedGraphBoundsVersion = -1;
+  // The union of every graph up to the selected call. Cached for the same
+  // reason as the bounds: re-merging every call's JSON every frame is O(calls).
+  std::string cachedMergedGraphJson;
+  int cachedMergedGraphVersion = -1;
+  int cachedMergedGraphLastIndex = -2;
+  bool cachedMergedGraphIncludeObservation = false;
 };

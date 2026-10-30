@@ -12,6 +12,12 @@
 // The live half of tile art generation: a worker thread produces sprites, a
 // main-thread drain swaps them in, and the frame in between is never blocked.
 //
+// Two producers behind one queue (art.generation.source): "image" writes a
+// worklist and runs a command, "dsl" compiles the sprite's .sprite document with
+// src/PixelDSL.cpp. Both return a PNG, both go through TileArt::PlaceSprite, and
+// everything after the file -- placement, the swap, the panels -- is shared. See
+// docs/pixel-dsl.md.
+//
 // This is the queue docs/asset-generation-design.md §10.2 and
 // docs/tile-art-wiring-design.md §4 describe, built for tiles. It mirrors the AI
 // path's shape -- background thread produces, a mutex-guarded queue hands the
@@ -119,6 +125,15 @@ public:
     // than being refused: the alternative to "twelve sprites cost three requests" is
     // "twelve sprites cost one illegible sheet", and the first is recoverable.
     int maxCellsPerRequest = 4;
+
+    // "image" runs art.generation.command; "dsl" compiles the .sprite document
+    // next to the sprite with src/PixelDSL.cpp. A source, not a mode: both end at
+    // TileArt::PlaceSprite, and everything after the file is shared.
+    //
+    // The DSL source ignores `command`, the batch window, the request cap and the
+    // cell cap, because a compile is local, free and instantaneous -- batching was
+    // only ever about the price of one image request.
+    std::string source = "image";
   };
 
   // Called on the main thread once per settled job, in the order results arrive.
@@ -193,6 +208,16 @@ public:
   // cancelling would throw away a file that has already been paid for.
   bool Forget(const std::string &tileName);
 
+  // Drops a *finished* job (Done, Failed or Skipped) so the same sprite can be asked
+  // for again. Queued and Running are left alone: the first is dropped by Forget(),
+  // and the second is already paid for and will post a completion that has to find
+  // its job.
+  //
+  // Separate from Forget() because the two mean different things: Forget is "this
+  // sprite stopped being interesting", this is "the document changed, compile it
+  // again". Only called from an explicit UI action.
+  bool ForgetCompleted(SpriteKinds::Kind kind, const std::string &name);
+
   // Forgets every job, for a map reload. Does not stop an in-flight batch.
   void Clear();
 
@@ -227,6 +252,10 @@ private:
     std::string conventionId;
   };
   void RunBatch(std::vector<BatchCell> cells);
+  // The "dsl" branch of RunBatch: compile each cell's document and place the PNG.
+  // Runs on the worker like the image path, even though a compile is fast, because
+  // placement touches the filesystem and the frame must not.
+  void RunDslBatch(std::vector<BatchCell> cells, struct Completion *completion);
 
   Config config;
   std::string workDirectory;

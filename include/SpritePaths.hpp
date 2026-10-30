@@ -12,6 +12,15 @@ class DebugLog;
 // Where a sprite is looked for when nothing points at one explicitly.
 inline constexpr const char *SPRITE_DIRECTORY = "data/sprites/";
 
+// The one texture every entity falls back to when nothing resolves: a 32x32
+// placeholder authored by tools/sprites/make_unknown.py.
+//
+// Deliberately outside the convention namespace. A convention id is content ("an
+// apple tree"), and the fallback is not content -- if it were reachable by id, a
+// template called "unknown" would shadow it, and the one texture whose whole job is
+// to always be there would be the one a pack could remove.
+std::string UnknownSpritePath();
+
 // The convention id for a map tile: its name lowercased and slugified, prefixed
 // with "tile_". So the tile named "tilled soil" looks for
 // data/sprites/tile_tilled_soil.png.
@@ -69,6 +78,38 @@ bool AttachSprite(flecs::entity entity, const std::string &explicitPath,
 //
 // Empty for an empty `conventionId`. See GameSettings::ArtSection for the roots.
 std::vector<std::string> SpriteCandidatePaths(const std::string &conventionId);
+
+// The sprite DSL document for a convention id, looked for in the same roots, in
+// the same order, as the PNG: the art pack first, then the generated layer (and
+// `data/sprites/` when no pack is configured).
+//
+// Same order on purpose. A document is the *source* of a generated sprite, so if
+// the pack ships one it owns that sprite exactly as it owns the PNG -- and a
+// hand-authored document in the pack is a supported authoring path, not a special
+// case for the window.
+struct SpriteDSLDocument {
+  bool found = false;
+  // The path that would be compiled. Filled even when `found` is false and
+  // `candidates` has entries? No: empty unless found.
+  std::string path;
+  // True when the winning path is inside the art pack, which means it is
+  // hand-curated and must never be overwritten by an agent.
+  bool inArtPack = false;
+  // Every path that was tried, in order. Reported when nothing was found, because
+  // "write one here" needs a here.
+  std::vector<std::string> candidates;
+};
+
+SpriteDSLDocument FindSpriteDSLDocument(const std::string &conventionId);
+
+// Where a *new* document for a convention id is written: the generated layer, and
+// nowhere else. Empty when no generated layer is configured, which is the same
+// limitation placement has -- with no layer there is no "outside the pack".
+//
+// Deliberately not `FindSpriteDSLDocument(...).candidates.back()`: that returns the
+// pack's path when no generated layer exists, and writing there would overwrite
+// hand-authored art.
+std::string GeneratedSpriteDocumentPath(const std::string &conventionId);
 
 // Whether a sprite *would* resolve, in exactly the order ResolveSpriteTexture
 // tries -- without loading anything.

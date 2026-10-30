@@ -1,0 +1,42 @@
+{
+  "map": "Map_Nav_Lake.json",
+  "scenario": "lake",
+  "headline": "Visible across water, reachable the long way round.",
+  "purpose": "Water blocks movement but not sight. The orchard is visible across the lake and reachable only by the long way round, so the leg should succeed with a badly inefficient route",
+  "spawn": [
+    6,
+    16
+  ],
+  "goal": "reach the orchard across the water",
+  "goalRegion": {
+    "x": [
+      24,
+      27
+    ],
+    "y": [
+      14,
+      17
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE reach the orchard across the water]"
+  ],
+  "expected": {
+    "maxLegs": 12,
+    "surveysAllowed": 2,
+    "note": "The straight line is blocked; A* must go south around the water. Score the walked route against optimalSteps."
+  },
+  "metrics": {
+    "optimalSteps": 26,
+    "reachableCells": 807,
+    "goalCellsWalkable": 6,
+    "objects": 10,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Lake.json",
+  "notes": [
+    "Water is a tile with blocksTile, so it is never walkable and the compass skips it; it blocks no sight, which is why the orchard is visible at all.",
+    "Score: the target cell is excluded after the first failure and the summary names why; or, on the open variant, the route length is within twice optimalSteps."
+  ]
+}

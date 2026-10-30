@@ -312,12 +312,13 @@ void Game::Init() {
   // windows that preview art (the map editor's object palette, inventory rows)
   // would show blanks wherever the art uses a block character. ImGui's built-in
   // font cannot be extended, so this is a second font added from the same file.
-  ArtImGuiFont() = AsciiArtFonts::AddImGuiArtFont(fontPathToLoad, 16.0f);
-  if (ArtImGuiFont() == nullptr) {
-    debugLog->LogWarning(
-        "Art fonts: no ImGui art font could be added, so art that uses block "
-        "characters will show blanks in the map editor palette.");
-  }
+  // The ImGui art font is deliberately NOT added any more. Its only consumer was
+  // DrawAsciiArtImGui, which fed the bitmap OTB through stb_truetype and crashed on
+  // a glyph with no outline (docs/pixel-dsl.md). Nothing draws ASCII art now --
+  // every entity is a sprite or the Unknown placeholder -- so loading a second
+  // 17KB font into the atlas would be memory spent on a renderer that is gone.
+  // AsciiArtFonts::AddImGuiArtFont is still there if art ever comes back, with that
+  // caveat recorded in AsciiArtDraw.hpp.
 }
 
 void Game::UpdateGUI() {
@@ -1623,6 +1624,7 @@ void Game::ECSConfigureTileArtQueue() {
   TileArtQueue::Config queueConfig;
   queueConfig.enabled = settings.art.generation.enabled;
   queueConfig.command = settings.art.generation.command;
+  queueConfig.source = settings.art.generation.source;
   queueConfig.batchDelaySeconds = settings.art.generation.batchDelaySeconds;
   queueConfig.maxRequestsPerSession =
       settings.art.generation.maxRequestsPerSession;
@@ -1660,8 +1662,27 @@ void Game::ECSConfigureTileArtQueue() {
   tileArtCompletionWired = true;
 }
 
+bool Game::RequestSpriteArt(SpriteKinds::Kind kind, const std::string &name,
+                            std::string *reason) {
+  return tileArtQueue.Request(kind, name, reason);
+}
+
 bool Game::RequestTileArt(const std::string &tileName, std::string *reason) {
-  return tileArtQueue.Request(KindForSpriteName(tileName), tileName, reason);
+  return RequestSpriteArt(KindForSpriteName(tileName), tileName, reason);
+}
+
+bool Game::RecompileSpriteArt(SpriteKinds::Kind kind, const std::string &name,
+                              std::string *reason) {
+  // The one caller allowed to forget a finished job. A document edited after its
+  // sprite was compiled would otherwise be impossible to apply: the queue's "already
+  // has generated art" refusal is right for an automatic path and wrong for a button
+  // the user pressed on something they just changed.
+  tileArtQueue.ForgetCompleted(kind, name);
+  return RequestSpriteArt(kind, name, reason);
+}
+
+bool Game::RecompileTileArt(const std::string &tileName, std::string *reason) {
+  return RecompileSpriteArt(KindForSpriteName(tileName), tileName, reason);
 }
 
 SpriteKinds::Kind Game::KindForSpriteName(const std::string &name) const {

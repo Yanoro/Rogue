@@ -1,0 +1,42 @@
+{
+  "map": "Map_Nav_LakeSealed.json",
+  "scenario": "lake_sealed",
+  "headline": "Visible across water, unreachable.",
+  "purpose": "Water blocks movement but not sight. A place is visible across it, so the candidate list offers a target A* cannot reach",
+  "spawn": [
+    6,
+    16
+  ],
+  "goal": "reach the orchard across the water",
+  "goalRegion": {
+    "x": [
+      24,
+      27
+    ],
+    "y": [
+      14,
+      17
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE reach the orchard across the water]"
+  ],
+  "expected": {
+    "maxLegs": 8,
+    "surveysAllowed": 2,
+    "note": "The orchard is unreachable: the water touches both map edges. One failed leg should exclude its target cell and the episode should end in a give-up or an explicit stuck reason."
+  },
+  "metrics": {
+    "optimalSteps": -1,
+    "reachableCells": 384,
+    "goalCellsWalkable": 6,
+    "objects": 10,
+    "reachable": false
+  },
+  "run": "./build/AIRogue maps/Map_Nav_LakeSealed.json",
+  "notes": [
+    "Water is a tile with blocksTile, so it is never walkable and the compass skips it; it blocks no sight, which is why the orchard is visible at all.",
+    "Score: the target cell is excluded after the first failure and the summary names why; or, on the open variant, the route length is within twice optimalSteps."
+  ]
+}

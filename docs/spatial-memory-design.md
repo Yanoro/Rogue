@@ -194,6 +194,11 @@ struct SeenObject {
   int vanishedTick = -1;       // a later look at that cell found nothing there
 };
 
+// Runtime records also carry template-derived seed data (portable, structural,
+// categories), the available InteractionRegistry keys (interactions), and a
+// stable model-facing instance alias (alias, e.g. apple_tree-3). The map key
+// remains the entity id; the alias is only for prompts and navigation grammar.
+
 // ---- Layer 2: durable structure. Survives eviction, capped, queryable. ------
 // Counts, never a verdict. "7 structures" is evidence; "village" is a conclusion.
 // `name` is the raw vocabulary and `category` only says which kind it is: grouping

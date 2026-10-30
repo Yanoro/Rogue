@@ -1,0 +1,43 @@
+{
+  "map": "Map_Nav_Maze.json",
+  "scenario": "maze",
+  "headline": "One-tile corridors and long A* legs under load.",
+  "purpose": "One-tile corridors with seven cells of rock between them, so the compass cannot see the next corridor through a wall. Isolates long A* legs, corridor following and leg timeout under load.",
+  "spawn": [
+    4,
+    4
+  ],
+  "goal": "reach the far chamber",
+  "goalRegion": {
+    "x": [
+      29,
+      34
+    ],
+    "y": [
+      32,
+      36
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE reach the far chamber]"
+  ],
+  "expected": {
+    "maxLegs": 24,
+    "surveysAllowed": 2,
+    "note": "Each leg is at most six tiles, so the serpentine is many decisions. Watch legTimeoutSeconds and frame time: AStar is quadratic in visited nodes."
+  },
+  "metrics": {
+    "optimalSteps": 126,
+    "reachableCells": 252,
+    "goalCellsWalkable": 30,
+    "objects": 1348,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Maze.json",
+  "notes": [
+    "1348 wall objects fill every non-corridor cell; they block sight.",
+    "A corner cut needs a zero-width gap, which a 1-wide corridor cannot provide; the dedicated Pinch map tests that separately.",
+    "Score: arrival, leg count, wall-clock, and whether any leg times out."
+  ]
+}

@@ -123,6 +123,50 @@ std::string BuildPromptForKind(const SpriteKinds::Descriptor &kind,
                                const PromptVocabulary &vocabulary,
                                PromptShape shape = PromptShape::One);
 
+// ---------------------------------------------------------------------------
+// The second turn: writing the sprite's *pixel document*
+// ---------------------------------------------------------------------------
+//
+// The definition turn answers "what is this thing". This turn answers "how is it
+// drawn", in the sprite DSL (docs/pixel-dsl.md), and its output is compiled rather
+// than painted: a reply either compiles and is accepted, or is refused with a line
+// and a reason that goes straight back to the model.
+//
+// The brief is the definition, restated: the model already produced it, so repeating
+// the name, the description and the one bit of behaviour a tile has is cheaper than
+// making it look them up.
+
+struct SpriteDocumentBrief {
+  SpriteKinds::Kind kind = SpriteKinds::Kind::Tile;
+  std::string name;
+  std::string description;
+  bool blocksTile = false;
+};
+
+// The system prompt for the document turn. `%SPRITE_DSL%` is substituted from
+// PixelDSL::GrammarReference() and `%RAMPS%` from the ramps file, so the grammar a
+// model is told and the grammar the compiler accepts come from one build instead of
+// two documents that drift.
+//
+// A missing prompt file degrades to a built-in prompt rather than an empty one, the
+// same way BuildPromptForKind does.
+std::string BuildSpriteDocumentSystemPrompt(const std::string &promptFile,
+                                            const std::string &rampsPath);
+
+// The user turn. `previousVerdict` empty is the first attempt; non-empty is a retry
+// carrying the compiler's own diagnostics, which is the whole point of the loop.
+std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
+                                       const std::string &previousVerdict);
+
+// The document out of a model reply: the first fenced ```sprite / ```pxl / ```dsl /
+// ```text block, or a bare fence's contents. When there is no fence at all the whole
+// text is returned, because a file on disk (or a person pasting one) is a document
+// with no wrapper, and refusing it would be refusing the only thing that was sent.
+//
+// `<think>` reasoning is stripped first, so a model that narrates before the block
+// still yields a clean document.
+std::string ExtractSpriteDocument(const std::string &text);
+
 // The glyph table, one line per glyph, as it goes into the prompt. Exposed for
 // the tile designer window's legend pane so the two cannot disagree about what
 // the model was told.

@@ -1952,6 +1952,7 @@ public:
         std::shared_ptr<Pending> pending;
         std::stop_source stopSource;
         std::vector<NavigationPlan::Candidate> candidates;
+        std::vector<NavigationPlan::ObjectGroup> objectGroups;
         std::vector<std::string> route;
         std::vector<int> routePlaceIds;
         std::vector<std::string> visitedNames;
@@ -2130,6 +2131,16 @@ public:
           return cleaned;
         }
 
+        static std::string RenderContext(
+            const std::vector<ChatMessage> &messages) {
+          std::ostringstream out;
+          for (const ChatMessage &message : messages) {
+            out << "=== " << message.role << " ===\n" << message.content
+                << "\n\n";
+          }
+          return out.str();
+        }
+
         static std::string AgentName(flecs::entity entity) {
           if (const DisplayName *name = entity.get<DisplayName>()) {
             if (!name->name.empty()) return name->name;
@@ -2153,6 +2164,12 @@ public:
         }
 
         void EnsureNavigatorLog(flecs::entity entity) {
+          // The single navigator's snapshot is mutated in place while a stream is
+          // in flight, so make sure the component exists even before the first
+          // PublishNavigationDebug call.
+          if (!entity.has<NavigationDebugState>()) {
+            entity.set<NavigationDebugState>({});
+          }
           if (navigatorLog != nullptr) return;
           navigatorLog =
               std::make_unique<NavigatorLog>(AgentName(entity), entity.id());
@@ -2213,6 +2230,27 @@ public:
             entry.distance = candidate.distance;
             debug->candidates.push_back(std::move(entry));
           }
+          debug->objectGroups.clear();
+          if (const SpatialMemory *memory = entity.get<SpatialMemory>()) {
+            if (const GamePosition *here = entity.get<GamePosition>()) {
+              for (const NavigationPlan::ObjectGroup &group :
+                   NavigationPlan::BuildObjectGroups(
+                       *memory, *here,
+                       Settings().system1.navigation.examineRadius, 0,
+                       Settings().navigation.single.objectSummary)) {
+                NavigationDebugObjectGroup entry;
+                entry.key = group.key;
+                entry.label = group.label;
+                entry.count = group.count;
+                entry.structural = group.structural;
+                entry.nearestDistance = group.nearestDistance;
+                entry.nearestDirection = group.nearestDirection;
+                entry.nearestAlias = group.nearestAlias;
+                entry.interactions = group.interactions;
+                debug->objectGroups.push_back(std::move(entry));
+              }
+            }
+          }
           debug->strategistObservation = debugObservation;
           debug->strategistBrief = debugBrief;
           debug->strategistResponse = debugResponse;
@@ -2233,6 +2271,8 @@ public:
             debug->visited += visitedNames[i];
           }
           debug->strategistThoughts = singleThoughts;
+          debug->liveThought = debugLiveThought;
+          debug->fullContext = RenderContext(singleMessages);
           ++debug->snapshotVersion;
           debug->s1Responses.clear();
           for (const NavigationDebugStrategistThought &thought :
@@ -2283,11 +2323,18 @@ public:
             singleStop = std::stop_source();
             auto pending = std::make_shared<SinglePending>();
             singlePending = pending;
+            debugLiveThought.clear();
             PublishNavigationDebug(entity, true);
 
             const std::string contextId =
                 "navsingle-" + std::to_string(entity.id());
-            AI *ai = backend->ptr.get();
+            AI *ai = backend->navigation != nullptr
+                        ? backend->navigation.get()
+                        : backend->ptr.get();
+            // The single navigator sends its full message history every time,
+            // so a backend's own stored token context would replay it. Ollama
+            // keeps one; clearing it makes the two representations agree.
+            ai->resetContext(contextId);
             ai->setMaxTokens(cfg.maxTokens);
             const bool startedCall = ai->generateStream(
                 contextId, singleMessages,
@@ -2313,11 +2360,23 @@ public:
           if (route.empty()) {
             route.push_back(NavigationPlan::StartPlaceName(*memory, *here));
           }
-          candidates = NavigationPlan::BuildCandidates(
-              *memory, *here, Settings().navigation.single.maxCandidates,
-              Settings().navigation.single.maxDirections, nav.compassRadius,
-              walkedCells, Settings().regions.modelNearCount, -1,
-              Settings().system1.navigation.examineRadius);
+          if (cfg.objectSummary) {
+            objectGroups = NavigationPlan::BuildObjectGroups(
+                *memory, *here, Settings().system1.navigation.examineRadius,
+                0, true);
+            candidates = NavigationPlan::BuildCandidates(
+                *memory, *here, Settings().navigation.single.maxCandidates,
+                Settings().navigation.single.maxDirections, nav.compassRadius,
+                walkedCells, Settings().regions.modelNearCount, 0,
+                Settings().system1.navigation.examineRadius);
+          } else {
+            objectGroups.clear();
+            candidates = NavigationPlan::BuildCandidates(
+                *memory, *here, Settings().navigation.single.maxCandidates,
+                Settings().navigation.single.maxDirections, nav.compassRadius,
+                walkedCells, Settings().regions.modelNearCount, -1,
+                Settings().system1.navigation.examineRadius);
+          }
           candidates.erase(
               std::remove_if(candidates.begin(), candidates.end(),
                              [this](const NavigationPlan::Candidate &candidate) {
@@ -2326,22 +2385,32 @@ public:
                                       0;
                              }),
               candidates.end());
-          if (candidates.empty()) {
+          if (candidates.empty() &&
+              (!cfg.objectSummary || objectGroups.empty())) {
             return Finish(entity, "you do not remember any place that could lead there");
           }
 
           const Facing *facing = entity.get<Facing>();
           const Facing facingValue = facing != nullptr ? *facing : Facing{};
-          const nlohmann::json observation =
+          nlohmann::json observation =
               NavigationStrategist::BuildObservation(
                   *memory, *here, facingValue, candidates, routePlaceIds, route,
                   visitedPlaceIds, walkedCells, walkedCells,
                   Settings().navigation.strategist.observation.localGridRadius,
                   Settings().navigation.strategist.observation.maxGraphNodes,
                   Settings().navigation.strategist.observation.maxGraphEdges);
-          const std::string state = NavigationPlan::BuildState(
+          if (cfg.objectSummary) {
+            NavigationStrategist::StripObjectGraph(observation);
+          }
+          std::string state = NavigationPlan::BuildState(
               *memory, *here, facingValue, AgentName(entity), goal, legs,
               visitedNames, candidates);
+          if (cfg.objectSummary) {
+            state += NavigationPlan::BuildObjectTargetGrammar();
+            state += NavigationPlan::BuildObjectGroupList(
+                objectGroups, static_cast<std::size_t>(cfg.maxObjectGroups),
+                *here);
+          }
           const std::string map = NavigationStrategist::BuildPilotMap(
               *memory, *here, facingValue, candidates, cfg.mapRadius);
 
@@ -2351,18 +2420,54 @@ public:
           }
 
           const std::string system =
-              NavigationStrategist::BuildSingleSystemPrompt();
+              NavigationStrategist::BuildSingleSystemPrompt(cfg.concise);
           const int maxCalls = 60;
           const std::string user =
               NavigationStrategist::BuildSingleUserPrompt(
                   goal, taskDigest, observation, map, state,
                   strategyReady ? &strategy : nullptr, route, lastResult,
-                  singleCalls, maxCalls);
+                  singleCalls, maxCalls, cfg.compactJson);
           if (!singleSystemAdded) {
             singleMessages.push_back({"system", system});
             singleSystemAdded = true;
           }
           singleMessages.push_back({"user", user});
+
+          // The state already carries the route and last result, so keeping the
+          // whole episode mostly re-sends observations the model has already
+          // acted on. Retaining the last few decision turns cuts prefill without
+          // removing the current state. 0 keeps everything (the old behaviour,
+          // useful for A/B).
+          if (cfg.historyTurns > 0 && singleMessages.size() > 1) {
+            const std::size_t keep =
+                static_cast<std::size_t>(cfg.historyTurns) * 2 + 1;
+            if (singleMessages.size() > keep + 1) {
+              std::size_t start = singleMessages.size() - keep;
+              // Start on a normal user turn, not on an assistant reply or a
+              // retry correction: a correction needs the assistant reply it
+              // corrects, and a reply needs the user turn it answered.
+              while (start < singleMessages.size()) {
+                const ChatMessage &message = singleMessages[start];
+                const bool correction =
+                    message.role == "user" &&
+                    message.content.rfind(
+                        "Your previous reply could not be used:", 0) == 0;
+                if (message.role == "assistant" || correction) {
+                  ++start;
+                  continue;
+                }
+                break;
+              }
+              if (start < singleMessages.size()) {
+                std::vector<ChatMessage> trimmed;
+                trimmed.reserve(1 + singleMessages.size() - start);
+                trimmed.push_back(singleMessages.front());
+                trimmed.insert(trimmed.end(), singleMessages.begin() + start,
+                               singleMessages.end());
+                singleMessages = std::move(trimmed);
+              }
+            }
+          }
 
           ++singleCalls;
           debugObservation = observation.dump(2);
@@ -2405,15 +2510,18 @@ public:
           singleStop = std::stop_source();
           auto pending = std::make_shared<SinglePending>();
           singlePending = pending;
+          debugLiveThought.clear();
           PublishNavigationDebug(entity, true);
 
           const std::string contextId =
               "navsingle-" + std::to_string(entity.id());
-          AI *ai = backend->ptr.get();
-          if (!singleContextReset) {
-            ai->resetContext(contextId);
-            singleContextReset = true;
-          }
+          AI *ai = backend->navigation != nullptr
+                        ? backend->navigation.get()
+                        : backend->ptr.get();
+          // See the retry branch: `singleMessages` is authoritative and already
+          // contains the conversation. Ollama's stored token context would
+          // otherwise be sent alongside it and replay the same history.
+          ai->resetContext(contextId);
           ai->setMaxTokens(cfg.maxTokens);
           const bool startedCall = ai->generateStream(
               contextId, singleMessages,
@@ -2441,7 +2549,9 @@ public:
             const GameSettings::SystemOneNavigationSection &nav) {
           if (singlePending == nullptr) return ActionStatus::Doing;
           std::string text;
+          std::string partialResponse;
           bool failed = false;
+          bool notReady = false;
           std::string error;
           {
             std::lock_guard<std::mutex> lock(singlePending->mutex);
@@ -2452,7 +2562,8 @@ public:
                 failed = true;
                 error = "the single navigator timed out";
               } else {
-                return ActionStatus::Doing;
+                partialResponse = singlePending->response;
+                notReady = true;
               }
             } else {
               text = singlePending->response;
@@ -2460,17 +2571,58 @@ public:
               error = singlePending->error;
             }
           }
+          if (notReady) {
+            // Streaming update only: republishing the whole snapshot on every
+            // token would invalidate the graph caches and copy the entire
+            // thought history every frame.
+            if (!partialResponse.empty() &&
+                partialResponse != debugLiveThought) {
+              debugLiveThought = partialResponse;
+              if (NavigationDebugState *debug =
+                      entity.get_mut<NavigationDebugState>()) {
+                debug->liveThought = partialResponse;
+              }
+            }
+            return ActionStatus::Doing;
+          }
+          debugLiveThought.clear();
+          if (NavigationDebugState *debug =
+                  entity.get_mut<NavigationDebugState>()) {
+            debug->liveThought.clear();
+          }
           singleStop.request_stop();
           singlePending.reset();
-          if (failed || text.empty()) {
+          if (failed) {
             return FallbackToTwo(entity, error.empty() ? "empty response" : error);
+          }
+          if (text.empty()) {
+            return RetrySingle(
+                entity, "the model returned an empty response",
+                "Reply with a short <think> block followed by one complete JSON "
+                "object; do not return an empty message.");
           }
 
           debugResponse = text;
           singleMessages.push_back({"assistant", text});
+          if (!singleThoughts.empty()) {
+            NavigationDebugAttempt attempt;
+            attempt.number =
+                static_cast<int>(singleThoughts.back().attempts.size()) + 1;
+            attempt.response = text;
+            singleThoughts.back().attempts.push_back(std::move(attempt));
+          }
           if (navigatorLog) navigatorLog->Response(text);
           const std::string think = NavigationStrategist::ExtractThinking(text);
           const std::string jsonText = NavigationStrategist::StripToJson(text);
+          if (jsonText.empty()) {
+            return RetrySingle(
+                entity,
+                "the reply ended before a complete JSON object (the output was "
+                "truncated or contained no JSON)",
+                "Keep the <think> to at most two sentences, then emit one "
+                "complete JSON object. Do not use a code fence or a top-level "
+                "`think` field.");
+          }
           nlohmann::json reply;
           std::string parseError;
           try {
@@ -2580,6 +2732,93 @@ public:
               break;
             }
           }
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            return RetrySingle(entity, "you have no memory of where you are");
+          }
+          if (Settings().navigation.single.objectSummary && !specialMove &&
+              chosen == nullptr) {
+            if (move == "objects:all") {
+              acceptReply();
+              RecordSingleChoice(move, think, confidence, "objects:all");
+              return ShowObjectGroups(entity);
+            }
+            if (move.rfind("inspect:", 0) == 0) {
+              std::string groupKey = move.substr(8);
+              bool all = false;
+              if (groupKey.size() > 4 &&
+                  groupKey.compare(groupKey.size() - 4, 4, ":all") == 0) {
+                groupKey.resize(groupKey.size() - 4);
+                all = true;
+              }
+              bool knownGroup = false;
+              for (const NavigationPlan::ObjectGroup &group : objectGroups) {
+                if (group.key == groupKey) {
+                  knownGroup = true;
+                  break;
+                }
+              }
+              if (!knownGroup) {
+                std::string keys;
+                for (const NavigationPlan::ObjectGroup &group : objectGroups) {
+                  if (!keys.empty()) keys += ", ";
+                  keys += group.key;
+                }
+                return RetrySingle(
+                    entity, "unknown object group '" + groupKey + "'",
+                    "Use inspect:<group> with one of: " + keys +
+                        ". `objects:all` lists every group.");
+              }
+              acceptReply();
+              RecordSingleChoice(move, think, confidence,
+                                 all ? "inspect-all" : "inspect");
+              return InspectObjectGroup(entity, groupKey, all);
+            }
+            if (move.rfind("approach:", 0) == 0) {
+              const std::string alias = move.substr(9);
+              NavigationPlan::ObjectRef object;
+              if (!NavigationPlan::FindObjectByAlias(
+                      *memory, *here, nav.examineRadius, alias, object)) {
+                return RetrySingle(
+                    entity, "unknown object alias '" + alias + "'",
+                    "Use inspect:<group> to list the aliases currently in "
+                    "range.");
+              }
+              acceptReply();
+              RecordSingleChoice(move, think, confidence, "approach");
+              return StartObjectLeg(entity, object, move, std::string());
+            }
+            const std::size_t colon = move.find(':');
+            if (colon != std::string::npos) {
+              const std::string verb = move.substr(0, colon);
+              const std::string alias = move.substr(colon + 1);
+              const InteractionHandler *handler =
+                  InteractionRegistry::FindInteraction(verb);
+              if (handler != nullptr) {
+                if (handler->requiresArgs) {
+                  return RetrySingle(
+                      entity,
+                      "the verb '" + verb +
+                          "' needs arguments and is not available to the "
+                          "navigator yet",
+                      "Use `approach:<alias>` and let the main agent handle "
+                      "this interaction, or choose a no-argument verb.");
+                }
+                NavigationPlan::ObjectRef object;
+                if (!NavigationPlan::FindObjectByAlias(
+                        *memory, *here, nav.examineRadius, alias, object)) {
+                  return RetrySingle(
+                      entity, "unknown object alias '" + alias + "'",
+                      "Use inspect:<group> to list the aliases currently in "
+                      "range.");
+                }
+                acceptReply();
+                RecordSingleChoice(move, think, confidence, verb);
+                return StartObjectLeg(entity, object, move, verb);
+              }
+            }
+          }
           if (!specialMove && chosen == nullptr) {
             std::string available;
             for (const NavigationPlan::Candidate &candidate : candidates) {
@@ -2623,32 +2862,42 @@ public:
             singleThoughts.back().s1Responses.push_back(std::move(s1));
             return Finish(entity, "you judged that you had arrived", true);
           }
-          if (unsure || move == "none" || move == "unsure") {
-            acceptReply();
-            return FallbackToTwo(entity, "the single navigator was unsure");
-          }
           if (move == "look_around") {
             acceptReply();
             return StartSurvey(entity, nav);
           }
 
-          acceptReply();
-          if (!singleThoughts.empty()) {
-            singleThoughts.back().thought = think;
-            singleThoughts.back().strategy = strategy.strategy;
-            singleThoughts.back().subtask = strategy.subtask;
-            singleThoughts.back().complete = true;
-            NavigationDebugS1Response s1;
-            s1.decision = singleCalls;
-            s1.choice = move;
-            s1.outcome = "candidate";
-            s1.probability = confidence;
-            s1.ok = true;
-            s1.latencyMs = static_cast<long long>(
-                SecondsSince(singleStartedAt) * 1000.0);
-            singleThoughts.back().s1Responses.push_back(std::move(s1));
+          // A concrete move wins over the `unsure` flag. The model often sets
+          // both (for example move=look_around, unsure=true); only `none` and
+          // `unsure` are explicit hand-backs once the move itself validated.
+          if (chosen != nullptr) {
+            acceptReply();
+            if (!singleThoughts.empty()) {
+              singleThoughts.back().thought = think;
+              singleThoughts.back().strategy = strategy.strategy;
+              singleThoughts.back().subtask = strategy.subtask;
+              singleThoughts.back().complete = true;
+              NavigationDebugS1Response s1;
+              s1.decision = singleCalls;
+              s1.choice = move;
+              s1.outcome = "candidate";
+              s1.probability = confidence;
+              s1.ok = true;
+              s1.latencyMs = static_cast<long long>(
+                  SecondsSince(singleStartedAt) * 1000.0);
+              singleThoughts.back().s1Responses.push_back(std::move(s1));
+            }
+            return StartLeg(entity, *chosen);
           }
-          return StartLeg(entity, *chosen);
+
+          if (move == "none" || move == "unsure" || unsure) {
+            acceptReply();
+            return FallbackToTwo(entity, "the single navigator was unsure");
+          }
+
+          // Unreachable: the move was validated against the candidate set above.
+          return FallbackToTwo(entity,
+                               "the single navigator named no usable move");
         }
 
         ActionStatus RetrySingle(flecs::entity entity,
@@ -2658,6 +2907,14 @@ public:
           if (!singleThoughts.empty()) {
             singleThoughts.back().failed = true;
             singleThoughts.back().error = error;
+            if (!singleThoughts.back().attempts.empty()) {
+              singleThoughts.back().attempts.back().error = error;
+            }
+          }
+          debugLiveThought.clear();
+          if (NavigationDebugState *debug =
+                  entity.get_mut<NavigationDebugState>()) {
+            debug->liveThought.clear();
           }
           debugError = error;
           if (navigatorLog) navigatorLog->Error(error);
@@ -2681,11 +2938,115 @@ public:
           if (!detail.empty()) {
             correction << " " << detail;
           }
-          correction << "\n";
+          correction
+              << "\nReply with exactly these top-level keys: plan, move, "
+                 "confidence, done, unsure, reason. `move` is a string. Never "
+                 "use action, verb, alias or think at the top level. Example: "
+                 "{\"plan\":{\"strategy\":\"follow the road\",\"subtask\":\"go "
+                 "south-west\"},\"move\":\"p5\",\"confidence\":0.6,"
+                 "\"done\":false,\"unsure\":false,\"reason\":\"the road "
+                 "may lead out\"}.\n";
           singleRetryCorrection = correction.str();
           phase = Phase::Deciding;
           PublishNavigationDebug(entity, true);
           return ActionStatus::Doing;
+        }
+
+        void RecordSingleChoice(const std::string &move,
+                                const std::string &think, float confidence,
+                                const std::string &outcome) {
+          if (singleThoughts.empty()) return;
+          NavigationDebugStrategistThought &thought = singleThoughts.back();
+          thought.thought = think;
+          thought.strategy = strategy.strategy;
+          thought.subtask = strategy.subtask;
+          thought.complete = true;
+          NavigationDebugS1Response s1;
+          s1.decision = singleCalls;
+          s1.choice = move;
+          s1.outcome = outcome;
+          s1.probability = confidence;
+          s1.ok = true;
+          s1.latencyMs = static_cast<long long>(
+              SecondsSince(singleStartedAt) * 1000.0);
+          thought.s1Responses.push_back(std::move(s1));
+          if (navigatorLog) {
+            navigatorLog->S1(debugState, move, confidence);
+            navigatorLog->Plan(NavigationStrategist::BuildPlanSummary(strategy));
+          }
+        }
+
+        ActionStatus StartObjectLeg(flecs::entity entity,
+                                    const NavigationPlan::ObjectRef &object,
+                                    const std::string &move,
+                                    const std::string &verb) {
+          const GamePosition *here = entity.get<GamePosition>();
+          if (here == nullptr) {
+            return Finish(entity, "you have no memory of where you are");
+          }
+          repetitionNote.clear();
+          const int movedSinceLastChoice =
+              Chebyshev(*here, positionAtLastChoice);
+          if (lastChoiceTargetSet && object.approach == lastChoiceTarget &&
+              movedSinceLastChoice == 0) {
+            repetitionNote = "the same target is still offered; consider a "
+                             "different direction.";
+          }
+          walkedCells.insert(VisionQuery::CellKey(*here));
+          lastChoiceTarget = object.approach;
+          lastChoiceTargetSet = true;
+          positionAtLastChoice = *here;
+          if (navigatorLog) {
+            navigatorLog->Leg(move, object.name, object.approach.x,
+                              object.approach.y);
+          }
+          legName = object.name;
+          legPlaceId = 0;
+          legTarget = object.approach;
+          legExamine = false;
+          legObjectId = object.id;
+          legObjectAlias = object.alias;
+          legInteraction = verb;
+          legApproach = verb.empty();
+          leg = std::make_unique<MoveToCellAction>(object.approach, legName);
+          legStartedAt = Clock::now();
+          phase = Phase::Moving;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus ShowObjectGroups(flecs::entity entity) {
+          const GamePosition *here = entity.get<GamePosition>();
+          lastResult = NavigationPlan::BuildObjectGroupList(
+              objectGroups, 0, here != nullptr ? *here : GamePosition{0, 0});
+          phase = Phase::Deciding;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus InspectObjectGroup(flecs::entity entity,
+                                        std::string groupKey, bool all) {
+          for (const NavigationPlan::ObjectGroup &group : objectGroups) {
+            if (group.key != groupKey) continue;
+            const GamePosition *here = entity.get<GamePosition>();
+            lastResult = NavigationPlan::BuildObjectInstanceList(
+                group, all,
+                static_cast<std::size_t>(
+                    Settings().navigation.single.maxGroupDetails),
+                here != nullptr ? *here : GamePosition{0, 0});
+            phase = Phase::Deciding;
+            PublishNavigationDebug(entity, true);
+            return ActionStatus::Doing;
+          }
+          std::string keys;
+          for (const NavigationPlan::ObjectGroup &group : objectGroups) {
+            if (!keys.empty()) keys += ", ";
+            keys += group.key;
+          }
+          return RetrySingle(
+              entity, "unknown object group '" + groupKey + "'",
+              "Use inspect:<group> with one of: " + keys +
+                  ". `objects:all` lists every group.");
         }
 
         ActionStatus StartLeg(flecs::entity entity,
@@ -2712,6 +3073,9 @@ public:
           legName = chosen.label;
           legPlaceId = chosen.placeId;
           legTarget = chosen.target;
+          legObjectAlias.clear();
+          legInteraction.clear();
+          legApproach = false;
           legExamine = chosen.examine;
           legObjectId = chosen.objectId;
           leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
@@ -2739,16 +3103,66 @@ public:
           if (status == ActionStatus::Doing) return ActionStatus::Doing;
           if (status == ActionStatus::Done) {
             const bool examined = legExamine;
-            const std::uint64_t examinedId = legObjectId;
+            const bool approached = legApproach;
+            const std::uint64_t objectId = legObjectId;
+            const std::string alias = legObjectAlias;
+            const std::string interaction = legInteraction;
             legExamine = false;
+            legApproach = false;
             legObjectId = 0;
+            legObjectAlias.clear();
+            legInteraction.clear();
             ++legs;
             for (const GamePosition &cell : leg->getPath()) {
               walkedCells.insert(VisionQuery::CellKey(cell));
             }
             walkedCells.insert(VisionQuery::CellKey(legTarget));
-            if (examined) {
-              flecs::entity object(entity.world(), examinedId);
+            if (!interaction.empty() || approached) {
+              flecs::entity object(entity.world(), objectId);
+              if (!object.is_alive()) {
+                lastResult = "you reached the " + legName + " (" + alias +
+                             "), but it is gone";
+              } else if (approached) {
+                entity.set<InteractionTarget>({object});
+                lastResult = "arrived next to " + legName + " (" + alias + ")";
+              } else {
+                const InteractionHandler *handler =
+                    InteractionRegistry::FindInteraction(interaction);
+                if (handler == nullptr) {
+                  lastResult = "the " + legName + " no longer has the '" +
+                               interaction + "' interaction";
+                } else if (!handler->canInteract(object)) {
+                  lastResult = "the " + legName + " no longer offers the '" +
+                               interaction + "' interaction";
+                } else {
+                  flecs::entity beforeAction = flecs::entity::null();
+                  if (const Busy *busy = entity.get<Busy>()) {
+                    beforeAction = busy->actionEntity;
+                  }
+                  std::string text = handler->execute(entity, object, "");
+                  flecs::entity afterAction = flecs::entity::null();
+                  if (const Busy *busy = entity.get<Busy>()) {
+                    afterAction = busy->actionEntity;
+                  }
+                  const bool timed = afterAction.is_alive() &&
+                                     afterAction != beforeAction;
+                  if (timed) {
+                    route.push_back(legName);
+                    leg.reset();
+                    return Finish(entity,
+                                  "started " + interaction + " on " + legName +
+                                      " (" + alias +
+                                      "); control returns to you");
+                  }
+                  lastResult =
+                      text.empty() ? "used " + interaction + " on " + legName +
+                                         " (" + alias + ")"
+                                   : text;
+                }
+              }
+              route.push_back(legName);
+            } else if (examined) {
+              flecs::entity object(entity.world(), objectId);
               const std::string text = ExamineNavigationObject(entity, object);
               lastResult = text.empty()
                                ? "you reached the " + legName +
@@ -2867,7 +3281,6 @@ public:
         std::stop_source singleStop;
         std::vector<ChatMessage> singleMessages;
         bool singleSystemAdded = false;
-        bool singleContextReset = false;
         int singleCalls = 0;
         int singleErrorAttempts = 0;
         std::string singleRetryCorrection;
@@ -2879,6 +3292,7 @@ public:
         bool strategyReady = false;
         NavigationStrategist::Plan strategy;
         std::vector<NavigationPlan::Candidate> candidates;
+        std::vector<NavigationPlan::ObjectGroup> objectGroups;
         std::vector<std::string> route;
         std::vector<int> routePlaceIds;
         std::vector<std::string> visitedNames;
@@ -2895,6 +3309,9 @@ public:
         GamePosition legTarget{0, 0};
         bool legExamine = false;
         std::uint64_t legObjectId = 0;
+        std::string legObjectAlias;
+        std::string legInteraction;
+        bool legApproach = false;
         std::unique_ptr<MoveToCellAction> leg;
         std::vector<NavigationDebugStrategistThought> singleThoughts;
         std::string debugObservation;
@@ -2902,6 +3319,7 @@ public:
         std::string debugState;
         std::string debugResponse;
         std::string debugError;
+        std::string debugLiveThought;
       };
 
       enum class ConversationState {

@@ -422,34 +422,19 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                                     static_cast<float>(ascii.height));
     }
   }
-  const bool drewSprite = spriteRect.width > 0.0f;
-
-  // The plate is the glyph/art backdrop, and it is drawn only when nothing else
-  // covers the cell. When it was drawn unconditionally -- before the sprite --
-  // every transparent pixel of a sprite revealed this plate instead of the map
-  // tile underneath, so a generated object with a keyed-out background still
-  // arrived in the world as a solid rectangle of its background colour. The
-  // condition has to be "a sprite actually drew", not "the entity has a Sprite
-  // component": a Sprite whose texture was evicted falls through to the art
-  // below, which needs the plate.
-  if (!drewSprite) {
-    DrawRectangleV(
-        {screenPos.x, screenPos.y},
-        {static_cast<float>(ascii.width), static_cast<float>(ascii.height)},
-        ascii.backgroundColor);
-  }
-
-  // Multi-line art when the entity has it, the single glyph otherwise.
-  // Both paths live in AsciiArtDraw.hpp so the world, the storage window
-  // and the editor palettes lay an art block out identically. Art cells are
-  // drawn from the art font ladder, not from the 32px gameFont.
+  // A sprite or the Unknown placeholder -- nothing else. The glyph and ASCII-art
+  // fallbacks are gone: an entity that has no sprite is now *visible* as missing
+  // rather than silently substituted, which is what the placeholder is for.
   //
-  // Same condition as the plate, and for the same reason: these two are the
-  // fallback look, and a sprite already drew the whole cell.
-  const AsciiArt *art = e.get<AsciiArt>();
-  if (!drewSprite) {
-    DrawAsciiEntityRaylib(artFonts, gameFont, ascii, art, screenPos.x,
-                          screenPos.y);
+  // The condition is "a texture actually drew", not "the entity has a Sprite
+  // component": a Sprite whose texture failed to load must fall back to the
+  // placeholder too, or the cell would be blank.
+  if (spriteRect.width <= 0.0f) {
+    if (raylib::Texture *unknown = resourceManager.GetTexture(UnknownSpritePath())) {
+      spriteRect = DrawSpriteFitted(*unknown, screenPos.x, screenPos.y,
+                                    static_cast<float>(ascii.width),
+                                    static_cast<float>(ascii.height));
+    }
   }
 
   // Debug rectangles - now togglable
@@ -460,35 +445,10 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
   }
 
   if (DrawAsciiDebug::GetShowInnerRectangles()) {
-    if (drewSprite) {
-      // The sprite's own drawn rect, which is what says whether it sits
-      // centred in the tile.
+    // The drawn sprite's own rect, which is what says whether it sits centred in
+    // the tile. There is no second box any more: the look is always an image.
+    if (spriteRect.width > 0.0f) {
       DrawRectangleLinesEx(spriteRect, 1.0f, BLUE);
-    } else if (art != nullptr && !art->lines.empty()) {
-      // With art the useful inner box is the drawn grid: it is what shows
-      // whether the cells are centred in the tile.
-      const AsciiGrid grid = ComputeAsciiGrid(
-          *art, screenPos.x, screenPos.y, static_cast<float>(ascii.width),
-          static_cast<float>(ascii.height));
-      raylib::Rectangle gridRect(
-          grid.originX, grid.originY,
-          static_cast<float>(grid.cellWidth * grid.cols),
-          static_cast<float>(grid.cellHeight * grid.rows));
-      gridRect.DrawLines(BLUE, 1.0f);
-    } else {
-      const char buf[2] = {ascii.ch, '\0'};
-      const float fontSize =
-          static_cast<float>(std::min(ascii.width, ascii.height));
-      const Vector2 textSize = MeasureTextEx(gameFont, buf, fontSize, 0);
-      raylib::Rectangle innerRect(
-          std::round(screenPos.x + (static_cast<float>(ascii.width) -
-                                    textSize.x) /
-                                       2.0f),
-          std::round(screenPos.y + (static_cast<float>(ascii.height) -
-                                    textSize.y) /
-                                       2.0f),
-          textSize.x, textSize.y);
-      innerRect.DrawLines(BLUE, 1.0f);
     }
   }
 }
@@ -3291,7 +3251,7 @@ void Game::ECSInit() {
         msg = "System: You crafted " + produced + " and put it in your inventory.\n";
       }
       return msg + FormatTrainingGains(training);
-  });
+  }, true);
 
   InteractionRegistry::RegisterComponentInteraction<DisplayName>(
       "Examine",
@@ -3387,7 +3347,7 @@ void Game::ECSInit() {
           msg += "System: The storage is full, " + std::to_string(static_cast<int>(itemsToStore.size()) - stored) + " " + itemName + " stayed with you.\n";
       }
       return msg;
-  });
+  }, true);
 
   InteractionRegistry::RegisterComponentInteraction<Storage>(
       "Take",
@@ -3422,7 +3382,7 @@ void Game::ECSInit() {
       }
 
       return "System: You took " + std::to_string(static_cast<int>(itemsToTake.size())) + " " + itemName + ".\n";
-  });
+  }, true);
 
 
   // The backend is built from the settings file's "model" block. The API key may
@@ -3430,6 +3390,41 @@ void Game::ECSInit() {
   // model.json, which LoadGameSettings still reads as a last resort.
   const GameSettings::ModelSection &modelSettings = settings.model;
   std::unique_ptr<AI> ai = BuildAIBackend(modelSettings, debugLog.get());
+
+  // A dedicated backend for the single navigator. It uses either the NPC model
+  // settings or its own `navigation.single.model` block, but always a separate
+  // instance: reasoning is off by default, and the navigator's per-call
+  // max_tokens must not leak into concurrent NPC requests through the shared
+  // backend's options.
+  std::unique_ptr<AI> navigationAI;
+  if (settings.navigation.agent == "single" &&
+      settings.navigation.single.dedicatedBackend) {
+    const GameSettings::ModelSection &navigationModel =
+        settings.navigation.single.useMainModel
+            ? modelSettings
+            : settings.navigation.single.model;
+    navigationAI = BuildAIBackend(navigationModel, debugLog.get());
+    if (navigationAI != nullptr) {
+      if (settings.navigation.single.disableReasoning) {
+        navigationAI->setReasoningEnabled(false);
+      }
+      navigationAI->setMaxTokens(settings.navigation.single.maxTokens);
+      if (debugLog) {
+        debugLog->LogInfo(
+            "Navigation backend: " + navigationAI->getAIName() + " / " +
+            navigationAI->getModelName() +
+            (settings.navigation.single.useMainModel
+                 ? " (main model settings)"
+                 : " (navigation model)") +
+            (settings.navigation.single.disableReasoning ? " (reasoning off)"
+                                                         : " (reasoning on)"));
+      }
+    } else if (debugLog) {
+      debugLog->LogWarning(
+          "Navigation backend could not be built; the single navigator will "
+          "share the NPC backend.");
+    }
+  }
 
   // The Vision Chat window talks to its own backend, never to the NPC one.
   // OllamaAI keys its conversation context by contextId alone, so serving a
@@ -3571,7 +3566,10 @@ void Game::ECSInit() {
     else std::cerr << message << std::endl;
   }
 
-  ecs.set<AIBackend>({std::move(ai)});
+  AIBackend backend;
+  backend.ptr = std::move(ai);
+  backend.navigation = std::move(navigationAI);
+  ecs.set<AIBackend>(std::move(backend));
 
   // Stage 5: the out-of-band digest, off unless the setting says otherwise. A
   // character with no backend, or a missing prompt file, leaves the job

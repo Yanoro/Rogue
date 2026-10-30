@@ -294,6 +294,7 @@ add_executable(SpatialMemoryBench
     bench/spatial_memory_bench.cpp
     src/PlaceCategoryRegistry.cpp
     src/DebugLog.cpp
+    src/InteractionRegistry.cpp
 )
 target_include_directories(SpatialMemoryBench PRIVATE
     include

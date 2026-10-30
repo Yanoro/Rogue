@@ -698,20 +698,35 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
     obj.set<DrawAscii>(ascii);
   }
 
-  // Optional multi-line art. Absent or unusable art leaves the single-glyph
-  // DrawAscii above as the whole visual, so this key can only add to a template.
-  {
-    AsciiArt art;
-    std::string artWarning;
-    const bool hasArt = ParseAsciiArt(tmpl, art, artWarning);
-    if (!artWarning.empty()) {
+  // `art`/`palette` are accepted and ignored: an object draws its sprite or the
+  // Unknown placeholder, and nothing else (docs/pixel-dsl.md). The keys stay
+  // accepted so every existing template still loads unchanged.
+  //
+  // The warning fires only when there is no sprite to fall back *to* -- explicit or
+  // by convention -- because that is the case where content clearly expected to be
+  // visible and is now a placeholder. A template with both art and a sprite is just
+  // carrying a field nobody reads, which is not worth a line per load.
+  if (tmpl.contains("art")) {
+    bool hasSprite = false;
+    if (tmpl.contains("sprite") && tmpl["sprite"].is_string()) {
+      hasSprite = !tmpl["sprite"].get<std::string>().empty();
+    }
+    if (!hasSprite) {
+      std::error_code existsError;
+      for (const std::string &candidate : SpriteCandidatePaths(type)) {
+        if (std::filesystem::exists(candidate, existsError)) {
+          hasSprite = true;
+          break;
+        }
+      }
+    }
+    if (!hasSprite) {
       const std::string msg =
-          "Warning: object template '" + type + "': " + artWarning + "\n";
+          "Warning: object template '" + type + "': \"art\" is ignored. Objects "
+          "draw their sprite or the Unknown placeholder; generate a sprite for "
+          "this key if it should not be a placeholder.\n";
       if (debugLog) debugLog->LogWarning(msg);
       else std::cerr << msg;
-    }
-    if (hasArt) {
-      obj.set<AsciiArt>(art);
     }
   }
 

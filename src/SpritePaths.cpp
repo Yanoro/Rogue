@@ -11,6 +11,10 @@
 #include "ResourceManager.h"
 #include "Settings.h"
 
+std::string UnknownSpritePath() {
+  return std::string(SPRITE_DIRECTORY) + "unknown.png";
+}
+
 std::string TileSpriteId(const std::string &tileName) {
   std::string slug = "tile_";
   bool pendingSeparator = false;
@@ -158,6 +162,55 @@ std::vector<std::string> SpriteCandidatePaths(const std::string &conventionId) {
             .string());
   }
   return candidates;
+}
+
+std::vector<std::string> SpriteDocumentCandidatePaths(
+    const std::string &conventionId) {
+  std::vector<std::string> candidates;
+  if (conventionId.empty()) return candidates;
+
+  const SpriteRoots &roots = Roots();
+  if (roots.artPackSprites.empty()) {
+    candidates.push_back(std::string(SPRITE_DIRECTORY) + conventionId + ".sprite");
+    return candidates;
+  }
+  candidates.push_back(
+      (std::filesystem::path(roots.artPackSprites) / (conventionId + ".sprite"))
+          .string());
+  if (!roots.generatedSprites.empty()) {
+    candidates.push_back(
+        (std::filesystem::path(roots.generatedSprites) / (conventionId + ".sprite"))
+            .string());
+  }
+  return candidates;
+}
+
+std::string GeneratedSpriteDocumentPath(const std::string &conventionId) {
+  if (conventionId.empty()) return {};
+  const SpriteRoots &roots = Roots();
+  if (roots.generatedSprites.empty()) return {};
+  return (std::filesystem::path(roots.generatedSprites) /
+          (conventionId + ".sprite"))
+      .string();
+}
+
+SpriteDSLDocument FindSpriteDSLDocument(const std::string &conventionId) {
+  SpriteDSLDocument document;
+  document.candidates = SpriteDocumentCandidatePaths(conventionId);
+  const SpriteRoots &roots = Roots();
+  std::error_code error;
+  for (size_t index = 0; index < document.candidates.size(); ++index) {
+    const std::string &candidate = document.candidates[index];
+    if (!std::filesystem::exists(candidate, error)) continue;
+    document.found = true;
+    document.path = candidate;
+    // The first candidate is the pack's whenever a pack is configured, which is
+    // exactly the one an agent must not overwrite.
+    document.inArtPack =
+        !roots.artPackSprites.empty() && index == 0;
+    return document;
+  }
+  return document;
 }
 
 bool SpriteResolves(const std::string &explicitPath,

@@ -1,0 +1,38 @@
+version 1
+sprite 32x32
+kind object
+material grass
+
+// A red bloom: five petals around a pale heart, on a short stem with two leaves.
+// The reds are literals because the derived ramps have no red material yet -- the
+// registry in tools/derive_ramps.py is hand-written and does not list one.
+palette {
+    stem  = grass.0
+    leaf  = grass.2
+    leaf2 = grass.3
+    petal = #b52a2a
+    light = #d94a3a
+    heart = sand.4
+}
+
+// Stem and leaves.
+rect (15,14) (16,29) color=stem
+polygon (15,21) (9,19) (8,23) (14,23) color=leaf
+polygon (16,23) (22,21) (23,25) (17,25) color=leaf
+line (16,17) (16,29) color=leaf2
+
+// Five petals around the heart.
+circle (16,5)  radius=3 color=petal
+circle (10,8)  radius=3 color=petal
+circle (22,8)  radius=3 color=petal
+circle (10,14) radius=3 color=petal
+circle (22,14) radius=3 color=petal
+circle (16,10) radius=3 color=heart
+
+// Petal shading, then a little grain inside the silhouette.
+circle (16,6)  radius=1 color=light
+circle (11,9)  radius=1 color=light
+circle (21,9)  radius=1 color=light
+circle (11,15) radius=1 color=light
+circle (21,15) radius=1 color=light
+scatter color=light,petal density=0.04 seed=5 cluster=1 inside

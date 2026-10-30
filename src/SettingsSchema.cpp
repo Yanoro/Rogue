@@ -922,6 +922,14 @@ const std::vector<FieldSpec> &Fields() {
         .Between(0, 64, 3);
     add(Field<ValueType::Bool>("navigation.single", "navigation.single.concise",
             "Ask for a one-sentence strategy and a short think block.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::concise));
+    add(Field<ValueType::Bool>("navigation.single", "navigation.single.objectSummary",
+            "Group objects by type/profile in the STATE block and use the target grammar (objects:all, inspect:<group>, approach:<alias>) instead of listing every examine candidate.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::objectSummary));
+    add(Field<ValueType::Int>("navigation.single", "navigation.single.maxObjectGroups",
+            "Object groups shown in the default STATE block. The rest stay available through objects:all and inspect.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::maxObjectGroups))
+        .Between(1, 64, 6);
+    add(Field<ValueType::Int>("navigation.single", "navigation.single.maxGroupDetails",
+            "Instances shown by inspect:<group>. inspect:<group>:all ignores this.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::maxGroupDetails))
+        .Between(1, 128, 8);
     add(Field<ValueType::Float>("navigation.single", "navigation.single.timeoutSeconds",
             "Whole-request budget for one decision.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::timeoutSeconds))
         .Min(1.0, 60.0);

@@ -1,0 +1,20 @@
+The tile is old flagstone with moss in the joints, so I want a slab that has been
+walked on for a long time: cool grey stone, narrow dark joints, and moss only where
+water would sit.
+
+```sprite
+sprite 32x32
+kind tile
+material stone
+fill stone.2
+line (0,12) (31,12) color=stone.0
+line (0,24) (31,24) color=stone.0
+line (11,0) (11,12) color=stone.0
+line (22,12) (22,24) color=stone.0
+fill_area (5,4) color=stone.3
+fill_area (16,4) color=stone.4
+fill_area (5,18) color=stone.4
+scatter color=stone.1,stone.3 density=0.12 seed=21 cluster=2
+pixel (11,11) color=grass.0
+pixel (12,11) color=grass.1
+```

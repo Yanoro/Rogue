@@ -35,6 +35,7 @@ if [[ -z "${IN_NIX_SHELL:-}" ]] && ! deps_available; then
 fi
 
 # --- Build (out-of-source). Assets are resolved relative to the project root.
+# Build on every core available on the machine.
 cd "$PROJECT_ROOT"
 
 if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then

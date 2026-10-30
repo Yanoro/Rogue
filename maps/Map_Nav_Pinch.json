@@ -1,0 +1,773 @@
+{
+  "mapWidth": 12,
+  "mapHeight": 12,
+  "tileWidth": 32,
+  "tileHeight": 32,
+  "tilePalette": [
+    "grass",
+    "stone floor"
+  ],
+  "positions": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "objects": [
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 6
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 0,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 1,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 2,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 3,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 4,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 6
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 5,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 6,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 7,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 8,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 9,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 10,
+      "y": 11
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 0
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 1
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 2
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 3
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 4
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 5
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 6
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 7
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 8
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 9
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 10
+    },
+    {
+      "type": "stone_wall",
+      "x": 11,
+      "y": 11
+    }
+  ],
+  "placeSeeds": [
+    {
+      "label": "the far room",
+      "position": [
+        8,
+        7
+      ],
+      "radius": 2
+    }
+  ],
+  "npcs": [
+    {
+      "name": "Wren",
+      "position": [
+        2,
+        5
+      ],
+      "background": "You are Wren, standing in a stone room. There is a way through to the room beyond, if you can find it.",
+      "goals": {
+        "terminal": [
+          "Reach the far room"
+        ]
+      }
+    }
+  ]
+}

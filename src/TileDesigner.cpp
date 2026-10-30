@@ -6,10 +6,12 @@
 #include <fstream>
 #include <iostream>
 #include <sstream>
+#include <cstring>
 
 #include <nlohmann/json.hpp>
 
 #include "DebugLog.h"
+#include "PixelDSL.hpp"
 #include "SpriteReply.hpp"
 
 namespace TileDesigner {
@@ -661,6 +663,118 @@ size_t LoadOverlayDirectory(const std::string &overlayDirectory,
     }
   }
   return added;
+}
+
+
+// ---------------------------------------------------------------------------
+// The second turn: the pixel document
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Plain find/replace, not regex: the substituted texts are a grammar reference full
+// of punctuation, and a replacement engine that treats `$` or `\` specially would
+// quietly corrupt the one thing this function exists to keep exact.
+void ReplaceAll(std::string *text, const std::string &needle,
+                const std::string &replacement) {
+  if (needle.empty()) return;
+  size_t position = 0;
+  while ((position = text->find(needle, position)) != std::string::npos) {
+    text->replace(position, needle.size(), replacement);
+    position += replacement.size();
+  }
+}
+
+// Why a missing file is survivable: this turn is a convenience on top of a
+// compiler that already works, so a checkout with no prompt file should still be
+// able to ask for a document. The fallback is the minimum that makes the contract
+// unambiguous, not a second full prompt that would then drift from the real one.
+constexpr const char *kFallbackSpriteDocumentPrompt =
+    "You write the pixel document for a sprite this engine has defined.\n\n"
+    "%SPRITE_DSL%\n\n## Ramps\n\n%RAMPS%\n\n"
+    "Reply with prose, then exactly one fenced ```sprite block holding the whole "
+    "document and nothing after it.\n";
+
+}  // namespace
+
+std::string BuildSpriteDocumentSystemPrompt(const std::string &promptFile,
+                                            const std::string &rampsPath) {
+  std::string document;
+  if (!promptFile.empty()) {
+    std::ifstream file(promptFile);
+    if (file.is_open()) {
+      std::stringstream buffer;
+      buffer << file.rdbuf();
+      document = buffer.str();
+    }
+  }
+  if (document.empty()) document = kFallbackSpriteDocumentPrompt;
+
+  PixelDSL::Config config;
+  config.rampsPath = rampsPath;
+  std::string rampsError;
+  const std::string ramps = PixelDSL::RampSummary(config, &rampsError);
+
+  ReplaceAll(&document, "%SPRITE_DSL%", PixelDSL::GrammarReference());
+  ReplaceAll(&document, "%RAMPS%",
+             ramps.empty()
+                 ? ("(the ramps could not be read: " + rampsError +
+                    ". Use only ramp references you can see in the grammar.)")
+                 : ramps);
+  return document;
+}
+
+std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
+                                       const std::string &previousVerdict) {
+  std::ostringstream out;
+  out << "Design the sprite document for "
+      << (brief.kind == SpriteKinds::Kind::Tile ? "the tile" : "the object")
+      << " \"" << brief.name << "\".\n";
+  if (!brief.description.empty()) {
+    out << "Its description: " << brief.description << "\n";
+  }
+  if (brief.kind == SpriteKinds::Kind::Tile) {
+    out << "It " << (brief.blocksTile ? "blocks movement." : "can be walked on.")
+        << "\n";
+  }
+  if (!previousVerdict.empty()) {
+    out << "\nThe compiler refused the previous document:\n"
+        << previousVerdict
+        << "Send the corrected document in full -- not a diff, and keep everything "
+           "that was already accepted.\n";
+  }
+  out << "\nReply with prose and exactly one ```sprite block holding the complete "
+         "document.\n";
+  return out.str();
+}
+
+std::string ExtractSpriteDocument(const std::string &text) {
+  const std::string body = StripReasoning(text);
+
+  // Tagged fences first. Ordered longest-tag-first is unnecessary -- no tag is a
+  // prefix of another -- but `sprite` before the bare fence is, because "```" is a
+  // prefix of "```sprite" and the bare-fence branch would return the tag line.
+  for (const char *fence : {"```sprite", "```pxl", "```dsl", "```text"}) {
+    const size_t open = body.find(fence);
+    if (open == std::string::npos) continue;
+    size_t start = open + std::strlen(fence);
+    if (start < body.size() && body[start] == '\r') ++start;
+    if (start < body.size() && body[start] == '\n') ++start;
+    const size_t close = body.find("```", start);
+    if (close == std::string::npos) continue;
+    return body.substr(start, close - start);
+  }
+
+  const size_t open = body.find("```");
+  if (open != std::string::npos) {
+    size_t start = open + 3;
+    // Skip the fence's own line, which carries either nothing or a language tag.
+    const size_t newline = body.find('\n', start);
+    if (newline != std::string::npos) start = newline + 1;
+    const size_t close = body.find("```", start);
+    if (close != std::string::npos) return body.substr(start, close - start);
+  }
+  return body;
 }
 
 }  // namespace TileDesigner

@@ -1,0 +1,44 @@
+{
+  "map": "Map_Nav_Names.json",
+  "scenario": "names",
+  "headline": "Two identical orchards and two roads: identity and naming.",
+  "purpose": "Two orchards and two road stretches that derive identical display names. Isolates place identity, [NAME_PLACE] and whether the summary leaves the agent able to say which one it visited.",
+  "spawn": [
+    14,
+    13
+  ],
+  "goal": "find apples",
+  "goalRegion": {
+    "x": [
+      6,
+      9
+    ],
+    "y": [
+      6,
+      9
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find apples]",
+    "[NAME_PLACE #<id> the north-west orchard]",
+    "[NAVIGATE the north-west orchard]"
+  ],
+  "expected": {
+    "maxLegs": 6,
+    "surveysAllowed": 2,
+    "note": "Both orchards should read 'an unnamed orchard' with the same scores. The second NAVIGATE is the real test: a name that the summary or the list cannot disambiguate is not a handle."
+  },
+  "metrics": {
+    "optimalSteps": 8,
+    "reachableCells": 994,
+    "goalCellsWalkable": 1,
+    "objects": 30,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Names.json",
+  "notes": [
+    "Place ids are re-derived as memory grows, so this map also catches a stale #id in the summary or in a [MOVE_TO].",
+    "Score: the named orchard is the one the second episode walks to, and the two orchard candidates were distinguishable by distance only before naming."
+  ]
+}

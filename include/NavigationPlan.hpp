@@ -33,13 +33,16 @@
 
 #include "Components.h"
 #include "Defaults.h"
+#include "InteractionRegistry.h"
 #include "PlaceQuery.hpp"
 #include "SightReport.hpp"
 #include "SystemOneRecorder.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
+#include <map>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -129,6 +132,38 @@ inline std::unordered_set<std::uint64_t> OccupiedCells(
     occupied.insert(VisionQuery::CellKey(object.pos));
   }
   return occupied;
+}
+
+// The nearest walkable, unoccupied cell next to `objectPos`. Used by the
+// examine/approach candidates and by the object-group snapshot so both agree on
+// whether an object is reachable at all.
+inline bool FindApproachCell(const SpatialMemory &memory,
+                             const std::unordered_set<std::uint64_t> &occupied,
+                             GamePosition objectPos, GamePosition here,
+                             GamePosition &best) {
+  best = {-1, -1};
+  int bestDistance = -1;
+  for (int dx = -1; dx <= 1; ++dx) {
+    for (int dy = -1; dy <= 1; ++dy) {
+      if (dx == 0 && dy == 0) continue;
+      const GamePosition cell{objectPos.x + dx, objectPos.y + dy};
+      const auto found = memory.cells.find(VisionQuery::CellKey(cell));
+      if (found == memory.cells.end() || !found->second.walkable) continue;
+      if (occupied.count(VisionQuery::CellKey(cell)) != 0) continue;
+      const int distance = Chebyshev(cell, here);
+      if (bestDistance < 0 || distance < bestDistance) {
+        best = cell;
+        bestDistance = distance;
+      }
+    }
+  }
+  return best.x >= 0;
+}
+
+// A stable key for an object's content type. Kept as a local alias so the
+// navigation code reads naturally; the rule itself lives beside SeenObject.
+inline std::string ObjectKey(const SeenObject &object) {
+  return ObjectContentKey(object);
 }
 
 // The first observed place along a sector, within `radius`. Unobserved ground ends
@@ -371,42 +406,33 @@ inline std::vector<Candidate> BuildCandidates(
     std::string direction;
   };
   std::vector<ExamineTarget> examineTargets;
-  for (const auto &[id, object] : memory.objects) {
-    if (object.character || object.portable || object.vanishedTick >= 0) continue;
-    const int objectDistance = detail::Chebyshev(object.pos, here);
-    if (objectDistance > examineRadius) continue;
-
-    GamePosition best{-1, -1};
-    int bestDistance = -1;
-    for (int dx = -1; dx <= 1; ++dx) {
-      for (int dy = -1; dy <= 1; ++dy) {
-        if (dx == 0 && dy == 0) continue;
-        const GamePosition cell{object.pos.x + dx, object.pos.y + dy};
-        const auto found = memory.cells.find(VisionQuery::CellKey(cell));
-        if (found == memory.cells.end() || !found->second.walkable) continue;
-        if (occupied.count(VisionQuery::CellKey(cell)) != 0) continue;
-        const int distance = detail::Chebyshev(cell, here);
-        if (bestDistance < 0 || distance < bestDistance) {
-          best = cell;
-          bestDistance = distance;
-        }
+  if (maxExamine != 0) {
+    for (const auto &[id, object] : memory.objects) {
+      if (object.character || object.portable || object.vanishedTick >= 0) {
+        continue;
       }
-    }
-    if (best.x < 0) continue;
+      const int objectDistance = detail::Chebyshev(object.pos, here);
+      if (objectDistance > examineRadius) continue;
 
-    ExamineTarget entry;
-    entry.id = id;
-    entry.name = object.name;
-    entry.target = best;
-    entry.distance = objectDistance;
-    entry.direction =
-        PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
-    examineTargets.push_back(std::move(entry));
+      GamePosition best;
+      if (!detail::FindApproachCell(memory, occupied, object.pos, here, best)) {
+        continue;
+      }
+
+      ExamineTarget entry;
+      entry.id = id;
+      entry.name = object.name;
+      entry.target = best;
+      entry.distance = objectDistance;
+      entry.direction =
+          PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
+      examineTargets.push_back(std::move(entry));
+    }
+    std::stable_sort(examineTargets.begin(), examineTargets.end(),
+                     [](const ExamineTarget &a, const ExamineTarget &b) {
+                       return a.distance < b.distance;
+                     });
   }
-  std::stable_sort(examineTargets.begin(), examineTargets.end(),
-                   [](const ExamineTarget &a, const ExamineTarget &b) {
-                     return a.distance < b.distance;
-                   });
   const int examineCount =
       maxExamine >= 0
           ? std::min<int>(maxExamine, static_cast<int>(examineTargets.size()))
@@ -530,6 +556,308 @@ inline std::vector<Candidate> BuildCandidates(
   }
 
   return candidates;
+}
+
+struct ObjectInstance {
+  std::string alias;
+  std::uint64_t id = 0;
+  int distance = 0;
+  std::string direction;
+  GamePosition pos{0, 0};
+  GamePosition approach{-1, -1};
+  std::vector<std::string> interactions;
+};
+
+// One object profile as the navigation prompt sees it. The count is instances,
+// not one row per instance; `interactions` is the stable InteractionHandler key
+// set that every counted instance shares. This is deliberately a pure function
+// of memory (no ECS lookup): the snapshot was taken when the objects were seen.
+struct ObjectGroup {
+  std::string key;
+  std::string templateId;
+  std::string label;
+  int count = 0;
+  bool structural = false;
+  int nearestDistance = 0;
+  std::string nearestDirection;
+  GamePosition nearestPos{0, 0};
+  GamePosition nearestApproach{-1, -1};
+  std::uint64_t nearestId = 0;
+  std::string nearestAlias;
+  std::vector<std::string> interactions;
+  std::vector<ObjectInstance> instances;
+};
+
+// Where an inspected alias points. Returned by FindObjectByAlias so the action
+// layer does not have to hold a pointer into SpatialMemory while it walks.
+struct ObjectRef {
+  std::uint64_t id = 0;
+  std::string alias;
+  std::string name;
+  GamePosition approach{-1, -1};
+};
+
+// Groups every remembered, approachable, non-portable object inside `radius` by
+// (content type, interaction set). Different capability profiles of the same
+// template stay separate: a harvestable apple tree must not lend its `harvest`
+// verb to a plain one. `maxGroups == 0` returns every group. When `noArgOnly`
+// is true, verbs with required arguments are omitted from the profile and from
+// instance lists; this is what the Stage 2 navigator offers.
+inline std::vector<ObjectGroup> BuildObjectGroups(
+    const SpatialMemory &memory, GamePosition here, int radius,
+    std::size_t maxGroups = 0, bool noArgOnly = false) {
+  const std::unordered_set<std::uint64_t> occupied =
+      detail::OccupiedCells(memory);
+  std::map<std::string, ObjectGroup> grouped;
+  for (const auto &[id, object] : memory.objects) {
+    if (object.character || object.portable || object.vanishedTick >= 0) {
+      continue;
+    }
+    const int objectDistance = detail::Chebyshev(object.pos, here);
+    if (objectDistance > radius) continue;
+
+    GamePosition approach;
+    if (!detail::FindApproachCell(memory, occupied, object.pos, here,
+                                  approach)) {
+      continue;
+    }
+
+    std::vector<std::string> interactions = object.interactions;
+    std::sort(interactions.begin(), interactions.end());
+    interactions.erase(std::unique(interactions.begin(), interactions.end()),
+                       interactions.end());
+    if (noArgOnly) {
+      interactions.erase(
+          std::remove_if(interactions.begin(), interactions.end(),
+                         [](const std::string &verb) {
+                           return !InteractionRegistry::IsNoArgumentInteraction(
+                               verb);
+                         }),
+          interactions.end());
+    }
+
+    const std::string baseKey = detail::ObjectKey(object);
+    std::string profileKey = baseKey;
+    for (const std::string &verb : interactions) {
+      profileKey += "|";
+      profileKey += verb;
+    }
+
+    auto found = grouped.find(profileKey);
+    if (found == grouped.end()) {
+      ObjectGroup group;
+      group.key = baseKey;
+      group.templateId = object.templateId;
+      group.label = object.name;
+      group.structural = object.structural;
+      group.nearestDistance = objectDistance;
+      group.nearestDirection =
+          PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
+      group.nearestPos = object.pos;
+      group.nearestApproach = approach;
+      group.nearestId = id;
+      group.nearestAlias = object.alias;
+      group.interactions = interactions;
+      group.count = 1;
+      ObjectInstance instance;
+      instance.alias = object.alias;
+      instance.id = id;
+      instance.distance = objectDistance;
+      instance.direction = group.nearestDirection;
+      instance.pos = object.pos;
+      instance.approach = approach;
+      instance.interactions = std::move(interactions);
+      group.instances.push_back(std::move(instance));
+      grouped.emplace(std::move(profileKey), std::move(group));
+      continue;
+    }
+
+    ObjectGroup &group = found->second;
+    ++group.count;
+    group.structural = group.structural || object.structural;
+    ObjectInstance instance;
+    instance.alias = object.alias;
+    instance.id = id;
+    instance.distance = objectDistance;
+    instance.direction =
+        PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
+    instance.pos = object.pos;
+    instance.approach = approach;
+    instance.interactions = interactions;
+    group.instances.push_back(std::move(instance));
+    if (objectDistance < group.nearestDistance ||
+        (objectDistance == group.nearestDistance && id < group.nearestId)) {
+      group.nearestDistance = objectDistance;
+      group.nearestDirection = instance.direction;
+      group.nearestPos = object.pos;
+      group.nearestApproach = approach;
+      group.nearestId = id;
+      group.nearestAlias = object.alias;
+    }
+  }
+
+  std::map<std::string, int> baseCounts;
+  for (const auto &[profile, group] : grouped) {
+    ++baseCounts[group.key];
+  }
+  std::vector<ObjectGroup> groups;
+  groups.reserve(grouped.size());
+  for (auto &[profile, group] : grouped) {
+    if (baseCounts[group.key] > 1) {
+      group.key += ".";
+      if (group.interactions.empty()) {
+        group.key += "none";
+      } else {
+        for (std::size_t i = 0; i < group.interactions.size(); ++i) {
+          if (i > 0) group.key += "+";
+          group.key += group.interactions[i];
+        }
+      }
+    }
+    std::stable_sort(group.instances.begin(), group.instances.end(),
+                     [](const ObjectInstance &a, const ObjectInstance &b) {
+                       if (a.distance != b.distance) {
+                         return a.distance < b.distance;
+                       }
+                       return a.alias < b.alias;
+                     });
+    groups.push_back(std::move(group));
+  }
+
+  std::stable_sort(groups.begin(), groups.end(),
+                   [](const ObjectGroup &a, const ObjectGroup &b) {
+                     const bool aActionable = !a.interactions.empty();
+                     const bool bActionable = !b.interactions.empty();
+                     if (aActionable != bActionable) return aActionable;
+                     if (a.nearestDistance != b.nearestDistance) {
+                       return a.nearestDistance < b.nearestDistance;
+                     }
+                     return a.label < b.label;
+                   });
+  if (maxGroups > 0 && groups.size() > maxGroups) {
+    groups.resize(maxGroups);
+  }
+  return groups;
+}
+
+// Resolve a model-facing alias ("apple_tree-3") to one remembered, approachable
+// object. Returns false for vanished, portable, character, out-of-radius,
+// unreachable or unknown aliases; the caller turns that into the normal retry.
+inline bool FindObjectByAlias(const SpatialMemory &memory, GamePosition here,
+                              int radius, const std::string &alias,
+                              ObjectRef &out) {
+  if (alias.empty()) return false;
+  const std::unordered_set<std::uint64_t> occupied =
+      detail::OccupiedCells(memory);
+  for (const auto &[id, object] : memory.objects) {
+    if (object.alias != alias) continue;
+    if (object.character || object.portable || object.vanishedTick >= 0) {
+      return false;
+    }
+    if (detail::Chebyshev(object.pos, here) > radius) return false;
+    GamePosition approach;
+    if (!detail::FindApproachCell(memory, occupied, object.pos, here,
+                                  approach)) {
+      return false;
+    }
+    out.id = id;
+    out.alias = object.alias;
+    out.name = object.name;
+    out.approach = approach;
+    return true;
+  }
+  return false;
+}
+
+// The fixed grammar block appended to the single navigator's state. Kept free of
+// concrete group keys: `inspect` produces the aliases the other two use.
+inline std::string BuildObjectTargetGrammar() {
+  return
+      "\nOBJECT TARGETS (the key= value below is the group key):\n"
+      "  objects:all             list every object group; does not move\n"
+      "  inspect:<group>         list the nearest instance aliases and verbs\n"
+      "  inspect:<group>:all     list every instance alias in that group\n"
+      "  approach:<alias>        walk to one instance; does not interact\n"
+      "  <verb>:<alias>          walk and use a no-argument verb\n"
+      "                          e.g. examine:apple_tree-1, harvest:apple_tree-1\n";
+}
+
+// The default group list. It deliberately omits aliases; aliases are only in an
+// inspect result, so the default prompt stays small even for a large group.
+inline std::string BuildObjectGroupList(
+    const std::vector<ObjectGroup> &groups, std::size_t maxGroups,
+    GamePosition here = {0, 0}) {
+  if (groups.empty()) return "\nOBJECTS SEEN: (none)\n";
+  const std::size_t shown =
+      maxGroups == 0 ? groups.size() : std::min(maxGroups, groups.size());
+  std::ostringstream out;
+  if (shown == groups.size()) {
+    out << "\nOBJECTS SEEN (" << groups.size() << " groups):\n";
+  } else {
+    out << "\nOBJECTS SEEN (" << shown << " of " << groups.size()
+        << " groups; objects:all for the rest):\n";
+  }
+  for (std::size_t i = 0; i < shown; ++i) {
+    const ObjectGroup &group = groups[i];
+    out << "  " << group.label << " x" << group.count << " key=" << group.key
+        << "  ";
+    if (group.interactions.empty()) {
+      out << "(no navigator verbs)";
+    } else {
+      for (std::size_t verb = 0; verb < group.interactions.size(); ++verb) {
+        if (verb > 0) out << ", ";
+        out << group.interactions[verb];
+      }
+    }
+    std::string direction = group.nearestDirection;
+    if (direction.empty()) {
+      direction = PlaceQuery::CompassWord(group.nearestPos.x - here.x,
+                                         group.nearestPos.y - here.y);
+    }
+    if (direction.empty()) direction = "nearby";
+    out << "  nearest " << direction << " " << group.nearestDistance;
+    if (group.structural) out << " (structure)";
+    out << "\n";
+  }
+  return out.str();
+}
+
+// A compact inspect result for one group. `all` overrides the cap; otherwise the
+// caller is told explicitly how to ask for the rest.
+inline std::string BuildObjectInstanceList(const ObjectGroup &group,
+                                           bool all, std::size_t maxDetails,
+                                           GamePosition here = {0, 0}) {
+  const std::size_t total = group.instances.size();
+  const std::size_t shown =
+      all ? total : std::min(maxDetails == 0 ? total : maxDetails, total);
+  std::ostringstream out;
+  out << "INSPECT " << group.label << " (key=" << group.key << "): " << total
+      << " seen within range; showing " << shown << " of " << total << ".\n";
+  for (std::size_t i = 0; i < shown; ++i) {
+    const ObjectInstance &instance = group.instances[i];
+    std::string direction = instance.direction;
+    if (direction.empty()) {
+      direction = PlaceQuery::CompassWord(instance.pos.x - here.x,
+                                         instance.pos.y - here.y);
+    }
+    if (direction.empty()) direction = "nearby";
+    out << "  " << instance.alias << "  " << direction << " "
+        << instance.distance << "  ";
+    if (instance.interactions.empty()) {
+      out << "(no navigator verbs)";
+    } else {
+      for (std::size_t verb = 0; verb < instance.interactions.size(); ++verb) {
+        if (verb > 0) out << ", ";
+        out << instance.interactions[verb];
+      }
+    }
+    out << "\n";
+  }
+  if (!all && shown < total) {
+    out << "Use inspect:" << group.key << ":all for the remaining "
+        << (total - shown) << ".\n";
+  }
+  return out.str();
 }
 
 // The state handed to System 1. It must be readable on its own: System 1 has no

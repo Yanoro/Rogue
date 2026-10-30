@@ -1,0 +1,4 @@
+sprite 32x32
+kind tile
+material mithril
+fill grass.2

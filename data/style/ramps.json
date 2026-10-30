@@ -1,0 +1,288 @@
+{
+  "version": 1,
+  "generatedBy": "tools/derive_ramps.py",
+  "palette": "data/palette.json",
+  "note": "Ramps are ordered dark -> light and hold the pack's own tones, not a palette approximation: a document can only name ramp entries, so it cannot invent a colour the pack does not use. `base` is the material's dominant tone. Regenerate after the art pack changes.",
+  "ramps": {
+    "stone": {
+      "steps": [
+        [
+          89,
+          86,
+          84
+        ],
+        [
+          113,
+          110,
+          107
+        ],
+        [
+          144,
+          138,
+          134
+        ],
+        [
+          164,
+          160,
+          153
+        ],
+        [
+          177,
+          176,
+          170
+        ]
+      ],
+      "base": [
+        177,
+        176,
+        170
+      ],
+      "source": [
+        "tile_floor"
+      ],
+      "pixels": 1024
+    },
+    "sand": {
+      "steps": [
+        [
+          132,
+          112,
+          92
+        ],
+        [
+          153,
+          127,
+          101
+        ],
+        [
+          175,
+          143,
+          110
+        ],
+        [
+          198,
+          160,
+          120
+        ],
+        [
+          220,
+          186,
+          139
+        ]
+      ],
+      "base": [
+        219,
+        185,
+        139
+      ],
+      "source": [
+        "tile_path"
+      ],
+      "pixels": 1024
+    },
+    "grass": {
+      "steps": [
+        [
+          68,
+          121,
+          26
+        ],
+        [
+          82,
+          143,
+          33
+        ],
+        [
+          83,
+          148,
+          26
+        ],
+        [
+          92,
+          163,
+          26
+        ],
+        [
+          102,
+          176,
+          25
+        ]
+      ],
+      "base": [
+        83,
+        148,
+        26
+      ],
+      "source": [
+        "tile_grass"
+      ],
+      "pixels": 1024
+    },
+    "soil": {
+      "steps": [
+        [
+          62,
+          32,
+          17
+        ],
+        [
+          84,
+          45,
+          24
+        ],
+        [
+          99,
+          56,
+          31
+        ],
+        [
+          114,
+          66,
+          38
+        ],
+        [
+          130,
+          81,
+          51
+        ]
+      ],
+      "base": [
+        132,
+        83,
+        52
+      ],
+      "source": [
+        "tile_tilled_soil",
+        "tile_packed_earth"
+      ],
+      "pixels": 2048
+    },
+    "wood": {
+      "steps": [
+        [
+          108,
+          60,
+          30
+        ],
+        [
+          138,
+          78,
+          35
+        ],
+        [
+          164,
+          93,
+          39
+        ],
+        [
+          179,
+          105,
+          47
+        ],
+        [
+          200,
+          124,
+          61
+        ]
+      ],
+      "base": [
+        179,
+        105,
+        47
+      ],
+      "source": [
+        "tile_wooden_floor"
+      ],
+      "pixels": 1024
+    },
+    "water": {
+      "steps": [
+        [
+          17,
+          75,
+          137
+        ],
+        [
+          18,
+          84,
+          149
+        ],
+        [
+          20,
+          94,
+          162
+        ],
+        [
+          23,
+          104,
+          174
+        ]
+      ],
+      "base": [
+        17,
+        75,
+        137
+      ],
+      "source": [
+        "tile_water"
+      ],
+      "pixels": 1024
+    },
+    "iron": {
+      "steps": [
+        [
+          30,
+          29,
+          30
+        ],
+        [
+          46,
+          46,
+          46
+        ],
+        [
+          67,
+          68,
+          68
+        ],
+        [
+          87,
+          87,
+          87
+        ],
+        [
+          111,
+          112,
+          113
+        ]
+      ],
+      "base": [
+        46,
+        46,
+        46
+      ],
+      "source": [
+        "anvil"
+      ],
+      "pixels": 338
+    },
+    "ink": {
+      "steps": [
+        [
+          24,
+          24,
+          25
+        ]
+      ],
+      "base": [
+        24,
+        24,
+        25
+      ],
+      "source": [
+        "chest"
+      ],
+      "pixels": 678
+    }
+  }
+}

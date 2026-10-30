@@ -1,0 +1,46 @@
+{
+  "art": [
+    " @ ",
+    "@o@",
+    " | "
+  ],
+  "backgroundColor": [
+    80,
+    140,
+    40
+  ],
+  "character": "F",
+  "characterColor": [
+    180,
+    40,
+    40
+  ],
+  "components": [
+    "Portable"
+  ],
+  "description": "A single red bloom on a short green stalk, with five broad petals in muted crimson and pale yellow stamens at the centre.",
+  "name": "red bloom",
+  "palette": {
+    " ": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "@": [
+      180,
+      40,
+      40
+    ],
+    "o": [
+      240,
+      230,
+      100
+    ],
+    "|": [
+      80,
+      140,
+      40
+    ]
+  }
+}

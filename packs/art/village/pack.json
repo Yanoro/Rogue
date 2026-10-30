@@ -1,0 +1,10 @@
+{
+  "id": "village",
+  "name": "Village",
+  "description": "A small European farming village, drawn in chunky retro pixel art at 32x32. Colours are muted and earthy: olive and grass greens, grey stone with warm mortar, brown timber and tilled earth, pale sand paths, deep blue water. Shading is flat and hand-placed, with a few tones per material rather than smooth gradients, and textures are grainy rather than clean -- grass is speckled, stone has irregular blocks, water is broken by horizontal ripples. Ground tiles are full-bleed and read as a surface rather than a picture: the detail is even across the cell so the tile repeats without showing a seam. Objects and characters sit in the same palette with more contrast and a stronger silhouette, and they carry the only real outlines in the set. The overall tone is rustic, understated and slightly weathered -- worn floorboards, mossy joints, a plain wooden fence -- never ornate, never glossy, and never cartoon-bright.",
+  "negative": "blurry, smooth gradient, antialiasing, 3d render, photograph, glossy highlights, neon colours, cartoon outlines",
+  "references": [
+    "sprites/stone_wall.png",
+    "sprites/tile_grass.png"
+  ]
+}

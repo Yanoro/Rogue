@@ -326,6 +326,16 @@ struct GameSettings {
     // the previous "a few sentences" / "2-6 sentences" wording. Shorter output is
     // the cheapest latency win after reasoning is off.
     bool concise = true;
+    // Stage 2: group objects by type/profile and use the target grammar
+    // (objects:all, inspect:<group>, approach:<alias>, <verb>:<alias>) instead
+    // of listing every examine candidate. False restores the old per-instance
+    // examine list for A/B.
+    bool objectSummary = true;
+    // Groups shown in the default STATE block. The rest stay available through
+    // objects:all and inspect.
+    int maxObjectGroups = 6;
+    // Instances shown by inspect:<group>. inspect:<group>:all ignores this.
+    int maxGroupDetails = 8;
     // All eight compass sectors are offered to the main LLM, and there is room
     // for four distant places after them. The two-context S1 keeps its smaller
     // system1.navigation caps.

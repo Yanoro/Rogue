@@ -1,0 +1,43 @@
+{
+  "map": "Map_Nav_Fork.json",
+  "scenario": "fork",
+  "headline": "Long road, T junction, contradictory signposts, quarry dead end.",
+  "purpose": "A long road with a T junction, two contradictory signposts and a quarry dead end. Isolates run following, junction splitting, the already-walked marker and told knowledge carried in the goal.",
+  "spawn": [
+    5,
+    50
+  ],
+  "goal": "find a village with a market; the signpost said north",
+  "goalRegion": {
+    "x": [
+      47,
+      56
+    ],
+    "y": [
+      15,
+      25
+    ]
+  },
+  "preSteps": [
+    "[LOOK around]",
+    "[NAVIGATE find a village with a market; the signpost said north]"
+  ],
+  "expected": {
+    "maxLegs": 20,
+    "surveysAllowed": 4,
+    "note": "Legs are capped by compassRadius, so a 25-tile road is four or five legs. The junction must not walk the west stretch again once it has been covered."
+  },
+  "metrics": {
+    "optimalSteps": 42,
+    "reachableCells": 3053,
+    "goalCellsWalkable": 88,
+    "objects": 1041,
+    "reachable": true
+  },
+  "run": "./build/AIRogue maps/Map_Nav_Fork.json",
+  "notes": [
+    "Second act on the same map: after arriving, [NAVIGATE return to the clearing] checks whether a second episode can use the first one's places. Route and dead ends are per-episode; the places are not.",
+    "The two signposts disagree on purpose (signpost.json vs signpost_old.json). The goal text carries the one the main model read.",
+    "Score: first or second junction choice is north, not the quarry; no west/east ping-pong after the T; the arrived cell is inside the square."
+  ]
+}

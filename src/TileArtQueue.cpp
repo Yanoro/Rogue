@@ -1,5 +1,7 @@
 #include "TileArtQueue.hpp"
 
+#include "PixelDSL.hpp"
+#include "SpritePaths.hpp"
 #include "TileArt.hpp"
 
 #include <algorithm>
@@ -62,7 +64,7 @@ std::string TileArtQueue::UnavailableReason() const {
   if (!config.enabled) {
     return "art generation is off (art.generation.enabled in settings.json)";
   }
-  if (config.command.empty()) {
+  if (config.source != "dsl" && config.command.empty()) {
     return "no generation command is configured (art.generation.command)";
   }
   // A generated layer is where the sprite has to go, and with none configured the
@@ -71,7 +73,9 @@ std::string TileArtQueue::UnavailableReason() const {
   if (spritesDirectory.empty()) {
     return "no generated layer is configured (set art.pack, or art.generated)";
   }
-  if (requestsUsed >= config.maxRequestsPerSession) {
+  // The cap exists because a request costs money. A DSL compile does not, so the
+  // cap would only refuse free work.
+  if (config.source != "dsl" && requestsUsed >= config.maxRequestsPerSession) {
     return "the session limit of " +
            std::to_string(config.maxRequestsPerSession) +
            " generation request(s) is reached";
@@ -113,7 +117,9 @@ bool TileArtQueue::Request(SpriteKinds::Kind kind, const std::string &tileName,
     }
     break;
   }
-  if (requestsUsed >= config.maxRequestsPerSession) {
+  // The cap exists because a request costs money. A DSL compile does not, so the
+  // cap would only refuse free work.
+  if (config.source != "dsl" && requestsUsed >= config.maxRequestsPerSession) {
     return refuse("the session limit of " +
                   std::to_string(config.maxRequestsPerSession) +
                   " generation request(s) is reached");
@@ -166,6 +172,18 @@ bool TileArtQueue::Forget(const std::string &tileName) {
   return false;
 }
 
+bool TileArtQueue::ForgetCompleted(SpriteKinds::Kind kind,
+                                   const std::string &name) {
+  std::lock_guard<std::mutex> lock(pendingMutex);
+  for (auto it = jobs.begin(); it != jobs.end(); ++it) {
+    if (it->tileName != name || it->kind != kind) continue;
+    if (it->state == State::Queued || it->state == State::Running) return false;
+    jobs.erase(it);
+    return true;
+  }
+  return false;
+}
+
 void TileArtQueue::Clear() {
   std::lock_guard<std::mutex> lock(pendingMutex);
   // Keeps Running jobs: their worker is still going to post a completion, and a
@@ -203,8 +221,15 @@ bool TileArtQueue::Update(float deltaSeconds) {
   // Measured from the first request still waiting, so the window is "how long has
   // something been waiting" rather than "how long since the last one arrived" --
   // the latter would let a stream of arrivals postpone the batch forever.
+  //
+  // The DSL source has no window at all: a compile is free and instant, so waiting
+  // would be a delay with no economic reason behind it. Batching exists because one
+  // image request costs the same whether it fills one cell or sixteen; nothing here
+  // costs anything.
   queueAge += deltaSeconds;
-  if (queueAge < config.batchDelaySeconds) {
+  const float batchWindow =
+      config.source == "dsl" ? 0.0f : config.batchDelaySeconds;
+  if (queueAge < batchWindow) {
     return false;
   }
   queueAge = 0.0f;
@@ -219,8 +244,9 @@ void TileArtQueue::StartWorker() {
     for (Job &job : jobs) {
       if (job.state != State::Queued) continue;
       // Stopped, then started: a job beyond the cap stays Skipped rather than
-      // sitting in Queued and being retried every batch.
-      if (requestsUsed >= config.maxRequestsPerSession) {
+      // sitting in Queued and being retried every batch. The cap exists because a
+      // request costs money; a DSL compile does not, so it is not applied there.
+      if (config.source != "dsl" && requestsUsed >= config.maxRequestsPerSession) {
         job.state = State::Skipped;
         job.error = "the session limit of " +
                     std::to_string(config.maxRequestsPerSession) +
@@ -267,10 +293,81 @@ void TileArtQueue::StartWorker() {
   }).detach();
 }
 
+void TileArtQueue::RunDslBatch(std::vector<BatchCell> cells,
+                               Completion *completion) {
+  std::filesystem::path stagingDirectory =
+      workDirectory.empty() ? std::filesystem::path("data/generated/work")
+                            : std::filesystem::path(workDirectory);
+  std::error_code ec;
+  std::filesystem::create_directories(stagingDirectory, ec);
+
+  for (const BatchCell &cell : cells) {
+    const SpriteDSLDocument document = FindSpriteDSLDocument(cell.conventionId);
+    if (!document.found) {
+      std::string looked;
+      for (const std::string &candidate : document.candidates) {
+        looked += "\n    " + candidate;
+      }
+      completion->error =
+          "no sprite document for '" + cell.name + "' (" + cell.conventionId +
+          ".sprite). Write one at the first path below:" + looked;
+      return;
+    }
+
+    PixelDSL::Config compileConfig;
+    // No palette file: the compiler's report is not used here, and reading 128
+    // colours per compile would be work for a number nobody sees in a batch.
+    compileConfig.palettePath.clear();
+    const PixelDSL::Result result =
+        PixelDSL::CompileFile(document.path, compileConfig);
+    if (!result.ok) {
+      std::string reason = "refused by the compiler";
+      for (const PixelDSL::Diagnostic &diagnostic : result.diagnostics) {
+        if (diagnostic.severity != PixelDSL::Severity::Error) continue;
+        reason = "line " + std::to_string(diagnostic.line) + ": " +
+                 diagnostic.message;
+        break;
+      }
+      completion->error = "sprite document " + document.path + " was " + reason;
+      return;
+    }
+
+    // The first frame is the sprite. A multi-frame document is a variant family
+    // (growth stages), and wiring a variant to its own template is separate work --
+    // naming it in the failure would be misleading when it is not a failure, so the
+    // batch simply takes the first.
+    const PixelDSL::Frame &frame = result.frames.front();
+    const std::filesystem::path staging =
+        stagingDirectory / (cell.conventionId + ".png");
+    if (!PixelDSL::WritePng(frame, staging.string())) {
+      completion->error = "could not write the compiled sprite to " +
+                          staging.string();
+      return;
+    }
+
+    // Placement, not a second copy of the rules: it refuses to write into the art
+    // pack, which is the one thing an agent-authored sprite must never do.
+    const TileArt::Target target = TileArt::PlanFor({cell.kind, cell.name});
+    const TileArt::CopyResult placed = TileArt::PlaceSprite(target, staging.string());
+    if (!placed.ok) {
+      completion->error = "could not place " + cell.name + ": " + placed.error;
+      return;
+    }
+  }
+  completion->ok = true;
+}
+
 void TileArtQueue::RunBatch(std::vector<BatchCell> cells) {
   Completion completion;
   for (const BatchCell &cell : cells) {
     completion.tiles.push_back(cell.name);
+  }
+
+  if (config.source == "dsl") {
+    RunDslBatch(cells, &completion);
+    std::lock_guard<std::mutex> lock(pendingMutex);
+    pending.push_back(std::move(completion));
+    return;
   }
 
   std::error_code ec;
