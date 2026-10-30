@@ -193,6 +193,32 @@ inline std::string ExtractThinking(const std::string &raw) {
   return text.substr(first, last - first + 1);
 }
 
+// Thought extraction with a fallback for models that ignore <think> tags. The
+// latest logs showed phi4-mini writing a prose "THINK:" block and then JSON; the
+// tagged extractor returned empty, so the debug window had nothing to show after
+// streaming ended. This keeps only the prose before the JSON/code fence.
+inline std::string ExtractThought(const std::string &raw) {
+  const std::string tagged = ExtractThinking(raw);
+  if (!tagged.empty()) return tagged;
+
+  std::string text = raw;
+  const std::size_t fence = text.find("```");
+  if (fence != std::string::npos) text.resize(fence);
+  const std::size_t brace = text.find('{');
+  if (brace != std::string::npos) text.resize(brace);
+  const std::size_t first = text.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return std::string();
+  const std::size_t last = text.find_last_not_of(" \t\r\n");
+  text = text.substr(first, last - first + 1);
+  // Strip a leading "THINK:" heading if the model wrote one.
+  if (text.rfind("THINK:", 0) == 0) {
+    text.erase(0, 6);
+    const std::size_t content = text.find_first_not_of(" \t\r\n");
+    text = content == std::string::npos ? std::string() : text.substr(content);
+  }
+  return text;
+}
+
 // Model output is prose with a JSON island more often than it is a JSON
 // document. Remove <think> blocks and code fences, then take the outermost
 // braces. An invalid reply is a parse error, not a silent empty plan.

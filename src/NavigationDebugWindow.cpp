@@ -834,6 +834,29 @@ void NavigationDebugWindow::Draw() {
         DrawTextBlock("Streaming", state->liveThought, 240.0f);
       }
 
+      // The live block disappears when the request completes. Keep a persistent
+      // latest-thought block above the graph so the Overview always shows what the
+      // navigator just thought, even if the response did not use <think> tags.
+      ImGui::SeparatorText("Latest navigator thought");
+      if (state->latestThought.empty()) {
+        ImGui::TextDisabled("(no thought captured yet)");
+      } else {
+        DrawTextBlock("Latest thought", state->latestThought, 180.0f);
+      }
+
+      // The exact STATE block the latest decision saw. It contains YOU ARE,
+      // GOAL, ACTIONS, OBJECT TARGETS and OBJECTS SEEN; the observation/map are
+      // intentionally separate. Keeping the raw block avoids the debug view
+      // drifting from the prompt's actual action vocabulary.
+      ImGui::SeparatorText("Latest decision context");
+      if (state->pilotState.empty()) {
+        ImGui::TextDisabled("(no decision state captured yet)");
+      } else {
+        ImGui::TextDisabled(
+            "The STATE block given to the navigator for the latest decision.");
+        DrawTextBlock("Navigator decision state", state->pilotState, 300.0f);
+      }
+
       ImGui::SeparatorText("Navigator thoughts");
       if (state->strategistThoughts.empty()) {
         ImGui::TextDisabled("(no strategist call yet)");

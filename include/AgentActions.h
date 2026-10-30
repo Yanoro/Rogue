@@ -2272,6 +2272,13 @@ public:
           }
           debug->strategistThoughts = singleThoughts;
           debug->liveThought = debugLiveThought;
+          debug->latestThought =
+              !singleThoughts.empty() ? singleThoughts.back().thought
+                                      : std::string();
+          if (debug->latestThought.empty() && !debugResponse.empty()) {
+            debug->latestThought =
+                NavigationStrategist::ExtractThought(debugResponse);
+          }
           debug->fullContext = RenderContext(singleMessages);
           ++debug->snapshotVersion;
           debug->s1Responses.clear();
@@ -2618,7 +2625,7 @@ public:
             singleThoughts.back().attempts.push_back(std::move(attempt));
           }
           if (navigatorLog) navigatorLog->Response(text);
-          const std::string think = NavigationStrategist::ExtractThinking(text);
+          const std::string think = NavigationStrategist::ExtractThought(text);
           const std::string jsonText = NavigationStrategist::StripToJson(text);
           if (jsonText.empty()) {
             return RetrySingle(

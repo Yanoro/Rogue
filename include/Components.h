@@ -879,6 +879,9 @@ struct NavigationDebugState {
   // Updated on the main thread as the stream advances, without republishing the
   // whole snapshot (which would re-run the graph cache every token).
   std::string liveThought;
+  // The latest accepted (or, when none was accepted, the latest raw) thought
+  // text, kept after the stream ends so the Overview always has something to show.
+  std::string latestThought;
   // The single navigator's whole conversation, system prompt first. Filled by
   // the single navigator's snapshot; empty for the two-context navigator, whose
   // "context" is the observation/brief pair shown separately.

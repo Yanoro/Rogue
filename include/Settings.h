@@ -291,11 +291,10 @@ struct GameSettings {
   // pilot from before this experiment.
   struct NavigationSingleSection {
     int maxTokens = 500;
-    // Context window requested from Ollama (`options.num_ctx`). The service
-    // default here has been 4096, which is smaller than the system prompt plus a
-    // decision state plus a retry; the model then loses the schema at the start of
-    // the prompt and rambles. 8192 fits the current prompt and a short history.
-    int contextTokens = 8192;
+    // Context window requested from Ollama (`options.num_ctx`). 8192 allocates a
+    // 1 GiB KV cache on phi4-mini and, with the model plus compute buffers,
+    // overflows a 6 GB RTX 3050. 4096 fits the reduced prompt and a 2-turn history.
+    int contextTokens = 4096;
     float timeoutSeconds = 60.0f;
     bool fallbackToTwo = true;
     int mapRadius = 6;
