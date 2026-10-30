@@ -1,0 +1,859 @@
+{
+  "model": "typesafe/jev-router",
+  "variants": "f_human",
+  "zoom": 6,
+  "shuffle_seed": null,
+  "results": [
+    {
+      "prop": "barrel",
+      "stems": [
+        "h_barrel_0",
+        "h_barrel_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "reject",
+            "recognisable": 6,
+            "clean": 0
+          },
+          {
+            "cell": 6,
+            "verdict": "usable",
+            "recognisable": 9,
+            "clean": 8
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 696,
+        "completion_tokens": 1702,
+        "total_tokens": 2398,
+        "cost": 0.0022512,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0022512,
+          "upstream_inference_prompt_cost": 0.0002088,
+          "upstream_inference_completions_cost": 0.0020424
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1625,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_barrel_0": {
+          "cell": 5,
+          "verdict": "reject",
+          "recognisable": 6,
+          "clean": 0
+        },
+        "h_barrel_2": {
+          "cell": 6,
+          "verdict": "usable",
+          "recognisable": 9,
+          "clean": 8
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "bucket",
+      "stems": [
+        "h_bucket_0",
+        "h_bucket_1",
+        "h_bucket_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "any_acceptable": true,
+        "reference_beats_all": true,
+        "verdicts": [
+          {
+            "cell": 5,
+            "clean": 3,
+            "recognisable": 6,
+            "verdict": "reject"
+          },
+          {
+            "cell": 6,
+            "clean": 9,
+            "recognisable": 6,
+            "verdict": "usable"
+          },
+          {
+            "cell": 7,
+            "clean": 9,
+            "recognisable": 8,
+            "verdict": "keep"
+          }
+        ]
+      },
+      "usage": {
+        "prompt_tokens": 964,
+        "completion_tokens": 342,
+        "total_tokens": 1306,
+        "cost": 0.0003156,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003156,
+          "upstream_inference_prompt_cost": 0.0001446,
+          "upstream_inference_completions_cost": 0.000171
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 258,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_bucket_0": {
+          "cell": 5,
+          "clean": 3,
+          "recognisable": 6,
+          "verdict": "reject"
+        },
+        "h_bucket_1": {
+          "cell": 6,
+          "clean": 9,
+          "recognisable": 6,
+          "verdict": "usable"
+        },
+        "h_bucket_2": {
+          "cell": 7,
+          "clean": 9,
+          "recognisable": 8,
+          "verdict": "keep"
+        }
+      },
+      "any_acceptable": true,
+      "keep_stems": [
+        "h_bucket_2"
+      ],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "cart",
+      "stems": [
+        "h_cart_0",
+        "h_cart_1",
+        "h_cart_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "reject",
+            "recognisable": 4,
+            "clean": 3
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 3,
+            "clean": 2
+          },
+          {
+            "cell": 7,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 5
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 964,
+        "completion_tokens": 284,
+        "total_tokens": 1248,
+        "cost": 0.0002866,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0002866,
+          "upstream_inference_prompt_cost": 0.0001446,
+          "upstream_inference_completions_cost": 0.000142
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 184,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_cart_0": {
+          "cell": 5,
+          "verdict": "reject",
+          "recognisable": 4,
+          "clean": 3
+        },
+        "h_cart_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 3,
+          "clean": 2
+        },
+        "h_cart_2": {
+          "cell": 7,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 5
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "crate",
+      "stems": [
+        "h_crate_0",
+        "h_crate_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "usable",
+            "recognisable": 8,
+            "clean": 4
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 6,
+            "clean": 3
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 964,
+        "completion_tokens": 289,
+        "total_tokens": 1253,
+        "cost": 0.0002891,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0002891,
+          "upstream_inference_prompt_cost": 0.0001446,
+          "upstream_inference_completions_cost": 0.0001445
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 215,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_crate_0": {
+          "cell": 5,
+          "verdict": "usable",
+          "recognisable": 8,
+          "clean": 4
+        },
+        "h_crate_2": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 6,
+          "clean": 3
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "hay_bale",
+      "stems": [
+        "h_hay_bale_0",
+        "h_hay_bale_1",
+        "h_hay_bale_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "reject",
+            "recognisable": 6,
+            "clean": 1
+          },
+          {
+            "cell": 6,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 8
+          },
+          {
+            "cell": 7,
+            "verdict": "keep",
+            "recognisable": 9,
+            "clean": 9
+          }
+        ],
+        "any_acceptable": true,
+        "reference_beats_all": false
+      },
+      "usage": {
+        "prompt_tokens": 704,
+        "completion_tokens": 1666,
+        "total_tokens": 2370,
+        "cost": 0.0022104,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0022104,
+          "upstream_inference_prompt_cost": 0.0002112,
+          "upstream_inference_completions_cost": 0.0019992
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1563,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_hay_bale_0": {
+          "cell": 5,
+          "verdict": "reject",
+          "recognisable": 6,
+          "clean": 1
+        },
+        "h_hay_bale_1": {
+          "cell": 6,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 8
+        },
+        "h_hay_bale_2": {
+          "cell": 7,
+          "verdict": "keep",
+          "recognisable": 9,
+          "clean": 9
+        }
+      },
+      "any_acceptable": true,
+      "keep_stems": [
+        "h_hay_bale_2"
+      ],
+      "reference_beats_all": false
+    },
+    {
+      "prop": "lamp_post",
+      "stems": [
+        "h_lamp_post_0",
+        "h_lamp_post_1",
+        "h_lamp_post_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "usable",
+            "recognisable": 8,
+            "clean": 7
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 5,
+            "clean": 3
+          },
+          {
+            "cell": 7,
+            "verdict": "reject",
+            "recognisable": 7,
+            "clean": 4
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 968,
+        "completion_tokens": 304,
+        "total_tokens": 1272,
+        "cost": 0.0002972,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0002972,
+          "upstream_inference_prompt_cost": 0.0001452,
+          "upstream_inference_completions_cost": 0.000152
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 204,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_lamp_post_0": {
+          "cell": 5,
+          "verdict": "usable",
+          "recognisable": 8,
+          "clean": 7
+        },
+        "h_lamp_post_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 5,
+          "clean": 3
+        },
+        "h_lamp_post_2": {
+          "cell": 7,
+          "verdict": "reject",
+          "recognisable": 7,
+          "clean": 4
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "signpost",
+      "stems": [
+        "h_signpost_0",
+        "h_signpost_1",
+        "h_signpost_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "usable",
+            "recognisable": 6,
+            "clean": 3
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 3,
+            "clean": 2
+          },
+          {
+            "cell": 7,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 6
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 700,
+        "completion_tokens": 1332,
+        "total_tokens": 2032,
+        "cost": 0.0018084,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0018084,
+          "upstream_inference_prompt_cost": 0.00021,
+          "upstream_inference_completions_cost": 0.0015984
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1229,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_signpost_0": {
+          "cell": 5,
+          "verdict": "usable",
+          "recognisable": 6,
+          "clean": 3
+        },
+        "h_signpost_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 3,
+          "clean": 2
+        },
+        "h_signpost_2": {
+          "cell": 7,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 6
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "water_trough",
+      "stems": [
+        "h_water_trough_0",
+        "h_water_trough_1",
+        "h_water_trough_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 5
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 6,
+            "clean": 3
+          },
+          {
+            "cell": 7,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 6
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 972,
+        "completion_tokens": 360,
+        "total_tokens": 1332,
+        "cost": 0.0003258,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003258,
+          "upstream_inference_prompt_cost": 0.0001458,
+          "upstream_inference_completions_cost": 0.00018
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 260,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_water_trough_0": {
+          "cell": 5,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 5
+        },
+        "h_water_trough_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 6,
+          "clean": 3
+        },
+        "h_water_trough_2": {
+          "cell": 7,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 6
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "well",
+      "stems": [
+        "h_well_0",
+        "h_well_1",
+        "h_well_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "keep",
+            "recognisable": 8,
+            "clean": 9
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 3,
+            "clean": 4
+          },
+          {
+            "cell": 7,
+            "verdict": "usable",
+            "recognisable": 6,
+            "clean": 5
+          }
+        ],
+        "any_acceptable": true,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 964,
+        "completion_tokens": 331,
+        "total_tokens": 1295,
+        "cost": 0.0003101,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003101,
+          "upstream_inference_prompt_cost": 0.0001446,
+          "upstream_inference_completions_cost": 0.0001655
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 231,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_well_0": {
+          "cell": 5,
+          "verdict": "keep",
+          "recognisable": 8,
+          "clean": 9
+        },
+        "h_well_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 3,
+          "clean": 4
+        },
+        "h_well_2": {
+          "cell": 7,
+          "verdict": "usable",
+          "recognisable": 6,
+          "clean": 5
+        }
+      },
+      "any_acceptable": true,
+      "keep_stems": [
+        "h_well_0"
+      ],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "wheelbarrow",
+      "stems": [
+        "h_wheelbarrow_0",
+        "h_wheelbarrow_1",
+        "h_wheelbarrow_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "reject",
+            "recognisable": 5,
+            "clean": 1
+          },
+          {
+            "cell": 6,
+            "verdict": "reject",
+            "recognisable": 6,
+            "clean": 2
+          },
+          {
+            "cell": 7,
+            "verdict": "reject",
+            "recognisable": 3,
+            "clean": 4
+          }
+        ],
+        "any_acceptable": false,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 972,
+        "completion_tokens": 850,
+        "total_tokens": 1822,
+        "cost": 0.000838,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.000838,
+          "upstream_inference_prompt_cost": 0.000243,
+          "upstream_inference_completions_cost": 0.000595
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 755,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_wheelbarrow_0": {
+          "cell": 5,
+          "verdict": "reject",
+          "recognisable": 5,
+          "clean": 1
+        },
+        "h_wheelbarrow_1": {
+          "cell": 6,
+          "verdict": "reject",
+          "recognisable": 6,
+          "clean": 2
+        },
+        "h_wheelbarrow_2": {
+          "cell": 7,
+          "verdict": "reject",
+          "recognisable": 3,
+          "clean": 4
+        }
+      },
+      "any_acceptable": false,
+      "keep_stems": [],
+      "reference_beats_all": true
+    },
+    {
+      "prop": "wood_pile",
+      "stems": [
+        "h_wood_pile_0",
+        "h_wood_pile_1",
+        "h_wood_pile_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "verdicts": [
+          {
+            "cell": 5,
+            "verdict": "keep",
+            "recognisable": 9,
+            "clean": 9
+          },
+          {
+            "cell": 6,
+            "verdict": "usable",
+            "recognisable": 8,
+            "clean": 9
+          },
+          {
+            "cell": 7,
+            "verdict": "usable",
+            "recognisable": 7,
+            "clean": 8
+          }
+        ],
+        "any_acceptable": true,
+        "reference_beats_all": true
+      },
+      "usage": {
+        "prompt_tokens": 972,
+        "completion_tokens": 343,
+        "total_tokens": 1315,
+        "cost": 0.0003173,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003173,
+          "upstream_inference_prompt_cost": 0.0001458,
+          "upstream_inference_completions_cost": 0.0001715
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 243,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "verdicts_by_stem": {
+        "h_wood_pile_0": {
+          "cell": 5,
+          "verdict": "keep",
+          "recognisable": 9,
+          "clean": 9
+        },
+        "h_wood_pile_1": {
+          "cell": 6,
+          "verdict": "usable",
+          "recognisable": 8,
+          "clean": 9
+        },
+        "h_wood_pile_2": {
+          "cell": 7,
+          "verdict": "usable",
+          "recognisable": 7,
+          "clean": 8
+        }
+      },
+      "any_acceptable": true,
+      "keep_stems": [
+        "h_wood_pile_0"
+      ],
+      "reference_beats_all": true
+    }
+  ]
+}

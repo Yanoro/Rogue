@@ -141,6 +141,16 @@ struct SpriteDocumentBrief {
   std::string name;
   std::string description;
   bool blocksTile = false;
+  // What the art around the sprite looks like, as prose. Empty when nothing looked:
+  // a standalone request from the window has no building to read, and an empty field
+  // must stay a supported state rather than a prompt that says "the surroundings are:
+  // " and stops.
+  //
+  // Filled by whatever saw the building -- today the crop the designer's expansion
+  // renders and a vision pass over it (BlueprintSnapshot + StyleDescriber). It is
+  // prose rather than a struct because the only consumer is the prompt, and a struct
+  // here would be a second vocabulary for style that the DSL's ramps already are.
+  std::string surroundings;
 };
 
 // The system prompt for the document turn. `%SPRITE_DSL%` is substituted from

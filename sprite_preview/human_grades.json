@@ -1,0 +1,36 @@
+{
+  "_comment": [
+    "The owner's grading of judge_sheet.png (the f_final256 variants, 1-indexed",
+    "exactly as numbered on that sheet). This is the reference judgement for",
+    "sprite_eval.py; it replaces curated.json, which only ever recorded my own",
+    "one-pass picks and was biased to index 0 in 9 of 11 props.",
+    "",
+    "grade values: good (would ship), ok (usable but flawed), bad (do not ship).",
+    "A prop with best=null means every variant was bad."
+  ],
+  "source": "owner, reviewing judge_sheet.png at 4x",
+  "grades": {
+    "barrel":       {"best": 1, "grades": {"1": "ok",   "2": "bad", "3": "bad"},
+                     "note": "1 is best but has a wall and extra stuff attached; 2 and 3 do not look like barrels"},
+    "bucket":       {"best": 2, "grades": {"1": "bad",  "2": "ok",  "3": "bad"},
+                     "note": "2 is best of three, but all three are bad"},
+    "cart":         {"best": 1, "grades": {"1": "good", "2": "bad", "3": "bad"},
+                     "note": "1 genuinely good; 3 and 2 kinda bad"},
+    "crate":        {"best": 2, "grades": {"1": "bad",  "2": "good","3": "good"},
+                     "note": "2 and 3 really good, 1 slightly bad"},
+    "hay_bale":     {"best": 3, "grades": {"1": "ok",   "2": "bad", "3": "good"},
+                     "note": "3 good, 1 ok, 2 bad"},
+    "lamp_post":    {"best": 3, "grades": {"1": "bad",  "2": "bad", "3": "good"},
+                     "note": "3 best by far"},
+    "signpost":     {"best": 2, "grades": {"1": "ok",   "2": "good","3": "bad"},
+                     "note": "2 good, 1 ok, 3 sucks"},
+    "water_trough": {"best": null,"grades": {"1": "bad",  "2": "bad", "3": "bad"},
+                     "note": "all three look like baths"},
+    "well":         {"best": null,"grades": {"1": "bad",  "2": "bad", "3": "bad"},
+                     "note": "all bad"},
+    "wheelbarrow":  {"best": null,"grades": {"1": "bad",  "2": "bad", "3": "bad"},
+                     "note": "all bad"},
+    "wood_pile":    {"best": null,"grades": {"1": "bad",  "2": "bad", "3": "bad"},
+                     "note": "all bad"}
+  }
+}

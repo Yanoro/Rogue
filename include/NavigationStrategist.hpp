@@ -1107,7 +1107,9 @@ inline std::string BuildStrategistUserPrompt(
 // One main-model context holds the whole navigation: the map, graph, plan, route
 // and previous results. This prompt is intentionally richer than the pilot's
 // one-step prompt: the model is the strategist and the pilot at once.
-inline std::string BuildSingleSystemPrompt(bool concise = false) {
+inline std::string BuildSingleSystemPrompt(bool concise = false,
+                                            bool includeGraph = true,
+                                            bool includeMap = true) {
   std::string prompt = R"(You are the navigator for a character in a tile-based game. You are the
 only navigation model: there is no separate strategist or pilot. You see only
 what the character has observed in SpatialMemory; you have no map, no authored
@@ -1180,6 +1182,20 @@ Rules:
 - Reply concisely. The JSON is authoritative; no prose outside the think block
   and the JSON.
 )";
+  if (!includeGraph) {
+    detail::ReplaceAll(
+        prompt, "the observed JSON grid and minimal place/object graph.",
+        "the observed JSON grid.");
+  }
+  if (!includeMap) {
+    detail::ReplaceAll(
+        prompt,
+        "- MAP: a north-up ASCII map; @ is you, digits are candidate target cells,\n"
+        "  letters are semantic-place initials; the legend is on the MAP line.\n",
+        "");
+    detail::ReplaceAll(prompt, "the map is too", "the state is too");
+    detail::ReplaceAll(prompt, "If the map changed", "If the state changed");
+  }
   if (concise) {
     detail::ReplaceAll(prompt,
                        "short <think>...</think> block (2-6 sentences)",
@@ -1200,7 +1216,8 @@ inline std::string BuildSingleUserPrompt(
     const nlohmann::json &observation, const std::string &map,
     const std::string &state, const Plan *plan,
     const std::vector<std::string> &route, const std::string &lastResult,
-    int calls, int maxCalls, bool compactJson = true) {
+    int calls, int maxCalls, bool compactJson = true,
+    bool includeMap = true) {
   std::ostringstream out;
   out << "GOAL: " << goal << "\n";
   if (!taskDigest.empty()) {
@@ -1208,7 +1225,7 @@ inline std::string BuildSingleUserPrompt(
   }
   out << "\nOBSERVATION (observed only):\n"
       << (compactJson ? observation.dump() : observation.dump(2)) << "\n";
-  out << "\n" << map << "\n";
+  if (includeMap) out << "\n" << map << "\n";
   out << "\n" << state << "\n";
   out << "\nPREVIOUS PLAN:\n";
   if (plan != nullptr) {

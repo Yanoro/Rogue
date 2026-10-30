@@ -65,6 +65,7 @@
     "agent": "single",
     "single": {
       "maxTokens": 500,
+      "contextTokens": 8192,
       "timeoutSeconds": 60,
       "fallbackToTwo": false,
       "mapRadius": 6,
@@ -79,9 +80,11 @@
       "dedicatedBackend": true,
       "disableReasoning": true,
       "compactJson": true,
-      "historyTurns": 3,
+      "historyTurns": 2,
       "concise": true,
       "objectSummary": true,
+      "includeGraph": false,
+      "includeMap": false,
       "maxObjectGroups": 6,
       "maxGroupDetails": 8
     }

@@ -2399,7 +2399,9 @@ public:
                   Settings().navigation.strategist.observation.localGridRadius,
                   Settings().navigation.strategist.observation.maxGraphNodes,
                   Settings().navigation.strategist.observation.maxGraphEdges);
-          if (cfg.objectSummary) {
+          if (!cfg.includeGraph) {
+            observation.erase("graph");
+          } else if (cfg.objectSummary) {
             NavigationStrategist::StripObjectGraph(observation);
           }
           std::string state = NavigationPlan::BuildState(
@@ -2411,8 +2413,11 @@ public:
                 objectGroups, static_cast<std::size_t>(cfg.maxObjectGroups),
                 *here);
           }
-          const std::string map = NavigationStrategist::BuildPilotMap(
-              *memory, *here, facingValue, candidates, cfg.mapRadius);
+          std::string map;
+          if (cfg.includeMap) {
+            map = NavigationStrategist::BuildPilotMap(
+                *memory, *here, facingValue, candidates, cfg.mapRadius);
+          }
 
           std::string taskDigest;
           if (const TaskList *tasks = entity.get<TaskList>()) {
@@ -2420,13 +2425,14 @@ public:
           }
 
           const std::string system =
-              NavigationStrategist::BuildSingleSystemPrompt(cfg.concise);
+              NavigationStrategist::BuildSingleSystemPrompt(
+                  cfg.concise, cfg.includeGraph, cfg.includeMap);
           const int maxCalls = 60;
           const std::string user =
               NavigationStrategist::BuildSingleUserPrompt(
                   goal, taskDigest, observation, map, state,
                   strategyReady ? &strategy : nullptr, route, lastResult,
-                  singleCalls, maxCalls, cfg.compactJson);
+                  singleCalls, maxCalls, cfg.compactJson, cfg.includeMap);
           if (!singleSystemAdded) {
             singleMessages.push_back({"system", system});
             singleSystemAdded = true;
@@ -2904,6 +2910,9 @@ public:
                                  const std::string &error,
                                  const std::string &detail = "") {
           ++singleErrorAttempts;
+          // Keep the rejected assistant reply in the retry context: seeing the
+          // exact output that failed is what lets the agent learn where it went
+          // wrong. The attempt is also retained in the debug record.
           if (!singleThoughts.empty()) {
             singleThoughts.back().failed = true;
             singleThoughts.back().error = error;

@@ -1,0 +1,179 @@
+{
+  "barrel": [
+    {
+      "label": "1",
+      "stem": "h_barrel_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_barrel_2",
+      "original_index": 2
+    }
+  ],
+  "bucket": [
+    {
+      "label": "1",
+      "stem": "h_bucket_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_bucket_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_bucket_2",
+      "original_index": 2
+    }
+  ],
+  "cart": [
+    {
+      "label": "1",
+      "stem": "h_cart_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_cart_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_cart_2",
+      "original_index": 2
+    }
+  ],
+  "crate": [
+    {
+      "label": "1",
+      "stem": "h_crate_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_crate_2",
+      "original_index": 2
+    }
+  ],
+  "hay_bale": [
+    {
+      "label": "1",
+      "stem": "h_hay_bale_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_hay_bale_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_hay_bale_2",
+      "original_index": 2
+    }
+  ],
+  "lamp_post": [
+    {
+      "label": "1",
+      "stem": "h_lamp_post_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_lamp_post_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_lamp_post_2",
+      "original_index": 2
+    }
+  ],
+  "signpost": [
+    {
+      "label": "1",
+      "stem": "h_signpost_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_signpost_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_signpost_2",
+      "original_index": 2
+    }
+  ],
+  "water_trough": [
+    {
+      "label": "1",
+      "stem": "h_water_trough_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_water_trough_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_water_trough_2",
+      "original_index": 2
+    }
+  ],
+  "well": [
+    {
+      "label": "1",
+      "stem": "h_well_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_well_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_well_2",
+      "original_index": 2
+    }
+  ],
+  "wheelbarrow": [
+    {
+      "label": "1",
+      "stem": "h_wheelbarrow_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_wheelbarrow_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_wheelbarrow_2",
+      "original_index": 2
+    }
+  ],
+  "wood_pile": [
+    {
+      "label": "1",
+      "stem": "h_wood_pile_0",
+      "original_index": 0
+    },
+    {
+      "label": "2",
+      "stem": "h_wood_pile_1",
+      "original_index": 1
+    },
+    {
+      "label": "3",
+      "stem": "h_wood_pile_2",
+      "original_index": 2
+    }
+  ]
+}

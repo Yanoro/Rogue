@@ -1,0 +1,278 @@
+{
+  "base_seed": 91500,
+  "params": {
+    "checkpoint": "aziibpixelmix_v10.safetensors",
+    "lora": null,
+    "trigger": "pixel art, pixel world",
+    "lora_scale": 0.85,
+    "steps": 28,
+    "cfg": 7.0,
+    "size": 256
+  },
+  "images": [
+    {
+      "prop": "barrel",
+      "variant": 0,
+      "seed": 154019,
+      "subject": "wooden barrel standing upright, curved iron bands around it, oak brown staves, viewed slightly from above",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/barrel_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/barrel_0.png"
+    },
+    {
+      "prop": "barrel",
+      "variant": 1,
+      "seed": 154019,
+      "subject": "wooden barrel standing upright, curved iron bands around it, oak brown staves, viewed slightly from above",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/barrel_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/barrel_1.png"
+    },
+    {
+      "prop": "barrel",
+      "variant": 2,
+      "seed": 154019,
+      "subject": "wooden barrel standing upright, curved iron bands around it, oak brown staves, viewed slightly from above",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/barrel_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/barrel_2.png"
+    },
+    {
+      "prop": "bucket",
+      "variant": 0,
+      "seed": 171154,
+      "subject": "wooden water bucket with a metal handle, iron hoops, seen from a three-quarter angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/bucket_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/bucket_0.png"
+    },
+    {
+      "prop": "bucket",
+      "variant": 1,
+      "seed": 171154,
+      "subject": "wooden water bucket with a metal handle, iron hoops, seen from a three-quarter angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/bucket_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/bucket_1.png"
+    },
+    {
+      "prop": "bucket",
+      "variant": 2,
+      "seed": 171154,
+      "subject": "wooden water bucket with a metal handle, iron hoops, seen from a three-quarter angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/bucket_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/bucket_2.png"
+    },
+    {
+      "prop": "cart",
+      "variant": 0,
+      "seed": 158243,
+      "subject": "wooden hand cart, two large spoked wheels, flat plank bed, two handles pointing forward",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/cart_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/cart_0.png"
+    },
+    {
+      "prop": "cart",
+      "variant": 1,
+      "seed": 158243,
+      "subject": "wooden hand cart, two large spoked wheels, flat plank bed, two handles pointing forward",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/cart_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/cart_1.png"
+    },
+    {
+      "prop": "cart",
+      "variant": 2,
+      "seed": 158243,
+      "subject": "wooden hand cart, two large spoked wheels, flat plank bed, two handles pointing forward",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/cart_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/cart_2.png"
+    },
+    {
+      "prop": "crate",
+      "variant": 0,
+      "seed": 130865,
+      "subject": "wooden shipping crate, square, plank sides with darker diagonal brace boards, seen at a slight angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/crate_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/crate_0.png"
+    },
+    {
+      "prop": "crate",
+      "variant": 1,
+      "seed": 130865,
+      "subject": "wooden shipping crate, square, plank sides with darker diagonal brace boards, seen at a slight angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/crate_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/crate_1.png"
+    },
+    {
+      "prop": "crate",
+      "variant": 2,
+      "seed": 130865,
+      "subject": "wooden shipping crate, square, plank sides with darker diagonal brace boards, seen at a slight angle",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/crate_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/crate_2.png"
+    },
+    {
+      "prop": "hay_bale",
+      "variant": 0,
+      "seed": 189778,
+      "subject": "a rectangular bale of golden hay, bound with two strands of twine, dry straw texture",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/hay_bale_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/hay_bale_0.png"
+    },
+    {
+      "prop": "hay_bale",
+      "variant": 1,
+      "seed": 189778,
+      "subject": "a rectangular bale of golden hay, bound with two strands of twine, dry straw texture",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/hay_bale_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/hay_bale_1.png"
+    },
+    {
+      "prop": "hay_bale",
+      "variant": 2,
+      "seed": 189778,
+      "subject": "a rectangular bale of golden hay, bound with two strands of twine, dry straw texture",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/hay_bale_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/hay_bale_2.png"
+    },
+    {
+      "prop": "lamp_post",
+      "variant": 0,
+      "seed": 104672,
+      "subject": "iron lamp post, tall thin dark metal pole, a small glass lantern box with a warm yellow glow at the top",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/lamp_post_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/lamp_post_0.png"
+    },
+    {
+      "prop": "lamp_post",
+      "variant": 1,
+      "seed": 104672,
+      "subject": "iron lamp post, tall thin dark metal pole, a small glass lantern box with a warm yellow glow at the top",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/lamp_post_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/lamp_post_1.png"
+    },
+    {
+      "prop": "lamp_post",
+      "variant": 2,
+      "seed": 104672,
+      "subject": "iron lamp post, tall thin dark metal pole, a small glass lantern box with a warm yellow glow at the top",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/lamp_post_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/lamp_post_2.png"
+    },
+    {
+      "prop": "signpost",
+      "variant": 0,
+      "seed": 103135,
+      "subject": "wooden signpost, a single post with two arrow-shaped boards pointing in different directions",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/signpost_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/signpost_0.png"
+    },
+    {
+      "prop": "signpost",
+      "variant": 1,
+      "seed": 103135,
+      "subject": "wooden signpost, a single post with two arrow-shaped boards pointing in different directions",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/signpost_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/signpost_1.png"
+    },
+    {
+      "prop": "signpost",
+      "variant": 2,
+      "seed": 103135,
+      "subject": "wooden signpost, a single post with two arrow-shaped boards pointing in different directions",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/signpost_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/signpost_2.png"
+    },
+    {
+      "prop": "water_trough",
+      "variant": 0,
+      "seed": 142646,
+      "subject": "hollowed wooden water trough, rectangular, filled with blue water, dark wood sides",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/water_trough_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/water_trough_0.png"
+    },
+    {
+      "prop": "water_trough",
+      "variant": 1,
+      "seed": 142646,
+      "subject": "hollowed wooden water trough, rectangular, filled with blue water, dark wood sides",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/water_trough_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/water_trough_1.png"
+    },
+    {
+      "prop": "water_trough",
+      "variant": 2,
+      "seed": 142646,
+      "subject": "hollowed wooden water trough, rectangular, filled with blue water, dark wood sides",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/water_trough_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/water_trough_2.png"
+    },
+    {
+      "prop": "well",
+      "variant": 0,
+      "seed": 169110,
+      "subject": "stone wishing well, round grey masonry rim, two upright posts and a small peaked wooden roof over it, a rope and bucket",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/well_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/well_0.png"
+    },
+    {
+      "prop": "well",
+      "variant": 1,
+      "seed": 169110,
+      "subject": "stone wishing well, round grey masonry rim, two upright posts and a small peaked wooden roof over it, a rope and bucket",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/well_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/well_1.png"
+    },
+    {
+      "prop": "well",
+      "variant": 2,
+      "seed": 169110,
+      "subject": "stone wishing well, round grey masonry rim, two upright posts and a small peaked wooden roof over it, a rope and bucket",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/well_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/well_2.png"
+    },
+    {
+      "prop": "wheelbarrow",
+      "variant": 0,
+      "seed": 156251,
+      "subject": "wooden wheelbarrow, single small front wheel, deep plank tray, two handles with legs at the back",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wheelbarrow_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wheelbarrow_0.png"
+    },
+    {
+      "prop": "wheelbarrow",
+      "variant": 1,
+      "seed": 156251,
+      "subject": "wooden wheelbarrow, single small front wheel, deep plank tray, two handles with legs at the back",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wheelbarrow_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wheelbarrow_1.png"
+    },
+    {
+      "prop": "wheelbarrow",
+      "variant": 2,
+      "seed": 156251,
+      "subject": "wooden wheelbarrow, single small front wheel, deep plank tray, two handles with legs at the back",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wheelbarrow_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wheelbarrow_2.png"
+    },
+    {
+      "prop": "wood_pile",
+      "variant": 0,
+      "seed": 118748,
+      "subject": "a stack of chopped firewood logs, round cut ends facing the viewer, arranged in a rough pyramid",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wood_pile_0_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wood_pile_0.png"
+    },
+    {
+      "prop": "wood_pile",
+      "variant": 1,
+      "seed": 118748,
+      "subject": "a stack of chopped firewood logs, round cut ends facing the viewer, arranged in a rough pyramid",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wood_pile_1_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wood_pile_1.png"
+    },
+    {
+      "prop": "wood_pile",
+      "variant": 2,
+      "seed": 118748,
+      "subject": "a stack of chopped firewood logs, round cut ends facing the viewer, arranged in a rough pyramid",
+      "raw": "sprite_preview/comfy_out/human_eval_raw/raw/wood_pile_2_raw.png",
+      "file": "sprite_preview/comfy_out/human_eval_raw/wood_pile_2.png"
+    }
+  ]
+}

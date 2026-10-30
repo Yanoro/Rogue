@@ -1,0 +1,158 @@
+{
+  "base_seed": 33000,
+  "params": {
+    "checkpoint": "aziibpixelmix_v10.safetensors",
+    "lora": null,
+    "trigger": "pixel art, pixel world",
+    "lora_scale": 0.85,
+    "steps": 28,
+    "cfg": 7.0,
+    "size": 128
+  },
+  "images": [
+    {
+      "prop": "barrel",
+      "variant": 0,
+      "seed": 95519,
+      "subject": "wooden barrel standing upright, curved iron bands around it, oak brown staves, viewed slightly from above",
+      "raw": "sprite_preview/comfy_out/q128/raw/barrel_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/barrel_0.png"
+    },
+    {
+      "prop": "barrel",
+      "variant": 1,
+      "seed": 95519,
+      "subject": "wooden barrel standing upright, curved iron bands around it, oak brown staves, viewed slightly from above",
+      "raw": "sprite_preview/comfy_out/q128/raw/barrel_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/barrel_1.png"
+    },
+    {
+      "prop": "well",
+      "variant": 0,
+      "seed": 110610,
+      "subject": "stone wishing well, round grey masonry rim, two upright posts and a small peaked wooden roof over it, a rope and bucket",
+      "raw": "sprite_preview/comfy_out/q128/raw/well_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/well_0.png"
+    },
+    {
+      "prop": "well",
+      "variant": 1,
+      "seed": 110610,
+      "subject": "stone wishing well, round grey masonry rim, two upright posts and a small peaked wooden roof over it, a rope and bucket",
+      "raw": "sprite_preview/comfy_out/q128/raw/well_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/well_1.png"
+    },
+    {
+      "prop": "cart",
+      "variant": 0,
+      "seed": 99743,
+      "subject": "wooden hand cart, two large spoked wheels, flat plank bed, two handles pointing forward",
+      "raw": "sprite_preview/comfy_out/q128/raw/cart_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/cart_0.png"
+    },
+    {
+      "prop": "cart",
+      "variant": 1,
+      "seed": 99743,
+      "subject": "wooden hand cart, two large spoked wheels, flat plank bed, two handles pointing forward",
+      "raw": "sprite_preview/comfy_out/q128/raw/cart_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/cart_1.png"
+    },
+    {
+      "prop": "wheelbarrow",
+      "variant": 0,
+      "seed": 97751,
+      "subject": "wooden wheelbarrow, single small front wheel, deep plank tray, two handles with legs at the back",
+      "raw": "sprite_preview/comfy_out/q128/raw/wheelbarrow_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/wheelbarrow_0.png"
+    },
+    {
+      "prop": "wheelbarrow",
+      "variant": 1,
+      "seed": 97751,
+      "subject": "wooden wheelbarrow, single small front wheel, deep plank tray, two handles with legs at the back",
+      "raw": "sprite_preview/comfy_out/q128/raw/wheelbarrow_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/wheelbarrow_1.png"
+    },
+    {
+      "prop": "water_trough",
+      "variant": 0,
+      "seed": 84146,
+      "subject": "hollowed wooden water trough, rectangular, filled with blue water, dark wood sides",
+      "raw": "sprite_preview/comfy_out/q128/raw/water_trough_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/water_trough_0.png"
+    },
+    {
+      "prop": "water_trough",
+      "variant": 1,
+      "seed": 84146,
+      "subject": "hollowed wooden water trough, rectangular, filled with blue water, dark wood sides",
+      "raw": "sprite_preview/comfy_out/q128/raw/water_trough_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/water_trough_1.png"
+    },
+    {
+      "prop": "wood_pile",
+      "variant": 0,
+      "seed": 60248,
+      "subject": "a stack of chopped firewood logs, round cut ends facing the viewer, arranged in a rough pyramid",
+      "raw": "sprite_preview/comfy_out/q128/raw/wood_pile_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/wood_pile_0.png"
+    },
+    {
+      "prop": "wood_pile",
+      "variant": 1,
+      "seed": 60248,
+      "subject": "a stack of chopped firewood logs, round cut ends facing the viewer, arranged in a rough pyramid",
+      "raw": "sprite_preview/comfy_out/q128/raw/wood_pile_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/wood_pile_1.png"
+    },
+    {
+      "prop": "bucket",
+      "variant": 0,
+      "seed": 112654,
+      "subject": "wooden water bucket with a metal handle, iron hoops, seen from a three-quarter angle",
+      "raw": "sprite_preview/comfy_out/q128/raw/bucket_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/bucket_0.png"
+    },
+    {
+      "prop": "bucket",
+      "variant": 1,
+      "seed": 112654,
+      "subject": "wooden water bucket with a metal handle, iron hoops, seen from a three-quarter angle",
+      "raw": "sprite_preview/comfy_out/q128/raw/bucket_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/bucket_1.png"
+    },
+    {
+      "prop": "signpost",
+      "variant": 0,
+      "seed": 44635,
+      "subject": "wooden signpost, a single post with two arrow-shaped boards pointing in different directions",
+      "raw": "sprite_preview/comfy_out/q128/raw/signpost_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/signpost_0.png"
+    },
+    {
+      "prop": "signpost",
+      "variant": 1,
+      "seed": 44635,
+      "subject": "wooden signpost, a single post with two arrow-shaped boards pointing in different directions",
+      "raw": "sprite_preview/comfy_out/q128/raw/signpost_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/signpost_1.png"
+    },
+    {
+      "prop": "hay_bale",
+      "variant": 0,
+      "seed": 131278,
+      "subject": "a rectangular bale of golden hay, bound with two strands of twine, dry straw texture",
+      "raw": "sprite_preview/comfy_out/q128/raw/hay_bale_0_raw.png",
+      "file": "sprite_preview/comfy_out/q128/hay_bale_0.png"
+    },
+    {
+      "prop": "hay_bale",
+      "variant": 1,
+      "seed": 131278,
+      "subject": "a rectangular bale of golden hay, bound with two strands of twine, dry straw texture",
+      "raw": "sprite_preview/comfy_out/q128/raw/hay_bale_1_raw.png",
+      "file": "sprite_preview/comfy_out/q128/hay_bale_1.png"
+    }
+  ]
+}

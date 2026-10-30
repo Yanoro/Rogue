@@ -291,6 +291,11 @@ struct GameSettings {
   // pilot from before this experiment.
   struct NavigationSingleSection {
     int maxTokens = 500;
+    // Context window requested from Ollama (`options.num_ctx`). The service
+    // default here has been 4096, which is smaller than the system prompt plus a
+    // decision state plus a retry; the model then loses the schema at the start of
+    // the prompt and rambles. 8192 fits the current prompt and a short history.
+    int contextTokens = 8192;
     float timeoutSeconds = 60.0f;
     bool fallbackToTwo = true;
     int mapRadius = 6;
@@ -331,6 +336,12 @@ struct GameSettings {
     // of listing every examine candidate. False restores the old per-instance
     // examine list for A/B.
     bool objectSummary = true;
+    // Include the observation graph in the single prompt. Off for the small
+    // local model: the place graph duplicates what STATE/ACTIONS already say.
+    bool includeGraph = true;
+    // Include the ASCII map and its target list in the single prompt. Off for
+    // the small local model; the candidate actions remain in ACTIONS.
+    bool includeMap = true;
     // Groups shown in the default STATE block. The rest stay available through
     // objects:all and inspect.
     int maxObjectGroups = 6;

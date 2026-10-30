@@ -1,0 +1,1044 @@
+{
+  "model": "typesafe/jev-router",
+  "variants": "f_final256",
+  "zoom": 6,
+  "shuffle_seed": null,
+  "results": [
+    {
+      "prop": "barrel",
+      "stems": [
+        "f_barrel_0",
+        "f_barrel_1",
+        "f_barrel_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 5,
+            "recognisable": 8,
+            "complete": 9,
+            "clean": 5,
+            "style_match": 7
+          },
+          {
+            "cell": 6,
+            "recognisable": 6,
+            "complete": 8,
+            "clean": 4,
+            "style_match": 6
+          },
+          {
+            "cell": 7,
+            "recognisable": 2,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 6
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7
+        ],
+        "best": 5,
+        "worst": 7,
+        "reference_beats_all": true,
+        "notes": "Reference sprites are not barrels; 5 best barrel but has extra stream/background; 6 has odd yellow object; 7 not barrel."
+      },
+      "usage": {
+        "prompt_tokens": 636,
+        "completion_tokens": 6580,
+        "total_tokens": 7216,
+        "cost": 0.007936272,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 512,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.007936272,
+          "upstream_inference_prompt_cost": 4.0272e-05,
+          "upstream_inference_completions_cost": 0.007896
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 6280,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_barrel_0",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "bucket",
+      "stems": [
+        "f_bucket_0",
+        "f_bucket_1",
+        "f_bucket_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 2,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 3,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 4,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 5,
+            "recognisable": 4,
+            "complete": 4,
+            "clean": 6,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 9
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 4,
+            "clean": 3,
+            "style_match": 6
+          }
+        ],
+        "ranking": [
+          6,
+          7,
+          5
+        ],
+        "best": 6,
+        "worst": 5,
+        "reference_beats_all": false,
+        "notes": "Cell 6 is a clean, well-shaded wooden bucket with handle matching the reference style. Cell 5 is a fragmented, watery mess; cell 7 is a cluttered scene with extra props, not a single sprite."
+      },
+      "usage": {
+        "prompt_tokens": 905,
+        "completion_tokens": 503,
+        "total_tokens": 1408,
+        "cost": 0.00038725,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00038725,
+          "upstream_inference_prompt_cost": 0.00013575,
+          "upstream_inference_completions_cost": 0.0002515
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 189,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_bucket_1",
+      "reference_beats_all": false
+    },
+    {
+      "prop": "cart",
+      "stems": [
+        "f_cart_0",
+        "f_cart_1",
+        "f_cart_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 2,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 3,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 4,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 6,
+            "clean": 8,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 4,
+            "complete": 8,
+            "clean": 7,
+            "style_match": 6
+          },
+          {
+            "cell": 7,
+            "recognisable": 3,
+            "complete": 5,
+            "clean": 4,
+            "style_match": 4
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7
+        ],
+        "best": 5,
+        "worst": 7,
+        "reference_beats_all": true,
+        "notes": "Cell 5 is the most cart-like (wooden body, wheels) but tilted and sketchy. Cell 6 reads as a market stall/counter, not a cart. Cell 7 is cluttered debris with items, barely readable. References are far cleaner and better shaded."
+      },
+      "usage": {
+        "prompt_tokens": 905,
+        "completion_tokens": 503,
+        "total_tokens": 1408,
+        "cost": 0.00038725,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00038725,
+          "upstream_inference_prompt_cost": 0.00013575,
+          "upstream_inference_completions_cost": 0.0002515
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 179,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_cart_0",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "crate",
+      "stems": [
+        "f_crate_0",
+        "f_crate_1",
+        "f_crate_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 4,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 7,
+            "complete": 8,
+            "clean": 5,
+            "style_match": 6
+          },
+          {
+            "cell": 7,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 8
+          }
+        ],
+        "ranking": [
+          7,
+          6,
+          5
+        ],
+        "best": 7,
+        "worst": 5,
+        "reference_beats_all": true,
+        "notes": "Cells 1-4 are reference sprites, not rated. Cell 7 is a clean, well-shaded crate matching the chunky outlined reference style. Cell 6 has grey ground/debris attached at the base. Cell 5 is messy with an unwanted purple object embedded in the crate face and muddy shading."
+      },
+      "usage": {
+        "prompt_tokens": 905,
+        "completion_tokens": 509,
+        "total_tokens": 1414,
+        "cost": 0.00039025,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00039025,
+          "upstream_inference_prompt_cost": 0.00013575,
+          "upstream_inference_completions_cost": 0.0002545
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 179,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_crate_2",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "hay_bale",
+      "stems": [
+        "f_hay_bale_0",
+        "f_hay_bale_1",
+        "f_hay_bale_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 8,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 4,
+            "style_match": 4
+          },
+          {
+            "cell": 7,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 8
+          }
+        ],
+        "ranking": [
+          7,
+          5,
+          6
+        ],
+        "best": 7,
+        "worst": 6,
+        "reference_beats_all": true,
+        "notes": "Cell 7 is a clean, well-shaded rolled hay bale with a green band, closest to reference quality. Cell 5 is readable but sketchy and washed out. Cell 6 has unwanted ground/debris attached and spiky artifacts, reading poorly."
+      },
+      "usage": {
+        "prompt_tokens": 911,
+        "completion_tokens": 488,
+        "total_tokens": 1399,
+        "cost": 0.00038065,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00038065,
+          "upstream_inference_prompt_cost": 0.00013665,
+          "upstream_inference_completions_cost": 0.000244
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 167,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_hay_bale_2",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "lamp_post",
+      "stems": [
+        "f_lamp_post_0",
+        "f_lamp_post_1",
+        "f_lamp_post_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 5,
+            "recognisable": 2,
+            "complete": 8,
+            "clean": 6,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 1,
+            "complete": 8,
+            "clean": 9,
+            "style_match": 4
+          },
+          {
+            "cell": 7,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 8
+          }
+        ],
+        "ranking": [
+          7,
+          5,
+          6
+        ],
+        "best": 7,
+        "worst": 6,
+        "reference_beats_all": false,
+        "notes": "Cell 7 clearly reads as a double-lantern street lamp with clean silhouette and warm glow matching reference palette. Cell 5 is a vertical object with a small glowing lamp but reads more like a door/lantern; cell 6 looks like a manhole or roof panel, not a lamp post."
+      },
+      "usage": {
+        "prompt_tokens": 908,
+        "completion_tokens": 511,
+        "total_tokens": 1419,
+        "cost": 0.0003917,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003917,
+          "upstream_inference_prompt_cost": 0.0001362,
+          "upstream_inference_completions_cost": 0.0002555
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 182,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_lamp_post_2",
+      "reference_beats_all": false
+    },
+    {
+      "prop": "signpost",
+      "stems": [
+        "f_signpost_0",
+        "f_signpost_1",
+        "f_signpost_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 0,
+            "clean": 0,
+            "style_match": 0
+          },
+          {
+            "cell": 5,
+            "recognisable": 7,
+            "complete": 7,
+            "clean": 8,
+            "style_match": 6
+          },
+          {
+            "cell": 6,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 8
+          },
+          {
+            "cell": 7,
+            "recognisable": 6,
+            "complete": 4,
+            "clean": 3,
+            "style_match": 6
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7
+        ],
+        "best": 6,
+        "worst": 7,
+        "reference_beats_all": false,
+        "notes": "Cell 6 is a clean single wooden signpost matching the chunky reference style. Cell 5 is decent but has a stray purple pixel and weaker shading. Cell 7 is a cluster of multiple signposts, not one usable sprite."
+      },
+      "usage": {
+        "prompt_tokens": 908,
+        "completion_tokens": 437,
+        "total_tokens": 1345,
+        "cost": 0.0003547,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0003547,
+          "upstream_inference_prompt_cost": 0.0001362,
+          "upstream_inference_completions_cost": 0.0002185
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 122,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_signpost_1",
+      "reference_beats_all": false
+    },
+    {
+      "prop": "water_trough",
+      "stems": [
+        "f_water_trough_0",
+        "f_water_trough_1",
+        "f_water_trough_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 8,
+            "clean": 5,
+            "style_match": 6
+          },
+          {
+            "cell": 6,
+            "recognisable": 8,
+            "complete": 9,
+            "clean": 7,
+            "style_match": 8
+          },
+          {
+            "cell": 7,
+            "recognisable": 9,
+            "complete": 9,
+            "clean": 8,
+            "style_match": 9
+          }
+        ],
+        "ranking": [
+          7,
+          6,
+          5
+        ],
+        "best": 7,
+        "worst": 5,
+        "reference_beats_all": true,
+        "notes": "Cells 1-4 are the REFERENCE sprites (apple, bread, anvil, chest), so candidates are 5-7. Cell 7 reads cleanest as a wooden water trough with good palette match; cell 6 is solid but has splash debris at the base; cell 5 reads more like a sink with an odd blue panel attached behind it."
+      },
+      "usage": {
+        "prompt_tokens": 911,
+        "completion_tokens": 866,
+        "total_tokens": 1777,
+        "cost": 0.00056965,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00056965,
+          "upstream_inference_prompt_cost": 0.00013665,
+          "upstream_inference_completions_cost": 0.000433
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 653,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_water_trough_2",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "well",
+      "stems": [
+        "f_well_0",
+        "f_well_1",
+        "f_well_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7
+          },
+          {
+            "cell": 5,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 6,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 7,
+            "complete": 7,
+            "clean": 6,
+            "style_match": 5
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 5,
+            "clean": 5,
+            "style_match": 4
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 6,
+        "worst": 1,
+        "reference_beats_all": true,
+        "notes": "Cell 6 reads best as a well despite stray pixels; references maintain significantly cleaner pixel definition."
+      },
+      "usage": {
+        "prompt_tokens": 1436,
+        "completion_tokens": 1947,
+        "total_tokens": 3383,
+        "cost": 0.00837825,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00837825,
+          "upstream_inference_prompt_cost": 0.001077,
+          "upstream_inference_completions_cost": 0.00730125
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1728,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_well_1",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "wheelbarrow",
+      "stems": [
+        "f_wheelbarrow_0",
+        "f_wheelbarrow_1",
+        "f_wheelbarrow_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 2,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 3,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 4,
+            "recognisable": 10,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 5,
+            "style_match": 5
+          },
+          {
+            "cell": 6,
+            "recognisable": 7,
+            "complete": 8,
+            "clean": 4,
+            "style_match": 6
+          },
+          {
+            "cell": 7,
+            "recognisable": 4,
+            "complete": 7,
+            "clean": 8,
+            "style_match": 5
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7
+        ],
+        "best": 6,
+        "worst": 7,
+        "reference_beats_all": true,
+        "notes": "Cell 6 reads best as a wheelbarrow but includes an unwanted character in the tray. Cell 5 is a wheelbarrow but cluttered with cargo and muddy shading. Cell 7 reads more like a baby pram than a wheelbarrow. References are cleaner and more cohesive than all candidates."
+      },
+      "usage": {
+        "prompt_tokens": 911,
+        "completion_tokens": 521,
+        "total_tokens": 1432,
+        "cost": 0.00039715,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00039715,
+          "upstream_inference_prompt_cost": 0.00013665,
+          "upstream_inference_completions_cost": 0.0002605
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 192,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_wheelbarrow_1",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "wood_pile",
+      "stems": [
+        "f_wood_pile_0",
+        "f_wood_pile_1",
+        "f_wood_pile_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 9,
+            "clean": 10,
+            "style_match": 9
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 9,
+            "clean": 10,
+            "style_match": 9
+          },
+          {
+            "cell": 3,
+            "recognisable": 1,
+            "complete": 9,
+            "clean": 10,
+            "style_match": 9
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 9,
+            "clean": 10,
+            "style_match": 9
+          },
+          {
+            "cell": 5,
+            "recognisable": 8,
+            "complete": 9,
+            "clean": 9,
+            "style_match": 7
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 7,
+            "clean": 8,
+            "style_match": 6
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 5,
+            "style_match": 5
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7,
+          3,
+          4,
+          2,
+          1
+        ],
+        "best": 5,
+        "worst": 1,
+        "reference_beats_all": true,
+        "notes": "Cell 5 is the only clear, complete wood pile with clean silhouette and fitting chunky shading. Cell 6 reads as an odd diamond arrangement, cell 7 is messy with green foliage attached. References are other objects (not wood piles) but show superior polish."
+      },
+      "usage": {
+        "prompt_tokens": 911,
+        "completion_tokens": 891,
+        "total_tokens": 1802,
+        "cost": 0.00058215,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00058215,
+          "upstream_inference_prompt_cost": 0.00013665,
+          "upstream_inference_completions_cost": 0.0004455
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 558,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_wood_pile_0",
+      "reference_beats_all": true
+    }
+  ]
+}

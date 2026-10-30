@@ -737,6 +737,13 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
     out << "It " << (brief.blocksTile ? "blocks movement." : "can be walked on.")
         << "\n";
   }
+  // After the definition, before the retry: this is context about the world, and it
+  // stays useful on a retry -- a document refused for a ramp name should be corrected
+  // without losing the reason it exists.
+  if (!brief.surroundings.empty()) {
+    out << "\nWhat it will sit among, read from the building it is made for:\n"
+        << brief.surroundings << "\n";
+  }
   if (!previousVerdict.empty()) {
     out << "\nThe compiler refused the previous document:\n"
         << previousVerdict

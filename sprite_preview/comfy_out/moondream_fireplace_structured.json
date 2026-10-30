@@ -1,0 +1,291 @@
+{
+  "model": "moondream:latest",
+  "endpoint": "http://127.0.0.1:11434",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "object": {
+        "type": "string"
+      },
+      "matches_request": {
+        "type": "string",
+        "enum": [
+          "yes",
+          "no",
+          "partially"
+        ]
+      },
+      "quality": {
+        "type": "string",
+        "enum": [
+          "poor",
+          "fair",
+          "good",
+          "excellent"
+        ]
+      },
+      "score": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10
+      }
+    },
+    "required": [
+      "object",
+      "matches_request",
+      "quality",
+      "score"
+    ]
+  },
+  "prompt": "Look at this image and report: what object it shows, whether it is a fireplace, how good its visual quality is, and a score out of ten.",
+  "items": [
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_0.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_1.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_2.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_3.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 8
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 8}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_4.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 8
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 8}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 8
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 8}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_0.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_1.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_4.png",
+      "runs": [
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        },
+        {
+          "parsed": {
+            "object": "fireplace",
+            "matches_request": "no",
+            "quality": "good",
+            "score": 9
+          },
+          "raw": "{\"object\": \"fireplace\", \"matches_request\": \"no\", \"quality\": \"good\", \"score\": 9}",
+          "meta": {
+            "done_reason": "stop",
+            "eval_count": 30
+          }
+        }
+      ]
+    }
+  ]
+}

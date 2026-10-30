@@ -3409,6 +3409,13 @@ void Game::ECSInit() {
         navigationAI->setReasoningEnabled(false);
       }
       navigationAI->setMaxTokens(settings.navigation.single.maxTokens);
+      // Ollama's service default has been 4096 here. The navigator's prompt plus
+      // a short history is wider than that, and an over-full context loses the
+      // schema at the start. Set the request-level window explicitly.
+      if (auto *ollama = dynamic_cast<OllamaAI *>(navigationAI.get())) {
+        ollama->setOption("num_ctx",
+                          settings.navigation.single.contextTokens);
+      }
       if (debugLog) {
         debugLog->LogInfo(
             "Navigation backend: " + navigationAI->getAIName() + " / " +

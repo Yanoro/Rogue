@@ -189,6 +189,8 @@ set(SOURCES
     src/TileArt.cpp
     src/TileArtQueue.cpp
     src/PixelDSL.cpp
+    src/BlueprintSnapshot.cpp
+    src/StyleDescriber.cpp
     src/PromptRewriter.cpp
     src/RewriteInputBox.cpp
     src/RewriteBriefs.cpp

@@ -1,0 +1,55 @@
+{
+  "model": "yuvalkirstain/PickScore_v1",
+  "prompt": "a pixel art game sprite of a fireplace",
+  "control_prompt": "a photograph of a cat",
+  "items": [
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_0.png",
+      "score": 21.258739471435547,
+      "wrong_prompt_score": 17.11313247680664,
+      "gap": 4.145606994628906
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_1.png",
+      "score": 21.713651657104492,
+      "wrong_prompt_score": 16.997764587402344,
+      "gap": 4.715887069702148
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_2.png",
+      "score": 21.7028751373291,
+      "wrong_prompt_score": 17.358184814453125,
+      "gap": 4.344690322875977
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_3.png",
+      "score": 21.78290367126465,
+      "wrong_prompt_score": 16.868730545043945,
+      "gap": 4.914173126220703
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_4.png",
+      "score": 21.671518325805664,
+      "wrong_prompt_score": 16.33388328552246,
+      "gap": 5.337635040283203
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_0.png",
+      "score": 22.14702033996582,
+      "wrong_prompt_score": 17.606935501098633,
+      "gap": 4.5400848388671875
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_1.png",
+      "score": 22.33637809753418,
+      "wrong_prompt_score": 18.142473220825195,
+      "gap": 4.193904876708984
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_4.png",
+      "score": 22.746152877807617,
+      "wrong_prompt_score": 17.439069747924805,
+      "gap": 5.3070831298828125
+    }
+  ]
+}

@@ -1,0 +1,1046 @@
+{
+  "model": "google/gemini-3.8-flash",
+  "variants": "f_final256",
+  "zoom": 6,
+  "shuffle_seed": null,
+  "results": [
+    {
+      "prop": "barrel",
+      "stems": [
+        "f_barrel_0",
+        "f_barrel_1",
+        "f_barrel_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 1,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 8,
+            "clean": 4,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 4,
+            "complete": 6,
+            "clean": 6,
+            "style_match": 4,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 1,
+            "complete": 8,
+            "clean": 8,
+            "style_match": 4,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 5,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "None of the candidate cells meet the quality bar. Cell 5 resembles a barrel or tub but has attached background scenery and unwanted props. Cell 6 is partially cut off and indistinct. Cell 7 is a bar table with a beverage rather than a barrel.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1935,
+        "completion_tokens": 4408,
+        "total_tokens": 6343,
+        "cost": 0.01798125,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.01798125,
+          "upstream_inference_prompt_cost": 0.00145125,
+          "upstream_inference_completions_cost": 0.01653
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4020,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_barrel_0",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "bucket",
+      "stems": [
+        "f_bucket_0",
+        "f_bucket_1",
+        "f_bucket_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 5,
+            "complete": 4,
+            "clean": 4,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 6,
+            "complete": 6,
+            "clean": 5,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 4,
+            "clean": 3,
+            "style_match": 5,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 6,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Candidates contain artifacts, unwanted props, or full scene backdrops; none match reference clean standards.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1935,
+        "completion_tokens": 2482,
+        "total_tokens": 4417,
+        "cost": 0.01075875,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.01075875,
+          "upstream_inference_prompt_cost": 0.00145125,
+          "upstream_inference_completions_cost": 0.0093075
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2000,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_bucket_1",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "cart",
+      "stems": [
+        "f_cart_0",
+        "f_cart_1",
+        "f_cart_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 6,
+            "style_match": 5,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 6,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Candidate carts do not match the medieval thematic style or clean clarity of the reference assets.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1935,
+        "completion_tokens": 5833,
+        "total_tokens": 7768,
+        "cost": 0.023325,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.023325,
+          "upstream_inference_prompt_cost": 0.00145125,
+          "upstream_inference_completions_cost": 0.02187375
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5492,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_cart_1",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "crate",
+      "error": "unparsable",
+      "raw": "{\n  \"scores\": [\n    {\n      \"cell\": 1,\n      \"recognisable\": 3,\n      \"complete\": 7,\n      \"clean\": 7,\n      \"style_match\": 7,\n      \"ship\": false\n    },\n    {\n      \"cell\": 2,\n      \"recognisable\": 3,\n      \"complete\": 7,\n      \"clean\": 7,\n      \"style_match\": 7,\n      \"ship\": false\n    },\n    {\n      \"cell\": 3,\n      \"recognisable\": 3,\n      \"complete\": 7,\n      \"clean\": 7,\n      \"style_match\": 7,\n      \"ship\": false\n    },\n    {\n      \"cell\": 4,\n      \"recognisable\": 4,\n      \"complete\": 7,\n      \"clean\": 7,\n      \"style_match\": 7,\n      \"ship\": false\n    },\n    {\n      \"cell\": 5,\n      \"recognisable\": 5,\n      \"complete\": 5,\n      \"clean\": 5,\n      \"style_match\": 4,\n      \"ship\": false\n    },\n    {\n      \"cell\": 6,\n      \"recognisable\": 7,\n      \"complete\": ",
+      "stems": [
+        "f_crate_0",
+        "f_crate_1",
+        "f_crate_2"
+      ],
+      "usage": {
+        "prompt_tokens": 1935,
+        "completion_tokens": 7985,
+        "total_tokens": 9920,
+        "cost": 0.031395,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.031395,
+          "upstream_inference_prompt_cost": 0.00145125,
+          "upstream_inference_completions_cost": 0.02994375
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 7678,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      }
+    },
+    {
+      "prop": "hay_bale",
+      "stems": [
+        "f_hay_bale_0",
+        "f_hay_bale_1",
+        "f_hay_bale_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 6,
+            "ship": true
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 4,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 7,
+            "complete": 7,
+            "clean": 6,
+            "style_match": 7,
+            "ship": true
+          }
+        ],
+        "ranking": [
+          7,
+          5,
+          6,
+          2,
+          4,
+          3,
+          1
+        ],
+        "best": 7,
+        "reference_beats_all": false,
+        "recuse": false,
+        "notes": "Cell 7 has the strongest read and style match. Cell 5 is clean but pale. Cell 6 includes unwanted ground debris.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1947,
+        "completion_tokens": 7936,
+        "total_tokens": 9883,
+        "cost": 0.03122025,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.03122025,
+          "upstream_inference_prompt_cost": 0.00146025,
+          "upstream_inference_completions_cost": 0.02976
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 7677,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_hay_bale_2",
+      "reference_beats_all": false
+    },
+    {
+      "prop": "lamp_post",
+      "stems": [
+        "f_lamp_post_0",
+        "f_lamp_post_1",
+        "f_lamp_post_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 0,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 10,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 6,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 1,
+            "complete": 8,
+            "clean": 7,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 9,
+            "complete": 10,
+            "clean": 10,
+            "style_match": 9,
+            "ship": true
+          }
+        ],
+        "ranking": [
+          7,
+          5,
+          6,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 7,
+        "reference_beats_all": false,
+        "recuse": false,
+        "notes": "Cell 7 is an excellent two-lantern street lamp post that fits the game's pixel art style, cleanly isolated with readable silhouette and glowing lanterns.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1943,
+        "completion_tokens": 2712,
+        "total_tokens": 4655,
+        "cost": 0.01162725,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.01162725,
+          "upstream_inference_prompt_cost": 0.00145725,
+          "upstream_inference_completions_cost": 0.01017
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2204,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_lamp_post_2",
+      "reference_beats_all": false
+    },
+    {
+      "prop": "signpost",
+      "stems": [
+        "f_signpost_0",
+        "f_signpost_1",
+        "f_signpost_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 6,
+            "complete": 6,
+            "clean": 6,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 7,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 5,
+            "complete": 5,
+            "clean": 4,
+            "style_match": 5,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          6,
+          5,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 6,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Cell 6 offers the clearest signpost silhouette, though none fully match the reference pixel precision.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1939,
+        "completion_tokens": 4563,
+        "total_tokens": 6502,
+        "cost": 0.0185655,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0185655,
+          "upstream_inference_prompt_cost": 0.00145425,
+          "upstream_inference_completions_cost": 0.01711125
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4186,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_signpost_1",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "water_trough",
+      "stems": [
+        "f_water_trough_0",
+        "f_water_trough_1",
+        "f_water_trough_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 4,
+            "complete": 5,
+            "clean": 5,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 5,
+            "style_match": 6,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 6,
+            "complete": 6,
+            "clean": 4,
+            "style_match": 6,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 7,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Candidates suffer from extra elements like faucets, attached lids, or excessive splash effects.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1947,
+        "completion_tokens": 1596,
+        "total_tokens": 3543,
+        "cost": 0.00744525,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.00744525,
+          "upstream_inference_prompt_cost": 0.00146025,
+          "upstream_inference_completions_cost": 0.005985
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 1256,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_water_trough_2",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "well",
+      "error": "unparsable",
+      "raw": "{\"scores\": [{\"cell\": 1, \"recognisable\": 0, \"complete\": 10, \"clean\": 10, \"style_match\": 10, \"ship\": false}, {\"cell\": 2, \"recognisable\": 0, \"complete\": 10, \"clean\": 10, \"style_match\": 10, \"ship\": false}, {\"cell\": 3, \"recognisable\": 0, \"complete\": 10, \"clean\": 10, \"style_match\": 10, \"ship\": false}, {\"cell\": 4, \"recognisable\": 0, \"complete\": 10, \"clean\": 10, \"style_match\": 10, \"ship\": false}, {\"cell\": 5, \"recognisable\": 4, \"complete\": 7, \"clean\": 4, \"style_match\": 4, \"ship\": false}, {\"cell\": 6, \"recognisable\": 7, \"complete\": 7, \"clean\": 5, \"style_match\": 5, \"ship\": false}, {\"cell\": 7, \"recognisable\": 4, \"complete\": 5, \"clean\": 4, \"style_match\": 3, \"ship\": false}], \"ranking\": [6, 5, 7, 4, 3, 2, 1], \"",
+      "stems": [
+        "f_well_0",
+        "f_well_1",
+        "f_well_2"
+      ],
+      "usage": {
+        "prompt_tokens": 1935,
+        "completion_tokens": 7986,
+        "total_tokens": 9921,
+        "cost": 0.03139875,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.03139875,
+          "upstream_inference_prompt_cost": 0.00145125,
+          "upstream_inference_completions_cost": 0.0299475
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 7680,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      }
+    },
+    {
+      "prop": "wheelbarrow",
+      "stems": [
+        "f_wheelbarrow_0",
+        "f_wheelbarrow_1",
+        "f_wheelbarrow_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 5,
+            "style_match": 4,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 5,
+            "clean": 4,
+            "style_match": 4,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 4,
+            "complete": 6,
+            "clean": 5,
+            "style_match": 4,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7,
+          4,
+          3,
+          2,
+          1
+        ],
+        "best": 5,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Candidate wheelbarrow sprites suffer from noisy silhouettes, unclear forms, and stray artifacts, failing to match the clarity of the reference art.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1939,
+        "completion_tokens": 3033,
+        "total_tokens": 4972,
+        "cost": 0.012828,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.012828,
+          "upstream_inference_prompt_cost": 0.00145425,
+          "upstream_inference_completions_cost": 0.01137375
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2683,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_wheelbarrow_0",
+      "reference_beats_all": true
+    },
+    {
+      "prop": "wood_pile",
+      "stems": [
+        "f_wood_pile_0",
+        "f_wood_pile_1",
+        "f_wood_pile_2"
+      ],
+      "n_reference": 4,
+      "parsed": {
+        "scores": [
+          {
+            "cell": 1,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 2,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 3,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 4,
+            "recognisable": 3,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 7,
+            "ship": false
+          },
+          {
+            "cell": 5,
+            "recognisable": 7,
+            "complete": 7,
+            "clean": 7,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 6,
+            "recognisable": 5,
+            "complete": 6,
+            "clean": 7,
+            "style_match": 5,
+            "ship": false
+          },
+          {
+            "cell": 7,
+            "recognisable": 4,
+            "complete": 5,
+            "clean": 6,
+            "style_match": 4,
+            "ship": false
+          }
+        ],
+        "ranking": [
+          5,
+          6,
+          7,
+          3,
+          4,
+          2,
+          1
+        ],
+        "best": 5,
+        "reference_beats_all": true,
+        "recuse": true,
+        "notes": "Candidate sprites show generative clustering and inconsistent pixel grid compared to hand-crafted references.",
+        "worst": 1
+      },
+      "usage": {
+        "prompt_tokens": 1943,
+        "completion_tokens": 4790,
+        "total_tokens": 6733,
+        "cost": 0.01941975,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 0,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.01941975,
+          "upstream_inference_prompt_cost": 0.00145725,
+          "upstream_inference_completions_cost": 0.0179625
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 4450,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      },
+      "best_label": "f_wood_pile_0",
+      "reference_beats_all": true
+    }
+  ]
+}

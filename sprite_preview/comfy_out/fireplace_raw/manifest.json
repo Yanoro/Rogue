@@ -1,0 +1,54 @@
+{
+  "base_seed": 12345,
+  "params": {
+    "checkpoint": "aziibpixelmix_v10.safetensors",
+    "lora": null,
+    "trigger": "pixel art, pixel world",
+    "lora_scale": 0.85,
+    "steps": 28,
+    "cfg": 7.0,
+    "size": 256
+  },
+  "images": [
+    {
+      "prop": "fireplace",
+      "variant": 0,
+      "seed": 40868,
+      "subject": "stone fireplace, tall arched hearth opening with burning logs and orange flames inside, grey masonry surround, a wooden mantel shelf on top",
+      "raw": "sprite_preview/comfy_out/fireplace_raw/raw/fireplace_0_raw.png",
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_0.png"
+    },
+    {
+      "prop": "fireplace",
+      "variant": 1,
+      "seed": 40868,
+      "subject": "stone fireplace, tall arched hearth opening with burning logs and orange flames inside, grey masonry surround, a wooden mantel shelf on top",
+      "raw": "sprite_preview/comfy_out/fireplace_raw/raw/fireplace_1_raw.png",
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_1.png"
+    },
+    {
+      "prop": "fireplace",
+      "variant": 2,
+      "seed": 40868,
+      "subject": "stone fireplace, tall arched hearth opening with burning logs and orange flames inside, grey masonry surround, a wooden mantel shelf on top",
+      "raw": "sprite_preview/comfy_out/fireplace_raw/raw/fireplace_2_raw.png",
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_2.png"
+    },
+    {
+      "prop": "fireplace",
+      "variant": 3,
+      "seed": 40868,
+      "subject": "stone fireplace, tall arched hearth opening with burning logs and orange flames inside, grey masonry surround, a wooden mantel shelf on top",
+      "raw": "sprite_preview/comfy_out/fireplace_raw/raw/fireplace_3_raw.png",
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_3.png"
+    },
+    {
+      "prop": "fireplace",
+      "variant": 4,
+      "seed": 40868,
+      "subject": "stone fireplace, tall arched hearth opening with burning logs and orange flames inside, grey masonry surround, a wooden mantel shelf on top",
+      "raw": "sprite_preview/comfy_out/fireplace_raw/raw/fireplace_4_raw.png",
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_4.png"
+    }
+  ]
+}

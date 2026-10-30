@@ -1,5 +1,7 @@
 #include "AI.h"
 #include "BlueprintRegistry.h"
+#include "BlueprintSnapshot.hpp"
+#include "OllamaAI.h"
 #include "DebugLog.h"
 #include "Defaults.h"
 #include "Game.h"
@@ -9,6 +11,7 @@
 #include "ObjectDesigner.hpp"
 #include "PixelDSL.hpp"
 #include "SpriteRouter.hpp"
+#include "StyleDescriber.hpp"
 #include "ObjectFactory.h"
 #include "RaylibException.hpp"
 #include "RewriteBriefs.hpp"
@@ -534,6 +537,169 @@ int RunSpriteDocumentCheck(const std::string &replyPath) {
   const PixelDSL::Result result = PixelDSL::Compile(document, config);
   std::cout << PixelDSL::Describe(result);
   return result.ok ? 0 : 1;
+}
+
+// Renders a blueprint to a crop of the building and, with `describe`, asks the vision
+// backend what the art around its gaps is like. Before the window, like
+// --sprite-compile: the renderer is CPU-only (no GL, no camera) and the describer is a
+// single HTTP call, so both are verifiable on a machine with no display.
+//
+// The two halves stay separable on purpose. Without --snapshot-describe this needs no
+// backend at all, which is what lets a change to the renderer be reviewed on its own;
+// with it, the style record is printed so the wording of the brief can be judged
+// against the picture rather than trusted.
+int RunBlueprintSnapshot(const std::string &blueprintPath, const std::string &outputPath,
+                         bool describe) {
+  const GameSettings &settings = Settings();
+  DebugLog log(settings.debug.logMaxEntries);
+
+  TileRegistry tiles;
+  tiles.SetDebugLog(&log);
+  tiles.LoadTiles(settings.content.tiles);
+
+  ObjectFactory objects;
+  objects.SetDebugLog(&log);
+  objects.LoadTemplates(settings.content.objects);
+
+  std::ifstream file(blueprintPath);
+  if (!file.is_open()) {
+    std::cerr << "blueprint snapshot: could not read " << blueprintPath << "\n";
+    return 1;
+  }
+  nlohmann::json json;
+  try {
+    file >> json;
+  } catch (const std::exception &error) {
+    std::cerr << "blueprint snapshot: " << blueprintPath << " is not JSON: "
+              << error.what() << "\n";
+    return 1;
+  }
+
+  Blueprint blueprint;
+  std::string error;
+  std::vector<std::string> warnings;
+  const std::string id = std::filesystem::path(blueprintPath).stem().string();
+  if (!BlueprintRegistry::ParseBlueprint(json, id, blueprintPath, blueprint, error,
+                                         warnings)) {
+    std::cerr << "blueprint snapshot: refused: " << error << "\n";
+    return 1;
+  }
+  for (const std::string &warning : warnings) {
+    std::cout << "warning:    " << warning << "\n";
+  }
+
+  // The gap set comes from the same function the load-time check and the gap report
+  // use, so this cannot disagree with them about what the world is missing.
+  const std::vector<MissingMaterial> vocabulary =
+      FindMissingVocabulary(blueprint, &tiles, &objects);
+  std::unordered_set<std::string> missing;
+  for (const MissingMaterial &material : vocabulary) {
+    missing.insert(material.material);
+  }
+
+  BlueprintSnapshot::Snapshot snapshot =
+      BlueprintSnapshot::Render(blueprint, missing, tiles, objects);
+  if (!snapshot.ok) {
+    std::cerr << "blueprint snapshot: refused: " << snapshot.error << "\n";
+    return 1;
+  }
+
+  const std::string destination = outputPath.empty()
+                                      ? "/tmp/blueprint-snapshot-" + id + ".png"
+                                      : outputPath;
+  if (!BlueprintSnapshot::WritePng(snapshot.image, destination)) {
+    std::cerr << "blueprint snapshot: could not write " << destination << "\n";
+    return 1;
+  }
+
+  std::cout << "blueprint:  " << id << " (" << blueprint.name << ")\n";
+  std::cout << "snapshot:   " << destination << " -- " << snapshot.image.width << "x"
+            << snapshot.image.height << " px, " << snapshot.cellsWide << "x"
+            << snapshot.cellsTall << " cells, " << snapshot.cellsDrawn << " drawn\n";
+  // Two different facts, printed as two: what the design *names* and the world lacks
+  // (the vocabulary check, part-level), and what the crop could actually *mark*
+  // (cell-level). They differ when a later part overwrites every cell a material was
+  // used on -- a design that paints a grate and then puts a wall on it references the
+  // grate and shows nothing, and saying only "0 gaps" there would be false.
+  std::cout << "gaps:       " << snapshot.gaps.size() << " marked, "
+            << vocabulary.size() << " referenced\n";
+  for (const MissingMaterial &material : vocabulary) {
+    bool marked = false;
+    size_t markedCells = 0;
+    for (const BlueprintSnapshot::Gap &gap : snapshot.gaps) {
+      if (gap.kind != material.kind || gap.material != material.material) continue;
+      marked = true;
+      markedCells = gap.cells.size();
+    }
+    std::cout << "  - " << (material.kind == "paint" ? "tile" : "object") << " '"
+              << material.material << "' -- ";
+    if (marked) {
+      std::cout << markedCells << " cell(s), marked\n";
+      continue;
+    }
+    std::cout << "referenced by part(s) ";
+    for (size_t i = 0; i < material.partIds.size(); ++i) {
+      if (i > 0) std::cout << (i + 1 == material.partIds.size() ? " and " : ", ");
+      std::cout << material.partIds[i];
+    }
+    std::cout << ", but a later part overwrites every cell it used, so there is "
+                 "nothing to mark\n";
+  }
+  for (const std::string &note : snapshot.notes) {
+    std::cout << "note:       " << note << "\n";
+  }
+  std::cout << "\n" << BlueprintSnapshot::Describe(blueprint, snapshot) << "\n";
+
+  if (!describe) {
+    return 0;
+  }
+
+  if (!settings.vision.enabled) {
+    std::cerr << "describe:   vision is disabled (settings vision.enabled is false)\n";
+    return 2;
+  }
+
+  std::string base64;
+  std::vector<unsigned char> pngBytes;
+  if (!BlueprintSnapshot::EncodePng(snapshot.image, &base64, &pngBytes)) {
+    std::cerr << "describe:   could not encode the snapshot\n";
+    return 1;
+  }
+
+  // The vision backend, not the designer's: the describer's whole job is to look, and
+  // the model that writes the document stays text-only (see StyleDescriber.hpp).
+  OllamaAI vision(settings.vision.model, settings.vision.endpoint);
+  vision.setKeepAlive(settings.vision.keepAlive);
+  vision.setErrorLogger([](const std::string &message) {
+    std::cerr << "vision:     " << message << "\n";
+  });
+
+  StyleDescriber::Job job;
+  job.Configure(&vision, &log);
+
+  std::string reason;
+  if (!job.Request(base64, BlueprintSnapshot::Describe(blueprint, snapshot), &reason)) {
+    std::cerr << "describe:   " << reason << "\n";
+    return 1;
+  }
+  std::cout << "\nreading the art (" << settings.vision.model << ") ...\n";
+
+  StyleDescriber::Style style;
+  if (!job.WaitFor(&style, 180000)) {
+    std::cerr << "describe:   no answer within the time budget\n";
+    return 1;
+  }
+  if (!style.ok) {
+    std::cout << "style:      refused: " << style.error << "\n";
+    if (!style.raw.empty()) {
+      std::cout << "\n--- raw reply ---\n" << style.raw << "\n";
+    }
+    return 1;
+  }
+  std::cout << "style:      ok (" << style.materials.size() << " material(s), "
+            << style.tones.size() << " tone(s))\n\n"
+            << style.summary << "\n";
+  return 0;
 }
 
 // Compiles a sprite DSL document and exits. No window, no world, no backend: the
@@ -1510,6 +1676,9 @@ int main(int argc, char *argv[]) {
   std::string spriteDocCheckPath;
   bool spriteGrammar = false;
   bool spriteDocPrompt = false;
+  std::string blueprintSnapshotPath;
+  std::string blueprintSnapshotOut;
+  bool blueprintSnapshotDescribe = false;
   std::string tileArtName;
   std::string tileArtSource;
   std::string tileArtPalette;
@@ -1583,6 +1752,18 @@ int main(int argc, char *argv[]) {
       spriteGrammar = true;
     } else if (arg == "--sprite-doc-prompt") {
       spriteDocPrompt = true;
+    } else if (arg == "--blueprint-snapshot" && i + 1 < argc) {
+      // Takes a value, so it is checked before the bare flags below and consumes its
+      // own argument rather than reading the path as the map.
+      blueprintSnapshotPath = argv[++i];
+    } else if (arg == "--snapshot-out" && i + 1 < argc) {
+      // Separate from the blueprint so the common run -- render and report -- does not
+      // have to name a destination.
+      blueprintSnapshotOut = argv[++i];
+    } else if (arg == "--snapshot-describe") {
+      // Bare flag: adds the vision pass. Kept opt-in because it is the only part that
+      // needs a backend, and as a local model it is also the only part that can be slow.
+      blueprintSnapshotDescribe = true;
     } else if (arg == "--tile-art" && i + 1 < argc) {
       tileArtName = argv[++i];
     } else if (arg == "--tile-art-sprite" && i + 1 < argc) {
@@ -1774,6 +1955,13 @@ int main(int argc, char *argv[]) {
   // The document turn's pure half, before the window: reply in, verdict out.
   if (!spriteDocCheckPath.empty()) {
     return RunSpriteDocumentCheck(spriteDocCheckPath);
+  }
+  // A blueprint rendered to a crop, and the art around its gaps read into a brief.
+  // Before the window: the renderer is CPU-only and the describer is one HTTP call, so
+  // neither needs a display.
+  if (!blueprintSnapshotPath.empty()) {
+    return RunBlueprintSnapshot(blueprintSnapshotPath, blueprintSnapshotOut,
+                                blueprintSnapshotDescribe);
   }
   // The DSL producer's file half, before the image one: same name argument, same
   // placement, different producer.

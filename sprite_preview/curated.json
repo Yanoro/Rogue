@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "prop -> finished variant stem. The record of which render was chosen to",
+    "ship; edit by hand. Read by curate.py, resolved through its SEARCH_DIRS.",
+    "",
+    "All picks are from the f_final256 set: AziibPixelMix, --style v3,",
+    "--size 256, NEAREST downscale. That combination is the one that reads as a",
+    "crisp sprite at 1x (README 3.6)."
+  ],
+  "PROVENANCE": {
+    "checkpoint": "aziibpixelmix_v10.safetensors",
+    "lora": null,
+    "style": "v3",
+    "size": 256,
+    "cfg": 7.0,
+    "steps": 28,
+    "seed_base": 45000,
+    "downscale": "NEAREST",
+    "finish": "finish_props.py --alpha-cut 0.3"
+  },
+  "NOTES": {
+    "barrel": "f_barrel_0 -- hooped barrel, clean silhouette at 1x",
+    "crate": "f_crate_1 -- plank crate with visible lid, least clutter",
+    "hay_bale": "f_hay_bale_0 -- bound bale, warm gold, reads instantly",
+    "signpost": "f_signpost_0 -- arrow board legible, no vines",
+    "well": "f_well_1 -- stone shaft plus roof, both readable",
+    "wood_pile": "f_wood_pile_0 -- stacked logs, cut ends visible",
+    "bucket": "f_bucket_0 -- marginal: bucket plus a well surround",
+    "cart": "f_cart_1 -- marginal: wheels legible, some scenery attached",
+    "lamp_post": "f_lamp_post_1 -- marginal: lantern reads, post is thin",
+    "water_trough": "f_water_trough_1 -- marginal: trough reads as a box of water",
+    "wheelbarrow": "f_wheelbarrow_1 -- marginal: tray and wheel present, cluttered"
+  },
+  "sprites": {
+    "barrel": "f_barrel_0",
+    "bucket": "f_bucket_0",
+    "cart": "f_cart_1",
+    "crate": "f_crate_1",
+    "hay_bale": "f_hay_bale_0",
+    "lamp_post": "f_lamp_post_1",
+    "signpost": "f_signpost_0",
+    "water_trough": "f_water_trough_1",
+    "well": "f_well_1",
+    "wheelbarrow": "f_wheelbarrow_1",
+    "wood_pile": "f_wood_pile_0"
+  }
+}

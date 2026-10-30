@@ -840,10 +840,16 @@ bool LoadGameSettings(const std::string &path) {
           "concise", settings.navigation.single.concise);
       settings.navigation.single.objectSummary = single.value(
           "objectSummary", settings.navigation.single.objectSummary);
+      settings.navigation.single.includeGraph = single.value(
+          "includeGraph", settings.navigation.single.includeGraph);
+      settings.navigation.single.includeMap = single.value(
+          "includeMap", settings.navigation.single.includeMap);
       settings.navigation.single.maxObjectGroups = single.value(
           "maxObjectGroups", settings.navigation.single.maxObjectGroups);
       settings.navigation.single.maxGroupDetails = single.value(
           "maxGroupDetails", settings.navigation.single.maxGroupDetails);
+      settings.navigation.single.contextTokens = single.value(
+          "contextTokens", settings.navigation.single.contextTokens);
       settings.navigation.single.timeoutSeconds = single.value(
           "timeoutSeconds", settings.navigation.single.timeoutSeconds);
       settings.navigation.single.fallbackToTwo = single.value(
@@ -896,6 +902,13 @@ bool LoadGameSettings(const std::string &path) {
                      "using 500."
                   << std::endl;
         settings.navigation.single.maxTokens = 500;
+      }
+      if (settings.navigation.single.contextTokens < 2048 ||
+          settings.navigation.single.contextTokens > 32768) {
+        std::cerr << "Settings: navigation.single.contextTokens must be "
+                     "2048..32768; using 8192."
+                  << std::endl;
+        settings.navigation.single.contextTokens = 8192;
       }
       if (settings.navigation.single.historyTurns < 0 ||
           settings.navigation.single.historyTurns > 64) {

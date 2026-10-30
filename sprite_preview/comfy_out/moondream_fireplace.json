@@ -1,0 +1,174 @@
+{
+  "model": "moondream:latest",
+  "endpoint": "http://127.0.0.1:11434",
+  "items": [
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_0.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "urn"
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urns of orange and yellow flames, a black candle holder, and a white fireplace surround are arranged on an orange rug against a gray wall."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image shows a fireplace with three lit candles on it, creating a warm and cozy atmosphere. The fire is burning brightly in the center of the fireplace, casting a soft glow throughout the room. A picture hangs above the fireplace, adding an artistic touch to the scene. In addition to the fireplace, there are two vases placed nearby, one closer to the left side of the image and another further back on the right side."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": ""
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_1.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "The image features a fireplace with a fire burning in it. The fire appears to be quite large and bright, illuminating the room around it. There are also some candles placed near the fireplace, adding to the cozy atmosphere of the scene."
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urns of orange and white, a white frame, and a fireplace with three burning logs are arranged on an orange background."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image features a fireplace with a fire burning in it, creating an orange glow that illuminates the room. The fireplace is situated on top of a mantel and has a white frame surrounding it. There are two candles placed near the fireplace, one on each side, adding to the warm ambiance of the scene. A picture can be seen hanging above the fireplace, further enhancing the cozy atmosphere in the room."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": ""
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_2.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "The image features a fireplace with a fire burning in it. The fire appears to be yellow and orange, creating a warm and cozy atmosphere. There are also two bottles placed on the mantle above the fireplace, adding an element of decoration or perhaps containing decorative items like candles or other accessories for the room."
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urn of orange and yellow flowers sits on a gray stone fireplace mantel, accompanied by a black and white striped vase and a green bottle."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image shows a fireplace with a fire burning in it, creating an orange glow that illuminates the room. The fireplace is situated on top of a stone mantel and has a black frame surrounding it. There are two vases placed nearby, one on each side of the fireplace. A bottle can also be seen near the right edge of the image."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": ""
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_3.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "urn"
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urns of water and oil, a blue candle, and a book are arranged on a brick fireplace mantel with a beige wall backdrop."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image shows a fireplace with a fire burning in it, surrounded by various objects such as books and bottles. The fire is located on the right side of the fireplace, while several books are placed on the left side, both above and below the fire. There are also three bottles situated near the top edge of the fireplace."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": ""
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/fireplace_raw/fireplace_4.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "urn"
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urn of red candles, a picture frame with a brown border and white background, and a stack of brown boxes on a wooden shelf against a gray wall."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image features a fireplace with several candles on it, creating an inviting and warm atmosphere. The fireplace is situated in front of a shelf that holds various items such as a picture frame and some books. The scene appears to be set up for a cozy evening or gathering, with the fireplace being the focal point of the room."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": "!!!bad!!!"
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_0.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "The object in the image is a fireplace with a fire burning inside it.\n\n2. What are some of the objects around the fireplace?"
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urn of orange and brown liquid sits on a fireplace mantel, accompanied by a yellow and red fire, with a white screen and black background."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image features a fireplace with an orange and white fire burning in it, creating a warm and cozy atmosphere. The fire is located on top of a mantel, which has a wooden shelf above it. On the mantel, there are two objects - one is a small vase filled with flowers, adding a touch of elegance to the scene. Additionally, there are three books placed near the fireplace, possibly serving as decoration or providing reading material for those gathered around the fire."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": "!!!bad!!!"
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_1.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "The image features a fireplace with an open fire, which appears to be the main focus of the scene.\n\n2. What are some objects in front of the fireplace?"
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urn of wine on a fireplace mantel, with a white picture frame and candles nearby."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image features a fireplace with an open fire, which is the main focus. The fireplace has a wooden mantel and a glass front that allows for a clear view of the fire inside. There are two bottles placed on top of the mantle, one near the left side and another closer to the center. A picture frame can be seen in the background, adding an artistic touch to the scene."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": "!!!bad!!!"
+        }
+      }
+    },
+    {
+      "file": "sprite_preview/comfy_out/f_fireplace/fp_fireplace_4.png",
+      "answers": {
+        "identify": {
+          "question": "What is this object?",
+          "answer": "The object in the image is a fireplace with two lit candles sitting on top of it. The fire appears to be burning brightly, creating a warm and cozy atmosphere around the fireplace."
+        },
+        "describe": {
+          "question": "Describe this image in one sentence.",
+          "answer": "urn of water, candle, and laptop on a dark surface."
+        },
+        "grade_numeric": {
+          "question": "Rate the visual quality of this image from 1 to 10.",
+          "answer": "The image features a fireplace with two lit candles placed on either side, creating an inviting and warm atmosphere. The fire appears to be burning brightly in the center of the fireplace, casting a soft glow throughout the room. A cup can also be seen nearby, possibly containing a beverage for someone enjoying their time by the fireplace."
+        },
+        "grade_word": {
+          "question": "Is this a good game sprite? Answer: bad, ok, or good.",
+          "answer": "!!!bad!!!"
+        }
+      }
+    }
+  ]
+}

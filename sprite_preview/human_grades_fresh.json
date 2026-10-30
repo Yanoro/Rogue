@@ -1,0 +1,90 @@
+{
+  "_comment": [
+    "The owner's grades for the FRESH set (seed 91500, f_human/, 31 sprites),",
+    "which neither judge had seen at grading time. Recorded from the DSH question",
+    "buttons, by sheet label, then converted to stems via grade_sheet_map.json so",
+    "scoring never depends on positional numbering.",
+    "",
+    "'accept' lists every variant the owner would ship; an empty list means all",
+    "were unusable. Some props have two acceptable variants, so a judge is",
+    "scored on landing inside the set, not on reproducing a single 'best'."
+  ],
+  "source": "owner, reviewing grade_sheet.png (6x) via ask_user_question",
+  "seed": 91500,
+  "grades": {
+    "barrel": {
+      "accept": [
+        "h_barrel_2"
+      ],
+      "all_bad": false,
+      "note": "2"
+    },
+    "bucket": {
+      "accept": [
+        "h_bucket_2"
+      ],
+      "all_bad": false,
+      "note": "3"
+    },
+    "cart": {
+      "accept": [
+        "h_cart_0",
+        "h_cart_2"
+      ],
+      "all_bad": false,
+      "note": "1 and 3, both ok but not great"
+    },
+    "crate": {
+      "accept": [
+        "h_crate_0"
+      ],
+      "all_bad": false,
+      "note": "1"
+    },
+    "hay_bale": {
+      "accept": [],
+      "all_bad": true,
+      "note": "all look like boxes, not hay bales"
+    },
+    "lamp_post": {
+      "accept": [
+        "h_lamp_post_0",
+        "h_lamp_post_2"
+      ],
+      "all_bad": false,
+      "note": "between 1 and 3"
+    },
+    "signpost": {
+      "accept": [
+        "h_signpost_0",
+        "h_signpost_2"
+      ],
+      "all_bad": false,
+      "note": "1 and 3 around the same level"
+    },
+    "water_trough": {
+      "accept": [],
+      "all_bad": true,
+      "note": "all bad"
+    },
+    "well": {
+      "accept": [
+        "h_well_2"
+      ],
+      "all_bad": false,
+      "note": "3 but it does not look great"
+    },
+    "wheelbarrow": {
+      "accept": [],
+      "all_bad": true,
+      "note": "all bad"
+    },
+    "wood_pile": {
+      "accept": [
+        "h_wood_pile_2"
+      ],
+      "all_bad": false,
+      "note": "3 is barely usable"
+    }
+  }
+}
