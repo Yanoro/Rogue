@@ -17,6 +17,9 @@
 #     list omits files that exist at HEAD), so a worktree without main's
 #     build files compiles and then fails to link. Those paths are carried by
 #     default; feature files are carried with --carry.
+#   * .agents/ is gitignored (.gitignore:4), so a new worktree gets no skills,
+#     no MCP server and no agent notes -- the cpp-navigation skill literally
+#     shells out to .agents/mcp/clangd-server.mjs. The directory is ported in.
 #   * staging matters: `git diff` alone misses staged work, so everything is
 #     read as `git diff HEAD`.
 #   * ~760 MB of dependency sources live in git history under the primary
@@ -39,6 +42,7 @@ COPY_DATA=0
 DO_BUILD=1
 DO_CONFIGURE=1
 DRY_RUN=0
+AGENTS_MODE=copy   # copy | link | none
 
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 info() { printf '  %s\n' "$*"; }
@@ -64,13 +68,19 @@ Options:
                       primary worktree. Repeatable. Globs allowed.
       --data          Copy untracked runtime assets (data/style,
                       data/generated/{objects,tiles}, data/prompts).
+      --no-agents     Do not port .agents/ (skills, MCP servers, notes).
+      --link-agents   Symlink .agents/ to the primary worktree instead of
+                      copying it, so skill edits stay in sync.
       --configure-only  Create + configure, do not compile.
       --no-build      Create the worktree only; no CMake, no compile.
   -n, --dry-run       Print the plan; change nothing.
   -h, --help          This help.
 
-Build plumbing carried automatically (when dirty):
-  CMakeLists.txt shell.nix compile_and_run.sh bench/ patches/
+Carried automatically:
+  .agents/            skills, MCP server scripts and agent notes (gitignored,
+                      so it never arrives with the checkout)
+  build plumbing      CMakeLists.txt shell.nix compile_and_run.sh bench/
+                      patches/ (when dirty against the start point)
 
 Exit codes:
   0 success   1 bad usage / refused   2 configure or build failed
@@ -85,6 +95,8 @@ while [[ $# -gt 0 ]]; do
         -f|--from)        FROM="${2:?--from needs a value}"; shift 2 ;;
         -C|--carry)       CARRY+=("${2:?--carry needs a value}"); shift 2 ;;
         --data)           COPY_DATA=1; shift ;;
+        --no-agents)      AGENTS_MODE=none; shift ;;
+        --link-agents)    AGENTS_MODE=link; shift ;;
         --configure-only) DO_BUILD=0; shift ;;
         --no-build)       DO_BUILD=0; DO_CONFIGURE=0; shift ;;
         -*)               die "unknown option: $1 (see --help)" ;;
@@ -184,7 +196,40 @@ if [[ -f "$REPO_ROOT/.gitmodules" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Transplant uncommitted changes
+# 3. Agent configuration -- .agents/ is gitignored, so it never arrives with
+#    the checkout. Without it the worktree has no skills and no clangd MCP
+#    server (cpp-navigation shells out to .agents/mcp/clangd-server.mjs).
+# ---------------------------------------------------------------------------
+if [[ "$AGENTS_MODE" != none && -d "$PRIMARY/.agents" ]]; then
+    step "porting agent config (.agents/)"
+    skills=$(ls "$PRIMARY/.agents/skills" 2>/dev/null | tr '\n' ' ')
+
+    if [[ "$AGENTS_MODE" == link ]]; then
+        if [[ -e "$WT_PATH/.agents" ]]; then
+            die "$WT_PATH/.agents already exists; remove it to use --link-agents"
+        fi
+        if (( DRY_RUN )); then
+            info "[dry-run] symlink $WT_PATH/.agents -> $PRIMARY/.agents"
+        else
+            ln -s "$PRIMARY/.agents" "$WT_PATH/.agents"
+        fi
+        info "linked: $PRIMARY/.agents"
+    else
+        # Merge, do not replace: an agent may already have added notes there.
+        if (( DRY_RUN )); then
+            info "[dry-run] copy $PRIMARY/.agents/ -> $WT_PATH/.agents/"
+        else
+            mkdir -p "$WT_PATH/.agents"
+            cp -a "$PRIMARY/.agents/." "$WT_PATH/.agents/"
+        fi
+    fi
+
+    info "skills: $skills"
+    info "mcp:    $(ls "$PRIMARY/.agents/mcp" 2>/dev/null | tr '\n' ' ')"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Transplant uncommitted changes
 # ---------------------------------------------------------------------------
 step "carrying uncommitted changes from $PRIMARY"
 
@@ -249,7 +294,7 @@ if (( ! DO_CONFIGURE )); then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Configure against the shared dependency sources
+# 5. Configure against the shared dependency sources
 # ---------------------------------------------------------------------------
 # FetchContent defaults to full clones (no GIT_SHALLOW), so raylib+flecs+imgui+
 # rlimgui cost ~760 MB of history per worktree. Pointing at the primary
@@ -297,7 +342,7 @@ fi
 info "configured"
 
 # ---------------------------------------------------------------------------
-# 5. Build
+# 6. Build
 # ---------------------------------------------------------------------------
 if (( DO_BUILD )); then
     step "building (this is the slow part)"
