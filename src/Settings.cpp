@@ -121,6 +121,80 @@ std::string &SettingsFilePathStorage() {
 
 const std::string &SettingsFilePath() { return SettingsFilePathStorage(); }
 
+
+namespace {
+
+// Reads one model-shaped JSON object into a ModelSection, with the same
+// present/absent semantics the table uses for the inline blocks: a missing key
+// leaves the member alone, a present one is an override.
+void LoadModelSectionJson(const nlohmann::json &json,
+                          GameSettings::ModelSection &out) {
+  if (!json.is_object()) {
+    throw std::runtime_error("the model block is not an object");
+  }
+  out.type = ToLower(json.value("type", out.type));
+  out.model = json.value("model", out.model);
+  out.apiKey = json.value("apiKey", out.apiKey);
+  out.endpoint = json.value("endpoint", out.endpoint);
+  out.keepAlive = json.value("keepAlive", out.keepAlive);
+  if (json.contains("temperature")) {
+    out.hasTemperature = true;
+    out.temperature = json["temperature"].get<double>();
+  }
+  if (json.contains("maxTokens")) {
+    out.hasMaxTokens = true;
+    out.maxTokens = json["maxTokens"].get<int>();
+  }
+  if (json.contains("provider")) {
+    out.hasProvider = true;
+    out.provider = json["provider"];
+  }
+}
+
+// One entry of `ai.profiles`. `error` collects warnings as well as failures; the
+// boolean is false only when the entry cannot be used at all.
+bool LoadAIProfile(const std::string &id, const nlohmann::json &entry,
+                   GameSettings::AIProfileSection &out, std::string &error) {
+  if (!entry.is_object()) {
+    error = "Settings: ai profile '" + id + "' is not an object; skipping\n";
+    return false;
+  }
+  out.label = entry.value("label", id);
+  out.kind = ToLower(entry.value("kind", out.kind));
+  if (out.kind != "s1" && out.kind != "s2" && out.kind != "vision") {
+    error = "Settings: ai profile '" + id + "' has unknown kind '" + out.kind +
+            "'; treating it as s2\n";
+    out.kind = "s2";
+  }
+  out.preset = entry.value("preset", out.preset);
+  if (!out.preset.empty() && out.kind != "s1") {
+    error += "Settings: ai profile '" + id +
+             "' sets a preset but is kind " + out.kind +
+             "; presets only apply to s1 profiles\n";
+  }
+  // A preset is the authority for how to reach an S1 model, so an absent field
+  // must not smuggle in ModelSection's chat-backend defaults -- Ollama's endpoint
+  // and llama3 would silently override the preset, which is exactly the bug
+  // SystemOneProfileSection documents. Same rule, same reason.
+  if (!out.preset.empty() && out.kind == "s1") {
+    out.model.model.clear();
+    out.model.endpoint.clear();
+    out.model.apiKey.clear();
+  }
+  if (entry.contains("model")) {
+    try {
+      LoadModelSectionJson(entry["model"], out.model);
+    } catch (const std::exception &e) {
+      error += std::string("Settings: ai profile '") + id +
+               "' model block has the wrong type: " + e.what() + "\n";
+      return false;
+    }
+  }
+  return true;
+}
+
+}  // namespace
+
 bool LoadGameSettings(const std::string &path) {
   GameSettings &settings = MutableSettings();
   // Remembered before the parse rather than after it, because a writer needs the
@@ -187,6 +261,124 @@ bool LoadGameSettings(const std::string &path) {
   for (const SettingsSchema::FieldSpec &field : SettingsSchema::Fields()) {
     if (field.stringDefault) {
       *static_cast<std::string *>(field.access(settings)) = *field.stringDefault;
+    }
+  }
+
+
+  // --- the named backends, and the blocks that reference them ---------------
+  //
+  // Read before any scalar: a block's `profile` key seeds that block's members,
+  // and the scalar pass below then reads the block's own keys over the seed.
+  // This is the one place where load order is load-bearing.
+  if (const nlohmann::json *profilesRoot =
+          SettingsSchema::JsonAt(root, "ai.profiles");
+      profilesRoot && profilesRoot->is_object()) {
+    for (auto it = profilesRoot->begin(); it != profilesRoot->end(); ++it) {
+      GameSettings::AIProfileSection profile;
+      std::string error;
+      bool usable = true;
+      try {
+        usable = LoadAIProfile(it.key(), it.value(), profile, error);
+      } catch (const std::exception &e) {
+        usable = false;
+        error += std::string("Settings: ai profile '") + it.key() +
+                 "' has the wrong type: " + e.what() + "\n";
+      }
+      if (!error.empty()) {
+        std::cerr << error;
+      }
+      if (usable) {
+        settings.ai.profiles[it.key()] = std::move(profile);
+      }
+    }
+  }
+
+  struct BlockSeed {
+    const char *blockPath;
+    const char *kind;
+    GameSettings::ModelSection &(*block)(GameSettings &);
+  };
+  static const BlockSeed kBlockSeeds[] = {
+      {"model", "s2",
+       [](GameSettings &s) -> GameSettings::ModelSection & { return s.model; }},
+      {"designer.model", "s2",
+       [](GameSettings &s) -> GameSettings::ModelSection & {
+         return s.designer.model;
+       }},
+      {"designer.rewriter.model", "s2",
+       [](GameSettings &s) -> GameSettings::ModelSection & {
+         return s.designer.rewriter.model;
+       }},
+      {"navigation.single.model", "s2",
+       [](GameSettings &s) -> GameSettings::ModelSection & {
+         return s.navigation.single.model;
+       }},
+      {"system1.model", "s1",
+       [](GameSettings &s) -> GameSettings::ModelSection & {
+         return s.system1.model;
+       }},
+  };
+  for (const BlockSeed &seed : kBlockSeeds) {
+    const nlohmann::json *name = SettingsSchema::JsonAt(
+        root, std::string(seed.blockPath) + ".profile");
+    if (!name || !name->is_string()) {
+      continue;
+    }
+    const std::string id = name->get<std::string>();
+    if (id.empty()) {
+      continue;
+    }
+    const auto found = settings.ai.profiles.find(id);
+    if (found == settings.ai.profiles.end()) {
+      std::cerr << "Settings: " << seed.blockPath
+                << ".profile names unknown ai profile '" << id
+                << "'; using the inline block" << std::endl;
+      continue;
+    }
+    if (found->second.kind != seed.kind) {
+      std::cerr << "Settings: ai profile '" << id << "' is kind "
+                << found->second.kind << " but " << seed.blockPath << " expects "
+                << seed.kind << "; using it anyway" << std::endl;
+    }
+    seed.block(settings) = found->second.model;
+  }
+
+  // Vision is not a ModelSection: the profile's model shape maps onto the four
+  // fields vision actually has, and the rest is reported rather than silently
+  // dropped.
+  if (const nlohmann::json *name =
+          SettingsSchema::JsonAt(root, "vision.profile");
+      name && name->is_string() && !name->get<std::string>().empty()) {
+    const std::string id = name->get<std::string>();
+    const auto found = settings.ai.profiles.find(id);
+    if (found == settings.ai.profiles.end()) {
+      std::cerr << "Settings: vision.profile names unknown ai profile '" << id
+                << "'; using the inline block" << std::endl;
+    } else {
+      const GameSettings::AIProfileSection &profile = found->second;
+      if (profile.kind != "vision") {
+        std::cerr << "Settings: ai profile '" << id << "' is kind "
+                  << profile.kind
+                  << " but vision.profile expects vision; using it anyway"
+                  << std::endl;
+      }
+      if (profile.model.type != "ollama") {
+        std::cerr << "Settings: ai profile '" << id << "' has type "
+                  << profile.model.type
+                  << " but vision only supports ollama; ignoring the type"
+                  << std::endl;
+      }
+      if (profile.model.hasMaxTokens || profile.model.hasProvider) {
+        std::cerr << "Settings: ai profile '" << id
+                  << "' sets maxTokens/provider, which vision does not use; "
+                     "ignoring them"
+                  << std::endl;
+      }
+      settings.vision.model = profile.model.model;
+      settings.vision.endpoint = profile.model.endpoint;
+      settings.vision.keepAlive = profile.model.keepAlive;
+      settings.vision.hasTemperature = profile.model.hasTemperature;
+      settings.vision.temperature = profile.model.temperature;
     }
   }
 
@@ -832,4 +1024,141 @@ bool WriteSettingsReference(const std::string &path, std::string &message) {
   }
   message = "Wrote the settings reference to " + path + ".";
   return true;
+}
+
+nlohmann::json AIProfileToJson(const GameSettings::AIProfileSection &profile) {
+  nlohmann::json entry = nlohmann::json::object();
+  entry["label"] = profile.label;
+  entry["kind"] = profile.kind;
+  if (!profile.preset.empty()) {
+    entry["preset"] = profile.preset;
+  }
+  nlohmann::json model = nlohmann::json::object();
+  model["type"] = profile.model.type;
+  model["model"] = profile.model.model;
+  model["apiKey"] = profile.model.apiKey;
+  model["endpoint"] = profile.model.endpoint;
+  model["keepAlive"] = profile.model.keepAlive;
+  if (profile.model.hasTemperature) {
+    model["temperature"] = profile.model.temperature;
+  }
+  if (profile.model.hasMaxTokens) {
+    model["maxTokens"] = profile.model.maxTokens;
+  }
+  if (profile.model.hasProvider) {
+    model["provider"] = profile.model.provider;
+  }
+  entry["model"] = std::move(model);
+  return entry;
+}
+
+bool ApplyAIProfileValue(const std::string &settingsPath, const std::string &id,
+                         const nlohmann::json &entry, std::string &message) {
+  message.clear();
+  if (id.empty()) {
+    message = "A profile needs an id.";
+    return false;
+  }
+  // The id becomes a key in the override file's dotted path, so a dot in it would
+  // silently nest objects instead of naming an entry.
+  if (id.find('.') != std::string::npos) {
+    message = "A profile id cannot contain '.'; override paths are dotted.";
+    return false;
+  }
+  GameSettings::AIProfileSection probe;
+  std::string warnings;
+  bool usable = true;
+  try {
+    usable = LoadAIProfile(id, entry, probe, warnings);
+  } catch (const std::exception &e) {
+    message = std::string("Invalid profile: ") + e.what();
+    return false;
+  }
+  if (!usable) {
+    message = warnings;
+    return false;
+  }
+
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json overrides;
+  if (!ReadOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  SettingsSchema::SetJsonAt(overrides, "ai.profiles." + id, entry);
+  if (!WriteOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  // References are resolved during a load, so writing the file is only half of
+  // the edit; the reload is what makes it take effect. Every other in-memory
+  // value is already persisted, so nothing is lost.
+  LoadGameSettings(settingsPath);
+  message = warnings + "ai profile '" + id + "' written to " + overridePath +
+            "; settings reloaded so references resolve.";
+  return true;
+}
+
+bool RemoveAIProfile(const std::string &settingsPath, const std::string &id,
+                     std::string &message) {
+  message.clear();
+  if (id.empty()) {
+    message = "A profile needs an id.";
+    return false;
+  }
+  if (id.find('.') != std::string::npos) {
+    message = "A profile id cannot contain '.'; override paths are dotted.";
+    return false;
+  }
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json overrides;
+  if (!ReadOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  // RFC 7396 spells deletion as null, which is the only way an override file can
+  // remove a profile that settings.json declares.
+  SettingsSchema::SetJsonAt(overrides, "ai.profiles." + id,
+                            nlohmann::json());
+  if (!WriteOverrideFile(overridePath, overrides, message)) {
+    return false;
+  }
+  LoadGameSettings(settingsPath);
+  message = "ai profile '" + id + "' removed for this checkout; settings "
+            "reloaded.";
+  return true;
+}
+
+int CountExplicitBlockKeys(const std::string &settingsPath,
+                           const std::string &blockPath) {
+  std::ifstream file(settingsPath);
+  if (!file.is_open()) {
+    return 0;
+  }
+  nlohmann::ordered_json root;
+  try {
+    file >> root;
+  } catch (const std::exception &) {
+    return 0;
+  }
+  if (!root.is_object()) {
+    return 0;
+  }
+  // Merge the override layer exactly as the loader does, so a block filled in
+  // either file counts -- an override in settings.local.json is just as hidden
+  // behind the picker as one in settings.json.
+  const std::string overridePath = OverridePath(settingsPath);
+  nlohmann::ordered_json local;
+  std::string ignored;
+  if (ReadOverrideFile(overridePath, local, ignored)) {
+    root.merge_patch(local);
+  }
+  const nlohmann::ordered_json *block = SettingsSchema::JsonAt(root, blockPath);
+  if (block == nullptr || !block->is_object()) {
+    return 0;
+  }
+  int count = 0;
+  for (auto it = block->begin(); it != block->end(); ++it) {
+    if (it.key() != "profile") {
+      ++count;
+    }
+  }
+  return count;
 }

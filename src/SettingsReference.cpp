@@ -104,6 +104,59 @@ void WriteFieldTable(std::ostringstream &out, const std::string &sectionKey) {
   }
 }
 
+void WriteAIProfileTable(std::ostringstream &out) {
+  out << "| field | type | default | meaning |\n";
+  out << "|---|---|---|---|\n";
+  for (const AIProfileFieldSpec &field : AIProfileFields()) {
+    std::string type;
+    switch (field.type) {
+    case ValueType::Int:
+    case ValueType::Int64:
+    case ValueType::UInt64:
+      type = "int";
+      break;
+    case ValueType::Float:
+    case ValueType::Double:
+      type = "number";
+      break;
+    case ValueType::Json:
+      type = "object";
+      break;
+    case ValueType::Bool:
+      type = "bool";
+      break;
+    default:
+      type = "string";
+      break;
+    }
+    const nlohmann::json fallback = AIProfileDefaultJson(field);
+    std::string defaultValue;
+    if (fallback.is_null()) {
+      defaultValue = "*absent*";
+    } else if (fallback.is_string()) {
+      const std::string text = fallback.get<std::string>();
+      defaultValue = "`" + (text.empty() ? std::string("\"\"") : text) + "`";
+    } else if (fallback.is_boolean()) {
+      defaultValue = fallback.get<bool>() ? "`true`" : "`false`";
+    } else {
+      defaultValue = "`" + fallback.dump() + "`";
+    }
+    std::string meaning = field.doc;
+    if (!field.enumValues.empty()) {
+      meaning += " One of ";
+      for (std::size_t i = 0; i < field.enumValues.size(); ++i) {
+        if (i > 0) {
+          meaning += (i + 1 == field.enumValues.size()) ? " or " : ", ";
+        }
+        meaning += "`" + field.enumValues[i] + "`";
+      }
+      meaning += ".";
+    }
+    out << "| `" << field.path << "` | " << type << " | " << defaultValue
+        << " | " << meaning << " |\n";
+  }
+}
+
 void WriteProfileTable(std::ostringstream &out) {
   const CollectionSpec &profiles = Profiles();
   out << "| field | type | default | meaning |\n";
@@ -304,7 +357,64 @@ const char *WiredAppendix() {
       "- `openrouter_debug.log` is AI debug output, not configuration.\n";
 }
 
+const char *AIProfilesProse() {
+  return
+      "A profile is resolved **into** the block that names it, not at runtime: the\n"
+      "loader copies the profile's model fields into the block, then reads the\n"
+      "block's own keys over them. So a block can share a backend and still change\n"
+      "one thing -- a cheaper model id, a smaller budget -- and every consumer keeps\n"
+      "reading a plain model block.\n"
+      "\n"
+      "```json\n"
+      "{\n"
+      "  \"ai\": {\n"
+      "    \"profiles\": {\n"
+      "      \"deepseek\": {\n"
+      "        \"label\": \"DeepSeek V4 Flash\",\n"
+      "        \"kind\": \"s2\",\n"
+      "        \"model\": { \"type\": \"openrouter\",\n"
+      "                   \"model\": \"deepseek/deepseek-v4-flash\",\n"
+      "                   \"maxTokens\": 1500 }\n"
+      "      }\n"
+      "    }\n"
+      "  },\n"
+      "  \"model\": { \"profile\": \"deepseek\" },\n"
+      "  \"designer\": { \"model\": { \"profile\": \"deepseek\", \"maxTokens\": 3000 } }\n"
+      "}\n"
+      "```\n"
+      "\n"
+      "The registry is an **object keyed by id**, not an array, because the override\n"
+      "layer (`settings.local.json`) merges objects key by key: a profile saved from\n"
+      "the settings window lands beside the others instead of replacing the whole\n"
+      "registry, which is what lets one profile's `apiKey` live in the untracked file.\n"
+      "Removing a profile is written as a JSON `null`, which RFC 7396 reads as a\n"
+      "deletion.\n"
+      "\n"
+      "`kind` decides which pickers offer the profile: `s2` for the agent, designer,\n"
+      "rewriter and single navigator blocks; `s1` for System 1; `vision` for the Vision\n"
+      "Chat backend. A hand-written mismatch is reported and still used, never refused,\n"
+      "so an experiment is not blocked by a taxonomy.\n"
+      "\n"
+      "A System 1 entry may name a profile instead of carrying a model block, in which\n"
+      "case the profile's preset and fields are applied first and the entry's own\n"
+      "`model` block and calibration sit on top -- the reason `system1.profiles` still\n"
+      "exists at all.\n"
+      "\n"
+      "In the settings window every block that takes a model starts with its profile\n"
+      "picker. Choosing **(no profile)** reveals the block's own fields, and forks the\n"
+      "profile it was using into them first, so switching to a manual configuration\n"
+      "keeps what already worked. With a profile selected the supplied fields are\n"
+      "hidden; **override fields** reveals them, and the picker row reports how many\n"
+      "explicit fields the files set, so a hand-written override is never invisible.\n"
+      "A System 1 entry follows the same rule for its model block, while its\n"
+      "calibration and timeout stay visible because they are per-entry. The last\n"
+      "choice in a picker creates a new profile and jumps to this editor.\n";
+}
+
 const char *SectionProse(const std::string &key) {
+  if (key == "ai.profiles") {
+    return AIProfilesProse();
+  }
   if (key == "designer.tts") {
     return TtsProse();
   }
@@ -348,7 +458,9 @@ std::string MarkdownReference() {
     if (!section.doc.empty()) {
       out << section.doc << "\n\n";
     }
-    if (section.key == Profiles().section) {
+    if (section.key == "ai.profiles") {
+      WriteAIProfileTable(out);
+    } else if (section.key == Profiles().section) {
       WriteProfileTable(out);
     } else {
       WriteFieldTable(out, section.key);

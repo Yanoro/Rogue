@@ -65,6 +65,7 @@ The backend the agents talk to. Read when the ECS world builds its AI instance.
 
 | field | type | default | meaning |
 |---|---|---|---|
+| `profile` | string | `""` | Name of an ai.profiles entry to take this block's settings from; any inline field overrides it. Empty uses the inline fields alone. *Restart to apply.* |
 | `type` | string | `ollama` | Backend to use. Anything other than the three known names is treated as ollama. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model` | string | `llama3` | Model id passed to the backend. *Restart to apply.* |
 | `apiKey` | string | `""` | Key for the gemini and openrouter backends. Leave empty here; put it in settings.local.json. *Restart to apply.* |
@@ -82,6 +83,7 @@ A second, independent Ollama backend behind the Vision Chat window. Separate fro
 
 | field | type | default | meaning |
 |---|---|---|---|
+| `profile` | string | `""` | Name of an ai.profiles entry of kind vision. model, endpoint, keepAlive and temperature come from it; maxTokens and provider have no meaning for vision and are reported. *Restart to apply.* |
 | `enabled` | bool | `true` | Off leaves the Vision Chat window usable but reporting that no backend is configured. *Restart to apply.* |
 | `model` | string | `moondream` | Ollama model tag for vision. *Restart to apply.* |
 | `endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint. The payload is the /api/generate shape. *Restart to apply.* |
@@ -107,6 +109,77 @@ The NPC prompt source and the spatial-memory digest.
 
 ---
 
+## `ai.profiles`
+
+Named AI backends: the endpoint, model, key and options for one model, declared once and referenced by id from any model block. A block's inline fields override the profile; a profile of kind s1, s2 or vision is offered only in the pickers it belongs to.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `label` | string | `""` | Display name in the pickers. |
+| `kind` | string | `s2` | What the model is for. The picker for a block only offers matching kinds; a hand-written mismatch is reported and still used. One of `s1`, `s2` or `vision`. |
+| `preset` | string | `""` | S1 only: hosted_jev or local_kev seeds endpoint, model and key before the fields below. |
+| `model.type` | string | `ollama` | Backend: ollama, gemini or openrouter. Anything else is treated as ollama. One of `ollama`, `gemini` or `openrouter`. |
+| `model.model` | string | `llama3` | Model id passed to the backend. |
+| `model.apiKey` | string | `""` | Key for gemini and openrouter. Empty falls back to the block's own key and then the main key. |
+| `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint. Ignored by the other backends. |
+| `model.keepAlive` | string | `""` | How long Ollama keeps the model resident, e.g. 30m. |
+| `model.temperature` | number | *absent* | Sampling temperature. Absent leaves the provider's own default in charge. |
+| `model.maxTokens` | int | *absent* | Completion budget. Absent leaves the provider's own default in charge. |
+| `model.provider` | object | *absent* | OpenRouter provider routing object, passed through verbatim. |
+
+A profile is resolved **into** the block that names it, not at runtime: the
+loader copies the profile's model fields into the block, then reads the
+block's own keys over them. So a block can share a backend and still change
+one thing -- a cheaper model id, a smaller budget -- and every consumer keeps
+reading a plain model block.
+
+```json
+{
+  "ai": {
+    "profiles": {
+      "deepseek": {
+        "label": "DeepSeek V4 Flash",
+        "kind": "s2",
+        "model": { "type": "openrouter",
+                   "model": "deepseek/deepseek-v4-flash",
+                   "maxTokens": 1500 }
+      }
+    }
+  },
+  "model": { "profile": "deepseek" },
+  "designer": { "model": { "profile": "deepseek", "maxTokens": 3000 } }
+}
+```
+
+The registry is an **object keyed by id**, not an array, because the override
+layer (`settings.local.json`) merges objects key by key: a profile saved from
+the settings window lands beside the others instead of replacing the whole
+registry, which is what lets one profile's `apiKey` live in the untracked file.
+Removing a profile is written as a JSON `null`, which RFC 7396 reads as a
+deletion.
+
+`kind` decides which pickers offer the profile: `s2` for the agent, designer,
+rewriter and single navigator blocks; `s1` for System 1; `vision` for the Vision
+Chat backend. A hand-written mismatch is reported and still used, never refused,
+so an experiment is not blocked by a taxonomy.
+
+A System 1 entry may name a profile instead of carrying a model block, in which
+case the profile's preset and fields are applied first and the entry's own
+`model` block and calibration sit on top -- the reason `system1.profiles` still
+exists at all.
+
+In the settings window every block that takes a model starts with its profile
+picker. Choosing **(no profile)** reveals the block's own fields, and forks the
+profile it was using into them first, so switching to a manual configuration
+keeps what already worked. With a profile selected the supplied fields are
+hidden; **override fields** reveals them, and the picker row reports how many
+explicit fields the files set, so a hand-written override is never invisible.
+A System 1 entry follows the same rule for its model block, while its
+calibration and timeout stay visible because they are per-entry. The last
+choice in a picker creates a new profile and jumps to this editor.
+
+---
+
 ## `designer`
 
 The blueprint designer's backend, prompt and output budget.
@@ -117,6 +190,7 @@ The blueprint designer's backend, prompt and output budget.
 | `promptFile` | string | `data/blueprints/DESIGNER.md` | The designer's instructions: the grammar, the reply contract and the worked examples. Empty uses the compiled-in default. *Restart to apply.* |
 | `maxDesignAttempts` | int | `3` | How many times the engine re-prompts after an invalid design before giving up. Must be at least 1. A value outside the range is reported and replaced. *Restart to apply.* |
 | `maxTokens` | int | `0` | The designer's own completion budget, overriding the backend's. 0 inherits it. Must be at least 0. A value outside the range is reported and replaced. *Restart to apply.* |
+| `model.profile` | string | `""` | Name of an ai.profiles entry for the designer's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the designer's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the designer's own model block. *Restart to apply.* |
 | `model.apiKey` | string | `""` | Key for the designer's own model block. *Restart to apply.* |
@@ -175,6 +249,7 @@ The model behind the Improve button. A short text edit wants a fast, cheap, non-
 |---|---|---|---|
 | `enabled` | bool | `false` | False shares the designer's backend with reasoning turned off. True reads the model block below. *Restart to apply.* |
 | `disableReasoning` | bool | `true` | Turn reasoning off on the rewriter's backend when it shares the designer's. *Restart to apply.* |
+| `model.profile` | string | `""` | Name of an ai.profiles entry for the rewriter's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the rewriter's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the rewriter's own model block. *Restart to apply.* |
 | `model.apiKey` | string | `""` | Key for the rewriter's own model block. *Restart to apply.* |
@@ -193,6 +268,7 @@ The typed-classifier layer and its selectable backends.
 | field | type | default | meaning |
 |---|---|---|---|
 | `useMainModel` | bool | `true` | Share the NPC backend instead of using the model block below. *Restart to apply.* |
+| `model.profile` | string | `""` | Name of an ai.profiles entry of kind s1 for the System 1 block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id. Empty means inherit the main model's id rather than ModelSection's llama3 default. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the System 1 model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.apiKey` | string | `""` | Key for the System 1 model block. *Restart to apply.* |
@@ -243,6 +319,7 @@ The selectable System 1 backends. Each entry is how to reach a model plus the tw
 | field | type | default | meaning |
 |---|---|---|---|
 | `id` | string | `""` | Identifier used to select this profile: system1.activeProfile, the --system1-profile flag and every status line. Required. |
+| `profile` | string | `""` | Name of an ai.profiles entry to take the model settings from. Its preset and fields are applied before this entry's own model block, so calibration and timeout can sit on top of a shared backend. |
 | `label` | string | `""` | Display name. Falls back to the id. |
 | `preset` | string | `""` | hosted_jev or local_kev: seeds endpoint, model, key and timeout before the explicit fields below are applied. Empty means no seed. |
 | `model.type` | string | `"ollama"` | Backend for this profile's model block. |
@@ -312,6 +389,7 @@ One main-model context that returns both the plan and the next move each decisio
 | `fallbackToTwo` | bool | `true` | Fall back to the strategist plus pilot when the single navigator's replies are unusable. |
 | `mapRadius` | int | `6` | Radius of the ASCII map offered with each decision. Must be 3..12. A value outside the range is reported and replaced. |
 | `useMainModel` | bool | `true` | Keep the NPC model settings. False reads the model block below. *Restart to apply.* |
+| `model.profile` | string | `""` | Name of an ai.profiles entry for the navigator's own model block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id for the navigator's own model block. Empty is not configured. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the navigator's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.apiKey` | string | `""` | Key for the navigator's own model block. *Restart to apply.* |

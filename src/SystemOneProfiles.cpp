@@ -77,13 +77,36 @@ ModelProfile FromAuthoredProfile(const GameSettings::SystemOneProfileSection &au
   ModelProfile profile;
   profile.id = authored.id;
   profile.label = authored.label.empty() ? authored.id : authored.label;
-  profile.preset = authored.preset;
+
+  // The shared backend this entry narrows, if it names one. Its preset and fields
+  // are a layer *under* the entry's own model block, so a per-profile timeout or
+  // calibration can sit on top of a definition used by several places.
+  const GameSettings::AIProfileSection *named = nullptr;
+  if (!authored.profile.empty()) {
+    const auto found = settings.ai.profiles.find(authored.profile);
+    if (found == settings.ai.profiles.end()) {
+      std::cerr << "Settings: system1 profile '" << authored.id
+                << "' names unknown ai profile '" << authored.profile
+                << "'; using its own model block" << std::endl;
+    } else {
+      named = &found->second;
+      if (named->kind != "s1") {
+        std::cerr << "Settings: ai profile '" << authored.profile << "' is kind "
+                  << named->kind
+                  << " but a system1 profile expects s1; using it anyway"
+                  << std::endl;
+      }
+    }
+  }
+  const std::string presetName =
+      authored.preset.empty() && named ? named->preset : authored.preset;
+  profile.preset = presetName;
 
   // Start from the named preset, or from the plain hosted defaults when a profile
   // names none. Starting from a preset is what keeps "local_kev" a single word
   // instead of three fields that must agree.
   JevClassifier::Config config;
-  const std::string preset = ToLower(authored.preset);
+  const std::string preset = ToLower(presetName);
   if (preset == "local_kev" || preset == "kev") {
     config = JevClassifier::Preset::LocalKev();
   } else if (preset.empty() || preset == "hosted_jev" || preset == "jev") {
@@ -92,9 +115,22 @@ ModelProfile FromAuthoredProfile(const GameSettings::SystemOneProfileSection &au
     // Unknown preset: reported rather than silently treated as hosted, because a typo
     // in a two-word field would otherwise point the game at the wrong backend.
     std::cerr << "Settings: system1 profile '" << authored.id << "' names unknown preset '"
-              << authored.preset << "'; using explicit fields only" << std::endl;
+              << presetName << "'; using explicit fields only" << std::endl;
     config = JevClassifier::Preset::HostedJev();
     config.endpoint.clear();
+  }
+
+  // The shared definition first, then this entry's explicit overrides.
+  if (named != nullptr) {
+    if (!named->model.endpoint.empty()) {
+      config.endpoint = named->model.endpoint;
+    }
+    if (!named->model.model.empty()) {
+      config.model = named->model.model;
+    }
+    if (!named->model.apiKey.empty()) {
+      config.apiKey = named->model.apiKey;
+    }
   }
 
   if (!authored.model.endpoint.empty()) {
