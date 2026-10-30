@@ -20,6 +20,9 @@
 #   * .agents/ is gitignored (.gitignore:4), so a new worktree gets no skills,
 #     no MCP server and no agent notes -- the cpp-navigation skill literally
 #     shells out to .agents/mcp/clangd-server.mjs. The directory is ported in.
+#   * settings.local.json is gitignored too and holds model.apiKey, so a
+#     worktree without it cannot reach the model APIs. It is copied as 0600 and
+#     never committed; --no-secrets skips it.
 #   * staging matters: `git diff` alone misses staged work, so everything is
 #     read as `git diff HEAD`.
 #   * ~760 MB of dependency sources live in git history under the primary
@@ -43,6 +46,7 @@ DO_BUILD=1
 DO_CONFIGURE=1
 DRY_RUN=0
 AGENTS_MODE=copy   # copy | link | none
+COPY_SECRETS=1
 
 die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 info() { printf '  %s\n' "$*"; }
@@ -71,6 +75,8 @@ Options:
       --no-agents     Do not port .agents/ (skills, MCP servers, notes).
       --link-agents   Symlink .agents/ to the primary worktree instead of
                       copying it, so skill edits stay in sync.
+      --no-secrets    Do not copy settings.local.json (model.apiKey and the
+                      machine-local overrides).
       --configure-only  Create + configure, do not compile.
       --no-build      Create the worktree only; no CMake, no compile.
   -n, --dry-run       Print the plan; change nothing.
@@ -79,6 +85,7 @@ Options:
 Carried automatically:
   .agents/            skills, MCP server scripts and agent notes (gitignored,
                       so it never arrives with the checkout)
+  settings.local.json model.apiKey and machine-local overrides, copied 0600
   build plumbing      CMakeLists.txt shell.nix compile_and_run.sh bench/
                       patches/ (when dirty against the start point)
 
@@ -97,6 +104,7 @@ while [[ $# -gt 0 ]]; do
         --data)           COPY_DATA=1; shift ;;
         --no-agents)      AGENTS_MODE=none; shift ;;
         --link-agents)    AGENTS_MODE=link; shift ;;
+        --no-secrets)     COPY_SECRETS=0; shift ;;
         --configure-only) DO_BUILD=0; shift ;;
         --no-build)       DO_BUILD=0; DO_CONFIGURE=0; shift ;;
         -*)               die "unknown option: $1 (see --help)" ;;
@@ -196,9 +204,11 @@ if [[ -f "$REPO_ROOT/.gitmodules" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Agent configuration -- .agents/ is gitignored, so it never arrives with
-#    the checkout. Without it the worktree has no skills and no clangd MCP
-#    server (cpp-navigation shells out to .agents/mcp/clangd-server.mjs).
+# 3. Gitignored local state -- neither .agents/ nor settings.local.json is
+#    tracked, so neither arrives with the checkout. Without .agents/ the
+#    worktree has no skills and no clangd MCP server (cpp-navigation shells out
+#    to .agents/mcp/clangd-server.mjs); without settings.local.json it has no
+#    model.apiKey and cannot reach the model APIs.
 # ---------------------------------------------------------------------------
 if [[ "$AGENTS_MODE" != none && -d "$PRIMARY/.agents" ]]; then
     step "porting agent config (.agents/)"
@@ -226,6 +236,22 @@ if [[ "$AGENTS_MODE" != none && -d "$PRIMARY/.agents" ]]; then
 
     info "skills: $skills"
     info "mcp:    $(ls "$PRIMARY/.agents/mcp" 2>/dev/null | tr '\n' ' ')"
+fi
+
+# API keys and machine-local overrides. install(1) forces 0600 whatever the
+# source mode is, and the copy stays gitignored in the new worktree, so it can
+# never be committed by `git add -A`.
+if (( COPY_SECRETS )) && [[ -f "$PRIMARY/settings.local.json" ]]; then
+    src_mode=$(stat -c '%a' "$PRIMARY/settings.local.json" 2>/dev/null || echo unknown)
+    if (( DRY_RUN )); then
+        info "[dry-run] copy settings.local.json (mode 0600)"
+    else
+        install -m 600 "$PRIMARY/settings.local.json" "$WT_PATH/settings.local.json"
+    fi
+    info "settings.local.json: copied 0600 (model.apiKey, gitignored)"
+    if [[ "$src_mode" != 600 ]]; then
+        info "note: source was mode $src_mode; the copy is tightened to 0600"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
