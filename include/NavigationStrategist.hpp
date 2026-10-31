@@ -1147,7 +1147,8 @@ Each turn the engine gives you:
   letters are semantic-place initials; the legend is on the MAP line.
 - STATE: where you are, the goal, the route and the candidate actions.
 - PLAN: your previous plan (or none).
-- ROUTE and LAST RESULT: what the character has walked and what just happened.
+- JOURNEY/ROUTE, AREA and LAST RESULT: what the character has walked, the
+  current area the engine knows, and what just happened.
 
 Your job is one decision: keep or update the plan, and choose the next move.
 Think about the long-term route and the local geometry, not just the next tile.
@@ -1243,7 +1244,8 @@ inline std::string BuildSingleUserPrompt(
     const std::string &state, const Plan *plan,
     const std::vector<std::string> &route, const std::string &lastResult,
     int calls, int maxCalls, bool compactJson = true,
-    bool includeMap = true) {
+    bool includeMap = true, const std::string &journey = "",
+    const std::string &areaCard = "") {
   std::ostringstream out;
   out << "GOAL: " << goal << "\n";
   if (!taskDigest.empty()) {
@@ -1259,14 +1261,22 @@ inline std::string BuildSingleUserPrompt(
   } else {
     out << "none\n";
   }
-  out << "\nROUTE:";
-  if (route.empty()) {
-    out << " nothing walked yet";
+  if (!journey.empty()) {
+    out << "\nJOURNEY: " << journey << "\n";
   } else {
-    for (std::size_t i = 0; i < route.size(); ++i) {
-      if (i > 0) out << " -> ";
-      out << route[i];
+    out << "\nROUTE:";
+    if (route.empty()) {
+      out << " nothing walked yet";
+    } else {
+      for (std::size_t i = 0; i < route.size(); ++i) {
+        if (i > 0) out << " -> ";
+        out << route[i];
+      }
     }
+    out << "\n";
+  }
+  if (!areaCard.empty()) {
+    out << "\n" << areaCard;
   }
   out << "\nLAST RESULT: " << (lastResult.empty() ? "episode start" : lastResult)
       << "\n";

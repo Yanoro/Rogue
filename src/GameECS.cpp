@@ -2244,6 +2244,26 @@ static std::unique_ptr<AI> BuildAIBackend(
   }
 
   if (ai) {
+    // A hosted backend with no key does not fail at construction: the request
+    // still goes out, as `Authorization: Bearer ` with nothing after it, and the
+    // provider answers 401 -- OpenRouter spells it "Missing Authentication
+    // header". That arrives as an empty completion, so the symptom is a silent
+    // empty reply and one line of API JSON in the debug log, which is not where
+    // anyone looks for a settings mistake. Name the cause while the startup log
+    // is still the obvious place to look.
+    if (modelSettings.apiKey.empty() &&
+        (modelSettings.type == "openrouter" || modelSettings.type == "gemini")) {
+      const std::string err =
+          "The " + modelSettings.type + " backend for model '" +
+          modelSettings.model +
+          "' has no apiKey, so the provider will reject every request. Set "
+          "model.apiKey in settings.local.json (or give the block its own key).";
+      if (debugLog) {
+        debugLog->LogError(err);
+      } else {
+        std::cerr << err << std::endl;
+      }
+    }
     ai->setErrorLogger([debugLog](const std::string &err) {
       if (debugLog) {
         debugLog->LogError(err);

@@ -27,6 +27,7 @@ using NavigationStrategistSection = GameSettings::NavigationStrategistSection;
 using NavigationObservationSection = GameSettings::NavigationObservationSection;
 using PerceptionSection = GameSettings::PerceptionSection;
 using RegionsSection = GameSettings::RegionsSection;
+using ChunksSection = GameSettings::ChunksSection;
 using WindowSection = GameSettings::WindowSection;
 using RenderSection = GameSettings::RenderSection;
 using PlayerSection = GameSettings::PlayerSection;
@@ -608,6 +609,7 @@ const std::vector<SectionSpec> &Sections() {
       {"navigation.strategist", "navigation.strategist", "The standard-LLM strategist above the System 1 pilot.", ""},
       {"perception", "perception", "The acquisition field for every character's vision. Named `perception` because `vision` is already the Vision Chat backend.", ""},
       {"regions", "regions", "Observed base regions: the coarse spatial memory places are derived from.", ""},
+      {"chunks", "chunks", "Fixed world chunk grid and the agent-facing area card/route strip.", ""},
       {"window", "window", "Window creation.", ""},
       {"render", "render", "Font and starting camera.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
@@ -1095,6 +1097,36 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Int>("regions", "regions.modelNearCount",
             "Near regions offered to the model in one prompt.", &GameSettings::regions, &RegionsSection::modelNearCount))
         .Between(0, 32);
+
+    // --- chunks -----------------------------------------------------------
+    add(Field<ValueType::Bool>("chunks", "chunks.enabled",
+            "Whether the agent-facing chunk area card and route strip are built.", &GameSettings::chunks, &ChunksSection::enabled));
+    add(Field<ValueType::Int>("chunks", "chunks.size",
+            "Cells per chunk side. Read at map load; a change remaps handles.", &GameSettings::chunks, &ChunksSection::size))
+        .Between(4, 64, DEFAULT_CHUNK_SIZE);
+    add(Field<ValueType::Int>("chunks", "chunks.maxTraversedAreas",
+            "Areas listed in one last-leg strip.", &GameSettings::chunks, &ChunksSection::maxTraversedAreas))
+        .Between(1, 32, DEFAULT_CHUNK_MAX_TRAVERSED_AREAS);
+    add(Field<ValueType::Int>("chunks", "chunks.maxJourneySegments",
+            "Journey stretches kept in the prompt.", &GameSettings::chunks, &ChunksSection::maxJourneySegments))
+        .Between(1, 64, DEFAULT_CHUNK_MAX_JOURNEY_SEGMENTS);
+    add(Field<ValueType::Int>("chunks", "chunks.maxNewAreas",
+            "Off-path newly seen areas listed after a leg.", &GameSettings::chunks, &ChunksSection::maxNewAreas))
+        .Between(1, 32, DEFAULT_CHUNK_MAX_NEW_AREAS);
+    add(Field<ValueType::Int>("chunks", "chunks.maxFeaturesPerArea",
+            "Features listed per area in the last-leg strip.", &GameSettings::chunks, &ChunksSection::maxFeaturesPerArea))
+        .Between(0, 16, DEFAULT_CHUNK_MAX_FEATURES_PER_AREA);
+    add(Field<ValueType::Int>("chunks", "chunks.cardAspects",
+            "Surfaces listed in the area card.", &GameSettings::chunks, &ChunksSection::cardAspects))
+        .Between(0, 16, DEFAULT_CHUNK_CARD_ASPECTS);
+    add(Field<ValueType::Int>("chunks", "chunks.cardObjectGroups",
+            "Object groups listed in the area card.", &GameSettings::chunks, &ChunksSection::cardObjectGroups))
+        .Between(0, 32, DEFAULT_CHUNK_CARD_OBJECT_GROUPS);
+    add(Field<ValueType::Int>("chunks", "chunks.cardPlaces",
+            "Places listed in the area card.", &GameSettings::chunks, &ChunksSection::cardPlaces))
+        .Between(0, 16, DEFAULT_CHUNK_CARD_PLACES);
+    add(Field<ValueType::Bool>("chunks", "chunks.includeCharacters",
+            "Whether the area card lists observed characters.", &GameSettings::chunks, &ChunksSection::includeCharacters));
 
     // --- window -----------------------------------------------------------
     add(Field<ValueType::String>("window", "window.title",

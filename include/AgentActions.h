@@ -5,6 +5,7 @@
 #include "DebugLog.h"
 #include "Map.h"
 #include "NavigationPlan.hpp"
+#include "ChunkView.hpp"
 #include "NavigatorLog.h"
 #include "NavigationStrategist.hpp"
 #include "PlaceQuery.hpp"
@@ -972,6 +973,12 @@ public:
           state.lastS1Raw = debugS1Raw;
           state.lastS1Error = debugS1Error;
           state.recentExamination = recentExamination;
+          state.journey = journeyText;
+          state.areaCard = areaCard;
+          state.lastResult = lastResult;
+          state.legTraceJson =
+              lastTrace.traversed.empty() ? std::string()
+                                          : lastTrace.ToJson().dump();
 
           for (const NavigationStrategist::Monitor &monitor : strategy.monitors) {
             NavigationDebugMonitor entry;
@@ -1089,6 +1096,15 @@ public:
           }
           if (!recentExamination.empty()) {
             observation["recent_examination"] = recentExamination;
+          }
+          if (!journeyText.empty()) {
+            observation["journey"] = journeyText;
+          }
+          if (!areaCard.empty()) {
+            observation["area_card"] = areaCard;
+          }
+          if (!lastResult.empty()) {
+            observation["last_result"] = lastResult;
           }
 
           std::string taskDigest;
@@ -1585,6 +1601,15 @@ public:
           if (!recentExamination.empty()) {
             state += "\nRECENT EXAMINATION: " + recentExamination + "\n";
           }
+          if (!journeyText.empty()) {
+            state += "\nJOURNEY: " + journeyText + "\n";
+          }
+          if (!areaCard.empty()) {
+            state += "\n" + areaCard;
+          }
+          if (!lastResult.empty()) {
+            state += "\nLAST RESULT: " + lastResult + "\n";
+          }
           if (!repetitionNote.empty()) {
             state += "\nREPETITION: " + repetitionNote + "\n";
           }
@@ -1849,11 +1874,86 @@ public:
           legTarget = chosen.target;
           legExamine = chosen.examine;
           legObjectId = chosen.objectId;
+          chunkLegTracked = false;
+          const ChunkViewSettings chunkSettings = CurrentChunkSettings();
+          if (chunkSettings.enabled) {
+            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+              legStart = *here;
+              legStartTick = memory->lastVisionTick;
+              chunksBeforeLeg.clear();
+              for (const auto &[key, cell] : memory->cells) {
+                (void)key;
+                chunksBeforeLeg.insert(
+                    ChunkKey(ChunkAt(cell.pos, chunkSettings.size)));
+              }
+              chunkLegTracked = true;
+            }
+          }
           leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
           PublishNavigationDebug(entity, true);
           return ActionStatus::Doing;
+        }
+
+        ChunkViewSettings CurrentChunkSettings() const {
+          ChunkViewSettings settings;
+          const GameSettings::ChunksSection &chunks = Settings().chunks;
+          settings.enabled = chunks.enabled;
+          settings.size = chunks.size;
+          settings.maxTraversedAreas = chunks.maxTraversedAreas;
+          settings.maxJourneySegments = chunks.maxJourneySegments;
+          settings.maxNewAreas = chunks.maxNewAreas;
+          settings.maxFeaturesPerArea = chunks.maxFeaturesPerArea;
+          settings.cardAspects = chunks.cardAspects;
+          settings.cardObjectGroups = chunks.cardObjectGroups;
+          settings.cardPlaces = chunks.cardPlaces;
+          settings.includeCharacters = chunks.includeCharacters;
+          return settings;
+        }
+
+        void RefreshChunkCard(flecs::entity entity) {
+          const ChunkViewSettings settings = CurrentChunkSettings();
+          if (!settings.enabled) {
+            return;
+          }
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            return;
+          }
+          const ChunkKnowledge knowledge = BuildChunkKnowledge(
+              *memory, ChunkAt(*here, settings.size), settings, *here);
+          areaCard = RenderAreaCard(knowledge, *memory, settings);
+        }
+
+        void RecordChunkLeg(flecs::entity entity, const std::string &outcome) {
+          if (!chunkLegTracked) {
+            RefreshChunkCard(entity);
+            return;
+          }
+          const ChunkViewSettings settings = CurrentChunkSettings();
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (!settings.enabled || memory == nullptr || here == nullptr ||
+              !leg) {
+            chunkLegTracked = false;
+            RefreshChunkCard(entity);
+            return;
+          }
+          lastTrace = BuildLegTrace(leg->getPath(), legStart, *memory,
+                                    chunksBeforeLeg, legStartTick, legName,
+                                    outcome, settings);
+          AppendLeg(journey, lastTrace, *memory);
+          journeyText = RenderJourney(journey, *memory, settings);
+          const ChunkKnowledge knowledge = BuildChunkKnowledge(
+              *memory, ChunkAt(*here, settings.size), settings, *here);
+          areaCard = RenderAreaCard(knowledge, *memory, settings);
+          lastResult = lastTrace.ToProse(*memory, settings);
+          if (navigatorLog) {
+            navigatorLog->ChunkTrace(lastTrace.ToJson().dump());
+          }
+          chunkLegTracked = false;
         }
 
         ActionStatus HandleLegFailure(flecs::entity entity,
@@ -1887,7 +1987,12 @@ public:
 
           if (SecondsSince(legStartedAt) > nav.legTimeoutSeconds) {
             leg->handleInterruption(entity);
+            if (chunkLegTracked) {
+              RecordChunkLeg(entity,
+                             "could not reach " + legName + " in time");
+            }
             leg.reset();
+            chunkLegTracked = false;
             return HandleLegFailure(
                 entity, "you could not reach " + legName + " in time");
           }
@@ -1913,6 +2018,10 @@ public:
                       ? "you reached the " + legName +
                             ", but there was nothing to examine"
                       : text;
+              lastResult = recentExamination;
+              if (chunkLegTracked) {
+                RecordChunkLeg(entity, lastResult);
+              }
               route.push_back(legName);
             } else {
               // The state's Visited list is places, not legs: following one road
@@ -1926,6 +2035,20 @@ public:
                   routePlaceIds.back() != legPlaceId) {
                 routePlaceIds.push_back(legPlaceId);
               }
+              lastResult = "arrived at " + legName + " (leg " +
+                           std::to_string(legs) + ")";
+              if (chunkLegTracked) {
+                const int tiles = static_cast<int>(leg->getPath().size());
+                const int dx = here->x - legStart.x;
+                const int dy = here->y - legStart.y;
+                std::string outcome = "walked " + std::to_string(tiles) +
+                                      (tiles == 1 ? " tile" : " tiles");
+                if (dx != 0 || dy != 0) {
+                  outcome += " " + PlaceQuery::CompassWord(dx, dy);
+                }
+                outcome += " to " + legName;
+                RecordChunkLeg(entity, outcome);
+              }
             }
             Trace(entity, "leg " + std::to_string(legs) + ": arrived at " +
                               legName);
@@ -1938,9 +2061,13 @@ public:
           }
 
           const std::string reason = leg->getFailureReason();
+          if (chunkLegTracked) {
+            RecordChunkLeg(entity, "could not walk there: " + reason);
+          }
           Trace(entity, "leg " + std::to_string(legs + 1) + ": failed (" +
                             reason + ") for " + legName);
           leg.reset();
+          chunkLegTracked = false;
           return HandleLegFailure(entity, reason);
         }
 
@@ -1988,6 +2115,15 @@ public:
         bool legExamine = false;
         std::uint64_t legObjectId = 0;
         int legs = 0;
+        Journey journey;
+        LegTrace lastTrace;
+        std::string journeyText;
+        std::string areaCard;
+        std::string lastResult;
+        std::unordered_set<std::uint64_t> chunksBeforeLeg;
+        GamePosition legStart{0, 0};
+        int legStartTick = 0;
+        bool chunkLegTracked = false;
         int decisions = 0;
         int surveysUsed = 0;
         int surveyWaitUpdates = 0;
@@ -2081,6 +2217,7 @@ public:
             leg->handleInterruption(entity);
             leg.reset();
           }
+          chunkLegTracked = false;
           if (fallback) {
             return fallback->handleInterruption(entity);
           }
@@ -2258,8 +2395,15 @@ public:
           debug->pilotState = debugState;
           debug->lastS1Raw = debugResponse;
           debug->lastS1Error = debugError;
-          debug->recentExamination = lastResult;
+          debug->recentExamination =
+              lastTrace.outcome.empty() ? lastResult : lastTrace.outcome;
           debug->lastSummary = lastSummary;
+          debug->journey = journeyText;
+          debug->areaCard = areaCard;
+          debug->lastResult = lastResult;
+          debug->legTraceJson =
+              lastTrace.traversed.empty() ? std::string()
+                                          : lastTrace.ToJson().dump();
           debug->route.clear();
           for (std::size_t i = 0; i < route.size(); ++i) {
             if (i > 0) debug->route += " -> ";
@@ -2439,7 +2583,8 @@ public:
               NavigationStrategist::BuildSingleUserPrompt(
                   goal, taskDigest, observation, map, state,
                   strategyReady ? &strategy : nullptr, route, lastResult,
-                  singleCalls, maxCalls, cfg.compactJson, cfg.includeMap);
+                  singleCalls, maxCalls, cfg.compactJson, cfg.includeMap,
+                  journeyText, areaCard);
           if (!singleSystemAdded) {
             singleMessages.push_back({"system", system});
             singleSystemAdded = true;
@@ -2511,7 +2656,10 @@ public:
             entry.distance = candidate.distance;
             thought.candidates.push_back(std::move(entry));
           }
-          thought.graphJson = observation["graph"].dump();
+          thought.graphJson = observation.contains("graph")
+                                  ? observation["graph"].dump()
+                                  : std::string();
+          thought.stateText = state;
           singleThoughts.push_back(std::move(thought));
 
           if (navigatorLog) {
@@ -3000,6 +3148,21 @@ public:
           if (here == nullptr) {
             return Finish(entity, "you have no memory of where you are");
           }
+          chunkLegTracked = false;
+          const ChunkViewSettings chunkSettings = CurrentChunkSettings();
+          if (chunkSettings.enabled) {
+            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+              legStart = *here;
+              legStartTick = memory->lastVisionTick;
+              chunksBeforeLeg.clear();
+              for (const auto &[key, cell] : memory->cells) {
+                (void)key;
+                chunksBeforeLeg.insert(
+                    ChunkKey(ChunkAt(cell.pos, chunkSettings.size)));
+              }
+              chunkLegTracked = true;
+            }
+          }
           repetitionNote.clear();
           const int movedSinceLastChoice =
               Chebyshev(*here, positionAtLastChoice);
@@ -3065,6 +3228,71 @@ public:
                   ". `objects:all` lists every group.");
         }
 
+        ChunkViewSettings CurrentChunkSettings() const {
+          ChunkViewSettings settings;
+          const GameSettings::ChunksSection &chunks = Settings().chunks;
+          settings.enabled = chunks.enabled;
+          settings.size = chunks.size;
+          settings.maxTraversedAreas = chunks.maxTraversedAreas;
+          settings.maxJourneySegments = chunks.maxJourneySegments;
+          settings.maxNewAreas = chunks.maxNewAreas;
+          settings.maxFeaturesPerArea = chunks.maxFeaturesPerArea;
+          settings.cardAspects = chunks.cardAspects;
+          settings.cardObjectGroups = chunks.cardObjectGroups;
+          settings.cardPlaces = chunks.cardPlaces;
+          settings.includeCharacters = chunks.includeCharacters;
+          return settings;
+        }
+
+        // Object/examine legs move too; they get a fresh current-area card even
+        // though they do not get a chunk route strip.
+        void RefreshChunkCard(flecs::entity entity) {
+          const ChunkViewSettings settings = CurrentChunkSettings();
+          if (!settings.enabled) {
+            return;
+          }
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (memory == nullptr || here == nullptr) {
+            return;
+          }
+          const ChunkKnowledge knowledge = BuildChunkKnowledge(
+              *memory, ChunkAt(*here, settings.size), settings, *here);
+          areaCard = RenderAreaCard(knowledge, *memory, settings);
+        }
+
+        // Record a completed leg: trace, journey, current card and the structured
+        // log line. Object/examine legs use the same path so the journey does not
+        // lose the movement they made.
+        void RecordChunkLeg(flecs::entity entity, const std::string &outcome) {
+          if (!chunkLegTracked) {
+            RefreshChunkCard(entity);
+            return;
+          }
+          const ChunkViewSettings settings = CurrentChunkSettings();
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (!settings.enabled || memory == nullptr || here == nullptr ||
+              !leg) {
+            chunkLegTracked = false;
+            RefreshChunkCard(entity);
+            return;
+          }
+          lastTrace = BuildLegTrace(leg->getPath(), legStart, *memory,
+                                    chunksBeforeLeg, legStartTick, legName,
+                                    outcome, settings);
+          AppendLeg(journey, lastTrace, *memory);
+          journeyText = RenderJourney(journey, *memory, settings);
+          const ChunkKnowledge knowledge = BuildChunkKnowledge(
+              *memory, ChunkAt(*here, settings.size), settings, *here);
+          areaCard = RenderAreaCard(knowledge, *memory, settings);
+          lastResult = lastTrace.ToProse(*memory, settings);
+          if (navigatorLog) {
+            navigatorLog->ChunkTrace(lastTrace.ToJson().dump());
+          }
+          chunkLegTracked = false;
+        }
+
         ActionStatus StartLeg(flecs::entity entity,
                               const NavigationPlan::Candidate &chosen) {
           const GamePosition *here = entity.get<GamePosition>();
@@ -3094,6 +3322,21 @@ public:
           legApproach = false;
           legExamine = chosen.examine;
           legObjectId = chosen.objectId;
+          chunkLegTracked = false;
+          const ChunkViewSettings chunkSettings = CurrentChunkSettings();
+          if (chunkSettings.enabled) {
+            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+              legStart = *here;
+              legStartTick = memory->lastVisionTick;
+              chunksBeforeLeg.clear();
+              for (const auto &[key, cell] : memory->cells) {
+                (void)key;
+                chunksBeforeLeg.insert(
+                    ChunkKey(ChunkAt(cell.pos, chunkSettings.size)));
+              }
+              chunkLegTracked = true;
+            }
+          }
           leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
@@ -3163,12 +3406,13 @@ public:
                   const bool timed = afterAction.is_alive() &&
                                      afterAction != beforeAction;
                   if (timed) {
+                    lastResult = "started " + interaction + " on " + legName +
+                                 " (" + alias +
+                                 "); control returns to you";
+                    RecordChunkLeg(entity, lastResult);
                     route.push_back(legName);
                     leg.reset();
-                    return Finish(entity,
-                                  "started " + interaction + " on " + legName +
-                                      " (" + alias +
-                                      "); control returns to you");
+                    return Finish(entity, lastResult);
                   }
                   lastResult =
                       text.empty() ? "used " + interaction + " on " + legName +
@@ -3176,6 +3420,7 @@ public:
                                    : text;
                 }
               }
+              RecordChunkLeg(entity, lastResult);
               route.push_back(legName);
             } else if (examined) {
               flecs::entity object(entity.world(), objectId);
@@ -3184,6 +3429,7 @@ public:
                                ? "you reached the " + legName +
                                      ", but there was nothing to examine"
                                : text;
+              RecordChunkLeg(entity, lastResult);
               route.push_back(legName);
             } else {
               if (visitedPlaceIds.insert(legPlaceId).second) {
@@ -3195,6 +3441,19 @@ public:
               }
               lastResult = "arrived at " + legName + " (leg " +
                            std::to_string(legs) + ")";
+              if (chunkLegTracked) {
+                const int tiles =
+                    static_cast<int>(leg->getPath().size());
+                const int dx = here->x - legStart.x;
+                const int dy = here->y - legStart.y;
+                std::string outcome = "walked " + std::to_string(tiles) +
+                                      (tiles == 1 ? " tile" : " tiles");
+                if (dx != 0 || dy != 0) {
+                  outcome += " " + PlaceQuery::CompassWord(dx, dy);
+                }
+                outcome += " to " + legName;
+                RecordChunkLeg(entity, outcome);
+              }
             }
             leg.reset();
             phase = Phase::Deciding;
@@ -3202,7 +3461,11 @@ public:
             return ActionStatus::Doing;
           }
           const std::string reason = leg->getFailureReason();
+          if (chunkLegTracked) {
+            RecordChunkLeg(entity, "could not walk there: " + reason);
+          }
           leg.reset();
+          chunkLegTracked = false;
           return FallbackToTwo(entity, "a leg failed: " + reason);
         }
 
@@ -3329,6 +3592,14 @@ public:
         std::string legInteraction;
         bool legApproach = false;
         std::unique_ptr<MoveToCellAction> leg;
+        Journey journey;
+        LegTrace lastTrace;
+        std::string journeyText;
+        std::string areaCard;
+        std::unordered_set<std::uint64_t> chunksBeforeLeg;
+        GamePosition legStart{0, 0};
+        int legStartTick = 0;
+        bool chunkLegTracked = false;
         std::vector<NavigationDebugStrategistThought> singleThoughts;
         std::string debugObservation;
         std::string debugBrief;

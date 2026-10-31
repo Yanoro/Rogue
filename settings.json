@@ -2,7 +2,7 @@
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
 
   "map": {
-    "file": "./maps/Map_Village_Quest.json",
+    "file": "./maps/Map_Nav_Maze.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
@@ -135,6 +135,19 @@
 
   "regions": {
       "farRadius": 48
+  },
+
+  "chunks": {
+    "enabled": true,
+    "size": 8,
+    "maxTraversedAreas": 8,
+    "maxJourneySegments": 12,
+    "maxNewAreas": 6,
+    "maxFeaturesPerArea": 3,
+    "cardAspects": 3,
+    "cardObjectGroups": 6,
+    "cardPlaces": 4,
+    "includeCharacters": true
   },
 
   "system1": {

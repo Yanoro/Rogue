@@ -68,7 +68,7 @@ The backend the agents talk to. Read when the ECS world builds its AI instance.
 | `profile` | string | `""` | Name of an ai.profiles entry to take this block's settings from; any inline field overrides it. Empty uses the inline fields alone. *Restart to apply.* |
 | `type` | string | `ollama` | Backend to use. Anything other than the three known names is treated as ollama. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model` | string | `llama3` | Model id passed to the backend. *Restart to apply.* |
-| `apiKey` | string | `""` | Key for the gemini and openrouter backends. Leave empty here; put it in settings.local.json. *Restart to apply.* |
+| `apiKey` | string | `""` | Key for the gemini and openrouter backends. Leave empty here; put it in settings.local.json. This block is the source every other hosted block inherits from when it has no key of its own. *Restart to apply.* |
 | `endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint. Only read by the ollama backend. *Restart to apply.* |
 | `temperature` | number | *absent* | Sampling temperature. Absent leaves the provider's own default in charge. *Restart to apply.* |
 | `maxTokens` | int | *absent* | Completion budget. Absent leaves the provider's own default in charge. *Restart to apply.* |
@@ -193,7 +193,7 @@ The blueprint designer's backend, prompt and output budget.
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the designer's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the designer's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the designer's own model block. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the designer's own model block. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the designer's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the designer's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the designer's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the designer's own model block. *Restart to apply.* |
@@ -252,7 +252,7 @@ The model behind the Improve button. A short text edit wants a fast, cheap, non-
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the rewriter's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the rewriter's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the rewriter's own model block. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the rewriter's own model block. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the rewriter's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the rewriter's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the rewriter's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the rewriter's own model block. *Restart to apply.* |
@@ -271,7 +271,7 @@ The typed-classifier layer and its selectable backends.
 | `model.profile` | string | `""` | Name of an ai.profiles entry of kind s1 for the System 1 block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id. Empty means inherit the main model's id rather than ModelSection's llama3 default. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the System 1 model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the System 1 model block. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the System 1 model block. Empty uses `model.apiKey`. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Decisions endpoint for the System 1 model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the System 1 model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the System 1 model block. *Restart to apply.* |
@@ -392,7 +392,7 @@ One main-model context that returns both the plan and the next move each decisio
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the navigator's own model block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id for the navigator's own model block. Empty is not configured. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the navigator's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the navigator's own model block. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the navigator's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the navigator's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the navigator's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the navigator's own model block. *Restart to apply.* |
@@ -451,6 +451,27 @@ Observed base regions: the coarse spatial memory places are derived from.
 | `farRadius` | int | `48` | How far the far grid extends. Must be at least midRadius. Must be 1..512. A value outside the range is reported and replaced. |
 | `maxRegions` | int | `64` | Regions remembered per character. Must be 0..512. A value outside the range is reported and replaced. |
 | `modelNearCount` | int | `6` | Near regions offered to the model in one prompt. Must be 0..32. A value outside the range is reported and replaced. |
+
+---
+
+## `chunks`
+
+Fixed world chunk grid and the agent-facing area card / route strip
+(`docs/chunk-design.md`). A chunk is world structure; the card and strip summarize
+only what the character has observed.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `enabled` | bool | `true` | Whether the area card and last-leg route strip are built. False restores the raw `ROUTE:` line. |
+| `size` | int | `8` | Cells per chunk side. Must be 4..64. Read at map load; a change remaps the per-agent handles, so reload. |
+| `maxTraversedAreas` | int | `8` | Areas listed in one last-leg strip. Must be 1..32. |
+| `maxJourneySegments` | int | `12` | Journey stretches kept in the prompt. Must be 1..64. |
+| `maxNewAreas` | int | `6` | Off-path newly seen areas listed after a leg. Must be 1..32. |
+| `maxFeaturesPerArea` | int | `3` | Features listed per area in the last-leg strip. Must be 0..16. |
+| `cardAspects` | int | `3` | Surfaces listed in the area card. Must be 0..16. |
+| `cardObjectGroups` | int | `6` | Object groups listed in the area card. Must be 0..32. |
+| `cardPlaces` | int | `4` | Places listed in the area card. Must be 0..16. |
+| `includeCharacters` | bool | `true` | Whether the area card lists observed characters. |
 
 ---
 

@@ -42,7 +42,10 @@ struct GameSettings {
     // "ollama", "gemini" or "openrouter". Anything else is treated as ollama.
     std::string type = "ollama";
     std::string model = "llama3";
-    // May stay empty when the key lives in model.json or settings.local.json.
+    // May stay empty: a hosted block with no key of its own uses the top-level
+    // `model.apiKey`, which is where settings.local.json and the legacy
+    // model.json put it. A named profile's key, when it has one, arrives by
+    // seeding the block at load (see LoadGameSettings' credential inheritance).
     std::string apiKey;
     // Only read for the ollama backend.
     std::string endpoint = "http://localhost:11434/api/generate";
@@ -571,6 +574,22 @@ struct GameSettings {
     int maxRegions = DEFAULT_MEMORY_REGIONS_MAX;
     int modelNearCount = DEFAULT_REGION_MODEL_NEAR_COUNT;
   } regions;
+
+  // Fixed world chunk grid and the agent-facing area view
+  // (docs/chunk-design.md). The size is read at map load; changing it mid-run
+  // remaps every handle, so a change wants a reload.
+  struct ChunksSection {
+    bool enabled = true;
+    int size = DEFAULT_CHUNK_SIZE;
+    int maxTraversedAreas = DEFAULT_CHUNK_MAX_TRAVERSED_AREAS;
+    int maxJourneySegments = DEFAULT_CHUNK_MAX_JOURNEY_SEGMENTS;
+    int maxNewAreas = DEFAULT_CHUNK_MAX_NEW_AREAS;
+    int maxFeaturesPerArea = DEFAULT_CHUNK_MAX_FEATURES_PER_AREA;
+    int cardAspects = DEFAULT_CHUNK_CARD_ASPECTS;
+    int cardObjectGroups = DEFAULT_CHUNK_CARD_OBJECT_GROUPS;
+    int cardPlaces = DEFAULT_CHUNK_CARD_PLACES;
+    bool includeCharacters = DEFAULT_CHUNK_INCLUDE_CHARACTERS;
+  } chunks;
 
   struct PlayerSection {
     std::string name = DEFAULT_PLAYER_ENTITY_NAME;

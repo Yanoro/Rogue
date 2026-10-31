@@ -26,6 +26,7 @@ public:
   void S1(const std::string &state, const std::string &answer,
           float confidence);
   void Leg(const std::string &key, const std::string &label, int x, int y);
+  void ChunkTrace(const std::string &json);
   void Summary(const std::string &summary);
 
 private:

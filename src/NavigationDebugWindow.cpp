@@ -956,6 +956,15 @@ void NavigationDebugWindow::Draw() {
           } else {
             DrawTextBlock("Thought", record.thought, 180.0f);
           }
+
+          ImGui::SeparatorText("Decision context");
+          if (record.stateText.empty()) {
+            ImGui::TextDisabled("(no state snapshot for this call)");
+          } else {
+            const std::string label =
+                "Call " + std::to_string(record.index) + " state";
+            DrawTextBlock(label.c_str(), record.stateText, 280.0f);
+          }
         }
       }
 
@@ -1047,6 +1056,29 @@ void NavigationDebugWindow::Draw() {
                            state->lastS1Error.c_str());
       }
       DrawTextBlock("Latest raw S1 response", state->lastS1Raw, 170.0f);
+      ImGui::EndTabItem();
+    }
+
+    // ── Chunks ─────────────────────────────────────────────────────────────
+    if (ImGui::BeginTabItem("Chunks")) {
+      if (state->journey.empty() && state->areaCard.empty()) {
+        ImGui::TextDisabled("(no chunk view in this snapshot)");
+      } else {
+        if (!state->journey.empty()) {
+          ImGui::TextWrapped("Journey: %s", state->journey.c_str());
+        }
+        ImGui::Separator();
+        if (!state->areaCard.empty()) {
+          DrawTextBlock("Current area card", state->areaCard, 220.0f);
+        }
+        if (!state->lastResult.empty()) {
+          DrawTextBlock("Last result strip", state->lastResult, 160.0f);
+        }
+        if (!state->legTraceJson.empty()) {
+          DrawTextBlock("Leg trace (JSON, world keys)",
+                        state->legTraceJson, 220.0f);
+        }
+      }
       ImGui::EndTabItem();
     }
 

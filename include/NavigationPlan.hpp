@@ -32,6 +32,7 @@
 // Design: docs/navigation-subagent-design.md.
 
 #include "Components.h"
+#include "Chunk.hpp"
 #include "Defaults.h"
 #include "InteractionRegistry.h"
 #include "PlaceQuery.hpp"

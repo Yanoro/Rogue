@@ -92,6 +92,10 @@ void NavigatorLog::Leg(const std::string &key, const std::string &label, int x,
         std::to_string(y) + ") ---\n");
 }
 
+void NavigatorLog::ChunkTrace(const std::string &json) {
+  Write("\n-- chunk trace (json) --\n" + json + "\n");
+}
+
 void NavigatorLog::Summary(const std::string &summary) {
   Write("\n-- summary --\n" + summary + "\n");
 }
