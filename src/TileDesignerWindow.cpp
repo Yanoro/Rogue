@@ -721,7 +721,9 @@ std::string TileDesignerWindow::ArtDocumentPath(const std::string &name,
 
 void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
-                                               bool replaceGenerated) {
+                                               bool replaceGenerated,
+                                               const std::string &surroundings,
+                                               const std::string &requirement) {
   if (name.empty()) return;
   if (ai == nullptr) {
     statusIsError = true;
@@ -734,6 +736,11 @@ void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
     return;
   }
   if (game == nullptr) return;
+
+  // The dropdown follows the request: a gap offered from the Designer window is a tile or
+  // an object, and leaving the header saying the other one would make the transcript read
+  // as if the wrong prompt had been used.
+  mode = kind;
 
   const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
 
@@ -787,6 +794,18 @@ void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
       artBrief.description = found->second.value("description", std::string());
     }
   }
+
+  // The designer's own description wins over the catalog's. A requested asset is not in
+  // the catalog at all yet, so there is nothing to look up -- and when an existing asset
+  // is being redrawn, the request is the newer statement of what it should be.
+  if (!requirement.empty()) {
+    artBrief.description = requirement;
+  }
+
+  // What the building around the gap looked like. Empty for a standalone request, which
+  // is the normal case outside the Designer window -- the prompt builder omits the
+  // paragraph entirely rather than saying "the surroundings are:" and stopping.
+  artBrief.surroundings = surroundings;
 
   artAttempts = 0;
   artVerdict.clear();
@@ -936,9 +955,15 @@ void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
   // The compile goes through the queue like any other art request, so placement and
   // the hot-swap are one code path whether a person wrote the document or an agent
   // did.
+  //
+  // `RecompileSpriteArt`, not `RequestSpriteArt`: a document that was just accepted is by
+  // definition newer than any sprite already compiled for that name, and the queue refuses
+  // a name it has generated art for before. That refusal is what made pressing the
+  // Recompile button necessary -- the automatic path was silently declining to compile the
+  // document it had just written.
   std::string reason;
   if (game != nullptr &&
-      game->RequestSpriteArt(artBrief.kind, artBrief.name, &reason)) {
+      game->RecompileSpriteArt(artBrief.kind, artBrief.name, &reason)) {
     statusIsError = false;
     statusLine = "Document accepted and saved to " + destination +
                  "; compiling it now.";
@@ -2689,6 +2714,245 @@ TileDesignerWindow::PixelViewLookup TileDesignerWindow::InspectPixelViewForTest(
   return lookup;
 }
 
+std::string TileDesignerWindow::DefinitionPromptFor(const std::string &name,
+                                                    SpriteKinds::Kind kind,
+                                                    const std::string &requirement) const {
+  std::string prompt = std::string("Create a new ") +
+                       (kind == SpriteKinds::Kind::Tile ? "ground tile" : "object") +
+                       " named \"" + name + "\".";
+  if (!requirement.empty()) {
+    prompt += " " + requirement;
+  }
+  prompt += kind == SpriteKinds::Kind::Tile
+                ? " It is a ground surface, so it does not block movement."
+                : " It is an object that stands on the ground in a building.";
+  return prompt;
+}
+
+void TileDesignerWindow::StartAutoArt(const Blueprint &design,
+                                      const std::vector<BlueprintNeed> &needs) {
+  // The design itself is not used yet: the automatic path carries the designer's own
+  // description of each asset, which is the brief that matters. The crop and style read
+  // stay on the manual path until this one has been seen working.
+  (void)design;
+  if (game == nullptr || ai == nullptr || needs.empty()) {
+    return;
+  }
+  autoNeeds = needs;
+  autoIndex = 0;
+  autoStarted = false;
+  autoIdleFrames = 0;
+  autoFailures.clear();
+  autoRunning = true;
+  // The run advances in this window's Draw, so it has to be visible: without this the run
+  // would sit idle because nothing pumps it.
+  game->tileDesignerWindowEntity.set<ActiveWindow>({game->tileDesignerWindow});
+  statusIsError = false;
+  statusLine = "Creating " + std::to_string(autoNeeds.size()) +
+               " requested asset(s), one at a time.";
+  LogEvent("AUTO ART STARTED: " + std::to_string(autoNeeds.size()) + " asset(s)");
+}
+
+void TileDesignerWindow::PumpAutoArt() {
+  if (!autoRunning) return;
+
+  if (autoIndex >= autoNeeds.size()) {
+    autoRunning = false;
+    if (autoFailures.empty()) {
+      statusIsError = false;
+      statusLine =
+          "Created all " + std::to_string(autoNeeds.size()) + " requested asset(s).";
+      LogEvent("AUTO ART DONE: all assets created");
+    } else {
+      std::string names;
+      for (const std::string &failure : autoFailures) {
+        names += (names.empty() ? "" : ", ") + failure;
+      }
+      statusIsError = true;
+      statusLine = "Auto art finished; could not create: " + names;
+      LogEvent("AUTO ART DONE WITH FAILURES: " + names);
+    }
+    return;
+  }
+
+  const BlueprintNeed &need = autoNeeds[autoIndex];
+
+  // A turn in flight is this item's turn: the run only starts from an idle window.
+  if (IsBusy()) {
+    autoIdleFrames = 0;
+    return;
+  }
+
+  // Done when the asset exists in the world. The sprite document and its compile follow
+  // the definition through the normal acceptance path, so this one check covers the whole
+  // item -- and it is a fact about the catalog rather than a flag some handler has to
+  // remember to set.
+  const bool exists =
+      need.kind == "tile"
+          ? game->tileRegistry.Get(need.name) != nullptr
+          : game->objectFactory.GetTemplates().count(need.name) != 0;
+
+  if (!autoStarted) {
+    // Already there: nothing to build, and asking for it again would be a wasted model
+    // call and a revision of something nobody complained about.
+    if (exists) {
+      ++autoIndex;
+      return;
+    }
+    autoStarted = true;
+    autoIdleFrames = 0;
+    const SpriteKinds::Kind kind =
+        need.kind == "tile" ? SpriteKinds::Kind::Tile : SpriteKinds::Kind::Object;
+    mode = kind;
+    requestSet = false;
+    systemPrompt = game->BuildSpriteSystemPrompt(kind, false);
+    LogEvent("AUTO ART ITEM: " + need.name);
+    SendUserMessage(DefinitionPromptFor(need.name, kind, need.description));
+    return;
+  }
+
+  if (exists) {
+    ++autoIndex;
+    autoStarted = false;
+    return;
+  }
+
+  // Nothing in flight and the asset still absent: a retry may be queued for the next
+  // frame, so give it a moment before calling the item failed.
+  if (++autoIdleFrames > 120) {
+    autoFailures.push_back(need.name);
+    LogEvent("AUTO ART ITEM FAILED: " + need.name);
+    ++autoIndex;
+    autoStarted = false;
+    autoIdleFrames = 0;
+  }
+}
+
+void TileDesignerWindow::DrawGapOffer() {
+  if (game == nullptr) return;
+  SpriteGapOffer *offer = game->spriteGapOffer.get();
+  if (offer == nullptr || !offer->Active()) return;
+
+  ImGui::PushID("sprite-gap-offer");
+  ImGui::Separator();
+
+  const bool reading = offer->GetState() == SpriteGapOffer::State::Reading;
+  const bool failed = offer->GetState() == SpriteGapOffer::State::Failed;
+
+  ImGui::Text("%s", offer->IsGap() ? "A gap the design needs drawn"
+                                   : "A sprite this design uses but cannot draw");
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Dismiss##gap")) {
+    // Cancelled, not destroyed: this runs inside the offer's own frame, and destroying it
+    // would unload the texture whose draw command is already queued for this frame. The
+    // object stays until Game replaces it or the run ends.
+    offer->Cancel();
+    ImGui::PopID();
+    return;
+  }
+
+  if (offer->IsGap()) {
+    ImGui::TextWrapped("\"%s\" -- the %s \"%s\", %d cell(s) marked in the crop.",
+                       offer->Design().name.c_str(),
+                       offer->Gap().kind == "paint" ? "ground tile" : "object",
+                       offer->Gap().material.c_str(), offer->GapCells());
+  } else {
+    ImGui::TextWrapped(
+        "\"%s\" -- the %s \"%s\", which this design uses. The definition exists and the "
+        "art pack has no sprite for it, so nothing is marked: the crop is the building as "
+        "it stands.",
+        offer->Design().name.c_str(),
+        offer->Gap().kind == "paint" ? "ground tile" : "object",
+        offer->Gap().material.c_str());
+  }
+
+  if (const Texture2D *crop = offer->CropTexture()) {
+    // Whole-number scaling only. The pane exists so the style brief can be judged against
+    // what the model saw, and a smoothed or fractional resample would be a picture of
+    // something the model never saw.
+    float scale = 2.0f;
+    const float available = ImGui::GetContentRegionAvail().x;
+    while (scale > 1.0f && crop->width > 0 && crop->width * scale > available) {
+      scale -= 1.0f;
+    }
+    ImGui::Image(static_cast<ImTextureID>(static_cast<std::intptr_t>(crop->id)),
+                 ImVec2(static_cast<float>(crop->width) * scale,
+                        static_cast<float>(crop->height) * scale));
+  } else {
+    ImGui::TextDisabled("(the crop exists but could not be shown)");
+  }
+  if (!offer->CropPath().empty()) {
+    ImGui::TextDisabled("%s", offer->CropPath().c_str());
+  }
+
+  ImGui::TextWrapped("%s", offer->Status().c_str());
+  if (!offer->Requirement().empty()) {
+    ImGui::TextDisabled("What the designer asked for:");
+    ImGui::TextWrapped("%s", offer->Requirement().c_str());
+  }
+  if (offer->ReadStyle().ok) {
+    ImGui::TextWrapped("%s", offer->ReadStyle().summary.c_str());
+  }
+
+  // Disabled while reading, and when the crop itself failed: the numeric brief alone is
+  // still a usable request, but a design that could not be drawn has nothing to offer.
+  ImGui::BeginDisabled(reading || failed);
+  const char *label =
+      offer->IsGap() ? "Create this asset" : "Send document request";
+  if (ImGui::Button(label)) {
+    const std::string name = offer->Gap().material;
+    const SpriteKinds::Kind kind = offer->Gap().kind == "paint"
+                                       ? SpriteKinds::Kind::Tile
+                                       : SpriteKinds::Kind::Object;
+    const std::string surroundings =
+        offer->ReadStyle().ok ? offer->ReadStyle().summary : std::string();
+    const std::string requirement = offer->Requirement();
+    const bool needsDefinition = offer->IsGap();
+    offer->Cancel();
+
+    if (needsDefinition) {
+      // A sprite for a template nobody can spawn is a picture of nothing, so the
+      // definition comes first. That is the definition turn, and accepting it is what
+      // requests the document (the acceptance path calls RequestSpriteDocument when the
+      // DSL source is active) -- so this one prompt is the whole chain, in the order the
+      // pipeline requires.
+      mode = kind;
+      requestSet = false;
+      if (game != nullptr) {
+        systemPrompt = game->BuildSpriteSystemPrompt(kind, false);
+      }
+      std::string prompt =
+          std::string("Create a new ") +
+          (kind == SpriteKinds::Kind::Tile ? "ground tile" : "object") + " named \"" +
+          name + "\".";
+      if (!requirement.empty()) {
+        prompt += " " + requirement;
+      }
+      prompt += kind == SpriteKinds::Kind::Tile
+                    ? " It is a ground surface, so it does not block movement."
+                    : " It is an object that stands on the ground in a building.";
+      SendUserMessage(prompt);
+    } else {
+      RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, surroundings,
+                            requirement);
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    return;
+  }
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        reading   ? "Waiting for the style read to finish."
+        : failed  ? "The building could not be rendered, so there is nothing to send."
+                  : "Ask the document turn for this sprite. The style brief above, if "
+                    "one was read, goes into the request.");
+  }
+
+  ImGui::Separator();
+  ImGui::PopID();
+}
+
 void TileDesignerWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(780, 560), ImGuiCond_FirstUseEver);
@@ -2702,6 +2966,14 @@ void TileDesignerWindow::Draw() {
     ImGui::End();
     return;
   }
+
+  // At the very top: when an offer is open it is the reason this window is open, and it
+  // is what the next document request will be about.
+  DrawGapOffer();
+
+  // The automatic run advances here rather than on a timer: this is the only place the
+  // window's own state (busy, or idle with a queue) is meaningful.
+  PumpAutoArt();
 
   // What is being designed, and who decided. The dropdown is the correction path for the
   // router: a wrong classification costs one decision call, and switching it here before

@@ -18,6 +18,8 @@
 #include "AI.h"
 #include "PixelDSL.hpp"
 #include "TileArtQueue.hpp"
+#include "Blueprint.hpp"
+#include "BlueprintNeed.hpp"
 #include "TileDesigner.hpp"
 #include "ObjectDesigner.hpp"
 #include "SpriteKinds.hpp"
@@ -124,6 +126,22 @@ public:
 
   void Draw() override;
 
+  // ---- automatic asset creation (settings.designer.autoArt) -----------------------
+  //
+  // Runs the assets a design asked for one at a time, with no input: for each need the
+  // definition turn, then (through the normal acceptance path) its sprite document and
+  // compile, then the next. A refused asset is recorded and skipped rather than stopping
+  // the run, because one bad request should not cost the rest.
+  //
+  // The order is the pipeline's own requirement, not a convenience: a sprite for a
+  // template nobody can spawn is a picture of nothing, so the definition has to exist
+  // first -- which is also why this cannot simply fire the document turn.
+  //
+  // Public because the Designer window starts it when it saves a design that asked for
+  // something; it is the only caller.
+  void StartAutoArt(const Blueprint &design, const std::vector<BlueprintNeed> &needs);
+  bool AutoArtRunning() const { return autoRunning; }
+
 private:
   // One request/response attempt. A retry is a new entry, so the transcript reads
   // as the conversation that actually happened.
@@ -200,7 +218,19 @@ private:
   // pack, or left by an earlier turn) it is used as-is and the art is queued; the
   // pack's copy is never overwritten.
   void RequestSpriteDocument(const std::string &name, SpriteKinds::Kind kind,
-                             bool replaceGenerated = false);
+                             bool replaceGenerated = false,
+                             const std::string &surroundings = std::string(),
+                             const std::string &requirement = std::string());
+  // The gap offer at the top of the window, when Game has one: the crop the vision pass
+  // read, what it read, and the Send button. Nothing is sent until it is pressed.
+  void DrawGapOffer();
+
+  // The user turn for "create this asset", shared with the manual Send path so the two
+  // cannot drift about what the model is asked. Private: only the two paths that create
+  // an asset use it.
+  std::string DefinitionPromptFor(const std::string &name, SpriteKinds::Kind kind,
+                                  const std::string &requirement) const;
+
   void SendArtTurn(const std::string &prompt);
   void InspectFinishedArtDocument(size_t index, const Exchange &finished);
   // True when settings say the generation source is "dsl".
@@ -208,6 +238,17 @@ private:
   // Where a document written by this turn would go. Empty when no generated layer is
   // configured, in which case there is nowhere an agent may write.
   std::string ArtDocumentPath(const std::string &name, SpriteKinds::Kind kind) const;
+
+  // The automatic run: the queue, how far through it we are, and what could not be made.
+  // `autoStarted` is what distinguishes "this item is in flight" from "this item has not
+  // begun", because the window is idle between the two.
+  void PumpAutoArt();
+  std::vector<BlueprintNeed> autoNeeds;
+  size_t autoIndex = 0;
+  bool autoRunning = false;
+  bool autoStarted = false;
+  int autoIdleFrames = 0;
+  std::vector<std::string> autoFailures;
 
   std::string artContextId;
   std::vector<ChatMessage> artHistory;

@@ -720,6 +720,8 @@ const std::vector<FieldSpec> &Fields() {
             "The designer's own completion budget, overriding the backend's. 0 inherits it.", &GameSettings::designer, &DesignerSection::maxTokens))
         .Min(0, 0)
         .Restart();
+    add(Field<ValueType::Bool>("designer", "designer.autoArt",
+            "Create the assets a design asks for, one at a time, without pressing anything. Off by default because it spends model calls and writes to the generated layer.", &GameSettings::designer, &DesignerSection::autoArt));
     add(Field<ValueType::EnumString>("designer", "designer.model.type",
             "Backend for the designer's own model block.", &GameSettings::designer, &DesignerSection::model, &ModelSection::type))
         .Enum({"ollama", "gemini", "openrouter"}, false)

@@ -126,6 +126,16 @@ struct GameSettings {
     // AI::setMaxTokens.
     int maxTokens = 0;
 
+    // With this on, a design that asks for assets the world does not have is followed
+    // through without a person pressing anything: each requested asset is created
+    // (definition first, then its sprite) one at a time, and the run names what it could
+    // not make at the end.
+    //
+    // Off by default, because it spends model calls and writes to the generated layer on
+    // every design that asks for something, and a shipped default that quietly writes
+    // content is a bad default.
+    bool autoArt = false;
+
     // Reading the designer's reply aloud. Off by default: it is a development
     // window, and a feature that starts making noise on first launch is a
     // feature people turn off before judging.

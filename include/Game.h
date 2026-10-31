@@ -27,6 +27,7 @@
 #include "RecipeRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
+#include "SpriteGapOffer.hpp"
 #include "SpriteKinds.hpp"
 #include "TileArtQueue.hpp"
 #include "SpeechQueue.h"
@@ -197,6 +198,22 @@ public:
   // settings.designer.maxDesignAttempts. Read by the designer window so the cap
   // lives in one place.
   int maxDesignAttempts() const;
+
+  // Starts "design a sprite for this gap": renders the design the gap belongs to, asks
+  // the vision backend what the art around it looks like, and opens the Sprite
+  // Designer window on that offer.
+  //
+  // Owned here rather than by either window, for the reason in SpriteGapOffer.hpp: the
+  // vision read takes seconds and a window toggle must not strand it. Nothing is sent
+  // from here -- the window shows the crop and the style brief, and a human presses
+  // Send, so the brief can be judged against the picture before it reaches a model.
+  void BeginSpriteGap(const Blueprint &design, const MissingMaterial &gap,
+                      bool markGap = true,
+                      const std::string &description = std::string());
+
+  // The offer in flight, or null. Public so a preview panel can say "already open in the
+  // Sprite Designer" without needing to be a friend of Game.
+  const SpriteGapOffer *ActiveSpriteGap() const { return spriteGapOffer.get(); }
 
 private:
   raylib::Window window;
@@ -394,6 +411,12 @@ private:
   // see the comment where it is constructed in Game::ECSInit.
   std::shared_ptr<class TileDesignerWindow> tileDesignerWindow;
   flecs::entity tileDesignerWindowEntity;
+
+  // The one gap-to-sprite request in flight (see SpriteGapOffer.hpp). Null when nothing
+  // is being designed; replaced rather than queued when a second gap is offered, because
+  // two style reads and two crops at once would compete for the same vision backend and
+  // the same preview pane.
+  std::unique_ptr<SpriteGapOffer> spriteGapOffer;
 
   // Live tile-art generation. Owned by Game rather than held in file-scope globals
   // the way the AI path's response queue is (see TileArtQueue.hpp and
@@ -769,6 +792,15 @@ public:
   //
   // Main thread only -- it touches the ECS.
   size_t RefreshObjectVisuals(const std::string &templateKey);
+
+  // Clears ResourceManager's memoised absence for a sprite, if the file exists now.
+  //
+  // Kept separate because it has to happen even when there is nothing to refresh: the memo
+  // is written by any probe (a spawn, a preview pane, a palette), and the automatic art run
+  // generates art while nothing is spawned yet. Clearing it only inside the "update these
+  // entities" loop is what made generated art appear only after pressing Recompile.
+  void ForgetSpriteMemo(const std::string &explicitPath,
+                        const std::string &conventionId);
 
   // Proves the object half of the hot-swap: spawns one entity from `templateKey`, checks it
   // starts on its ASCII art, drops a sprite into the generated layer, and checks the

@@ -13,6 +13,7 @@
 
 #include "BlueprintExpansion.hpp"
 #include "BlueprintPreview.hpp"
+#include "SpriteGapPanel.hpp"
 #include "BlueprintRegistry.h"
 #include "Components.h"
 #include "DebugLog.h"
@@ -21,6 +22,7 @@
 #include "RewriteBriefs.hpp"
 #include "Settings.h"
 #include "SpriteDraw.hpp"
+#include "TileDesignerWindow.h"
 #include "SpritePaths.hpp"
 #include "TimeUtils.hpp"
 #include "imgui.h"
@@ -567,6 +569,31 @@ void DesignerChatWindow::DrawPreviewPane() {
     BlueprintPreview::DrawLegend(design.expansion, game->tileRegistry);
   }
 
+  // What this design cannot be drawn with, and a button per item. Shared with the
+  // Blueprints window so the two previews cannot disagree about what is missing, and
+  // shown for "no art yet" as well as for genuinely absent materials -- the first is the
+  // common case, the second is what the section used to be limited to.
+  // The switch for the automatic run, right where the assets it would build are listed.
+  // Live rather than Restart: PumpAutoArt reads it when a design is saved, so a change
+  // takes effect on the next design rather than on the next launch.
+  {
+    bool autoArt = MutableSettings().designer.autoArt;
+    if (ImGui::Checkbox("Build the requested assets automatically", &autoArt)) {
+      MutableSettings().designer.autoArt = autoArt;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "After a design is saved, create each asset it asked for -- definition first,\n"
+          "then its sprite -- one at a time, with no further input. Failures are named\n"
+          "in the Sprite Designer when the run ends.");
+    }
+  }
+
+  if (game != nullptr) {
+    SpriteGapPanel::Draw(game, game->tileRegistry, game->objectFactory, blueprint,
+                         design.needs);
+  }
+
   // The designer's own critique, which is the reason this pane sits next to the
   // transcript rather than behind a button.
   if (!design.notes.empty()) {
@@ -621,6 +648,9 @@ void DesignerChatWindow::InspectFinishedExchange(size_t index) {
   bool ok = false;
   std::string designId;
   std::string notes;
+  // The assets this design asked for, in the designer's own words. Kept beside the
+  // design so the preview can offer each one, and dropped on save with the notes.
+  std::vector<BlueprintNeed> needs;
   std::string savedPath;
   bool overwrote = false;
   // Filled when the design got far enough to be parsed and expanded, whether or
@@ -643,8 +673,14 @@ void DesignerChatWindow::InspectFinishedExchange(size_t index) {
     }
 
     if (reason.empty()) {
+      // Declared before the chain so a malformed `needs` can be refused in the same
+      // channel as a malformed design -- the model gets the reason and resends, which is
+      // the only way it learns.
+      BlueprintNeeds::ParseResult wanted;
       if (!parsed.is_object()) {
         reason = "the json block must be a JSON object describing one blueprint.";
+      } else if (!(wanted = BlueprintNeeds::Parse(parsed)).ok) {
+        reason = wanted.error;
       } else if (!parsed.contains("designerNotes") ||
                  !parsed["designerNotes"].is_string() ||
                  parsed["designerNotes"].get<std::string>().empty()) {
@@ -654,6 +690,10 @@ void DesignerChatWindow::InspectFinishedExchange(size_t index) {
             "the blueprint has no non-empty \"designerNotes\" string. Every design "
             "must carry your own thoughts on it.";
       } else {
+        // The assets the design asked for. `needs` is not schema: stripped here so it
+        // never reaches the saved blueprint, exactly like the notes.
+        parsed.erase("needs");
+        needs = std::move(wanted.needs);
         notes = parsed["designerNotes"].get<std::string>();
         // Removed before saving: it is not part of the schema, so writing it back
         // would put a designer-only field into content the rest of the engine
@@ -723,9 +763,19 @@ void DesignerChatWindow::InspectFinishedExchange(size_t index) {
     preview.blueprint = std::move(parsedDesign);
     preview.expansion = std::move(parsedExpansion);
     preview.notes = notes;
+    preview.needs = std::move(needs);
     preview.accepted = ok;
     preview.refusal = ok ? std::string() : reason;
     lastDesign = std::move(preview);
+  }
+
+  // The automatic run needs a saved design, the setting on, and something to build.
+  // Started from here rather than from the Send button so that nothing is needed beyond
+  // the original prompt -- which is the whole point of the option.
+  if (ok && Settings().designer.autoArt && game != nullptr &&
+      game->tileDesignerWindow && lastDesign.has_value() &&
+      !lastDesign->needs.empty()) {
+    game->tileDesignerWindow->StartAutoArt(lastDesign->blueprint, lastDesign->needs);
   }
 
   {

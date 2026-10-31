@@ -3467,6 +3467,14 @@ void Game::ECSInit() {
   {
     GameSettings::ModelSection designerModel =
         settings.designer.useMainModel ? modelSettings : settings.designer.model;
+    // A hosted backend with no key of its own inherits the shared one. Without this, a
+    // designer block that names a model but no key builds a backend that cannot
+    // authenticate, and the window's only symptom is "No answer came back" -- which is
+    // exactly how this was diagnosed. Naming a *different* provider still means naming
+    // its key, because the only way to reach a key of a foreign provider is to set it.
+    if (designerModel.apiKey.empty()) {
+      designerModel.apiKey = settings.model.apiKey;
+    }
     designerAI = BuildAIBackend(designerModel, debugLog.get());
     // The designer's own output budget, applied after the backend was built so it
     // overrides the max_tokens the model block just set. 0 means inherit, which
@@ -3496,10 +3504,16 @@ void Game::ECSInit() {
     // completion budget thinking and can return an *empty* answer, which a user would
     // read as "the Improve button does nothing". Measured on this repo's default
     // backend before this line existed.
-    rewriterAI = BuildAIBackend(settings.designer.rewriter.enabled
-                                    ? settings.designer.rewriter.model
-                                    : designerModel,
-                                debugLog.get());
+    GameSettings::ModelSection rewriterModel =
+        settings.designer.rewriter.enabled ? settings.designer.rewriter.model
+                                           : designerModel;
+    // Same inheritance as the designer's: naming only a model is the common case, and a
+    // backend that silently cannot authenticate reads as a dead button. The main key is
+    // the one a person already had to set for the game to run at all.
+    if (rewriterModel.apiKey.empty()) {
+      rewriterModel.apiKey = settings.model.apiKey;
+    }
+    rewriterAI = BuildAIBackend(rewriterModel, debugLog.get());
     if (rewriterAI && settings.designer.rewriter.disableReasoning) {
       rewriterAI->setReasoningEnabled(false);
     }

@@ -750,6 +750,20 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
     }
     // `type` doubles as the convention id, so data/sprites/<templateKey>.png is
     // picked up with no "sprite" key at all.
+    //
+    // Forget what is memoised about this sprite first, for the same reason PaintTile does:
+    // ResourceManager remembers an absent path, and a spawn is the moment the file may have
+    // appeared since the last look. Without this, art generated before the building was
+    // placed leaves the path poisoned -- the spawn is told "missing" by the cache rather than
+    // by the disk, the object keeps drawing its glyph, and only a refresh with the entity
+    // present clears it. That is exactly "I still have to press Recompile for it to show".
+    {
+      std::string resolvedPath;
+      SpriteResolves(explicitSprite, type, &resolvedPath);
+      if (!resolvedPath.empty()) {
+        resourceManager->ForgetPath(resolvedPath);
+      }
+    }
     AttachSprite(obj, explicitSprite, type, *resourceManager, debugLog);
   }
 

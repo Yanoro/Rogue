@@ -7,6 +7,7 @@
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
+#include "DebugWindows.h"
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
@@ -628,6 +629,12 @@ void Game::Update() {
   if (map) {
     map->RefreshBlockingObjects();
   }
+  // The gap offer's vision read is drained here rather than in the Sprite Designer's
+  // Draw(): a window closed while the model is still reading would otherwise never see
+  // the answer, and reopening it would show a request that had silently finished.
+  if (spriteGapOffer) {
+    spriteGapOffer->Update();
+  }
   UpdateGUI();
   // The speech pump lives here, not in the Designer window's Draw(): Draw only
   // runs while that window is visible, so a pane closed to watch the world would
@@ -755,6 +762,26 @@ void Game::handleInput() {
       cmd->execute(playerEntity);
     }
   }
+
+  // F10 toggles the debug console. Here rather than in InputHandler because that class
+  // produces commands for the player entity and knows nothing about windows, and with
+  // the other global keys because a window toggle is not a player action.
+  //
+  // `WantTextInput` rather than `WantCaptureKeyboard`: F10 should still work while a
+  // window has focus (it is a global key), but not while a text field is consuming
+  // keys -- otherwise it would be impossible to type "F10" into the console's own
+  // input, or into any other field.
+  if (!ImGui::GetIO().WantTextInput && IsKeyPressed(KEY_F10)) {
+    if (debugConsoleWindowEntity.has<ActiveWindow>()) {
+      debugConsoleWindowEntity.remove<ActiveWindow>();
+    } else {
+      // Rebuilt rather than cached: this window holds no state of its own (it is a menu
+      // of toggles that read the entities live), so a fresh one cannot lose anything,
+      // and the alternative is a member that has to be kept alive for no benefit.
+      debugConsoleWindowEntity.set<ActiveWindow>(
+          {std::make_shared<DebugConsoleWindow>(this)});
+    }
+  }
 }
 
 bool Game::SaveMapToFile() {
@@ -867,6 +894,27 @@ void Game::Shutdown() {
 bool Game::shouldClose() const { return window.ShouldClose(); }
 
 int Game::maxDesignAttempts() const { return Settings().designer.maxDesignAttempts; }
+
+void Game::BeginSpriteGap(const Blueprint &design, const MissingMaterial &gap,
+                          bool markGap, const std::string &description) {
+  if (!tileDesignerWindow) {
+    return;
+  }
+  // Replaced rather than queued: two offers would compete for the same vision backend
+  // and the same preview pane, and the second would be the one the human asked for.
+  spriteGapOffer = std::make_unique<SpriteGapOffer>();
+  spriteGapOffer->Begin(design, gap, tileRegistry, objectFactory, visionAI.get(),
+                        debugLog.get(), markGap, description);
+
+  // The Sprite Designer is the only place the crop and the brief are shown, so opening
+  // it is part of offering rather than a separate step a caller could forget.
+  tileDesignerWindowEntity.set<ActiveWindow>({tileDesignerWindow});
+
+  if (debugLog) {
+    debugLog->LogInfo("Sprite gap offered: '" + gap.material + "' for blueprint '" +
+                      design.id + "'");
+  }
+}
 
 std::string Game::BuildDesignerSystemPrompt() const {
   const GameSettings &settings = Settings();
@@ -1128,6 +1176,32 @@ std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
     }
   }
 
+  // Re-resolve the art of everything just built.
+  //
+  // Spawn and paint resolve a sprite once, at the moment they run, and ResourceManager
+  // memoises an absent path so the same missing file is not probed every frame. A design
+  // placed while its art was still being generated therefore resolves "no sprite",
+  // memoises that, and keeps drawing the placeholder -- and if the art lands while nothing
+  // is spawned yet, the completion's refresh has no entity to refresh and cannot clear the
+  // memo either. Refreshing after placement closes that ordering: the memo is forgotten and
+  // the texture is loaded for entities that exist now. Together with the refresh on
+  // completion, "art then building" and "building then art" both end with art on screen.
+  {
+    std::unordered_set<std::string> keys;
+    std::unordered_set<std::string> tileNames;
+    for (const BlueprintGhostCell &cell : placement.cells) {
+      if (cell.carve) continue;
+      if (!cell.object.empty()) keys.insert(cell.object);
+      if (!cell.tile.empty()) tileNames.insert(cell.tile);
+    }
+    for (const std::string &key : keys) {
+      RefreshObjectVisuals(key);
+    }
+    for (const std::string &tileName : tileNames) {
+      RefreshTileVisuals(tileName);
+    }
+  }
+
   // The checkbox governs terrain persistence only. Objects are always authored,
   // because leaving them unmarked would strand an object the map cannot write
   // back, which is never what a debug placement wants; the terrain flag exists
@@ -1274,6 +1348,14 @@ size_t Game::RefreshTileVisuals(const std::string &tileName) {
     return 0;
   }
 
+  // Clear the memoised absence before anything can return early, for the reason spelled out
+  // in ForgetSpriteMemo: the art may have arrived while the tile was on no map at all.
+  {
+    const TileDef *definition = tileRegistry.Get(tileName);
+    ForgetSpriteMemo(definition != nullptr ? definition->sprite : std::string(),
+                     TileSpriteId(tileName));
+  }
+
   // The Tile instances this name refers to. Usually one, but a map may hold two
   // palette entries with the same name and different overrides (a deliberate
   // non-goal of the palette work: duplicate names stay distinct tiles), and both
@@ -1415,10 +1497,40 @@ void OnTileArtCompleted(void *context, const TileArtQueue::Job &job) {
   game->HandleTileArtGenerated(job);
 }
 
+void Game::ForgetSpriteMemo(const std::string &explicitPath,
+                            const std::string &conventionId) {
+  // ResourceManager memoises an absent path so the same missing file is not probed every
+  // frame. That memo outlives the reason it was written: an entity or a preview that
+  // resolved "no sprite" before the art existed leaves the path poisoned, and the next spawn
+  // is told "missing" by the cache rather than by the disk.
+  //
+  // So clearing it belongs to "the art changed", never to "an entity was found to update".
+  // An automatic run generates art before the building is placed, so there is no entity to
+  // update at that moment -- and the early returns below used to skip the clear entirely,
+  // which is precisely why the art only appeared after pressing Recompile: by then the
+  // entities existed, so the clear finally ran.
+  std::string resolvedPath;
+  if (SpriteResolves(explicitPath, conventionId, &resolvedPath) && !resolvedPath.empty()) {
+    resourceManager.ForgetPath(resolvedPath);
+  }
+}
+
 size_t Game::RefreshObjectVisuals(const std::string &templateKey) {
   if (templateKey.empty()) {
     return 0;
   }
+
+  // Read the template's explicit sprite and clear the memo *first*, before any early return:
+  // see ForgetSpriteMemo. The template is the authority for an explicit path, exactly as it
+  // is in ApplyTemplate.
+  std::string explicitSprite;
+  const auto &templates = objectFactory.GetTemplates();
+  const auto found = templates.find(templateKey);
+  if (found != templates.end() && found->second.contains("sprite") &&
+      found->second["sprite"].is_string()) {
+    explicitSprite = found->second["sprite"].get<std::string>();
+  }
+  ForgetSpriteMemo(explicitSprite, templateKey);
 
   // Collected first, then modified. Adding and removing a component while iterating would
   // be safe here because `Sprite` is not the component being matched on, but relying on
@@ -1431,28 +1543,9 @@ size_t Game::RefreshObjectVisuals(const std::string &templateKey) {
   });
   if (targets.empty()) {
     // Not on the map, and not spawned anywhere -- the common case for an object that was
-    // just designed. Normal: the next spawn resolves the art at spawn time.
+    // just designed. Normal: the next spawn resolves the art at spawn time, and the memo was
+    // already cleared above so that spawn is told the truth.
     return 0;
-  }
-
-  // An explicit "sprite" key on the template wins over the convention, exactly as it does in
-  // ApplyTemplate. Read here rather than passed in, because the template is the authority and
-  // the job only knows the key.
-  std::string explicitSprite;
-  const auto &templates = objectFactory.GetTemplates();
-  const auto found = templates.find(templateKey);
-  if (found != templates.end() && found->second.contains("sprite") &&
-      found->second["sprite"].is_string()) {
-    explicitSprite = found->second["sprite"].get<std::string>();
-  }
-
-  // The same targeted forget the tile path does, and for the same reason: ResourceManager
-  // memoises an absent path, so without this the re-resolve is told the file does not exist
-  // -- from the cache -- forever.
-  std::string resolvedPath;
-  SpriteResolves(explicitSprite, templateKey, &resolvedPath);
-  if (!resolvedPath.empty()) {
-    resourceManager.ForgetPath(resolvedPath);
   }
 
   size_t updated = 0;

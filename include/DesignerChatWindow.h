@@ -10,6 +10,7 @@
 
 #include "AI.h"
 #include "BlueprintExpansion.hpp"
+#include "BlueprintNeed.hpp"
 #include "PromptRewriter.hpp"
 #include "RewriteInputBox.hpp"
 #include "SpeechQueue.h"
@@ -152,6 +153,10 @@ private:
     Blueprint blueprint;
     BlueprintExpansion::Expansion expansion;
     std::string notes;
+    // The assets this design asked the world for (the reply's `needs`). Not part of the
+    // saved blueprint -- stripped before saving, like the notes -- but kept here so the
+    // preview can offer each one to the sprite designer.
+    std::vector<BlueprintNeed> needs;
     bool accepted = false;
     std::string refusal;
   };

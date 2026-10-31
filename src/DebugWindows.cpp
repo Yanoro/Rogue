@@ -26,6 +26,7 @@
 #include "AgentContextWindow.h"
 #include "BlueprintExpansion.hpp"
 #include "BlueprintPreview.hpp"
+#include "SpriteGapPanel.hpp"
 #include "DesignerChatWindow.h"
 #include "TileDesignerWindow.h"
 #include <algorithm>
@@ -3721,6 +3722,11 @@ void BlueprintWindow::Draw() {
       contents += entry.first + " x" + std::to_string(entry.second);
     }
     ImGui::TextWrapped("%s", contents.c_str());
+
+    // What this design cannot be drawn with, and a button per item. The same panel the
+    // Designer window's preview draws, so looking at a design here and looking at it
+    // there cannot give two different answers about what is missing.
+    SpriteGapPanel::Draw(game, game->tileRegistry, game->objectFactory, *previewed);
 
     ImGui::Separator();
 
