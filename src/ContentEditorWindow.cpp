@@ -663,7 +663,6 @@ void ContentEditorWindow::DrawSpritePane() {
   const bool generatedChosen = PrefersGeneratedSprite(convention);
   const std::string chosen = ChosenVariantName(markerPath);
   const std::string packSprite = ArtPackSpritePath(convention);
-  std::error_code rowEc;
 
   // The original artwork first: every generated sprite is an alternative to it, and
   // choosing it again is how you go back.
@@ -679,12 +678,6 @@ void ContentEditorWindow::DrawSpritePane() {
   if (!packSprite.empty()) {
     candidates.push_back({"original", packSprite, !generatedChosen, false,
                           [this, convention] { UseOriginalSprite(convention); }});
-  }
-  const std::string current = GeneratedSpritePath(convention);
-  if (!current.empty() && std::filesystem::exists(current, rowEc)) {
-    candidates.push_back(
-        {"current generation", current, generatedChosen, true,
-         [this, convention, current] { ActivateVariant(convention, current); }});
   }
   for (const std::filesystem::path &variant : variants) {
     const std::string name = variant.filename().string();
@@ -711,9 +704,9 @@ void ContentEditorWindow::DrawSpritePane() {
   options.cell = 52.0f;
   options.rows = 3;
   options.childId = "##sprite-variants";
-  // A cell is click-to-use; anything destructive lives in its context menu. The
-  // current generation is deletable just as its row's trash button was, because
-  // deleting it is how a generated sprite is abandoned in favour of the pack's.
+  // A cell is click-to-use; anything destructive lives in its context menu. Only
+  // archived variants are deletable: the pack's original is hand-authored, and the
+  // picture in use is shown by the preview above rather than as a cell of its own.
   options.contextMenu = [&](int index) {
     const Candidate &candidate = candidates[index];
     if (!candidate.selected && ImGui::MenuItem("Use")) {
