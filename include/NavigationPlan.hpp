@@ -32,6 +32,7 @@
 // Design: docs/navigation-subagent-design.md.
 
 #include "Components.h"
+#include "Chunk.hpp"
 #include "Defaults.h"
 #include "InteractionRegistry.h"
 #include "PlaceQuery.hpp"
@@ -271,7 +272,8 @@ inline std::vector<Candidate> BuildCandidates(
     const std::unordered_set<std::uint64_t> &walkedCells = {},
     int maxNearRegions = DEFAULT_REGION_MODEL_NEAR_COUNT,
     int maxExamine = -1,
-    int examineRadius = static_cast<int>(DEFAULT_VISION_RANGE)) {
+    int examineRadius = static_cast<int>(DEFAULT_VISION_RANGE),
+    bool advertisePrimitives = false) {
   const KnownPlace *current = PlaceQuery::At(memory, here);
   const std::unordered_set<std::uint64_t> occupied =
       detail::OccupiedCells(memory);
@@ -309,13 +311,21 @@ inline std::vector<Candidate> BuildCandidates(
             PlaceQuery::DisplayName(*current) + " (" + direction + ")";
         move.candidate.distance = run;
         const std::string aspects = detail::AspectSummary(*current, 2);
-        move.candidate.description =
-            (PlaceQuery::IsLinearPlace(*current)
-                 ? "follow " + PlaceQuery::DisplayName(*current) + " " + direction +
-                       " for " + std::to_string(run) + " tiles"
-                 : "walk " + direction + " through " +
-                       PlaceQuery::DisplayName(*current) + " for " +
-                       std::to_string(run) + " tiles");
+        if (PlaceQuery::IsLinearPlace(*current)) {
+          move.candidate.description =
+              "walk " + PlaceQuery::DisplayName(*current) + " " + direction +
+              " for " + std::to_string(run) + " tiles";
+          if (advertisePrimitives) {
+            move.candidate.description +=
+                " (compass run; follow:" + direction +
+                " goes to the next junction/end)";
+          }
+        } else {
+          move.candidate.description =
+              "walk " + direction + " through " +
+              PlaceQuery::DisplayName(*current) + " for " +
+              std::to_string(run) + " tiles";
+        }
         if (!aspects.empty()) {
           move.candidate.description += " (" + aspects + ")";
         }
@@ -1221,6 +1231,229 @@ inline std::string StartPlaceName(const SpatialMemory &memory,
     return PlaceQuery::DisplayName(*place);
   }
   return "open ground";
+}
+
+
+// ── Traversal primitives (first slice) ───────────────────────────────────────
+//
+// `follow` and `back` are *commitments*, not new one-tile moves. Both return a
+// fixed cell path, so the leg walks the remembered feature (or retraces the
+// remembered route) instead of letting A* cut across open ground. The caller
+// hands that path to MoveToCellAction.
+
+struct PrimitiveMove {
+  Candidate candidate;
+  std::vector<GamePosition> path;
+};
+
+inline bool ParsePrimitiveDirection(const std::string &raw, int &dx, int &dy) {
+  std::string word;
+  word.reserve(raw.size());
+  for (char c : raw) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (std::isalpha(uc) != 0) {
+      word.push_back(static_cast<char>(std::tolower(uc)));
+    }
+  }
+  if (word == "n" || word == "north") { dx = 0; dy = -1; return true; }
+  if (word == "ne" || word == "northeast") { dx = 1; dy = -1; return true; }
+  if (word == "e" || word == "east") { dx = 1; dy = 0; return true; }
+  if (word == "se" || word == "southeast") { dx = 1; dy = 1; return true; }
+  if (word == "s" || word == "south") { dx = 0; dy = 1; return true; }
+  if (word == "sw" || word == "southwest") { dx = -1; dy = 1; return true; }
+  if (word == "w" || word == "west") { dx = -1; dy = 0; return true; }
+  if (word == "nw" || word == "northwest") { dx = -1; dy = -1; return true; }
+  return false;
+}
+
+// Follow the linear place underfoot: through forced turns, stopping at the next
+// fork, junction with another linear feature, or the end of the known feature.
+// The path is confined to the current place, so a follow cannot wander across a
+// field; crossing a place transition is a fresh decision for now.
+inline bool BuildFollowMove(const SpatialMemory &memory, GamePosition here,
+                            const Facing &facing,
+                            const std::string &rawDirection,
+                            PrimitiveMove &out, std::string &error) {
+  const KnownPlace *place = PlaceQuery::At(memory, here);
+  if (place == nullptr || !PlaceQuery::IsLinearPlace(*place)) {
+    error = "there is no linear feature underfoot; move onto a road, river or "
+            "wall, or use here:<direction>";
+    return false;
+  }
+
+  int dirX = 0;
+  int dirY = 0;
+  if (!rawDirection.empty()) {
+    if (!ParsePrimitiveDirection(rawDirection, dirX, dirY)) {
+      error = "unknown direction '" + rawDirection + "'";
+      return false;
+    }
+  } else {
+    if (facing.x > 0.35f) dirX = 1;
+    else if (facing.x < -0.35f) dirX = -1;
+    if (facing.y > 0.35f) dirY = 1;
+    else if (facing.y < -0.35f) dirY = -1;
+    if (dirX == 0 && dirY == 0) {
+      error = "face along the feature or use follow:<direction>";
+      return false;
+    }
+  }
+
+  const std::string directionWord = PlaceQuery::CompassWord(dirX, dirY);
+  const int placeId = place->id;
+  const std::string placeName = PlaceQuery::DisplayName(*place);
+  const std::unordered_set<std::uint64_t> occupied =
+      detail::OccupiedCells(memory);
+
+  const auto walkablePlace = [&](GamePosition cell) -> const KnownPlace * {
+    const std::uint64_t key = VisionQuery::CellKey(cell);
+    const auto it = memory.cells.find(key);
+    if (it == memory.cells.end() || !it->second.walkable) return nullptr;
+    if (occupied.count(key) != 0) return nullptr;
+    return PlaceQuery::At(memory, cell);
+  };
+
+  GamePosition previous = here;
+  GamePosition current = here;
+  std::vector<GamePosition> path;
+  constexpr int kMaxFollowSteps = 256;
+
+  for (int step = 0; step < kMaxFollowSteps; ++step) {
+    std::vector<GamePosition> forward;
+    bool branch = false;
+    for (const detail::Sector &sector : detail::Sectors()) {
+      const GamePosition next{current.x + sector.dx, current.y + sector.dy};
+      if (next == previous) continue;
+      const KnownPlace *nextPlace = walkablePlace(next);
+      if (nextPlace == nullptr) continue;
+      if (nextPlace->id == placeId) {
+        forward.push_back(next);
+      } else if (PlaceQuery::IsLinearPlace(*nextPlace)) {
+        branch = true;
+      }
+    }
+    if (branch) break;
+    if (forward.empty()) break;
+    if (forward.size() > 1) {
+      if (step != 0) break;  // a fork inside the feature
+      // At the start the direction may pick which way along a line, but only
+      // when the two continuations are opposite (a line). Two forward cells
+      // that are not opposite are a fork/corner choice, and a third arm is a
+      // T: the follow must not silently pick one.
+      if (forward.size() > 2) {
+        error = placeName + " has a fork here; use here:<direction>";
+        return false;
+      }
+      const int between =
+          (forward[0].x - current.x) * (forward[1].x - current.x) +
+          (forward[0].y - current.y) * (forward[1].y - current.y);
+      if (between >= 0) {
+        error = placeName + " has a fork here; use here:<direction>";
+        return false;
+      }
+      std::vector<GamePosition> eligible;
+      for (const GamePosition &candidate : forward) {
+        const int dot = (candidate.x - current.x) * dirX +
+                        (candidate.y - current.y) * dirY;
+        if (dot > 0) eligible.push_back(candidate);
+      }
+      if (eligible.empty()) {
+        error = placeName + " does not continue " + directionWord +
+                " from here";
+        return false;
+      }
+      forward.assign(1, eligible.front());
+    } else if (step == 0) {
+      const int dot = (forward[0].x - current.x) * dirX +
+                      (forward[0].y - current.y) * dirY;
+      if (dot <= 0) {
+        error = placeName + " does not continue " + directionWord +
+                " from here";
+        return false;
+      }
+    }
+
+    previous = current;
+    current = forward[0];
+    path.push_back(current);
+  }
+
+  if (path.empty()) {
+    error = "you are already at a junction or the end of " + placeName +
+            "; use here:<direction>";
+    return false;
+  }
+
+  GamePosition target = path.back();
+  const int distance = std::max(std::abs(target.x - here.x),
+                                std::abs(target.y - here.y));
+  out.candidate.placeId = placeId;
+  out.candidate.target = target;
+  out.candidate.key =
+      rawDirection.empty() ? "follow" : "follow:" + directionWord;
+  out.candidate.label = "follow " + placeName + " " + directionWord +
+                        " to the next choice";
+  out.candidate.description =
+      "follow " + placeName + " " + directionWord + " for " +
+      std::to_string(distance) +
+      " tiles, through forced turns, to the next fork, junction or end";
+  out.candidate.distance = distance;
+  out.candidate.examine = false;
+  out.candidate.objectId = 0;
+  out.path = std::move(path);
+  return true;
+}
+
+// Retrace the last leg, exactly, to the cell where that leg started. One leg at
+// a time: this is "undo that", not a general route-history command.
+inline bool BuildBackMove(const SpatialMemory &memory, GamePosition here,
+                          GamePosition lastStart,
+                          const std::vector<GamePosition> &lastPath,
+                          PrimitiveMove &out, std::string &error) {
+  if (lastPath.empty()) {
+    error = "there is no remembered leg to retrace; use here:<direction>";
+    return false;
+  }
+  if (lastPath.back() != here) {
+    error = "the last remembered leg did not end here; use here:<direction>";
+    return false;
+  }
+  if (lastStart == here) {
+    error = "you have not moved since the last decision";
+    return false;
+  }
+
+  std::vector<GamePosition> path;
+  path.reserve(lastPath.size() + 1);
+  for (auto it = lastPath.rbegin(); it != lastPath.rend(); ++it) {
+    if (path.empty() && *it == here) continue;
+    if (!path.empty() && *it == path.back()) continue;
+    path.push_back(*it);
+  }
+  if (path.empty() || path.back() != lastStart) {
+    path.push_back(lastStart);
+  }
+  if (path.empty()) {
+    error = "the last leg has no cells to retrace";
+    return false;
+  }
+
+  const int distance = std::max(std::abs(lastStart.x - here.x),
+                                std::abs(lastStart.y - here.y));
+  out.candidate.placeId =
+      PlaceQuery::At(memory, lastStart) != nullptr
+          ? PlaceQuery::At(memory, lastStart)->id
+          : 0;
+  out.candidate.target = lastStart;
+  out.candidate.key = "back";
+  out.candidate.label = "back to where you came from";
+  out.candidate.description =
+      "retrace the last leg for " + std::to_string(distance) + " tiles";
+  out.candidate.distance = distance;
+  out.candidate.examine = false;
+  out.candidate.objectId = 0;
+  out.path = std::move(path);
+  return true;
 }
 
 }  // namespace NavigationPlan

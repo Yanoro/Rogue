@@ -1,0 +1,285 @@
+{
+  "id": "pastel_clinic",
+  "levels": 1,
+  "name": "Pastel Clinic",
+  "parts": [
+    {
+      "id": "floor",
+      "op": {
+        "paint": "floor"
+      },
+      "region": "interior"
+    },
+    {
+      "id": "garden_grass",
+      "op": {
+        "paint": "grass"
+      },
+      "region": "courtyard"
+    },
+    {
+      "id": "walls",
+      "op": {
+        "place": "wooden_wall"
+      },
+      "region": "walls",
+      "role": "structural"
+    },
+    {
+      "id": "doorway",
+      "op": {
+        "carve": true
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "door",
+      "op": {
+        "place": "door"
+      },
+      "role": "entrance",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            6
+          ]
+        }
+      }
+    },
+    {
+      "id": "workbench",
+      "op": {
+        "place": "workbench"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "bench1",
+      "op": {
+        "place": "church_bench"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "bench2",
+      "op": {
+        "place": "church_bench"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "id": "chest",
+      "op": {
+        "place": "chest"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "indoor_plant",
+      "op": {
+        "place": "potted_plant"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            4
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower1",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            1,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower2",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            3,
+            9
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower3",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            5,
+            8
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower4",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            7,
+            9
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower5",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            2,
+            11
+          ]
+        }
+      }
+    },
+    {
+      "id": "flower6",
+      "op": {
+        "place": "red_bloom"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            6,
+            11
+          ]
+        }
+      }
+    },
+    {
+      "id": "garden_plant",
+      "op": {
+        "place": "potted_plant"
+      },
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            10
+          ]
+        }
+      }
+    },
+    {
+      "id": "garden_bench",
+      "op": {
+        "place": "church_bench"
+      },
+      "role": "fixture",
+      "shape": {
+        "point": {
+          "at": [
+            4,
+            7
+          ]
+        }
+      }
+    }
+  ],
+  "purpose": "hospital",
+  "regions": {
+    "courtyard": {
+      "rect_fill": {
+        "at": [
+          0,
+          7
+        ],
+        "to": [
+          8,
+          12
+        ]
+      }
+    },
+    "interior": {
+      "rect_fill": {
+        "at": [
+          1,
+          1
+        ],
+        "to": [
+          7,
+          5
+        ]
+      }
+    },
+    "walls": {
+      "rect_outline": {
+        "at": [
+          0,
+          0
+        ],
+        "to": [
+          8,
+          6
+        ]
+      }
+    }
+  }
+}

@@ -445,6 +445,35 @@ bool LoadGameSettings(const std::string &path) {
     settings.model.apiKey = ReadLegacyApiKey();
   }
 
+  // Credential inheritance: a model block with no key of its own uses the main
+  // model's key. This is the rule SETTINGS.md states for a profile's
+  // `model.apiKey` ("empty falls back to the block's own key and then the main
+  // key") and the one SystemOne::ResolveProfiles has always spelled out by hand.
+  //
+  // It was the missing half of profiles for every other block. A profile carries
+  // the endpoint and the model id, while the credential belongs to the provider
+  // rather than to the block that references it -- `"profile": "deepseek"` on
+  // the navigator therefore seeded a block with no key while the only key in the
+  // run sat in `model.apiKey`, and BuildAIBackend sent
+  // "Authorization: Bearer " with nothing after it. OpenRouter answers that with
+  // 401 "Missing Authentication header", which reaches the user as an empty reply
+  // and a line in the debug log rather than as a configuration error.
+  //
+  // Runs after the scalar pass and after the legacy fallback, so every block's
+  // own key and the main key are both final by the time it decides.
+  for (const BlockSeed &seed : kBlockSeeds) {
+    GameSettings::ModelSection &block = seed.block(settings);
+    if (&block == &settings.model || !block.apiKey.empty()) {
+      continue;
+    }
+    // Only the hosted backends take a key at all; Ollama has no use for one, and
+    // copying a secret into a block that cannot use it is only another place to
+    // leak it from.
+    if (block.type == "openrouter" || block.type == "gemini") {
+      block.apiKey = settings.model.apiKey;
+    }
+  }
+
   if (!settings.ai.npcPromptFile.empty()) {
     if (ReadTextFile(settings.ai.npcPromptFile, settings.ai.npcPromptTemplate)) {
       std::cout << "Settings: NPC prompt template loaded from "

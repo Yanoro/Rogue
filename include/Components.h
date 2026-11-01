@@ -533,6 +533,13 @@ struct SpatialMemory {
   // destroyed object's alias is never reused.
   std::unordered_map<std::string, std::uint32_t> nextObjectAlias;
   int nextPlaceId = 1;
+
+  // Per-agent chunk handles (docs/chunk-design.md). Keyed by ChunkKey(cx, cy)
+  // from include/Chunk.hpp; the value is the model-facing "area-N". Assigned
+  // lazily on first observation and stable for the memory's lifetime. Future
+  // chunk names alias these handles; the world key never changes.
+  std::unordered_map<std::uint64_t, int> chunkHandles;
+  int nextChunkHandle = 1;
 };
 
 struct BlocksTile {};
@@ -839,6 +846,10 @@ struct NavigationDebugStrategistThought {
   // Raw replies from this decision's failed attempts. Empty on success and for
   // the two-context navigator, which records one response per strategist call.
   std::vector<NavigationDebugAttempt> attempts;
+  // The exact STATE block this decision saw. Kept per call so selecting an older
+  // thought shows that call's location, ACTIONS, OBJECT TARGETS and OBJECTS SEEN,
+  // not the latest state. Empty for the two-context navigator.
+  std::string stateText;
   bool complete = false;
   bool failed = false;
   std::string error;
@@ -889,6 +900,18 @@ struct NavigationDebugState {
   // The most recent object examination text (signpost, notice, etc.), kept so
   // the window can show what the navigator learned after the arrow.
   std::string recentExamination;
+  // Chunk view (docs/chunk-design.md): the prompt's JOURNEY/AREA/LAST RESULT and
+  // the structured leg trace. Empty when chunks are disabled or no leg has
+  // completed yet. Debug-only; never part of the agent prompt except through the
+  // normal state strings above.
+  std::string journey;
+  std::string areaCard;
+  std::string lastResult;
+  std::string legTraceJson;
+  // Mid-leg attention gate: a stop report waiting for the main model, and the
+  // notes the gate collected without stopping.
+  std::string gate;
+  std::string noted;
   // Incremented on every published snapshot. The window uses it to cache the
   // expensive union of all call graphs instead of re-parsing every graph every
   // frame (which made FPS fall with each navigator call).

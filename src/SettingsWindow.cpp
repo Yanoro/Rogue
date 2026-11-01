@@ -854,8 +854,15 @@ void SettingsWindow::AssignProfile(const SettingsSchema::FieldSpec &field,
       }
       const nlohmann::json value =
           SettingsSchema::CurrentJson(candidate, settings);
-      // Never write an empty apiKey: it would sit in the override file and mask
-      // the key settings.local.json or model.json supplies.
+      // Never copy a secret into the fork. A hosted block's key is normally not
+      // its own: it is inherited from model.apiKey at load, so forking would
+      // pin a copy here that outlives a key rotation in settings.local.json.
+      // An empty value is skipped for the reason it always was -- it would mask
+      // the key the loader supplies. Nothing is lost either way: the fork only
+      // adds fields, so a key already written inline keeps its value.
+      if (candidate.secret) {
+        continue;
+      }
       if (value.is_string() && value.get<std::string>().empty()) {
         continue;
       }

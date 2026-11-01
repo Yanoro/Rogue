@@ -1,6 +1,9 @@
 # Agent attention and interruption
 
-**Status:** design note, nothing implemented here.
+**Status:** design note. The navigation-specific first slice — a mid-leg
+attention gate in the single navigator — is implemented in
+[navigation-attention-gate.md](navigation-attention-gate.md). The general
+`Perception`/`WakeReason` path and the validator are not implemented.
 **Scope:** how an agent becomes aware of the world while it is busy, how a System 1 model decides
 whether that is worth waking it, how a second System 1 check validates the agent's own task list, and
 how a woken agent yields its current activity to talk.

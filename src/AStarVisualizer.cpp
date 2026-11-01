@@ -238,7 +238,16 @@ void RunAStarSimulation(MockWorld &ecs, const GamePosition &startPos, const Game
         
         // Blocked check (O(1) instead of ECS query loop)
         if (ecs.isBlocked(neighbourPos.x, neighbourPos.y)) continue;
-        
+
+        // Corner check: a diagonal step passes the corner shared by the two
+        // cells beside it, and cells are solid, so both must be free. Mirrors
+        // CornerIsClear() in PathFinding.cpp; without it this visualizer would
+        // show routes the game refuses to walk.
+        if (neighbourPos.x != currNode->position.x && neighbourPos.y != currNode->position.y) {
+            if (ecs.isBlocked(neighbourPos.x, currNode->position.y) ||
+                ecs.isBlocked(currNode->position.x, neighbourPos.y)) continue;
+        }
+
         // Closed list check (O(1))
         if (closedGrid[neighbourPos.y * ecs.width + neighbourPos.x]) continue;
 
@@ -386,6 +395,18 @@ void InitTestCases() {
                     w.AddWall(x, y);
                 }
             }
+        }
+    });
+
+    // Two walls that touch only at a corner. The diagonal (10,10) -> (11,9)
+    // squeezes between (11,10) and (10,9), both of which are walls, so it is not
+    // walkable; the route has to go around the top instead. This is the case the
+    // old neighbour test got wrong.
+    g_testCases.push_back({
+        "6. Corner Squeeze", {2, 12}, {16, 12},
+        [](MockWorld& w) {
+            for (int y = 2; y <= 9; y++) w.AddWall(10, y);    // upper wall
+            for (int y = 10; y <= 17; y++) w.AddWall(11, y);  // lower wall, offset
         }
     });
 }

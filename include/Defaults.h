@@ -131,6 +131,18 @@ constexpr int DEFAULT_REGION_FAR_SIZE = 32;
 constexpr int DEFAULT_REGION_FAR_RADIUS = 48;
 constexpr int DEFAULT_REGION_MODEL_NEAR_COUNT = 6;
 
+// Fixed world chunk grid (docs/chunk-design.md). Eight cells matches the near
+// region size; it is a presentation/index default, not a semantic radius.
+constexpr int DEFAULT_CHUNK_SIZE = 8;
+constexpr int DEFAULT_CHUNK_MAX_TRAVERSED_AREAS = 8;
+constexpr int DEFAULT_CHUNK_MAX_JOURNEY_SEGMENTS = 12;
+constexpr int DEFAULT_CHUNK_MAX_NEW_AREAS = 6;
+constexpr int DEFAULT_CHUNK_MAX_FEATURES_PER_AREA = 3;
+constexpr int DEFAULT_CHUNK_CARD_ASPECTS = 3;
+constexpr int DEFAULT_CHUNK_CARD_OBJECT_GROUPS = 6;
+constexpr int DEFAULT_CHUNK_CARD_PLACES = 4;
+constexpr bool DEFAULT_CHUNK_INCLUDE_CHARACTERS = true;
+
 // How close (Chebyshev) two seeds must be to land in the same place. Global
 // rather than per category, because one region may hold many categories
 // (docs/place-derivation-design.md section 5.1): a market beside an orchard is one
