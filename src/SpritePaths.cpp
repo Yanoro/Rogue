@@ -149,19 +149,53 @@ std::vector<std::string> SpriteCandidatePaths(const std::string &conventionId) {
     return candidates;
   }
 
-  // The pack is the art, so its own sprites come first and win. The generated
-  // layer is strictly additive: it supplies an appearance only where the pack
-  // has none, which is what stops a generated image from shadowing hand-authored
-  // art -- and why "load a pack with more art" is always an improvement.
-  candidates.push_back(
+  const std::string pack =
       (std::filesystem::path(roots.artPackSprites) / (conventionId + ".png"))
-          .string());
-  if (!roots.generatedSprites.empty()) {
-    candidates.push_back(
-        (std::filesystem::path(roots.generatedSprites) / (conventionId + ".png"))
-            .string());
+          .string();
+  const std::string generated =
+      roots.generatedSprites.empty()
+          ? std::string()
+          : (std::filesystem::path(roots.generatedSprites) / (conventionId + ".png"))
+                .string();
+
+  // The pack is the art, so its own sprites normally come first and win: the generated
+  // layer is additive, which is what stops a generated image from shadowing hand-authored
+  // art. The one exception is a marker the Content Editor writes when a person chooses a
+  // generated sprite for this asset -- then the generated copy is tried first, and
+  // deleting the marker puts the pack's art back. The rule is per asset so an asset the
+  // user never opened keeps exactly the behaviour it had before.
+  if (!generated.empty() && PrefersGeneratedSprite(conventionId)) {
+    candidates.push_back(generated);
+    candidates.push_back(pack);
+  } else {
+    candidates.push_back(pack);
+    if (!generated.empty()) candidates.push_back(generated);
   }
   return candidates;
+}
+
+std::string GeneratedSpriteMarkerPath(const std::string &conventionId) {
+  if (conventionId.empty()) return std::string();
+  const SpriteRoots &roots = Roots();
+  if (roots.generatedSprites.empty()) return std::string();
+  return (std::filesystem::path(roots.generatedSprites) /
+          (conventionId + ".active.json"))
+      .string();
+}
+
+bool PrefersGeneratedSprite(const std::string &conventionId) {
+  const std::string marker = GeneratedSpriteMarkerPath(conventionId);
+  if (marker.empty()) return false;
+  std::error_code ec;
+  return std::filesystem::exists(marker, ec);
+}
+
+std::string ArtPackSpritePath(const std::string &conventionId) {
+  if (conventionId.empty()) return std::string();
+  const SpriteRoots &roots = Roots();
+  if (roots.artPackSprites.empty()) return std::string();
+  return (std::filesystem::path(roots.artPackSprites) / (conventionId + ".png"))
+      .string();
 }
 
 std::vector<std::string> SpriteDocumentCandidatePaths(

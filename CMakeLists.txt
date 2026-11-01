@@ -190,6 +190,7 @@ set(SOURCES
     src/TileDesigner.cpp
     src/ObjectDesigner.cpp
     src/SpriteKinds.cpp
+    src/DesignerDomains.cpp
     src/SpriteReply.cpp
     src/SpriteRouter.cpp
     src/TileArt.cpp
@@ -197,6 +198,7 @@ set(SOURCES
     src/PixelDSL.cpp
     src/BlueprintSnapshot.cpp
     src/StyleDescriber.cpp
+    src/SpriteGapOffer.cpp
     src/PromptRewriter.cpp
     src/RewriteInputBox.cpp
     src/RewriteBriefs.cpp
@@ -204,8 +206,12 @@ set(SOURCES
     src/ContentFiles.cpp
     src/BlueprintExpansion.cpp
     src/GapLog.cpp
-    src/DesignerChatWindow.cpp
-    src/TileDesignerWindow.cpp
+    src/ActorSpriteRegistry.cpp
+    src/ArtRequestsPanel.cpp
+    src/ContentKinds.cpp
+    src/ContentEditorWindow.cpp
+    src/DesignerSession.cpp
+    src/DesignerWindow.cpp
     src/SpeechQueue.cpp
     src/PiperSpeech.cpp
     src/EffectParsing.cpp

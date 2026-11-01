@@ -152,11 +152,20 @@ public:
   // created, so a design can be iterated on. A hand-authored template is never
   // replaceable here: the catalog is read-only to the designer.
   //
+  // `allowCatalogReplace` is the Content Editor's door through the "catalog is
+  // read-only" rule above. It is a separate parameter rather than a wrapper so the
+  // editor gets *the same* validation and the same registration path -- the point of
+  // validating by running the real setters is lost if the editor gets its own parser.
+  // Off everywhere else, deliberately: an agent may not rewrite hand-authored content,
+  // and one flag that only a human-facing window sets is easier to audit than a new
+  // code path.
+  //
   // Main-thread only, and not safe to call while a `GetTemplates()` reference is held.
   RuntimeAddResult AddRuntime(const nlohmann::json& definition,
                               const std::string& source = "(object designer)",
                               bool replaceExisting = false,
-                              bool requireAtLeastOneComponent = true);
+                              bool requireAtLeastOneComponent = true,
+                              bool allowCatalogReplace = false);
 
   // True when `key` came from AddRuntime rather than from a loaded file.
   bool IsRuntimeAdded(const std::string& key) const;

@@ -737,6 +737,8 @@ add(Field<ValueType::Bool>("vision", "vision.enabled",
             "How many times the engine re-prompts after an invalid design before giving up.", &GameSettings::designer, &DesignerSection::maxDesignAttempts))
         .Min(1, 1)
         .Restart();
+    add(Field<ValueType::Bool>("designer", "designer.autoRoute",
+            "Ask the classifier which domain a request is for, and send once it answers, instead of waiting for the Route button. Hides the domain dropdown. Costs one decision call per request.", &GameSettings::designer, &DesignerSection::autoRoute));
     add(Field<ValueType::Int>("designer", "designer.maxTokens",
             "The designer's own completion budget, overriding the backend's. 0 inherits it.", &GameSettings::designer, &DesignerSection::maxTokens))
         .Min(0, 0)
@@ -1206,6 +1208,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.items",
             "Item registry directory.", &GameSettings::content, &ContentSection::items))
         .Restart();
+    add(Field<ValueType::String>("content", "content.actorSprites",
+            "Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature.", &GameSettings::content, &ContentSection::actorSprites))
+        .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
         .Restart();
@@ -1224,11 +1229,19 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.generatedTiles",
             "Generated overlay for agent-created tiles, loaded additively on top of the catalog.", &GameSettings::content, &ContentSection::generatedTiles))
         .Restart();
-    add(Field<ValueType::String>("content", "content.tileDesignerPromptFile",
-            "The tile designer's instructions. Empty falls back to the generated vocabulary alone.", &GameSettings::content, &ContentSection::tileDesignerPromptFile))
+    add(Field<ValueType::String>("content", "content.editor",
+            "Where the Content Editor saves its overrides (tiles/ and objects/ beneath it). Loaded last, so an edit wins over the catalog and the generated overlay; the hand-authored files are never rewritten.", &GameSettings::content, &ContentSection::editor))
         .Restart();
-    add(Field<ValueType::String>("content", "content.objectDesignerPromptFile",
-            "The object designer's instructions.", &GameSettings::content, &ContentSection::objectDesignerPromptFile))
+    add(Field<ValueType::String>("content", "content.tilePromptFile",
+            "The tile designer's instructions. Empty falls back to the generated vocabulary alone.", &GameSettings::content, &ContentSection::tilePromptFile))
+        // The old spelling. It named the *window* that read the file, which now designs
+        // buildings too; the key names the domain instead. Read, never written, so an
+        // existing settings.json keeps working without the new name being advertised.
+        .Alias("content.tileDesignerPromptFile")
+        .Restart();
+    add(Field<ValueType::String>("content", "content.objectPromptFile",
+            "The object designer's instructions.", &GameSettings::content, &ContentSection::objectPromptFile))
+        .Alias("content.objectDesignerPromptFile")
         .Restart();
     add(Field<ValueType::String>("content", "content.generatedObjects",
             "Generated overlay for agent-created objects. Empty means an accepted object lives for this run only.", &GameSettings::content, &ContentSection::generatedObjects))

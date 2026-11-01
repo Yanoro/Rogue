@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -17,7 +18,7 @@ class DebugLog;
 // and the *designing* model stays text-only. The alternative -- sending the crop
 // straight to the document turn -- is better information and a worse trade today,
 // because the designer backend is text-only by construction
-// (DesignerChatWindow's own comment says so) and a provider is allowed to ignore an
+// (the designer's own comment says so) and a provider is allowed to ignore an
 // image list silently. A no-op is the one failure mode worth paying a hop to avoid.
 //
 // What this deliberately does NOT do is describe the gap. An image model looking at a
@@ -95,23 +96,37 @@ public:
   void Cancel();
 
 private:
-  void Run(std::string base64, std::string context);
+  // Everything a provider callback touches, owned by the *threads* rather than by the
+  // Job.
+  //
+  // This is not indirection for its own sake. OllamaAI dispatches its own detached curl
+  // thread and invokes the stream callback from it, so the callback can fire after the
+  // worker has returned and after the Job has been destroyed -- which is exactly what an
+  // earlier version did, producing a heap-buffer-overflow inside the callback. Capturing
+  // a shared state object by value keeps the memory valid for as long as any callback can
+  // still reach it; the late tokens are then simply dropped.
+  struct Stream;
+
+  void Run(std::string base64, std::string context, std::shared_ptr<Stream> stream);
 
   AI *ai = nullptr;
   DebugLog *log = nullptr;
   std::string instructions;
   std::string contextId = "style-describer";
 
+  // The run in flight, reachable by Cancel() and by the worker. Null between runs.
+  std::shared_ptr<Stream> stream;
+
+  // Result delivery. Separate from Stream because only these two are the Job's own
+  // lifetime: the worker stores, the main thread polls.
   mutable std::mutex mutex;
-  std::condition_variable finished;
+  std::condition_variable deliver;
   std::thread worker;
   bool busy = false;
   bool hasResult = false;
-  bool cancelled = false;
-  // Accumulated on the provider's callback thread, under `mutex`.
-  std::string reply;
-  bool streamDone = false;
-  std::string transportError;
+  // Set by Cancel so a headless caller blocked in WaitFor returns instead of waiting out
+  // the timeout for a result that will never come.
+  bool abandoned = false;
   Style result;
 };
 

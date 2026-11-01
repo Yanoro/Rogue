@@ -11,7 +11,7 @@ it, with the places the implementation diverged marked inline.
 | worker thread, per-reply audio, transport | `include/SpeechQueue.h`, `src/SpeechQueue.cpp` |
 | audio device, per-frame pump | `Game::Init` / `Game::Shutdown` / `Game::Update` (`src/Game.cpp`) |
 | backend construction | `Game::ECSInit` (`src/GameECS.cpp`) |
-| speech on a finished reply, bars, mute | `DesignerChatWindow::SpeakFor` / `DrawSpeechBar` / `Draw` |
+| speech on a finished reply, bars, mute | `DesignerSession::SpeakFor` / `DrawSpeechBar` / `DrawTranscript` (the shell the designer window uses) |
 | settings | `designer.tts` (`include/Settings.h`, `src/Settings.cpp`, `SETTINGS.md`) |
 | voice model | `models/tts/en_GB-alba-medium.onnx` + `.onnx.json`, gitignored, fetched per SETTINGS.md |
 
@@ -41,9 +41,15 @@ backend and reporting success. See §6.3; it is the most useful section in this 
 in `src/`, and the only matches for "speak" are prose in the NPC prompt and `TalkAction`.~~
 (True when this was written; no longer.)
 
-Line numbers were verified against the tree on 2026-10-15. `DesignerChatWindow` is under active
-development and gained 11 lines while this document was being written, so prefer the symbol names in
-each reference — they are the stable identifier, the numbers are not.
+Line numbers were verified against the tree on 2026-10-15, when speech lived in
+`DesignerChatWindow`. That class no longer exists: the speech half moved into `DesignerSession`
+while the two designer windows were merged (see `docs/sprite-designer-design.md` §23), and the
+symbol names below have moved with it. Prefer the symbol names — they are the stable identifier,
+the numbers never were.
+
+Since the merge, speech is reachable from *any* domain's reply: the session draws the bar under
+every spoken exchange, and only the blueprint path calls `SpeakFor`. The tile and object halves
+are silent by omission rather than by policy, which is the natural place to change it.
 
 The goal: when the designer answers in the Designer Chat window, you hear its critique instead of
 reading it — so you can look at the blueprint preview pane (or at the world) while it talks.

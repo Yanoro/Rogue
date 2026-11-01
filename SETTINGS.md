@@ -189,6 +189,7 @@ The blueprint designer's backend, prompt and output budget.
 | `useMainModel` | bool | `true` | Share the NPC backend instead of using the model block below. *Restart to apply.* |
 | `promptFile` | string | `data/blueprints/DESIGNER.md` | The designer's instructions: the grammar, the reply contract and the worked examples. Empty uses the compiled-in default. *Restart to apply.* |
 | `maxDesignAttempts` | int | `3` | How many times the engine re-prompts after an invalid design before giving up. Must be at least 1. A value outside the range is reported and replaced. *Restart to apply.* |
+| `autoRoute` | bool | `false` | Ask the classifier which domain a request is for, and send once it answers, instead of waiting for the Route button. Hides the domain dropdown. Costs one decision call per request. |
 | `maxTokens` | int | `0` | The designer's own completion budget, overriding the backend's. 0 inherits it. Must be at least 0. A value outside the range is reported and replaced. *Restart to apply.* |
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the designer's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the designer's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
@@ -538,12 +539,14 @@ Where each content registry loads its definitions from.
 | `stats` | string | `data/stats` | Stat registry directory. *Restart to apply.* |
 | `skills` | string | `data/skills` | Skill registry directory. *Restart to apply.* |
 | `items` | string | `data/items` | Item registry directory. *Restart to apply.* |
+| `actorSprites` | string | `data/actor_sprites` | Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature. *Restart to apply.* |
 | `races` | string | `data/races` | Race registry directory. *Restart to apply.* |
 | `places` | string | `data/places.json` | The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule. *Restart to apply.* |
 | `tiles` | string | `data/tiles` | The hand-authored tile catalog directory. Agent-created tiles go to generatedTiles instead. *Restart to apply.* |
+| `editor` | string | `data/editor` | Where the Content Editor saves its overrides (tiles/ and objects/ beneath it). Loaded last, so an edit wins over the catalog and the generated overlay; the hand-authored files are never rewritten. *Restart to apply.* |
 | `generatedTiles` | string | `data/generated/tiles` | Generated overlay for agent-created tiles, loaded additively on top of the catalog. *Restart to apply.* |
-| `tileDesignerPromptFile` | string | `data/tiles/TILEDESIGNER.md` | The tile designer's instructions. Empty falls back to the generated vocabulary alone. *Restart to apply.* |
-| `objectDesignerPromptFile` | string | `data/objects/OBJECTDESIGNER.md` | The object designer's instructions. *Restart to apply.* |
+| `tilePromptFile` | string | `data/tiles/TILEDESIGNER.md` | The tile designer's instructions. Empty falls back to the generated vocabulary alone. *Restart to apply.* |
+| `objectPromptFile` | string | `data/objects/OBJECTDESIGNER.md` | The object designer's instructions. *Restart to apply.* |
 | `generatedObjects` | string | `data/generated/objects` | Generated overlay for agent-created objects. Empty means an accepted object lives for this run only. *Restart to apply.* |
 | `spriteContractFile` | string | `data/prompts/SPRITE_CONTRACT.md` | The reply contract every kind's prompt is built from: format, refusal protocol and prohibitions. *Restart to apply.* |
 | `spriteDSLPromptFile` | string | `data/style/SPRITEDESIGNER.md` | The system prompt for the turn that writes a pixel document for an accepted definition. *Restart to apply.* |

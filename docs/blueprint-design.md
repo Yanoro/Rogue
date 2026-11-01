@@ -153,7 +153,8 @@ in `data/objects/`; this is the form every shipped structural design now uses:
 ```
 
 Order matters: floor first, then the wall objects, the doorway carved out of the wall, then the door
-object on the carved cell.
+object on the carved cell. The carve removes the wall object and keeps the floor; the door then takes
+the cell's object slot, so the doorway cell ends with the floor it started with and the door on top.
 
 **This shipped file used to be the wrong version of this example.** The migration converted it (and
 nine of the other thirteen designs) from painting `"wooden wall"`/`"door"` to placing
@@ -185,7 +186,18 @@ void    ComputeBounds(blueprint, minX, minY, maxX, maxY);
 Expansion Expand(const Blueprint &blueprint);
 ```
 
-- **Per part, then merged in order.** Later parts win, which is what lets a carve open a wall.
+- **Per part, then merged in order, per *field*.** A later `paint` replaces the ground on a cell,
+  a later `place` replaces the object on it, and neither removes the other. That is what lets a
+  carve open a wall without punching a hole in the floor, and what lets a chair stand on the
+  floor its design laid rather than on whatever the map happened to have there. (Before
+  2026-10-31 the ops owned the whole cell, so `place` cleared the tile and every placed object
+  left a hole.)
+- **No voids.** Every cell any part covers must end up with a tile: `place` and `carve` do not
+  lay ground, so a cell they cover without a `paint` underneath is a hole, and the design is
+  refused with the coordinate named. The check is `BlueprintExpansion::FindVoids`, run by the
+  loader (a design on disk with a void is rejected and does not appear in the Blueprints window)
+  and by the designer (the same sentence is fed back to the model, which is the only way it
+  learns to paint the footprint first). `--blueprint-check <file>` applies it headlessly.
 - **`level != 0` parts are skipped** by both `Expand` and `ComputeBounds`. The world is
   single-layer, and a preview of a floor the map cannot show would mislead rather than inform.
 - **`fill` uses `Interior`**, a 4-connected flood fill from outside the shape's bounding box:
@@ -208,8 +220,9 @@ world already has:
 | object | `place`, `fill{place}` | an `ObjectFactory` template id. Something **standing on** the ground — including walls and doors. |
 
 They differ in cost and visibility: terrain is free to paint and is not a named entity an agent can
-target, an object consumes a real item and gets a `DisplayName`. `carve` writes neither — it marks the
-cell as an opening, which both renderers draw as a hole.
+target, an object consumes a real item and gets a `DisplayName`. A cell can carry **both** — and for
+anything standing on the ground it should, because no op lays ground except `paint`. `carve` writes
+neither: it clears the cell's object slot and keeps the ground, marking the cell as an opening.
 
 ---
 
@@ -250,8 +263,8 @@ header states this with the failing example, because the previous comment claime
 "stable for the registry's lifetime" and that stopped being true the moment `Reload` existed.
 
 `SaveBlueprint` and `DeleteBlueprint` **copy their arguments on entry**. That is not style: callers
-naturally pass a reference into the registry — `BlueprintWindow` passes a key, `DesignerChatWindow`
-passes a design it just looked up — and `Reload()` at the end frees it. This was a real
+naturally pass a reference into the registry — `BlueprintWindow` passes a key, the designer
+window passes a design it just looked up — and `Reload()` at the end frees it. This was a real
 heap-use-after-free (`DeleteBlueprint → LoadBlueprints::clear → Get(id)`), found by ASan and fixed by
 copying at the boundary.
 
@@ -269,12 +282,16 @@ grouping was necessary: reporting per part produced six near-identical lines and
 
 ## 6. The designer agent
 
-`include/DesignerChatWindow.h` / `src/DesignerChatWindow.cpp`. A development window that turns a
-request in plain language into a blueprint, so a model can be judged on *designing* before any of it
-is wired to the in-game agents.
+The blueprint half of `include/DesignerWindow.h` / `src/DesignerWindow.cpp` (this section was
+written when it was a separate `DesignerChatWindow`; the two were merged on 2026-10-31 — see
+`docs/sprite-designer-design.md` §23). A development window that turns a request in plain
+language into a blueprint, so a model can be judged on *designing* before any of it is wired to
+the in-game agents.
 
-It is deliberately isolated, like `VisionChatWindow`: its own `contextId`, never touching
-`NPCContext`, `AIRequest` or the agent thread pipeline, so it cannot disturb the NPC loop.
+It is deliberately isolated, like `VisionChatWindow`: its own provider conversation, never
+touching `NPCContext`, `AIRequest` or the agent thread pipeline, so it cannot disturb the NPC
+loop. The chat plumbing is `DesignerSession`, shared with the tile and object halves; the
+inspection, the preview and the retry wording are the blueprint's own.
 
 ### 6.1 Backend
 
@@ -393,7 +410,7 @@ overlay *should* be its own directory so a data pack a designer designs against 
 agent-created content, and notes that the art tooling currently writes into the catalog; that move
 is designed and not made. Reloading the layer is `RemoveRuntimeTiles` plus a re-add.
 
-`TileDesignerWindow` is the art counterpart to the building designer: the same chat shape, plus a
+`DesignerWindow` is the art counterpart to the building designer: the same chat shape, plus a
 tile editor (glyph, colours, hitbox, sprite), the art job's artifacts, a pixel view and a filmstrip.
 It is reachable headlessly through `--tile-design`, with `--tile-art*` flags for the art pipeline.
 See `asset-generation-design.md`.
@@ -461,12 +478,17 @@ them from the schema:
 - `include/BlueprintRegistry.h`, `src/BlueprintRegistry.cpp` — parse, save, delete, reload,
   serialise, `FindMissingVocabulary`
 - `include/BlueprintPreview.hpp` — the shared preview renderer
-- `include/DesignerChatWindow.h`, `src/DesignerChatWindow.cpp` — the designer agent
+- `include/DesignerWindow.h`, `src/DesignerWindow.cpp` — the designer agent, all three domains
+  (blueprint, tile, object) since 2026-10-31
+- `include/DesignerSession.h`, `src/DesignerSession.cpp` — the shared conversation shell
+- `include/DesignerDomains.h`, `src/DesignerDomains.cpp` — the domain table
 - `data/blueprints/DESIGNER.md` — the designer's instructions, including the reply contract
-- `src/Game.cpp` — `BuildDesignerSystemPrompt` (prompt file plus generated palette),
+- `include/BlueprintPrompt.hpp` — the blueprint prompt (file plus generated palette), shared
+  by the window and `--designer-prompt building`
+- `src/Game.cpp` — `BuildDesignerPrompt` (the domain seam),
   `BuildBlueprintPlacement`, `PaintTile`
 - `src/GameDraw.cpp` — the world-space ghost
 - `include/GapLog.h`, `src/GapLog.cpp` — coverage and vocabulary gap reports
 - `include/TileRegistry.h`, `src/TileRegistry.cpp` — the catalog and its generated overlay
-- `include/TileDesignerWindow.h` — the art counterpart
+- `include/DesignerWindow.h` — the art counterpart
 - `data/blueprints/*.json` — hand-authored and agent-authored designs, side by side

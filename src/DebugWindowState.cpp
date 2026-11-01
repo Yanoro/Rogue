@@ -20,7 +20,7 @@ DebugWindowState::DebugWindowState(DebugLog* debugLog)
     showMapEditorWindow(false),
     showBlueprintWindow(false),
     showDesignerWindow(false),
-    showTileDesignerWindow(false),
+    showContentEditorWindow(false),
     showAIMenuWindow(false),
     showNPCMenuWindow(false),
     showTaskBoardWindow(false),
@@ -60,13 +60,15 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["mapEditorObjectSort"] = ContentSortMetricId(objectSortMetric);
   state["mapEditorObjectSortDescending"] = objectSortDescending;
   state["blueprint"] = showBlueprintWindow;
+  state["blueprintSort"] = ContentSortMetricId(blueprintSortMetric);
+  state["blueprintSortDescending"] = blueprintSortDescending;
   state["designer"] = showDesignerWindow;
-  state["tileDesigner"] = showTileDesignerWindow;
+  state["contentEditor"] = showContentEditorWindow;
   state["designerPaneWidth"] = designerPaneWidth;
   state["designerZoom"] = designerZoom;
   state["designerShowJson"] = designerShowJson;
   state["designerShowThoughts"] = designerShowThoughts;
-  state["tileDesignerAutoArt"] = tileDesignerAutoArt;
+  state["designerAutoArt"] = designerAutoArt;
   state["blueprintPaneWidth"] = blueprintPaneWidth;
   state["blueprintZoom"] = blueprintZoom;
   state["aiMenu"] = showAIMenuWindow;
@@ -136,19 +138,28 @@ void DebugWindowState::LoadState(const std::string &filePath) {
       objectSortDescending =
           state.value("mapEditorObjectSortDescending", false);
       showBlueprintWindow = state.value("blueprint", false);
-      showDesignerWindow = state.value("designer", false);
-      showTileDesignerWindow = state.value("tileDesigner", false);
+      // The two windows were merged into one, so a file written by either build opens
+      // the surviving window. An OR rather than a precedence rule: whichever one was
+      // open is the one the user was looking at, and there is only one now.
+      showContentEditorWindow = state.value("contentEditor", false);
+      showDesignerWindow = state.value("designer", false) ||
+                           state.value("tileDesigner", false);
       designerPaneWidth = state.value("designerPaneWidth", designerPaneWidth);
       designerZoom = state.value("designerZoom", designerZoom);
       designerShowJson = state.value("designerShowJson", designerShowJson);
       designerShowThoughts =
           state.value("designerShowThoughts", designerShowThoughts);
-      tileDesignerAutoArt =
-          state.value("tileDesignerAutoArt", tileDesignerAutoArt);
+      designerAutoArt = state.value(
+          "designerAutoArt", state.value("tileDesignerAutoArt", designerAutoArt));
       // Recorded separately from the value: a file written before this key existed
       // must leave the preference *unstated*, so the window can follow
       // art.generation.enabled instead of defaulting to off.
-      tileDesignerAutoArtStored = state.contains("tileDesignerAutoArt");
+      designerAutoArtStored = state.contains("designerAutoArt") ||
+                              state.contains("tileDesignerAutoArt");
+      blueprintSortMetric = ContentSortMetricFromId(
+          state.value("blueprintSort", std::string("name")),
+          ContentSortMetric::Name);
+      blueprintSortDescending = state.value("blueprintSortDescending", false);
       blueprintPaneWidth = state.value("blueprintPaneWidth", blueprintPaneWidth);
       blueprintZoom = state.value("blueprintZoom", blueprintZoom);
       showAIMenuWindow = state.value("aiMenu", false);

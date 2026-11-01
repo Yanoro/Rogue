@@ -606,7 +606,7 @@ BlueprintRegistry::DeleteResult BlueprintRegistry::DeleteBlueprint(
 
   // Copied immediately, and this is not a style choice. Callers naturally pass a
   // reference that lives inside this registry -- BlueprintWindow passes
-  // `blueprint->id`, a key in the map, and DesignerChatWindow passes
+  // `blueprint->id`, a key in the map, and the designer window passes
   // `blueprint.id` from an entry it just looked up. Reload() at the end clears
   // that map, which frees the very string the parameter refers to, so every use
   // of `id` after it would read freed memory. That was a real heap-use-after-free
@@ -747,6 +747,30 @@ void BlueprintRegistry::LoadBlueprints(const std::string& directoryPath) {
              "empty building");
         continue;
       }
+
+      // A void is a hole in the floor: a cell a part covered and left with nothing to
+      // stand on. Refused rather than warned, because placing such a design shows the
+      // map's own ground through the middle of a room. An ERROR rather than a warning
+      // for the reason the catch block below gives: a design that silently vanishes from
+      // the list is indistinguishable from one that was never authored.
+      const BlueprintExpansion::VoidReport voids =
+          BlueprintExpansion::FindVoids(expansion);
+      if (!voids.ok()) {
+        const std::string message = "Error: blueprint '" + id + "' (" +
+                                    entry.path().string() + ") rejected: " +
+                                    voids.Summary();
+        if (debugLog) debugLog->LogError(message);
+        else std::cerr << message << std::endl;
+        continue;
+      }
+
+      // The file's own write time, for the list's "by date" order. A design that
+      // failed to load never reaches here, so only content that is actually listed
+      // carries a time.
+      std::error_code timeEc;
+      blueprint.sourceTime =
+          std::filesystem::last_write_time(entry.path(), timeEc);
+      if (timeEc) blueprint.sourceTime = {};
 
       blueprints[id] = std::move(blueprint);
     } catch (const std::exception& e) {

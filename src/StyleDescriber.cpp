@@ -5,6 +5,7 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <stop_token>
 #include <string>
 #include <utility>
 #include <vector>
@@ -148,21 +149,14 @@ Style ParseReply(const std::string &reply) {
   return style;
 }
 
-Job::~Job() {
-  {
-    std::lock_guard<std::mutex> lock(mutex);
-    cancelled = true;
-  }
-  finished.notify_all();
-  if (worker.joinable()) {
-    worker.join();
-  }
-}
-
 void Job::Configure(AI *backend, DebugLog *debugLog) {
   ai = backend;
   log = debugLog;
 
+  // The instructions are read once per backend, not per request: a prompt file does not
+  // change mid-conversation, and re-reading it per crop would put file I/O on the worker
+  // thread for no gain. A missing file degrades to the built-in text rather than to an
+  // empty system prompt.
   instructions.clear();
   std::ifstream file(kDefaultPromptPath);
   if (file.is_open()) {
@@ -177,6 +171,25 @@ void Job::Configure(AI *backend, DebugLog *debugLog) {
                       kDefaultPromptPath +
                       "; using the built-in instructions instead.");
     }
+  }
+}
+
+// The state a provider callback may touch. It lives as long as either the worker or a
+// late callback still holds a reference, which is what makes the callback safe after the
+// Job itself is gone.
+struct Job::Stream {
+  std::mutex mutex;
+  std::condition_variable finished;
+  std::stop_source stop;
+  std::string reply;
+  bool streamDone = false;
+  bool cancelled = false;
+};
+
+Job::~Job() {
+  Cancel();
+  if (worker.joinable()) {
+    worker.join();
   }
 }
 
@@ -195,26 +208,25 @@ bool Job::Request(const std::string &imagePngBase64, const std::string &context,
   if (ai == nullptr) return refuse("no vision backend is configured");
   if (imagePngBase64.empty()) return refuse("the snapshot produced no image bytes");
 
+  auto state = std::make_shared<Stream>();
   {
     std::lock_guard<std::mutex> lock(mutex);
     if (busy) return refuse("a style request is already in flight");
     busy = true;
     hasResult = false;
-    cancelled = false;
-    reply.clear();
-    streamDone = false;
-    transportError.clear();
+    abandoned = false;
     result = Style{};
+    stream = state;
   }
 
-  // A previous worker (if any) has already stored its result and is finishing; joining
-  // it here is what keeps `worker` assignable and keeps two vision calls from sharing
-  // one context id.
+  // The previous worker, when there is one, has already stored its result (busy was
+  // false), so this join is short. It happens outside the lock so a worker finishing at
+  // this moment cannot deadlock against the main thread.
   if (worker.joinable()) {
     worker.join();
   }
-  worker = std::thread([this, imagePngBase64, context]() {
-    Run(imagePngBase64, context);
+  worker = std::thread([this, imagePngBase64, context, state]() {
+    Run(imagePngBase64, context, state);
   });
   return true;
 }
@@ -232,8 +244,8 @@ bool Job::Poll(Style *out) {
 bool Job::WaitFor(Style *out, int timeoutMs) {
   if (out == nullptr) return false;
   std::unique_lock<std::mutex> lock(mutex);
-  const bool arrived = finished.wait_for(lock, std::chrono::milliseconds(timeoutMs),
-                                         [this]() { return hasResult; });
+  const bool arrived = deliver.wait_for(lock, std::chrono::milliseconds(timeoutMs),
+                                        [this]() { return hasResult || abandoned; });
   if (!arrived || !hasResult) {
     return false;
   }
@@ -244,17 +256,32 @@ bool Job::WaitFor(Style *out, int timeoutMs) {
 }
 
 void Job::Cancel() {
+  std::shared_ptr<Stream> state;
   {
     std::lock_guard<std::mutex> lock(mutex);
-    cancelled = true;
+    abandoned = true;
+    busy = false;
+    state = stream;
   }
-  finished.notify_all();
+  // The two locks are taken one after the other, never nested: the worker takes
+  // Stream::mutex and then Job::mutex, so nesting the other way here would deadlock.
+  if (state != nullptr) {
+    {
+      std::lock_guard<std::mutex> lock(state->mutex);
+      state->cancelled = true;
+    }
+    // Asks the HTTP transfer to stop as well. The callback is still safe without it --
+    // it drops late tokens -- but a cancelled crop should not keep a model busy.
+    state->stop.request_stop();
+    state->finished.notify_all();
+  }
+  deliver.notify_all();
 }
 
-void Job::Run(std::string base64, std::string context) {
+void Job::Run(std::string base64, std::string context, std::shared_ptr<Stream> state) {
   // A fresh provider context per request: the history is sent explicitly, and leaving
-  // the previous crop's tokens in place would have the model describing two buildings
-  // at once.
+  // the previous crop's tokens in place would have the model describing two buildings at
+  // once.
   ai->resetContext(contextId);
 
   std::vector<ChatMessage> messages;
@@ -268,57 +295,63 @@ void Job::Run(std::string base64, std::string context) {
 
   const ImageList images{base64};
 
+  // The callback captures `state` by value and never touches the Job. It may fire after
+  // this function returns, on OllamaAI's detached curl thread, and by then the Job may
+  // have been destroyed -- which is the crash this replaced.
   const bool accepted = ai->generateStream(
       contextId, messages,
-      [this](const std::string &token) {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (cancelled) return;
+      [state](const std::string &token) {
+        std::lock_guard<std::mutex> lock(state->mutex);
+        if (state->cancelled) return;
         if (!token.empty()) {
-          reply += token;
+          state->reply += token;
           return;
         }
-        streamDone = true;
-        finished.notify_all();
+        state->streamDone = true;
+        state->finished.notify_all();
       },
-      std::stop_token{}, images);
+      state->stop.get_token(), images);
 
-  std::unique_lock<std::mutex> lock(mutex);
+  bool cancelled = false;
+  bool finished = false;
+  std::string raw;
+  {
+    std::unique_lock<std::mutex> lock(state->mutex);
+    if (accepted) {
+      // The empty-token sentinel is completion; generateStream returning only means the
+      // request was dispatched. Waiting here is the worker's job -- the frame loop never
+      // blocks on this.
+      state->finished.wait_for(lock, std::chrono::milliseconds(kTimeoutMs),
+                               [&state]() {
+                                 return state->streamDone || state->cancelled;
+                               });
+    }
+    cancelled = state->cancelled;
+    finished = state->streamDone;
+    raw = state->reply;
+  }
+
+  Style outcome;
   if (!accepted) {
+    outcome.error = "the vision backend could not accept the request";
+    outcome.raw = raw;
+  } else if (!cancelled && !finished) {
+    outcome.error = "the vision model did not answer within the time budget";
+    outcome.raw = raw;
+  } else if (!cancelled) {
+    outcome = ParseReply(raw);
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(mutex);
     busy = false;
-    result = Style{};
-    result.error = "the vision backend could not accept the request";
-    result.raw = reply;
-    hasResult = true;
-    finished.notify_all();
-    return;
+    if (!cancelled) {
+      result = std::move(outcome);
+      hasResult = true;
+    }
+    stream.reset();
   }
-
-  // The empty-token sentinel is completion; generateStream returning means only that
-  // the request was dispatched. Waiting here is the worker thread's job -- the frame
-  // loop never blocks on this.
-  finished.wait_for(lock, std::chrono::milliseconds(kTimeoutMs),
-                    [this]() { return streamDone || cancelled; });
-
-  if (cancelled) {
-    busy = false;
-    hasResult = false;
-    return;
-  }
-
-  if (!streamDone) {
-    result = Style{};
-    result.error = "the vision model did not answer within the time budget";
-    result.raw = reply;
-  } else {
-    const std::string complete = reply;
-    lock.unlock();
-    result = ParseReply(complete);
-    lock.lock();
-  }
-
-  busy = false;
-  hasResult = true;
-  finished.notify_all();
+  deliver.notify_all();
 }
 
 }  // namespace StyleDescriber

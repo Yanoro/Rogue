@@ -8,7 +8,7 @@
 #include <stop_token>
 
 #include "JevClassifier.h"
-#include "SpriteKinds.hpp"
+#include "DesignerDomains.h"
 
 // The one-shot router: which kind of sprite a request is for, whether it is one sprite or
 // a set, and how many.
@@ -69,7 +69,11 @@ struct Verdict {
   // Null when the `kind` question was unanswered or its key was unknown. A caller must not
   // fall back to "the more likely kind"; the window keeps whatever mode it is already in
   // and says so.
-  const SpriteKinds::Descriptor *kind = nullptr;
+  //
+  // A *domain*, not a sprite kind: one of the answers is `building`, which is not a sprite
+  // at all. The sprite half is reached through `domain->sprite`, which is null for a
+  // building, and that null is what stops building requests from reaching art code.
+  const DesignerDomains::Descriptor *domain = nullptr;
 
   // False when `shape` was unanswered. When false, `sheet` is false too: an unanswered
   // question resolves to the narrower case (one sprite), because a single-sprite prompt

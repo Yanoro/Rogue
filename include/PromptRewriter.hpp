@@ -57,8 +57,8 @@ public:
   PromptRewriter &operator=(const PromptRewriter &) = delete;
 
   // `ai` is borrowed and may be null: a window whose backend failed to construct
-  // then reports "no rewriter" rather than crashing, the same contract
-  // DesignerChatWindow has for its own backend.
+  // then reports "no rewriter" rather than crashing, the same contract the
+  // designer window has for its own backend.
   //
   // `promptFile` is the instructions, with `%BRIEF%` and `%TEXT%` placeholders. A
   // missing or unreadable file is reported once and disables the feature -- there is

@@ -126,11 +126,14 @@ public:
   bool GetShowBlueprintWindow() const { return showBlueprintWindow; }
   void SetShowBlueprintWindow(bool value) { showBlueprintWindow = value; }
 
+  // One designer window since the blueprint and sprite windows were merged. The old
+  // `tileDesigner` key is still read as a fallback so a run that had the sprite window
+  // open does not come back with the merged one closed.
   bool GetShowDesignerWindow() const { return showDesignerWindow; }
   void SetShowDesignerWindow(bool value) { showDesignerWindow = value; }
 
-  bool GetShowTileDesignerWindow() const { return showTileDesignerWindow; }
-  void SetShowTileDesignerWindow(bool value) { showTileDesignerWindow = value; }
+  bool GetShowContentEditorWindow() const { return showContentEditorWindow; }
+  void SetShowContentEditorWindow(bool value) { showContentEditorWindow = value; }
 
   // Designer window layout: the width of the blueprint pane and the size of one
   // cell in it. Layout state lives here rather than in the window because the
@@ -145,25 +148,33 @@ public:
   bool GetDesignerShowJson() const { return designerShowJson; }
   void SetDesignerShowJson(bool value) { designerShowJson = value; }
 
-  // Whether the tile designer asks for art as soon as it accepts a tile.
+  // Whether the designer asks for art as soon as it accepts a sprite.
   //
   // Persisted because it is a workflow preference about how a session reads, not
   // about one tile. It is the one preference in that window which spends money
   // without a further click, so it is stored rather than inferred -- but see
-  // HasTileDesignerAutoArt: a checkout that has never stored it follows
+  // HasDesignerAutoArt: a checkout that has never stored it follows
   // `art.generation.enabled`, so enabling generation is a single decision.
-  bool GetTileDesignerAutoArt() const { return tileDesignerAutoArt; }
-  void SetTileDesignerAutoArt(bool value) { tileDesignerAutoArt = value; }
+  bool GetDesignerAutoArt() const { return designerAutoArt; }
+  void SetDesignerAutoArt(bool value) { designerAutoArt = value; }
   // False until a state file that carries the key has been read. Distinguishing
   // "the user turned it off" from "nobody has ever said" is the whole point: the
   // two want opposite defaults, and a bare bool cannot tell them apart.
-  bool HasTileDesignerAutoArt() const { return tileDesignerAutoArtStored; }
+  bool HasDesignerAutoArt() const { return designerAutoArtStored; }
   bool GetDesignerShowThoughts() const { return designerShowThoughts; }
   void SetDesignerShowThoughts(bool value) { designerShowThoughts = value; }
 
   // The same two values for the Blueprints window, kept separate rather than
   // shared: the two windows hold different content, so a width that suits one
   // does not suit the other. Clamped on use, not here.
+  // The Blueprints window's list order, persisted for the same reason the Map
+  // Editor's is: a list that reorders itself on every launch is a list you re-sort
+  // on every launch. By id, so inserting a metric cannot reinterpret a saved file.
+  ContentSortMetric GetBlueprintSortMetric() const { return blueprintSortMetric; }
+  void SetBlueprintSortMetric(ContentSortMetric value) { blueprintSortMetric = value; }
+  bool GetBlueprintSortDescending() const { return blueprintSortDescending; }
+  void SetBlueprintSortDescending(bool value) { blueprintSortDescending = value; }
+
   float GetBlueprintPaneWidth() const { return blueprintPaneWidth; }
   void SetBlueprintPaneWidth(float value) { blueprintPaneWidth = value; }
   float GetBlueprintZoom() const { return blueprintZoom; }
@@ -247,7 +258,7 @@ private:
   bool showMapEditorWindow;
   bool showBlueprintWindow;
   bool showDesignerWindow;
-  bool showTileDesignerWindow;
+  bool showContentEditorWindow;
 
   // Map Editor palette ordering. Defaults reproduce the old behaviour for tiles
   // (alphabetical) and improve it for objects (also alphabetical, where the
@@ -257,7 +268,7 @@ private:
   ContentSortMetric objectSortMetric = ContentSortMetric::Name;
   bool objectSortDescending = false;
 
-  // Clamped to the ranges in DesignerChatWindow when read; the stored value is
+  // Clamped to the ranges in DesignerWindow when read; the stored value is
   // whatever the user last dragged to.
   float designerPaneWidth = 380.0f;
   float designerZoom = 64.0f;
@@ -265,11 +276,13 @@ private:
   // Off by default: the reasoning is noise while watching a design being produced,
   // and it is always in the log when it is wanted.
   bool designerShowThoughts = false;
-  bool tileDesignerAutoArt = false;
+  bool designerAutoArt = false;
   // Whether that value came from a file. Only ever set by a successful read of the
   // key, so it also survives a state file written before the key existed -- which
   // is exactly the case that should follow the setting rather than default to off.
-  bool tileDesignerAutoArtStored = false;
+  bool designerAutoArtStored = false;
+  ContentSortMetric blueprintSortMetric = ContentSortMetric::Name;
+  bool blueprintSortDescending = false;
   float blueprintPaneWidth = 420.0f;
   float blueprintZoom = 64.0f;
   bool showAIMenuWindow;

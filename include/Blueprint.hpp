@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -95,6 +96,13 @@ struct Blueprint {
   std::vector<BlueprintPart> parts;
   // The file this came from, for reporting. Empty for a runtime-authored design.
   std::string sourcePath;
+
+  // When the source file was last written, so the list can be ordered by age. Recorded
+  // at load rather than derived in the window: a stat per design per frame is a syscall
+  // storm for a value that only changes when the file does. Empty for a runtime-authored
+  // design, which sorts as the oldest thing there is -- it exists only for this run, so
+  // there is no date to report and it must not jump to the top of "newest first".
+  std::filesystem::file_time_type sourceTime{};
 
   // Bounding box of every part on every level, origin-relative. Set by the
   // registry after parsing; used for both the ghost preview and placement.

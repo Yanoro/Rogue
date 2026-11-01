@@ -11,18 +11,13 @@
 #include <nlohmann/json.hpp>
 
 #include "DebugLog.h"
+#include "DesignerSession.h"
 #include "PixelDSL.hpp"
 #include "SpriteReply.hpp"
 
 namespace TileDesigner {
 
 namespace {
-
-// The language tag that opens the one fenced block a reply must carry. The same
-// string DesignerChatWindow matches on; the two windows are answering different
-// questions but the contract is deliberately identical, so a model that learned
-// one has learned the other.
-constexpr const char *kJsonFence = "```json";
 
 constexpr const char *kGlyphPlaceholder = "%GLYPHS%";
 // The vocabulary placeholder. It used to be `%TILES%`, which said what the list was
@@ -197,24 +192,11 @@ std::string WriteDefinition(const TileDef &def, const std::string &overlayDirect
 }  // namespace
 
 std::string ExtractJsonBlock(const std::string &text) {
-  // Deliberately tolerant about what surrounds the fence and strict about the
-  // fence itself, because that is the one thing the prompt is unambiguous about.
-  const size_t fence = text.find(kJsonFence);
-  if (fence == std::string::npos) {
-    return {};
-  }
-  const size_t bodyStart = text.find('\n', fence);
-  if (bodyStart == std::string::npos) {
-    return {};
-  }
-  const size_t close = text.find("```", bodyStart);
-  if (close == std::string::npos) {
-    // An unterminated fence: take the rest. A model that forgot to close it has
-    // usually still produced the object, and "no JSON block" would be a less
-    // useful error than whatever the parser says about the text.
-    return text.substr(bodyStart + 1);
-  }
-  return text.substr(bodyStart + 1, close - bodyStart - 1);
+  // Delegated, not reimplemented. There were three copies of this fence parser -- here,
+  // in the blueprint window and in the sprite window -- and the one thing they had to
+  // agree about is exactly the thing three copies drift about. The single implementation
+  // lives beside the transcript that displays what it extracts.
+  return DesignerReply::ExtractJsonBlock(text);
 }
 
 std::string ExtractTileJson(const std::string &text, bool *fromBlock) {
@@ -228,27 +210,11 @@ std::string ExtractTileJson(const std::string &text, bool *fromBlock) {
 }
 
 std::string StripReasoning(const std::string &text) {
-  static constexpr const char *kOpen = "<think>";
-  static constexpr const char *kClose = "</think>";
-  static constexpr size_t kOpenLength = 7;
-  static constexpr size_t kCloseLength = 8;
-
-  std::string out;
-  out.reserve(text.size());
-
-  size_t i = 0;
-  while (i < text.size()) {
-    if (text.compare(i, kOpenLength, kOpen) == 0) {
-      const size_t close = text.find(kClose, i + kOpenLength);
-      if (close == std::string::npos) {
-        break;  // an unterminated block swallows the rest
-      }
-      i = close + kCloseLength;
-      continue;
-    }
-    out += text[i++];
-  }
-  return out;
+  // Delegated for the same reason as ExtractJsonBlock above: the scanner is subtle (a '<'
+  // can be literal text, and an unterminated block swallows the rest) and it was copied
+  // verbatim into the blueprint window. One implementation, beside the transcript that
+  // depends on it.
+  return DesignerReply::StripReasoning(text);
 }
 
 std::vector<std::string> GlyphLegend(const TileRegistry &tiles) {
@@ -727,9 +693,15 @@ std::string BuildSpriteDocumentSystemPrompt(const std::string &promptFile,
 std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
                                        const std::string &previousVerdict) {
   std::ostringstream out;
-  out << "Design the sprite document for "
-      << (brief.kind == SpriteKinds::Kind::Tile ? "the tile" : "the object")
-      << " \"" << brief.name << "\".\n";
+  // The subject is named, because this sentence is what decides whether the model draws
+  // ground, a prop or a being. Actor used to fall into the object arm, which is why an
+  // actor's sprite read as a prop.
+  const char *subject = brief.kind == SpriteKinds::Kind::Tile
+                            ? "the tile"
+                            : brief.kind == SpriteKinds::Kind::Actor ? "the actor"
+                                                                     : "the object";
+  out << "Design the sprite document for " << subject << " \"" << brief.name
+      << "\".\n";
   if (!brief.description.empty()) {
     out << "Its description: " << brief.description << "\n";
   }

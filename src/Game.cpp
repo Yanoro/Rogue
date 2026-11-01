@@ -4,9 +4,11 @@
 #include "AIChatWindow.h"
 #include "AgentContextWindow.h"
 #include "BlueprintExpansion.hpp"
+#include "BlueprintPrompt.hpp"
 #include "Components.h"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
+#include "DebugWindows.h"
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
@@ -19,7 +21,7 @@
 #include "SpriteRouter.hpp"
 #include "TileArt.hpp"
 #include "TileDesigner.hpp"
-#include "TileDesignerWindow.h"
+#include "DesignerWindow.h"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -571,7 +573,7 @@ void Game::UpdateGUI() {
         if (mapEntity.is_valid()) {
           flecs::entity existingObj = flecs::entity::null();
           ecs.filter<const GamePosition>().each([&](flecs::entity e, const GamePosition& pos) {
-            if (pos.x == gPos.x && pos.y == gPos.y && e != playerEntity && !e.has<CharacterTag>()) {
+            if (pos.x == gPos.x && pos.y == gPos.y && e != playerEntity && !e.has<Actor>()) {
                if (!existingObj.is_alive()) {
                  existingObj = e;
                }
@@ -644,7 +646,7 @@ void Game::UpdateGUI() {
           if (gPos.x != pos.x || gPos.y != pos.y) {
             return;
           }
-          if (!entity.has<Interactable>() && !entity.has<CharacterTag>()) {
+          if (!entity.has<Interactable>() && !entity.has<Actor>()) {
             return;
           }
           contextMenuTarget = entity;
@@ -661,6 +663,12 @@ void Game::Update() {
   // would not be.
   if (map) {
     map->RefreshBlockingObjects();
+  }
+  // The gap offer's vision read is drained here rather than in the Sprite Designer's
+  // Draw(): a window closed while the model is still reading would otherwise never see
+  // the answer, and reopening it would show a request that had silently finished.
+  if (spriteGapOffer) {
+    spriteGapOffer->Update();
   }
   UpdateGUI();
   // The speech pump lives here, not in the Designer window's Draw(): Draw only
@@ -834,6 +842,25 @@ void Game::handleInput() {
       debugLog->LogCombat("HUD position reset.");
     }
   }
+  // F11 toggles the debug console. Here rather than in InputHandler because that class
+  // produces commands for the player entity and knows nothing about windows, and with
+  // the other global keys because a window toggle is not a player action.
+  //
+  // `WantTextInput` rather than `WantCaptureKeyboard`: F11 should still work while a
+  // window has focus (it is a global key), but not while a text field is consuming
+  // keys -- otherwise it would be impossible to type "F11" into the console's own
+  // input, or into any other field.
+  if (!ImGui::GetIO().WantTextInput && IsKeyPressed(KEY_F11)) {
+    if (debugConsoleWindowEntity.has<ActiveWindow>()) {
+      debugConsoleWindowEntity.remove<ActiveWindow>();
+    } else {
+      // Rebuilt rather than cached: this window holds no state of its own (it is a menu
+      // of toggles that read the entities live), so a fresh one cannot lose anything,
+      // and the alternative is a member that has to be kept alive for no benefit.
+      debugConsoleWindowEntity.set<ActiveWindow>(
+          {std::make_shared<DebugConsoleWindow>(this)});
+    }
+  }
 }
 
 bool Game::SaveMapToFile() {
@@ -956,8 +983,6 @@ void Game::Shutdown() {
         blueprintWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowDesignerWindow(
         designerWindowEntity.has<ActiveWindow>());
-    debugWindowState->SetShowTileDesignerWindow(
-        tileDesignerWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowNPCMenuWindow(
         npcMenuWindowEntity.has<ActiveWindow>());
     debugWindowState->SetShowTaskBoardWindow(
@@ -1013,72 +1038,123 @@ bool Game::shouldClose() const { return window.ShouldClose(); }
 
 int Game::maxDesignAttempts() const { return Settings().designer.maxDesignAttempts; }
 
-std::string Game::BuildDesignerSystemPrompt() const {
-  const GameSettings &settings = Settings();
-
-  std::string prompt;
-  if (!settings.designer.promptFile.empty()) {
-    std::ifstream file(settings.designer.promptFile);
-    if (file.is_open()) {
-      std::stringstream buffer;
-      buffer << file.rdbuf();
-      prompt = buffer.str();
-    } else {
-      const std::string message =
-          "Designer: could not read the prompt file " +
-          settings.designer.promptFile +
-          "; the designer will run without its instructions.\n";
-      if (debugLog) debugLog->LogWarning(message);
-      else std::cerr << message;
-    }
+void Game::BeginSpriteGap(const Blueprint &design, const MissingMaterial &gap,
+                          bool markGap, const std::string &description) {
+  if (!designerWindow) {
+    return;
   }
+  // Replaced rather than queued: two offers would compete for the same vision backend
+  // and the same preview pane, and the second would be the one the human asked for.
+  spriteGapOffer = std::make_unique<SpriteGapOffer>();
+  spriteGapOffer->Begin(design, gap, tileRegistry, objectFactory, visionAI.get(),
+                        debugLog.get(), markGap, description);
 
-  // The palette is generated from the live content registries so it cannot drift
-  // from what the validator will accept. The %MATERIALS% placeholder is replaced
-  // when present, and appended when not, so a prompt file that forgets it still
-  // gets the list rather than silently losing the vocabulary.
-  std::string palette = "Tiles, for `paint` -- write the name exactly as shown:\n";
-  if (tileRegistry.Count() == 0) {
-    palette += "  (none: no tile catalog is loaded, so no design can be built)\n";
-  } else {
-    for (const TileDef *tile : tileRegistry.GetAll()) {
-      palette += "  - " + tile->name +
-                 (tile->blocksTile ? "  [blocks movement]" : "") + "\n";
-    }
-  }
+  // The Sprite Designer is the only place the crop and the brief are shown, so opening
+  // it is part of offering rather than a separate step a caller could forget.
+  designerWindowEntity.set<ActiveWindow>({designerWindow});
 
-  palette += "\nObjects, for `place` -- each one costs a real item:\n";
-  const auto &templates = objectFactory.GetTemplates();
-  if (templates.empty()) {
-    palette += "  (none)\n";
-  } else {
-    std::vector<std::string> names;
-    names.reserve(templates.size());
-    for (const auto &entry : templates) {
-      names.push_back(entry.first);
-    }
-    std::sort(names.begin(), names.end());
-    for (const std::string &name : names) {
-      palette += "  - " + name + "\n";
-    }
+  if (debugLog) {
+    debugLog->LogInfo("Sprite gap offered: '" + gap.material + "' for blueprint '" +
+                      design.id + "'");
   }
-
-  const std::string placeholder = "%MATERIALS%";
-  const size_t at = prompt.find(placeholder);
-  if (at != std::string::npos) {
-    prompt.replace(at, placeholder.size(), palette);
-  } else if (!prompt.empty()) {
-    prompt +=
-        "\n\n## Available materials (generated from this world's content)\n\n" +
-        palette;
-  }
-  return prompt;
 }
 
-std::string Game::BuildTileDesignerSystemPrompt() const {
-  // A wrapper over the kind-aware builder, kept because the tile window and the
-  // existing tests call it by name. New callers should use BuildSpriteSystemPrompt.
-  return BuildSpriteSystemPrompt(SpriteKinds::Kind::Tile);
+void Game::LoadContentOverrides() {
+  const GameSettings &settings = Settings();
+  const std::filesystem::path root = settings.content.editor;
+  if (root.empty()) return;
+
+  std::error_code ec;
+
+  const auto read = [](const std::filesystem::path &path, nlohmann::json &out,
+                       std::string &error) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+      error = "could not be read";
+      return false;
+    }
+    try {
+      file >> out;
+    } catch (const std::exception &e) {
+      error = std::string("is not JSON: ") + e.what();
+      return false;
+    }
+    return true;
+  };
+
+  // Tiles.
+  const std::filesystem::path tileDir = root / "tiles";
+  if (std::filesystem::is_directory(tileDir, ec)) {
+    size_t applied = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(tileDir, ec)) {
+      if (entry.path().extension() != ".json") continue;
+      nlohmann::json json;
+      std::string error;
+      if (!read(entry.path(), json, error)) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: " + entry.path().string() + " " + error);
+        }
+        continue;
+      }
+      const TileRegistry::AddResult result =
+          tileRegistry.OverrideDefinition(json, entry.path().string());
+      if (!result.ok) {
+        // Loud, not quiet: an override that silently did not apply looks exactly like
+        // one the user never saved.
+        if (debugLog) {
+          debugLog->LogError("Content editor: override " + entry.path().string() +
+                             " refused: " + result.error);
+        }
+        continue;
+      }
+      ++applied;
+    }
+    if (applied > 0 && debugLog) {
+      debugLog->LogInfo("Content editor: " + std::to_string(applied) +
+                        " tile override(s) applied");
+    }
+  }
+
+  // Objects. The same door through the factory's "the catalog is read-only" rule that
+  // only this and the editor's own save use.
+  const std::filesystem::path objectDir = root / "objects";
+  if (std::filesystem::is_directory(objectDir, ec)) {
+    size_t applied = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(objectDir, ec)) {
+      if (entry.path().extension() != ".json") continue;
+      nlohmann::json json;
+      std::string error;
+      if (!read(entry.path(), json, error)) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: " + entry.path().string() + " " + error);
+        }
+        continue;
+      }
+      const ObjectFactory::RuntimeAddResult result = objectFactory.AddRuntime(
+          json, entry.path().string(), /*replaceExisting=*/true,
+          /*requireAtLeastOneComponent=*/false, /*allowCatalogReplace=*/true);
+      if (!result.ok) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: override " + entry.path().string() +
+                             " refused: " + result.error);
+        }
+        continue;
+      }
+      ++applied;
+    }
+    if (applied > 0 && debugLog) {
+      debugLog->LogInfo("Content editor: " + std::to_string(applied) +
+                        " object override(s) applied");
+    }
+  }
+}
+
+std::string Game::BuildDesignerSystemPrompt() const {
+  // The assembly lives in BlueprintPrompt so that the headless
+  // `--designer-prompt building` mode and the window cannot disagree about what the
+  // model was told. This method is the seam that gives it the live world.
+  return BlueprintPrompt::Build(Settings().designer.promptFile, tileRegistry,
+                                objectFactory, debugLog.get());
 }
 
 std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind,
@@ -1100,7 +1176,7 @@ std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind,
   std::string promptFile = descriptor.promptFile;
 
   if (kind == SpriteKinds::Kind::Tile) {
-    promptFile = gameSettings.content.tileDesignerPromptFile;
+    promptFile = gameSettings.content.tilePromptFile;
 
     vocabulary.body = TileDesigner::TileVocabulary(tileRegistry);
     const std::vector<std::string> legend = TileDesigner::GlyphLegend(tileRegistry);
@@ -1113,7 +1189,7 @@ std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind,
       }
     }
   } else {
-    promptFile = gameSettings.content.objectDesignerPromptFile;
+    promptFile = gameSettings.content.objectPromptFile;
     // Generated from the factory's registered components, not written into the
     // document: a hand-written list drifts the moment a component is added, and the
     // failure is quiet -- the designer writes a key the engine ignores. The first draft
@@ -1127,6 +1203,36 @@ std::string Game::BuildSpriteSystemPrompt(SpriteKinds::Kind kind,
   return TileDesigner::BuildPromptForKind(
       descriptor, promptFile, gameSettings.content.spriteContractFile, vocabulary,
       set ? TileDesigner::PromptShape::Set : TileDesigner::PromptShape::One);
+}
+
+std::string Game::DesignerPromptFile(DesignerDomains::Domain domain) const {
+  const GameSettings &settings = Settings();
+  if (domain == DesignerDomains::Domain::Blueprint) {
+    return settings.designer.promptFile;
+  }
+  if (domain == DesignerDomains::Domain::Object) {
+    return settings.content.objectPromptFile;
+  }
+  return settings.content.tilePromptFile;
+}
+
+std::string Game::BuildDesignerPrompt(DesignerDomains::Domain domain,
+                                      bool set) const {
+  // A building is not a sprite and has no prompt shape: one reply is one blueprint, and
+  // the blueprint document has no set half. Asking the sprite builder for it would
+  // substitute a glyph table or a component list into a document that has neither
+  // placeholder, which is the kind of mismatch that reads as a model failure.
+  // An actor sprite has no definition prompt at all: its instructions are the sprite
+  // document's. Without this the header (and `--designer-prompt actor_sprite`) reported
+  // the *blueprint* prompt for a mode that never produces a blueprint.
+  if (domain == DesignerDomains::Domain::ActorSprite) {
+    return TileDesigner::BuildSpriteDocumentSystemPrompt(
+        Settings().content.spriteDSLPromptFile, PixelDSL::Config{}.rampsPath);
+  }
+  if (!DesignerDomains::IsSprite(domain)) {
+    return BuildDesignerSystemPrompt();
+  }
+  return BuildSpriteSystemPrompt(DesignerDomains::SpriteOf(domain), set);
 }
 
 Game::ObjectLookup Game::LookupObject(const std::string &key) const {
@@ -1238,6 +1344,14 @@ std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
   int cellsCleared = 0;
 
   for (const BlueprintGhostCell &cell : placement.cells) {
+    // The ground first, because the other two ops compose with it now: an object or a
+    // carve no longer means "this cell has no floor". Painting first also matters to the
+    // spawn -- a `Placeable` object asks the surface under it whether it may stand there,
+    // and the design's own floor is what should answer that, not the map's old ground.
+    if (!cell.tile.empty() && PaintTile(cell.position, cell.tile)) {
+      ++tilesPainted;
+    }
+
     if (cell.carve) {
       // A carve clears the cell's object so an opening really is an opening. The
       // ground stays: "carve" removes what was built, not the earth under it.
@@ -1252,10 +1366,7 @@ std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
         target.destruct();
       }
       ++cellsCleared;
-      continue;
-    }
-
-    if (!cell.object.empty()) {
+    } else if (!cell.object.empty()) {
       // Objects are stamped authored so a save writes them back, which is what
       // makes a placed building survive a reload. "authored" is exactly what the
       // map loader and the map editor pass; a runtime spawn (a harvest drop)
@@ -1265,11 +1376,32 @@ std::string Game::PlaceBlueprintAt(const Blueprint &blueprint,
                                   cell.position, true);
         ++objectsPlaced;
       }
-      continue;
     }
+  }
 
-    if (!cell.tile.empty() && PaintTile(cell.position, cell.tile)) {
-      ++tilesPainted;
+  // Re-resolve the art of everything just built.
+  //
+  // Spawn and paint resolve a sprite once, at the moment they run, and ResourceManager
+  // memoises an absent path so the same missing file is not probed every frame. A design
+  // placed while its art was still being generated therefore resolves "no sprite",
+  // memoises that, and keeps drawing the placeholder -- and if the art lands while nothing
+  // is spawned yet, the completion's refresh has no entity to refresh and cannot clear the
+  // memo either. Refreshing after placement closes that ordering: the memo is forgotten and
+  // the texture is loaded for entities that exist now. Together with the refresh on
+  // completion, "art then building" and "building then art" both end with art on screen.
+  {
+    std::unordered_set<std::string> keys;
+    std::unordered_set<std::string> tileNames;
+    for (const BlueprintGhostCell &cell : placement.cells) {
+      if (cell.carve) continue;
+      if (!cell.object.empty()) keys.insert(cell.object);
+      if (!cell.tile.empty()) tileNames.insert(cell.tile);
+    }
+    for (const std::string &key : keys) {
+      RefreshObjectVisuals(key);
+    }
+    for (const std::string &tileName : tileNames) {
+      RefreshTileVisuals(tileName);
     }
   }
 
@@ -1419,6 +1551,14 @@ size_t Game::RefreshTileVisuals(const std::string &tileName) {
     return 0;
   }
 
+  // Clear the memoised absence before anything can return early, for the reason spelled out
+  // in ForgetSpriteMemo: the art may have arrived while the tile was on no map at all.
+  {
+    const TileDef *definition = tileRegistry.Get(tileName);
+    ForgetSpriteMemo(definition != nullptr ? definition->sprite : std::string(),
+                     TileSpriteId(tileName));
+  }
+
   // The Tile instances this name refers to. Usually one, but a map may hold two
   // palette entries with the same name and different overrides (a deliberate
   // non-goal of the palette work: duplicate names stay distinct tiles), and both
@@ -1560,10 +1700,40 @@ void OnTileArtCompleted(void *context, const TileArtQueue::Job &job) {
   game->HandleTileArtGenerated(job);
 }
 
+void Game::ForgetSpriteMemo(const std::string &explicitPath,
+                            const std::string &conventionId) {
+  // ResourceManager memoises an absent path so the same missing file is not probed every
+  // frame. That memo outlives the reason it was written: an entity or a preview that
+  // resolved "no sprite" before the art existed leaves the path poisoned, and the next spawn
+  // is told "missing" by the cache rather than by the disk.
+  //
+  // So clearing it belongs to "the art changed", never to "an entity was found to update".
+  // An automatic run generates art before the building is placed, so there is no entity to
+  // update at that moment -- and the early returns below used to skip the clear entirely,
+  // which is precisely why the art only appeared after pressing Recompile: by then the
+  // entities existed, so the clear finally ran.
+  std::string resolvedPath;
+  if (SpriteResolves(explicitPath, conventionId, &resolvedPath) && !resolvedPath.empty()) {
+    resourceManager.ForgetPath(resolvedPath);
+  }
+}
+
 size_t Game::RefreshObjectVisuals(const std::string &templateKey) {
   if (templateKey.empty()) {
     return 0;
   }
+
+  // Read the template's explicit sprite and clear the memo *first*, before any early return:
+  // see ForgetSpriteMemo. The template is the authority for an explicit path, exactly as it
+  // is in ApplyTemplate.
+  std::string explicitSprite;
+  const auto &templates = objectFactory.GetTemplates();
+  const auto found = templates.find(templateKey);
+  if (found != templates.end() && found->second.contains("sprite") &&
+      found->second["sprite"].is_string()) {
+    explicitSprite = found->second["sprite"].get<std::string>();
+  }
+  ForgetSpriteMemo(explicitSprite, templateKey);
 
   // Collected first, then modified. Adding and removing a component while iterating would
   // be safe here because `Sprite` is not the component being matched on, but relying on
@@ -1576,28 +1746,9 @@ size_t Game::RefreshObjectVisuals(const std::string &templateKey) {
   });
   if (targets.empty()) {
     // Not on the map, and not spawned anywhere -- the common case for an object that was
-    // just designed. Normal: the next spawn resolves the art at spawn time.
+    // just designed. Normal: the next spawn resolves the art at spawn time, and the memo was
+    // already cleared above so that spawn is told the truth.
     return 0;
-  }
-
-  // An explicit "sprite" key on the template wins over the convention, exactly as it does in
-  // ApplyTemplate. Read here rather than passed in, because the template is the authority and
-  // the job only knows the key.
-  std::string explicitSprite;
-  const auto &templates = objectFactory.GetTemplates();
-  const auto found = templates.find(templateKey);
-  if (found != templates.end() && found->second.contains("sprite") &&
-      found->second["sprite"].is_string()) {
-    explicitSprite = found->second["sprite"].get<std::string>();
-  }
-
-  // The same targeted forget the tile path does, and for the same reason: ResourceManager
-  // memoises an absent path, so without this the re-resolve is told the file does not exist
-  // -- from the cache -- forever.
-  std::string resolvedPath;
-  SpriteResolves(explicitSprite, templateKey, &resolvedPath);
-  if (!resolvedPath.empty()) {
-    resourceManager.ForgetPath(resolvedPath);
   }
 
   size_t updated = 0;
@@ -1743,18 +1894,35 @@ size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // generated but never showed: a tile lives in map cells and an object is a spawned
   // entity, so the cell-based refresh finds nothing to do for an object and reports the
   // same "not on the map yet" a genuinely unplaced tile does. Two different questions.
-  const size_t updated = job.kind == SpriteKinds::Kind::Object
-                             ? RefreshObjectVisuals(job.conventionId)
-                             : RefreshTileVisuals(job.tileName);
+  // An actor has no spawn path yet, so there is nothing drawing its sprite to refresh.
+  // Zero here is honest rather than a failure: the sprite landed in the generated layer
+  // and the first spawn of that actor will pick it up.
+  // An actor has no spawned entities to update, but its sprite still has to be re-resolved
+  // in every window that cached it: the texture is memoised by path, and the path is the
+  // same one the regeneration just overwrote, so without this the Content Editor keeps
+  // drawing the old image over the new file.
+  size_t updated = 0;
+  if (job.kind == SpriteKinds::Kind::Actor) {
+    ForgetSpriteMemo(std::string(), job.conventionId);
+  } else if (job.kind == SpriteKinds::Kind::Object) {
+    updated = RefreshObjectVisuals(job.conventionId);
+  } else {
+    updated = RefreshTileVisuals(job.tileName);
+  }
 
   // Zero is the interesting case, not a no-op: it means nothing is currently drawing this
   // sprite, which is normal for something designed and not placed, and is the difference
   // between "the swap failed" and "there was nothing to swap yet". Said in the log because
   // otherwise both look identical from outside.
-  const char *unit = job.kind == SpriteKinds::Kind::Object ? " entity(ies)" : " cell(s)";
-  const char *unplaced = job.kind == SpriteKinds::Kind::Object
-                             ? " (nothing spawned from it yet)"
-                             : " (the tile is not on the map yet)";
+  const char *unit = job.kind == SpriteKinds::Kind::Actor
+                         ? " actor(s)"
+                         : (job.kind == SpriteKinds::Kind::Object ? " entity(ies)"
+                                                                 : " cell(s)");
+  const char *unplaced = job.kind == SpriteKinds::Kind::Actor
+                             ? " (no actor spawn path yet)"
+                             : (job.kind == SpriteKinds::Kind::Object
+                                    ? " (nothing spawned from it yet)"
+                                    : " (the tile is not on the map yet)");
   if (debugLog) {
     debugLog->LogInfo(std::string("Tile art: '") + job.tileName + "' generated into " +
                       job.path + "; " + std::to_string(updated) + unit + " updated" +
@@ -1812,6 +1980,15 @@ bool Game::RequestSpriteArt(SpriteKinds::Kind kind, const std::string &name,
   return tileArtQueue.Request(kind, name, reason);
 }
 
+void Game::ForgetActorSprite(const std::string &conventionId) {
+  ForgetSpriteMemo(std::string(), conventionId);
+}
+
+bool Game::TileBlocksMovement(const std::string &tileName) const {
+  const TileDef *definition = tileRegistry.Get(tileName);
+  return definition != nullptr && definition->blocksTile;
+}
+
 bool Game::RequestTileArt(const std::string &tileName, std::string *reason) {
   return RequestSpriteArt(KindForSpriteName(tileName), tileName, reason);
 }
@@ -1854,6 +2031,15 @@ SpriteKinds::Kind Game::KindForSpriteName(const std::string &name) const {
       return SpriteKinds::Kind::Object;
     }
   }
+  // Actors last, so a name that is also a tile or an object keeps the answer it had
+  // before actors existed. Actors are the newest namespace and the one whose names are
+  // most likely to collide with scenery ('wolf' could be a tile), and this only decides
+  // the default for a *name* -- the Content Editor passes the kind explicitly.
+  if (actorSpriteRegistry.Get(name) != nullptr) return SpriteKinds::Kind::Actor;
+  for (const ActorSpriteDef *definition : actorSpriteRegistry.GetAll()) {
+    if (definition->name == name) return SpriteKinds::Kind::Actor;
+  }
+
   // Neither: a name nobody has defined yet, which is the common case for a request made
   // before the definition lands. A tile is the safer default because that is what the
   // feature was built around, and the sprite is named accordingly -- an object that asks
@@ -1876,20 +2062,20 @@ Game::TileArtPumpResult Game::PumpTileArtQueue(float deltaSeconds) {
   return result;
 }
 
-size_t Game::RunTileDesignerLogSelfTest() {
-  if (!tileDesignerWindow) {
+size_t Game::RunDesignerLogSelfTest() {
+  if (!designerWindow) {
     std::cerr << "log test: the sprite designer window was not constructed\n";
     return 0;
   }
-  const size_t inspected = tileDesignerWindow->RunSelfTestConversation(
-      tileDesignerArtSelfTest, tileDesignerSelfTestKind, tileDesignerSelfTestSet);
+  const size_t inspected = designerWindow->RunSelfTestConversation(
+      designerArtSelfTest, designerSelfTestDomain, designerSelfTestSet);
 
   // The automatic art request is the one thing here whose *effect* is not in the
   // window: it lands in the queue. Reported so the two outcomes are distinguishable
   // from outside -- generation off means "refused, and the transcript says why",
   // generation on with a stub command means "queued", and a silent neither would
   // look the same as a path that never ran.
-  if (tileDesignerArtSelfTest) {
+  if (designerArtSelfTest) {
     const TileArtQueue &queue = tileArtQueue;
     const bool queued = queue.CountInState(TileArtQueue::State::Queued) > 0;
     std::cout << "art test:   automatic request "
@@ -1909,8 +2095,20 @@ size_t Game::RunTileDesignerLogSelfTest() {
   // that changed what the code under test does would be testing something else. So
   // the file is removed here, by the thing that asked for the test. Left behind, it
   // would add a junk tile to the world on every run of this mode.
-  if (inspected > 0) {
-    const bool objects = tileDesignerSelfTestKind == SpriteKinds::Kind::Object;
+  if (inspected > 0 && designerSelfTestDomain == DesignerDomains::Domain::Blueprint) {
+    // A building writes a blueprint into content.blueprints, not into a generated
+    // overlay, and leaving it there would add a junk building to every later run.
+    std::error_code ec;
+    const std::filesystem::path path =
+        std::filesystem::path(Settings().content.blueprints) / "self_test_shed.json";
+    if (std::filesystem::exists(path, ec)) {
+      std::filesystem::remove(path, ec);
+      std::cout << "log test: removed " << path.string() << "\n";
+    }
+  }
+  if (inspected > 0 && DesignerDomains::IsSprite(designerSelfTestDomain)) {
+    const bool objects =
+        DesignerDomains::SpriteOf(designerSelfTestDomain) == SpriteKinds::Kind::Object;
     const std::string overlay = objects ? Settings().content.generatedObjects
                                         : Settings().content.generatedTiles;
     // Keyed by the *key*, not the display name: the object overlay is written under the
@@ -2782,7 +2980,7 @@ int Game::RunDrawProbe(const std::string &templateKey) {
 }
 
 int Game::RunArtCacheSelfTest() {
-  if (!tileDesignerWindow) {
+  if (!designerWindow) {
     std::cerr << "art cache test: the tile designer window was not constructed\n";
     return 1;
   }
@@ -2802,16 +3000,16 @@ int Game::RunArtCacheSelfTest() {
     return 1;
   }
 
-  const TileDesignerWindow::ThumbnailLookup firstLook =
-      tileDesignerWindow->InspectThumbnailForTest(first);
+  const DesignerWindow::ThumbnailLookup firstLook =
+      designerWindow->InspectThumbnailForTest(first);
   if (firstLook.textureId == 0) {
     std::cerr << "art cache test: the first image did not load as a thumbnail\n";
     return 1;
   }
-  const size_t firstColours = tileDesignerWindow->InspectPixelViewForTest(first)
+  const size_t firstColours = designerWindow->InspectPixelViewForTest(first)
                                   .distinctColours;
   const size_t firstHash =
-      tileDesignerWindow->InspectPixelViewForTest(first).hash;
+      designerWindow->InspectPixelViewForTest(first).hash;
   if (firstColours == 0 || firstHash == 0) {
     std::cerr << "art cache test: the first image did not load into the pixel view\n";
     return 1;
@@ -2832,10 +3030,10 @@ int Game::RunArtCacheSelfTest() {
       std::filesystem::last_write_time(first, ec) + std::chrono::seconds(2);
   std::filesystem::last_write_time(first, future, ec);
 
-  const TileDesignerWindow::ThumbnailLookup secondLook =
-      tileDesignerWindow->InspectThumbnailForTest(first);
-  const TileDesignerWindow::PixelViewLookup secondPixels =
-      tileDesignerWindow->InspectPixelViewForTest(first);
+  const DesignerWindow::ThumbnailLookup secondLook =
+      designerWindow->InspectThumbnailForTest(first);
+  const DesignerWindow::PixelViewLookup secondPixels =
+      designerWindow->InspectPixelViewForTest(first);
   std::cout << "art cache test: thumbnail id " << firstLook.textureId << " -> "
             << secondLook.textureId << ", pixel hash " << firstHash << " -> "
             << secondPixels.hash << "\n";

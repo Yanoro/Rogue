@@ -1,4 +1,4 @@
-#include "TileDesignerWindow.h"
+#include "DesignerWindow.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -13,12 +13,17 @@
 #include <tuple>
 #include <utility>
 
+#include "BlueprintPreview.hpp"
+#include "BlueprintRegistry.h"
 #include "Components.h"
 #include "DebugLog.h"
 #include "LogPaths.h"
+#include "SpriteGapPanel.hpp"
 
 #include <nlohmann/json.hpp>
 #include "Game.h"
+#include "ArtRequestsPanel.h"
+#include "ContentKinds.h"
 #include "PixelDSL.hpp"
 #include "Settings.h"
 #include "RewriteBriefs.hpp"
@@ -33,46 +38,10 @@
 
 namespace {
 
-constexpr const char *kJsonFence = "```json";
-
-// How many of the most recent messages are replayed to the model. A tile is a
-// small object, but a session is long: unbounded history is the one cost that
-// grows without limit here, and the cap is generous enough that "make it
-// darker" still has the previous tile in view.
-constexpr size_t kMaxHistoryMessages = 8;
-
-// The reply with its fenced json block replaced by a marker, for when the user
-// has turned JSON display off. Display only: the block is still parsed and
-// applied, so hiding it cannot change what the designer produced.
-std::string HideJsonBlock(const std::string &text) {
-  const size_t fence = text.find(kJsonFence);
-  if (fence == std::string::npos) {
-    return text;
-  }
-  const size_t bodyStart = text.find('\n', fence);
-  if (bodyStart == std::string::npos) {
-    return text;
-  }
-
-  std::string out = text.substr(0, fence);
-  const size_t close = text.find("```", bodyStart);
-  out += close == std::string::npos ? "(tile hidden)" + std::string()
-                                    : "(tile hidden)" + text.substr(close + 3);
-
-  while (!out.empty() && (out.back() == '\n' || out.back() == ' ')) {
-    out.pop_back();
-  }
-  std::string collapsed;
-  for (size_t i = 0; i < out.size(); ++i) {
-    collapsed += out[i];
-    if (out[i] == '\n') {
-      while (i + 1 < out.size() && (out[i + 1] == '\n' || out[i + 1] == ' ')) {
-        ++i;
-      }
-    }
-  }
-  return collapsed;
-}
+// Neither pane may be dragged to nothing: a window with an ungrabbable sliver is a state
+// the user cannot get out of.
+constexpr float kMinPaneWidth = 180.0f;
+constexpr float kMinTranscriptWidth = 220.0f;
 
 // A coloured plate showing what a tile looks like: the background as a filled
 // square with the glyph centred on it in the character colour. Local because
@@ -125,26 +94,39 @@ bool ColorEditorRow(const char *id, const char *label, int *channels, int count)
 
 }  // namespace
 
-TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
+DesignerWindow::DesignerWindow(Game *game, AI *designerAI,
                                        std::string modelLabel, bool selfTest,
                                        flecs::entity owner)
-    : game(game), ai(designerAI), modelLabel(std::move(modelLabel)),
+    : game(game), modelLabel(std::move(modelLabel)),
       selfTest(selfTest) {
   (void)owner;  // Windows are not ECS components yet; see Window.h.
+
   // One context per window instance, named so it cannot collide with an NPC's
   // ("npc-<id>"), the blueprint designer's or the vision window's.
-  contextId = "tile-designer-" + std::to_string(reinterpret_cast<uintptr_t>(this));
+  const std::string contextId =
+      "tile-designer-" + std::to_string(reinterpret_cast<uintptr_t>(this));
   // Its own provider context. Not because the histories are sent explicitly -- they
   // are -- but because a provider that keys anything by context must not have a
   // document request and a definition request share one.
-  artContextId =
+  const std::string artContextId =
       "tile-designer-art-" + std::to_string(reinterpret_cast<uintptr_t>(this));
-  if (game != nullptr) {
-    // By the current mode rather than the tile-specific entry point, so the two cannot
-    // disagree about what the model was told. The mode starts as Tile, so this is the same
-    // prompt the old call produced.
-    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
-  }
+
+  session = std::make_unique<DesignerSession>(
+      game, designerAI, modelLabel, "designer", "-designer.txt", "Designer",
+      // Neutral rather than per-kind: this window hides a blueprint, a tile or an object
+      // JSON block depending on the request, and a marker naming one of them would be
+      // wrong two times in three. It also reaches the model in the replayed history.
+      "JSON hidden");
+
+  // Two conversations, one transcript. The definition turn starts from the mode's own
+  // prompt -- by the current mode rather than the tile-specific entry point, so the two
+  // cannot disagree about what the model was told, and because the mode starts as Tile
+  // this is the same prompt the old call produced.
+  session->AddConversation(
+      contextId,
+      game != nullptr ? game->BuildDesignerPrompt(mode, requestSet)
+                      : std::string());
+  session->AddConversation(artContextId, std::string());
 
   // The Improve button. Same backend as the conversation, its own provider context,
   // and its instructions from data/prompts/REWRITE.md.
@@ -157,26 +139,26 @@ TileDesignerWindow::TileDesignerWindow(Game *game, AI *designerAI,
   // The rewrite transcript goes into the same file as the conversation, so a rewrite
   // that produced the wrong half is diagnosable from the log rather than by replaying
   // it: the game's DebugLog is in memory only.
-  promptBox.SetLogSink([this](const std::string &line) { Log(line); });
+  promptBox.SetLogSink([this](const std::string &line) { session->Log(line); });
 }
 
-size_t TileDesignerWindow::RunSelfTestConversation(bool requestArt,
-                                                 SpriteKinds::Kind kind,
-                                                 bool setTest) {
+size_t DesignerWindow::RunSelfTestConversation(
+    bool requestArt, DesignerDomains::Domain domain, bool setTest) {
   if (!selfTest) return 0;
 
   // The mode is set here because the canned reply below is a reply for that kind, and the
   // whole point of the object variant is to run the object half of the inspection path --
   // a tile-shaped reply inspected as an object would be refused for having no components,
   // which tests the refusal and not the accept.
-  mode = kind;
-  designMode = kind;
+  mode = domain;
+  designMode = domain;
   // The shape, before the request is "sent": inspection reads it per exchange, and a set
   // reply judged by the single path is refused for having no "name" at the top level.
   requestSet = setTest;
   RefreshRewriteBrief();
   if (game != nullptr) {
-    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+    session->SetSystemPrompt(kDefinitionConversation,
+                             game->BuildDesignerPrompt(mode, requestSet));
   }
 
   // Switched on here rather than through the settings, because the point is to test
@@ -269,14 +251,65 @@ A set of iron fittings for one room.
 ```
 )";
 
+  // A building reply: a floor and one placed object. The `place` op is there so the
+  // *preview*'s object branch is exercised -- it draws the object's sprite over the floor,
+  // which is the reported bug this fixture now guards. `workbench` is a real template key
+  // (`--object-check workbench` resolves it, and its generated sprite exists), so a wrong
+  // key would fail the expansion and turn this into a refusal test.
+  const std::string kCannedBlueprintReply = R"(<think>One floor, one region.</think>
+A small stone-floored shed.
+
+```json
+{
+  "id": "self_test_shed",
+  "name": "Self Test Shed",
+  "purpose": "house",
+  "levels": 1,
+  "regions": {
+    "footprint": {
+      "rect_fill": {
+        "at": [0, 0],
+        "to": [4, 3]
+      }
+    }
+  },
+  "parts": [
+    {
+      "id": "floor",
+      "region": "footprint",
+      "op": {
+        "paint": "stone floor"
+      }
+    },
+    {
+      "id": "bench",
+      "shape": {
+        "point": {
+          "at": [1, 1]
+        }
+      },
+      "op": {
+        "place": "workbench"
+      }
+    }
+  ],
+  "designerNotes": "Written by the self test to exercise the building half of the inspection path end to end: one region, one paint op, no placed objects."
+}
+```
+)";
+
   const std::string kCannedReply =
       setTest ? kCannedSetReply
-              : (kind == SpriteKinds::Kind::Object ? kCannedObjectReply
-                                                   : kCannedTileReply);
+              : (domain == DesignerDomains::Domain::Blueprint
+                     ? kCannedBlueprintReply
+                     : (domain == DesignerDomains::Domain::Object
+                            ? kCannedObjectReply
+                            : kCannedTileReply));
 
   LogSessionHeader();
 
-  Exchange ex;
+  DesignerSession::Exchange ex;
+  ex.conversation = kDefinitionConversation;
   ex.prompt = "self test: log one exchange";
   ex.fromUser = true;
   ex.done = true;
@@ -287,168 +320,93 @@ A set of iron fittings for one room.
   // having no top-level "name", and retried. A test that runs the wrong path convincingly is
   // worse than no test.
   ex.wasSet = setTest;
-  size_t index = 0;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    exchanges.push_back(std::move(ex));
-    index = exchanges.size() - 1;
-  }
+  const size_t index = session->Append(std::move(ex));
 
-  LogEvent("USER REQUEST (attempt 1 of this request)");
-  Log("self test: log one exchange\n");
+  session->LogEvent("USER REQUEST (attempt 1 of this request)");
+  session->Log("self test: log one exchange\n");
 
   // One synthetic request so the "what went on the wire" line is written too, with
   // a real elapsed time measured across the inspection below.
   {
     std::vector<ChatMessage> request;
-    if (!systemPrompt.empty()) request.push_back({"system", systemPrompt});
+    if (!session->SystemPrompt(kDefinitionConversation).empty()) {
+      request.push_back({"system", session->SystemPrompt(kDefinitionConversation)});
+    }
     request.push_back({"user", "self test: log one exchange"});
-    size_t total = 0;
-    for (const ChatMessage &m : request) total += m.content.size();
-    LogEvent("SENT (request 1): " + std::to_string(request.size()) +
-             " message(s), " + std::to_string(total) + " chars -- 1 system, 1 user, "
-             "0 assistant; history trimmed to " +
-             std::to_string(kMaxHistoryMessages) + " message(s) max");
+    session->NoteSend(request);
   }
-  requestStarted = std::chrono::steady_clock::now();
   InspectFinishedExchange(index);
 
+  // Re-select the entry the inspection just captured. Nothing should change on screen, but
+  // it runs the one path the arrows take -- `ShowViewed`, which reloads a blueprint slot, an
+  // object copy or a tile editor from a stored result -- and that path is otherwise
+  // reachable only by a click. A test hook that only inspected would leave the part of the
+  // feature that was reported broken untested.
+  if (!viewed.empty()) {
+    ShowViewed(viewed.size() - 1);
+  }
+
   size_t inspected = 0;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    for (const Exchange &exchange : exchanges) {
-      if (exchange.inspected) ++inspected;
-    }
+  for (const DesignerSession::Exchange &exchange : session->Snapshot()) {
+    if (exchange.inspected) ++inspected;
   }
   return inspected;
 }
 
-std::string TileDesignerWindow::Exchange::ParsedAnswer() const {
-  return TileDesigner::StripReasoning(answer);
-}
-
-std::string TileDesignerWindow::Exchange::HistoryAnswer() const {
-  return HideJsonBlock(answer);
-}
-
-std::string TileDesignerWindow::Exchange::DisplayAnswer(bool showThoughts,
-                                                        bool showJson) const {
-  const std::string text =
-      showThoughts ? answer : TileDesigner::StripReasoning(answer);
-  return showJson ? text : HideJsonBlock(text);
-}
-
-void TileDesignerWindow::Log(const std::string &text) {
-  if (text.empty()) return;
-
-  if (logFilePath.empty()) {
-    // <session>/tile-designer/, beside the blueprint designer's but in its own
-    // directory: the two conversations are about different vocabularies, and
-    // mixing them would make the folder harder to scan.
-    const std::filesystem::path directory = LogPaths::Subdir("tile-designer");
-    std::error_code ec;
-    if (!std::filesystem::is_directory(directory, ec)) {
-      if (game != nullptr && game->debugLog) {
-        game->debugLog->LogWarning("Tile designer: could not create " +
-                                   directory.string() + ": " + ec.message());
-      }
-      logFilePath = " ";
-      return;
-    }
-    logFilePath = (directory / (TimeUtils::GetCurrentTimeString() +
-                                "-tile-designer.txt")).string();
-  }
-  if (logFilePath == " ") return;
-
-  std::ofstream out(logFilePath, std::ios::app);
-  if (out.is_open()) {
-    out << text;
-  }
-}
-
-void TileDesignerWindow::LogEvent(const std::string &text) {
-  Log("\n=== [" + TimeUtils::GetCurrentTimeString() + "] " + text + "\n");
-}
-
-void TileDesignerWindow::LogPromptFile(const std::string &path) {
-  if (path.empty()) {
-    Log("prompt file: (none configured -- the vocabulary below is all the model "
-        "was given)\n");
-    return;
-  }
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    // Worth recording precisely: a silent fallback to "no instructions" is the
-    // difference between a model that ignored its brief and one that never had it.
-    Log("prompt file: " + path + "  -- COULD NOT BE READ\n");
-    return;
-  }
-  std::stringstream buffer;
-  buffer << file.rdbuf();
-  const std::string text = buffer.str();
-  int lines = 0;
-  for (const char c : text) {
-    if (c == '\n') ++lines;
-  }
-  Log("prompt file: " + path + "  (" + std::to_string(text.size()) +
-      " bytes, " + std::to_string(lines) + " lines)\n");
-  Log("--- file contents (the instructions; the vocabulary is appended below) "
-      "---\n");
-  Log(text);
-  if (!text.empty() && text.back() != '\n') Log("\n");
-  Log("--- end of file ---\n");
-}
-
-void TileDesignerWindow::LogSessionHeader() {
+void DesignerWindow::LogSessionHeader() {
   if (headerLogged) return;
   headerLogged = true;
 
-  // The kind this session designs, named in the header because a log with two kinds of
-  // session in it is otherwise ambiguous -- and the two are told apart by their prompt
-  // file and their overlay, both of which follow from this line.
-  const SpriteKinds::Descriptor &kind = SpriteKinds::For(mode);
-  Log("\n================ SPRITE DESIGNER SESSION (" + kind.label +
+  // The domain this session designs, named in the header because one log file now covers
+  // buildings, tiles and objects -- and they are told apart by their prompt file and their
+  // save location, both of which follow from this line.
+  const DesignerDomains::Descriptor &domain = ModeDescriptor();
+  // The prompt as it is *now*, not as it was when the window was built: the vocabulary
+  // is generated from the live catalog, so a session that created a tile earlier in the
+  // run has a different prompt from the one it started with.
+  const std::string &systemPrompt = session->SystemPrompt(kDefinitionConversation);
+  session->Log("\n================ DESIGNER SESSION (" + domain.label +
       ") ================\n");
-  Log("started:   " + TimeUtils::GetCurrentTimeString() + "\n");
-  Log("kind:      " + kind.id + "\n");
-  Log("backend:   " + (modelLabel.empty() ? std::string("(none)") : modelLabel) +
+  session->Log("started:   " + TimeUtils::GetCurrentTimeString() + "\n");
+  session->Log("domain:    " + domain.id + "\n");
+  session->Log("backend:   " + (modelLabel.empty() ? std::string("(none)") : modelLabel) +
       "\n");
-  Log("context:   " + contextId + "\n");
+  session->Log("context:   " + session->ContextId(kDefinitionConversation) + "\n");
 
   const GameSettings &settings = Settings();
   const std::string overlay = ModeOverlayDirectory();
-  Log("overlay:   " + (overlay.empty() ? std::string("(none)") : overlay) + "\n");
-  Log("art:       pack=" +
+  session->Log("overlay:   " + (overlay.empty() ? std::string("(none)") : overlay) + "\n");
+  session->Log("art:       pack=" +
       (settings.art.pack.empty() ? std::string("(none)") : settings.art.pack) +
       "  generation=" + (settings.art.generation.enabled ? "on" : "off") + "\n");
-  Log("attempts:  " + std::to_string(game != nullptr ? game->maxDesignAttempts() : 0) +
+  session->Log("attempts:  " + std::to_string(game != nullptr ? game->maxDesignAttempts() : 0) +
       " per request\n");
 
-  LogPromptFile(kind.id == "object" ? settings.content.objectDesignerPromptFile
-                                    : settings.content.tileDesignerPromptFile);
+  session->LogPromptFile(game != nullptr ? game->DesignerPromptFile(mode)
+                                         : domain.promptFile);
 
   // The system prompt as it will be sent: the file above with %CONTRACT%, %GLYPHS% and
   // %VOCAB% substituted from the live world at the moment the window was constructed --
   // the tile catalog for a tile, the factory's components for an object. This is the
   // single most valuable line in the log, because it is the only record of what the model
   // was actually told.
-  Log("--- system prompt as sent (" + std::to_string(systemPrompt.size()) +
+  session->Log("--- system prompt as sent (" + std::to_string(systemPrompt.size()) +
       " bytes) ---\n");
   if (systemPrompt.empty()) {
-    Log("(EMPTY -- the model is running with no instructions at all)\n");
+    session->Log("(EMPTY -- the model is running with no instructions at all)\n");
   } else {
-    Log(systemPrompt);
-    if (systemPrompt.back() != '\n') Log("\n");
+    session->Log(systemPrompt);
+    if (systemPrompt.back() != '\n') session->Log("\n");
   }
-  Log("--- end of system prompt ---\n");
-  Log("=======================================================\n");
+  session->Log("--- end of system prompt ---\n");
+  session->Log("=======================================================\n");
 }
 
-std::string TileDesignerWindow::OverlayDirectory() const {
+std::string DesignerWindow::OverlayDirectory() const {
   return Settings().content.generatedTiles;
 }
 
-void TileDesignerWindow::LoadEditorFrom(const TileDef &definition) {
+void DesignerWindow::LoadEditorFrom(const TileDef &definition) {
   // The definition is reachable as mutable (it is a runtime-added entry this
   // window owns the editing of), but it arrives here as a const TileDef* from
   // AddRuntime's result, so the constness is dropped at this one boundary rather
@@ -486,7 +444,7 @@ void TileDesignerWindow::LoadEditorFrom(const TileDef &definition) {
   }
 }
 
-std::string TileDesignerWindow::SaveEditedTile() {
+std::string DesignerWindow::SaveEditedTile() {
   if (edited == nullptr) {
     return "there is no tile to save.";
   }
@@ -529,14 +487,23 @@ std::string TileDesignerWindow::SaveEditedTile() {
   return {};
 }
 
-void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
-  if (ai == nullptr || prompt.empty() || IsBusy()) {
+void DesignerWindow::SendUserMessage(const std::string &prompt) {
+  if (!session->HasBackend() || prompt.empty() || session->IsBusy()) {
+    return;
+  }
+
+  // Actor sprites are the one mode whose request is not a definition: the text is a
+  // description of a being to draw, and the reply is a sprite document. Routed before the
+  // attempt budget and the latched kind below, because none of that applies to the art
+  // conversation.
+  if (mode == DesignerDomains::Domain::ActorSprite) {
+    SendActorSpriteRequest(prompt);
     return;
   }
 
   // A new request restarts the attempt budget: the cap is per request, not per
   // session, or the third tile of a session could never be retried.
-  attempts = 0;
+  session->ResetAttempts(kDefinitionConversation);
   statusLine.clear();
 
   // The kind this request is being built for, latched here rather than read at
@@ -549,18 +516,6 @@ void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
   // top level.
   const bool designSet = requestSet;
 
-  Exchange ex;
-  ex.prompt = prompt;
-  ex.fromUser = true;
-  ex.wasSet = designSet;
-
-  size_t index = 0;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    exchanges.push_back(std::move(ex));
-    index = exchanges.size() - 1;
-  }
-
   // The session header goes out with the first message, before anything else: the
   // log is created here rather than in the constructor, so a window that is never
   // used leaves no file -- and the header cannot go anywhere else without either
@@ -572,168 +527,69 @@ void TileDesignerWindow::SendUserMessage(const std::string &prompt) {
   // leaves a record of what was asked. That is not hypothetical: a request whose
   // reply never arrives leaves a file that ends here, and the absence is the
   // evidence.
-  LogEvent("USER REQUEST (attempt " + std::to_string(attempts + 1) +
+  session->LogEvent("USER REQUEST (attempt " +
+           std::to_string(session->Attempts(kDefinitionConversation) + 1) +
            " of this request)");
-  Log(prompt);
-  Log("\n");
+  session->Log(prompt);
+  session->Log("\n");
 
-  GenerateResponse(index, prompt);
-}
-
-void TileDesignerWindow::GenerateResponse(size_t index, std::string prompt,
-                                          bool artConversation) {
-  AI *backend = ai;
-  if (backend == nullptr) {
-    return;
-  }
-
-  // Which conversation this request belongs to. Two histories and two system
-  // prompts, one send path: everything below -- the trim, the log, the streaming,
-  // the sentinel -- is the same for both, and a second copy of it is a second place
-  // for the handoff to break.
-  const std::string &activeSystem =
-      artConversation ? artSystemPrompt : systemPrompt;
-  const std::vector<ChatMessage> &activeHistory =
-      artConversation ? artHistory : history;
-  const std::string activeContext =
-      artConversation ? artContextId : contextId;
-
-  // Snapshot the history on the main thread. The worker must not read `history`
-  // while a later turn mutates it, and the request has to be built from the
-  // conversation as it stood when the request was made.
-  std::vector<ChatMessage> request;
-  if (!activeSystem.empty()) {
-    request.push_back({"system", activeSystem});
-  }
-  const size_t firstKept = activeHistory.size() > kMaxHistoryMessages
-                               ? activeHistory.size() - kMaxHistoryMessages
-                               : 0;
-  for (size_t i = firstKept; i < activeHistory.size(); ++i) {
-    request.push_back(activeHistory[i]);
-  }
-  request.push_back({"user", prompt});
-
-  // What actually goes on the wire, recorded before the thread is started so the
-  // log and the request cannot disagree: the exact message list, including how much
-  // of the history survived the cap. The system prompt is written out once by
-  // LogSessionHeader, so here it is recorded by size -- repeating a 3KB prompt on
-  // every request would bury the conversation it is meant to illuminate.
-  {
-    size_t totalChars = 0;
-    for (const ChatMessage &message : request) {
-      totalChars += message.content.size();
-    }
-    // The count of each role, because "the model saw four turns" and "the model
-    // saw one" explain very different replies.
-    size_t systemCount = 0;
-    size_t userCount = 0;
-    size_t assistantCount = 0;
-    for (const ChatMessage &message : request) {
-      if (message.role == "system") ++systemCount;
-      else if (message.role == "user") ++userCount;
-      else if (message.role == "assistant") ++assistantCount;
-    }
-    LogEvent("SENT (request " + std::to_string(requestNumber + 1) + "): " +
-             std::to_string(request.size()) + " message(s), " +
-             std::to_string(totalChars) + " chars -- " +
-             std::to_string(systemCount) + " system, " +
-             std::to_string(userCount) + " user, " +
-             std::to_string(assistantCount) + " assistant; history trimmed to " +
-             std::to_string(kMaxHistoryMessages) + " message(s) max");
-  }
-
-  // The clock the reply is measured against starts here, where the request is
-  // handed over, not where it was typed: the logged duration should mean "what the
-  // backend took".
-  requestStarted = std::chrono::steady_clock::now();
-
-  // Neither a "stream finished" branch nor a synchronous completion check
-  // belongs here: OllamaAI's generateStream dispatches its own thread and returns
-  // as soon as the request is accepted, so completion is the provider's
-  // empty-token sentinel and nothing else. This mirrors DesignerChatWindow, which
-  // is the proven implementation of the same handoff.
-  std::thread([this, index, request = std::move(request), backend,
-               activeContext]() {
-    // A fresh provider-side context per request, because the history is sent
-    // explicitly: leaving the previous request's tokens in place would replay the
-    // conversation twice.
-    backend->resetContext(activeContext);
-
-    std::string failure;
-    const bool delivered = backend->generateStream(
-        activeContext, request,
-        [this, index](const std::string &token) {
-          std::lock_guard<std::mutex> lock(transcriptMutex);
-          if (index >= exchanges.size()) {
-            return;
-          }
-          Exchange &ex = exchanges[index];
-          if (!token.empty()) {
-            ex.answer += token;
-            return;
-          }
-          ex.done = true;
-          if (ex.answer.empty()) {
-            ex.failed = true;
-            ex.error =
-                "No answer came back. Check that the backend is running and "
-                "that the model is available.";
-          }
-        });
-
-    if (!delivered) {
-      failure = "The tile designer backend could not accept the request.";
-    }
-    if (!failure.empty()) {
-      std::lock_guard<std::mutex> lock(transcriptMutex);
-      if (index < exchanges.size()) {
-        Exchange &ex = exchanges[index];
-        ex.done = true;
-        ex.failed = true;
-        ex.error = failure;
-      }
-    }
-  }).detach();
-}
-
-bool TileDesignerWindow::IsBusy() {
-  std::lock_guard<std::mutex> lock(transcriptMutex);
-  for (const Exchange &ex : exchanges) {
-    if (!ex.done) {
-      return true;
-    }
-  }
-  return false;
+  // The exchange, the streaming handoff and the empty-token sentinel are
+  // DesignerSession's; the kind and shape latched above travel with it so inspection
+  // judges the reply by the grammar it was asked for.
+  session->Send(prompt, kDefinitionConversation, /*fromUser=*/true, designSet);
 }
 
 // ---------------------------------------------------------------------------
 // The pixel document turn
 // ---------------------------------------------------------------------------
 
-bool TileDesignerWindow::DslArtSourceActive() const {
+bool DesignerWindow::DslArtSourceActive() const {
   return Settings().art.generation.source == "dsl";
 }
 
-std::string TileDesignerWindow::ArtDocumentPath(const std::string &name,
+std::string DesignerWindow::ArtDocumentPath(const std::string &name,
                                                 SpriteKinds::Kind kind) const {
   return GeneratedSpriteDocumentPath(SpriteKinds::ConventionIdFor(kind, name));
 }
 
-void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
+void DesignerWindow::AskForSpriteArt(const std::string &name,
+                                     SpriteKinds::Kind kind) {
+  // `true` is the point of the button. With `false` an existing document is merely
+  // *compiled*, which is instant, free and produces exactly the image that is already on
+  // screen -- so "regenerate" looked like a request that completed without doing anything.
+  // Only a new document can produce new art; the pack's copy is never overwritten, and the
+  // compile lands in the generated layer until the Content Editor's marker chooses it.
+  RequestSpriteDocument(name, kind, /*replaceGenerated=*/true);
+}
+
+void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
-                                               bool replaceGenerated) {
+                                               bool replaceGenerated,
+                                               const std::string &surroundings,
+                                               const std::string &requirement) {
   if (name.empty()) return;
-  if (ai == nullptr) {
+  if (!session->HasBackend()) {
     statusIsError = true;
     statusLine = "No designer backend is configured, so a document cannot be asked for.";
     return;
   }
-  if (IsBusy()) {
+  if (session->IsBusy()) {
     statusIsError = false;
     statusLine = "A request is already in flight; the document follows it.";
     return;
   }
   if (game == nullptr) return;
+
+  // The dropdown follows the request: a gap offered from the blueprint pane is a tile or
+  // an object, and leaving the header saying the other one would make the transcript read
+  // as if the wrong prompt had been used.
+  // An actor is not a definition domain: its definition lives in data/actors, so a
+  // sprite request for one leaves the header where it is rather than claiming the next
+  // request would produce an object or a tile.
+  if (kind != SpriteKinds::Kind::Actor) {
+    mode = kind == SpriteKinds::Kind::Object ? DesignerDomains::Domain::Object
+                                             : DesignerDomains::Domain::Tile;
+  }
 
   const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
 
@@ -743,21 +599,26 @@ void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
   // it may replace the generated copy but still never the pack's, because that one is
   // not ours to discard.
   const SpriteDSLDocument existing = FindSpriteDSLDocument(conventionId);
-  if (existing.found && (!replaceGenerated || existing.inArtPack)) {
-    if (replaceGenerated && existing.inArtPack) {
-      statusIsError = true;
-      statusLine = "That document is hand-authored in the art pack (" +
-                   existing.path +
-                   "). Edit it there; a generated document would never win over it.";
-      return;
-    }
+  if (existing.found && !replaceGenerated) {
+    // An existing document is compiled as-is. This is the free path, and the pack's copy
+    // is still never overwritten.
     std::string reason;
-    const bool queued = game->RequestTileArt(name, &reason);
+    const bool queued = game->RecompileSpriteArt(kind, name, &reason);
     statusIsError = !queued;
     statusLine = queued ? "Compiling the existing document " + existing.path
                         : reason;
-    LogEvent("DSL DOCUMENT EXISTS (not overwriting): " + existing.path);
+    session->LogEvent("DSL DOCUMENT EXISTS (not overwriting): " + existing.path);
     return;
+  }
+
+  // `replaceGenerated` asks for a *new* document, and it is now allowed even when the
+  // pack has one: what gets replaced is the generated copy at `ArtDocumentPath` below,
+  // never the pack's. Before this, asking again for an asset with hand-authored art was
+  // refused outright, so regeneration was impossible for exactly the assets a person can
+  // see. The generated document only wins once the Content Editor's marker says so.
+  if (existing.found && existing.inArtPack) {
+    session->LogEvent("PACK DOCUMENT KEPT: " + existing.path +
+                      " (a generated document will be written instead)");
   }
 
   const std::string destination = ArtDocumentPath(name, kind);
@@ -780,6 +641,12 @@ void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
       artBrief.description = definition->description;
       artBrief.blocksTile = definition->blocksTile;
     }
+  } else if (kind == SpriteKinds::Kind::Actor) {
+    // Without this an actor sprite was requested with no description at all: the model
+    // saw a bare name, which is why the result looked like a generic prop.
+    if (const ActorSpriteDef *actor = game->actorSpriteRegistry.Get(name)) {
+      artBrief.description = actor->description;
+    }
   } else if (ObjectFactory *objects = Objects()) {
     const auto &templates = objects->GetTemplates();
     const auto found = templates.find(conventionId);
@@ -788,78 +655,84 @@ void TileDesignerWindow::RequestSpriteDocument(const std::string &name,
     }
   }
 
-  artAttempts = 0;
+  // The designer's own description wins over the catalog's. A requested asset is not in
+  // the catalog at all yet, so there is nothing to look up -- and when an existing asset
+  // is being redrawn, the request is the newer statement of what it should be.
+  if (!requirement.empty()) {
+    artBrief.description = requirement;
+  }
+
+  // What the building around the gap looked like. Empty for a standalone request, which
+  // is the normal case for a document asked for by name -- the prompt builder omits the
+  // paragraph entirely rather than saying "the surroundings are:" and stopping.
+  artBrief.surroundings = surroundings;
+
+  // A new document turn starts a new art conversation: the previous document's
+  // instructions are about a different sprite, and its retry reasons are about a
+  // different compile. Its own budget too, because `dslAttempts` is not
+  // `designer.maxDesignAttempts` and one counter would let one budget silence the other.
+  session->ResetAttempts(kArtConversation);
+  session->SetMaxAttempts(kArtConversation, Settings().art.generation.dslAttempts);
   artVerdict.clear();
-  artHistory.clear();
-  artSystemPrompt = TileDesigner::BuildSpriteDocumentSystemPrompt(
-      Settings().content.spriteDSLPromptFile,
-      PixelDSL::Config{}.rampsPath);
+  session->ClearHistory(kArtConversation);
+  session->SetSystemPrompt(
+      kArtConversation,
+      TileDesigner::BuildSpriteDocumentSystemPrompt(
+          Settings().content.spriteDSLPromptFile,
+          PixelDSL::Config{}.rampsPath));
 
   statusIsError = false;
-  statusLine = "Asking for a sprite document for '" + name + "'. It will be compiled "
-               "before anything is written.";
-  LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + conventionId + ")");
+  const std::string kindWord = kind == SpriteKinds::Kind::Tile
+                                   ? "tile"
+                                   : kind == SpriteKinds::Kind::Actor ? "actor"
+                                                                      : "object";
+  statusLine = "Asking for a sprite document for the " + kindWord + " '" + name +
+               "'. It will be compiled before anything is written.";
+  session->LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + kindWord + ", " +
+                    conventionId + ")");
   SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""));
 }
 
-void TileDesignerWindow::SendArtTurn(const std::string &prompt) {
-  if (ai == nullptr || prompt.empty() || IsBusy()) return;
-
-  Exchange exchange;
-  exchange.prompt = prompt;
-  exchange.fromUser = true;
-  exchange.isArtDocument = true;
-
-  size_t index = 0;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    exchanges.push_back(std::move(exchange));
-    index = exchanges.size() - 1;
-  }
+void DesignerWindow::SendArtTurn(const std::string &prompt) {
+  if (!session->HasBackend() || prompt.empty() || session->IsBusy()) return;
 
   // Logged in the same designer log as the definition turn: a document and the
   // definition it belongs to are one story, and a second log file would split it.
-  LogEvent("SPRITE DOCUMENT REQUEST (attempt " +
-           std::to_string(artAttempts + 1) + " of " +
-           std::to_string(Settings().art.generation.dslAttempts) + ")");
-  Log(prompt);
-  Log("\n");
+  session->LogEvent("SPRITE DOCUMENT REQUEST (attempt " +
+           std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
+           std::to_string(session->MaxAttempts(kArtConversation)) + ")");
+  session->Log(prompt);
+  session->Log("\n");
 
-  GenerateResponse(index, prompt, /*artConversation=*/true);
+  session->Send(prompt, kArtConversation, /*fromUser=*/true);
 }
 
-void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
-                                                    const Exchange &finished) {
-  // Published under the mutex once, at the end of each path, for the same reason the
-  // definition path does it that way: the Draw thread reads these fields.
+void DesignerWindow::InspectFinishedArtDocument(
+    size_t index, const DesignerSession::Exchange &finished) {
+  // Published once, at the end of each path, through the session's lock: the Draw
+  // thread reads these fields.
   auto publish = [this, index](bool ok, const std::string &failure,
                                const std::string &savedPath,
                                const std::string &note) {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    if (index >= exchanges.size()) return;
-    Exchange &exchange = exchanges[index];
-    exchange.inspected = true;
-    exchange.ok = ok;
-    exchange.failureReason = failure;
-    exchange.savedPath = savedPath;
-    exchange.artNote = note;
+    session->Update(index, [&](DesignerSession::Exchange &exchange) {
+      exchange.inspected = true;
+      exchange.ok = ok;
+      exchange.failureReason = failure;
+      exchange.savedPath = savedPath;
+      exchange.artNote = note;
+    });
   };
 
   if (finished.failed) {
-    {
-      std::lock_guard<std::mutex> lock(transcriptMutex);
-      artHistory.push_back({"user", finished.prompt});
-    }
+    session->PushTurn(kArtConversation, finished.prompt, "");
     publish(false, finished.error, "", "no document: " + finished.error);
-    LogEvent("SPRITE DOCUMENT TRANSPORT FAILURE: " + finished.error);
+    session->LogEvent("SPRITE DOCUMENT TRANSPORT FAILURE: " + finished.error);
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    artHistory.push_back({"user", finished.prompt});
-    artHistory.push_back({"assistant", finished.answer});
-  }
+  // The raw reply, not HistoryAnswer: the document turn needs the model's previous
+  // document verbatim to revise it, and the pixel DSL is what it is revising.
+  session->PushTurn(kArtConversation, finished.prompt, finished.answer);
 
   const std::string document = TileDesigner::ExtractSpriteDocument(finished.answer);
   PixelDSL::Config config;
@@ -868,11 +741,12 @@ void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
 
   if (!result.ok) {
     artVerdict = PixelDSL::Describe(result);
-    const int budget = std::max(1, Settings().art.generation.dslAttempts);
-    LogEvent("SPRITE DOCUMENT REFUSED (attempt " + std::to_string(artAttempts + 1) +
-             " of " + std::to_string(budget) + ")");
+    const int budget = std::max(1, session->MaxAttempts(kArtConversation));
+    session->LogEvent("SPRITE DOCUMENT REFUSED (attempt " +
+             std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
+             std::to_string(budget) + ")");
 
-    if (artAttempts + 1 >= budget) {
+    if (session->Attempts(kArtConversation) + 1 >= budget) {
       publish(false,
               "the document was refused on all " + std::to_string(budget) +
                   " attempt(s)",
@@ -884,7 +758,7 @@ void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
       return;
     }
 
-    ++artAttempts;
+    session->CountAttempt(kArtConversation);
     // The failed attempt is published first, then the retry is sent -- so the
     // transcript reads as the conversation that happened rather than as one slow
     // request. The verdict goes back verbatim: it already names the line and says
@@ -892,7 +766,7 @@ void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
     publish(false, "refused; retrying", "", artVerdict);
     statusIsError = false;
     statusLine = "Document refused; asking again (attempt " +
-                 std::to_string(artAttempts + 1) + " of " +
+                 std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
                  std::to_string(budget) + ").";
     SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, artVerdict));
     return;
@@ -931,63 +805,489 @@ void TileDesignerWindow::InspectFinishedArtDocument(size_t index,
   artVerdict = PixelDSL::Describe(result);
   publish(true, "", destination,
           artVerdict + "  document: " + destination);
-  LogEvent("SPRITE DOCUMENT ACCEPTED: " + destination);
+  session->LogEvent("SPRITE DOCUMENT ACCEPTED: " + destination);
 
   // The compile goes through the queue like any other art request, so placement and
   // the hot-swap are one code path whether a person wrote the document or an agent
   // did.
+  //
+  // `RecompileSpriteArt`, not `RequestSpriteArt`: a document that was just accepted is by
+  // definition newer than any sprite already compiled for that name, and the queue refuses
+  // a name it has generated art for before. That refusal is what made pressing the
+  // Recompile button necessary -- the automatic path was silently declining to compile the
+  // document it had just written.
   std::string reason;
   if (game != nullptr &&
-      game->RequestSpriteArt(artBrief.kind, artBrief.name, &reason)) {
+      game->RecompileSpriteArt(artBrief.kind, artBrief.name, &reason)) {
     statusIsError = false;
     statusLine = "Document accepted and saved to " + destination +
                  "; compiling it now.";
-    LogEvent("SPRITE COMPILE QUEUED for " + artBrief.name);
+    session->LogEvent("SPRITE COMPILE QUEUED for " + artBrief.name);
   } else {
     statusIsError = true;
     statusLine = "Document accepted and saved, but the compile was refused: " + reason;
-    LogEvent("SPRITE COMPILE REFUSED: " + reason);
+    session->LogEvent("SPRITE COMPILE REFUSED: " + reason);
   }
 }
 
-void TileDesignerWindow::InspectFinishedExchange(size_t index) {
-  Exchange finished;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    if (index >= exchanges.size()) return;
-    finished = exchanges[index];
+// What the model must send back on a retry: the artifact, not the domain. "Send the
+// corrected building" would be a sentence about a person; the blueprint is the thing being
+// produced. One rule for all three domains, so a retry sentence cannot name the wrong one.
+static const char *ArtifactNoun(DesignerDomains::Domain domain) {
+  switch (domain) {
+    case DesignerDomains::Domain::Blueprint:
+      return "blueprint";
+    case DesignerDomains::Domain::Object:
+      return "object";
+    case DesignerDomains::Domain::Tile:
+      return "tile";
+  }
+  return "definition";
+}
+
+void DesignerWindow::InspectBlueprintReply(
+    size_t index, const DesignerSession::Exchange &finished) {
+  std::string reason;
+  bool ok = false;
+  std::string designId;
+  std::string notes;
+  // The assets this design asked for, in the designer's own words. Kept beside the
+  // design so the preview can offer each one, and dropped on save with the notes.
+  std::vector<BlueprintNeed> needs;
+  std::string savedPath;
+  bool overwrote = false;
+  // Filled when the design got far enough to be parsed and expanded, whether or
+  // not it then passed. Held out here so the pane can show a refused design too.
+  bool haveDesign = false;
+  Blueprint parsedDesign;
+  BlueprintExpansion::Expansion parsedExpansion;
+
+  const std::string block = DesignerReply::ExtractJsonBlock(finished.ParsedAnswer());
+  if (block.empty()) {
+    reason =
+        "the reply had no ```json block. The blueprint must be inside one fenced "
+        "block tagged json.";
+  } else {
+    nlohmann::json parsed;
+    try {
+      parsed = nlohmann::json::parse(block);
+    } catch (const std::exception &e) {
+      reason = std::string("the json block is not valid JSON: ") + e.what();
+    }
+
+    if (reason.empty()) {
+      // Declared before the chain so a malformed `needs` can be refused in the same
+      // channel as a malformed design -- the model gets the reason and resends, which is
+      // the only way it learns.
+      BlueprintNeeds::ParseResult wanted;
+      if (!parsed.is_object()) {
+        reason = "the json block must be a JSON object describing one blueprint.";
+      } else if (!(wanted = BlueprintNeeds::Parse(parsed)).ok) {
+        reason = wanted.error;
+      } else if (!parsed.contains("designerNotes") ||
+                 !parsed["designerNotes"].is_string() ||
+                 parsed["designerNotes"].get<std::string>().empty()) {
+        // Required by the contract, and the reason it is required is the whole point of
+        // this window: the model's own judgement of its design.
+        reason =
+            "the blueprint has no non-empty \"designerNotes\" string. Every design "
+            "must carry your own thoughts on it.";
+      } else {
+        // The assets the design asked for. `needs` is not schema: stripped here so it
+        // never reaches the saved blueprint, exactly like the notes.
+        parsed.erase("needs");
+        needs = std::move(wanted.needs);
+        notes = parsed["designerNotes"].get<std::string>();
+        // Removed before saving: it is not part of the schema, so writing it back would
+        // put a designer-only field into content the rest of the engine parses.
+        parsed.erase("designerNotes");
+
+        const std::string id = parsed.value("id", std::string());
+        if (id.empty()) {
+          reason = "the blueprint has no \"id\".";
+        } else {
+          BlueprintRegistry *registry = nullptr;
+          if (auto *res = game != nullptr
+                              ? game->ecs.get<BlueprintRegistryResource>()
+                              : nullptr) {
+            registry = res->registry;
+          }
+
+          std::string parseError;
+          std::vector<std::string> warnings;
+          BlueprintRegistry::ParseBlueprint(parsed, id, "(designer)", parsedDesign,
+                                            parseError, warnings);
+
+          // Expanded even when parsing failed only enough to set an error: a partial
+          // design is still worth drawing. The pane is a debugging aid, so it prefers
+          // showing something over showing nothing.
+          parsedExpansion = BlueprintExpansion::Expand(parsedDesign);
+          haveDesign = !parsedDesign.parts.empty();
+
+          if (!parseError.empty()) {
+            reason = parseError;
+          } else if (!parsedExpansion.errors.empty()) {
+            // Expansion is checked before saving, not after: a design that parses but
+            // produces no cells would otherwise be written to disk and appear in the
+            // list as an empty building.
+            reason = parsedExpansion.errors.front();
+            if (parsedExpansion.errors.size() > 1) {
+              reason += " (and " +
+                        std::to_string(parsedExpansion.errors.size() - 1) +
+                        " more problem(s))";
+            }
+          } else if (parsedExpansion.cells.empty()) {
+            reason = "the design expands to no cells at all.";
+          } else if (const BlueprintExpansion::VoidReport voids =
+                         BlueprintExpansion::FindVoids(parsedExpansion);
+                     !voids.ok()) {
+            // Same sentence the loader logs, because it is the same rule: the model is
+            // told which cell it left bare and how to fix it, which a bare "invalid" never
+            // does.
+            reason = voids.Summary();
+          } else if (registry == nullptr) {
+            reason = "there is no blueprint registry to save to.";
+          } else {
+            const BlueprintRegistry::SaveResult saved =
+                registry->SaveBlueprint(parsedDesign);
+            if (!saved.ok) {
+              reason = saved.error;
+            } else {
+              ok = true;
+              designId = parsedDesign.id;
+              savedPath = saved.path;
+              overwrote = saved.overwrote;
+            }
+          }
+        }
+      }
+    }
   }
 
-  ++requestNumber;
+  // The pane shows the latest *attempt*, so this is updated even on refusal -- and
+  // deliberately not cleared when a reply carries no design at all, so a failed attempt
+  // does not blank the last thing you were looking at.
+  if (haveDesign) {
+    PreviewedDesign preview;
+    preview.blueprint = std::move(parsedDesign);
+    preview.expansion = std::move(parsedExpansion);
+    preview.notes = notes;
+    preview.needs = std::move(needs);
+    preview.accepted = ok;
+    preview.refusal = ok ? std::string() : reason;
+    lastDesign = std::move(preview);
 
-  // How long the reply took, from the moment the request was handed to the
-  // backend. A monotonic clock because this is a duration and a clock step would
-  // make it nonsense. Without it a slow model and a stalled backend read
-  // identically in a transcript.
-  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-      std::chrono::steady_clock::now() - requestStarted);
+    // A refused attempt is shown only while it is the newest event: the pane has always
+    // drawn refused designs on purpose, but walking back through failures is not what the
+    // history is for. The accepted branch below captures into the history itself.
+    if (!ok) {
+      refusedAttempt = ViewedResult{};
+      refusedAttempt->domain = DesignerDomains::Domain::Blueprint;
+      refusedAttempt->label = lastDesign->blueprint.name.empty()
+                                  ? lastDesign->blueprint.id
+                                  : lastDesign->blueprint.name;
+      refusedAttempt->accepted = false;
+      refusedAttempt->design = lastDesign;
+      paneDomain = DesignerDomains::Domain::Blueprint;
+    }
+  }
 
-  LogEvent("MODEL REPLY (request " + std::to_string(requestNumber) + ", " +
-           std::to_string(finished.answer.size()) + " bytes, " +
-           std::to_string(elapsed.count()) + " ms" +
-           (finished.fromUser ? ", answers a user request" : ", engine retry") +
-           ")");
-  Log(finished.answer);
-  Log("\n");
+  // The automatic run needs a saved design, the "Art automatically" switch on, and
+  // something to build. Started from here rather than from the Send button so that
+  // nothing is needed beyond the original prompt -- which is the whole point.
+  //
+  // One switch, not two: the checkbox that used to guard this sat in the preview pane and
+  // asked the same question as the header's "Art automatically", which meant a user had to
+  // find both. Generation being enabled is checked too, because the switch is disabled in
+  // that state and a stale "on" from the state file must not turn into model calls.
+  if (ok && autoRequestArt && game != nullptr &&
+      game->TileArtQueueState().Enabled() && lastDesign.has_value() &&
+      !lastDesign->needs.empty()) {
+    StartAutoArt(lastDesign->blueprint, lastDesign->needs);
+  }
+
+  session->Update(index, [&](DesignerSession::Exchange &exchange) {
+    exchange.inspected = true;
+    exchange.ok = ok;
+    exchange.name = designId;
+    exchange.savedPath = savedPath;
+    exchange.overwrote = overwrote;
+    exchange.notes = notes;
+    exchange.failureReason = reason;
+  });
+
+  // The conversation both sides saw, so a follow-up can refer to this design. The
+  // assistant turn is the raw reply, and the capped replay is what keeps a large
+  // blueprint from accumulating.
+  session->PushTurn(kDefinitionConversation, finished.prompt,
+                    finished.HistoryAnswer(session->HiddenMarker()));
+
+  if (ok) {
+    session->LogEvent("SAVED: " + designId + " -> " + savedPath +
+                      (overwrote ? " (replaced an existing design)" : " (new design)"));
+    if (!notes.empty()) {
+      session->Log("designerNotes: " + notes + "\n");
+    }
+    if (game != nullptr && game->debugLog) {
+      game->debugLog->LogInfo("Designer: saved blueprint '" + designId + "' to " +
+                              savedPath + (overwrote ? " (replaced)" : ""));
+    }
+
+    // Read aloud only on the attempt that landed. Speaking every stream would mean
+    // reading three blueprints and two refusals, interleaved, whenever the model needed a
+    // retry.
+    //
+    // The blueprint JSON is never spoken under any setting except "everything", which
+    // exists to debug this pipeline: it is the majority of the reply's bytes and it is not
+    // language, so it reads as "id two bedroom house, name two bedroom house, rect_fill".
+    const std::string &content = Settings().designer.tts.content;
+    std::string spoken = "Saved as " + designId + ".";
+    if (content == "everything") {
+      spoken += " " + finished.ParsedAnswer();
+    } else {
+      if (content == "prose_and_notes") {
+        const std::string prose =
+            DesignerReply::ProseBeforeJson(finished.ParsedAnswer());
+        if (!prose.empty()) {
+          spoken += " " + prose;
+        }
+      }
+      // The notes are the reason the window exists, so they are the default payload: the
+      // model's own critique of what it just made.
+      if (!notes.empty()) {
+        spoken += " " + notes;
+      }
+    }
+    session->SpeakFor(index, spoken);
+
+    if (lastDesign.has_value()) {
+      ViewedResult result;
+      result.domain = DesignerDomains::Domain::Blueprint;
+      result.label = lastDesign->blueprint.name.empty() ? lastDesign->blueprint.id
+                                                        : lastDesign->blueprint.name;
+      result.design = lastDesign;
+      CaptureViewed(std::move(result));
+    }
+
+    session->ResetAttempts(kDefinitionConversation);
+    return;
+  }
+
+  // Refused: say why, in the same conversation, and try again. Bounded so a model that
+  // cannot satisfy the contract cannot spend the whole budget.
+  //
+  // The one refusal that is spoken is the last one, because it is the last thing that will
+  // be said about this request. Intermediate refusals stay silent -- they are superseded
+  // seconds later -- but this sentence is short, actionable, and lands while you are still
+  // looking at the design that failed.
+  if (!session->RetryRefused(kDefinitionConversation, reason, ArtifactNoun(designMode))) {
+    session->SpeakFor(index,
+                      "Giving up after " +
+                          std::to_string(session->Attempts(kDefinitionConversation)) +
+                          " attempts. " + reason);
+  }
+}
+
+// How many results the pane remembers. Bounded because each blueprint entry holds its
+// parsed design *and* its expansion: a long session would otherwise keep every design it
+// ever produced, which is exactly the kind of unbounded growth a chat window should not
+// have.
+static constexpr size_t kMaxViewedResults = 50;
+
+void DesignerWindow::CaptureViewed(ViewedResult result) {
+  if (viewed.size() >= kMaxViewedResults) {
+    viewed.erase(viewed.begin());
+  }
+  viewed.push_back(std::move(result));
+  viewedIndex = viewed.size() - 1;
+  paneDomain = viewed.back().domain;
+  // A refusal is the newest event until the next result replaces it; once there is a newer
+  // accepted result the refusal is no longer what the pane is about.
+  refusedAttempt.reset();
+}
+
+void DesignerWindow::ShowViewed(size_t index) {
+  if (index >= viewed.size()) return;
+  viewedIndex = index;
+  refusedAttempt.reset();
+  const ViewedResult &entry = viewed[index];
+  paneDomain = entry.domain;
+
+  switch (entry.domain) {
+    case DesignerDomains::Domain::Blueprint:
+      lastDesign = entry.design;
+      break;
+    case DesignerDomains::Domain::Object:
+      editedObject = entry.object;
+      editedObjectKey = entry.objectKey;
+      editedObjectOverlayPath = entry.objectOverlayPath;
+      break;
+    case DesignerDomains::Domain::Tile: {
+      // By name, not by pointer: the editor writes through a pointer into the registry, so
+      // showing a tile means pointing the editor at the registry's current definition of
+      // that name. `LoadEditorFrom` also clears the dirty marker, which belongs to the
+      // definition being edited rather than to the window -- the edit itself is already
+      // live in the world (`TouchRuntime`), only the overlay file lags.
+      const TileDef *definition =
+          game != nullptr ? game->tileRegistry.Get(entry.tileName) : nullptr;
+      if (definition != nullptr) {
+        editedIsRuntime = entry.tileIsRuntime;
+        LoadEditorFrom(*definition);
+      }
+      break;
+    }
+  }
+}
+
+void DesignerWindow::DrawViewedToolbar() {
+  if (viewed.empty()) return;
+
+  const ViewedResult &current = viewed[viewedIndex];
+  const char *domainLabel = DesignerDomains::For(current.domain).label.c_str();
+
+  ImGui::BeginDisabled(viewedIndex == 0);
+  if (ImGui::ArrowButton("##viewed_prev", ImGuiDir_Left)) {
+    ShowViewed(viewedIndex - 1);
+  }
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    ImGui::SetTooltip("Back to the previous result");
+  }
+
+  ImGui::SameLine();
+  ImGui::BeginDisabled(viewedIndex + 1 >= viewed.size());
+  if (ImGui::ArrowButton("##viewed_next", ImGuiDir_Right)) {
+    ShowViewed(viewedIndex + 1);
+  }
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+    ImGui::SetTooltip("Forward to the next result");
+  }
+
+  ImGui::SameLine();
+  // The list is the same history the arrows walk, newest first, so the two cannot disagree
+  // about what is in it or which entry is selected. `(3/11)` is there because "which one am
+  // I looking at" is otherwise unanswerable in a combo that shows only its own selection.
+  char preview[256];
+  std::snprintf(preview, sizeof(preview), "%s '%s'  (%zu/%zu)", domainLabel,
+                current.label.empty() ? "(unnamed)" : current.label.c_str(),
+                viewedIndex + 1, viewed.size());
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::BeginCombo("##viewed_list", preview)) {
+    for (size_t i = viewed.size(); i-- > 0;) {
+      const ViewedResult &entry = viewed[i];
+      char item[256];
+      std::snprintf(item, sizeof(item), "%s '%s'##viewed%zu",
+                    DesignerDomains::For(entry.domain).label.c_str(),
+                    entry.label.empty() ? "(unnamed)" : entry.label.c_str(), i);
+      if (ImGui::Selectable(item, i == viewedIndex)) {
+        ShowViewed(i);
+      }
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::Separator();
+}
+
+void DesignerWindow::DrawBlueprintPreview() {
+  if (!lastDesign.has_value()) {
+    ImGui::TextWrapped(
+        "The design from the latest reply appears here. A reply is drawn whether or not "
+        "it passed validation -- a refused design is the one most worth looking at.");
+    return;
+  }
+
+  const PreviewedDesign &design = *lastDesign;
+  const Blueprint &blueprint = design.blueprint;
+
+  // The verdict banner is the one part not shared with the Blueprints window: it is about
+  // this conversation's reply, not about the design as content.
+  if (!design.accepted) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
+    ImGui::TextWrapped("REFUSED");
+    ImGui::PopStyleColor();
+    if (!design.refusal.empty()) {
+      ImGui::TextWrapped("%s", design.refusal.c_str());
+    }
+  } else {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+    ImGui::TextWrapped("SAVED");
+    ImGui::PopStyleColor();
+  }
+  ImGui::Text("%s", blueprint.name.empty() ? blueprint.id.c_str()
+                                           : blueprint.name.c_str());
+  ImGui::TextDisabled("%s | %d x %d | %zu cells", blueprint.id.c_str(),
+                      blueprint.Width(), blueprint.Height(),
+                      design.expansion.cells.size());
+  ImGui::Separator();
+
+  BlueprintPreview::DrawZoomControl("##designer_zoom", blueprintZoom);
+
+  const float canvasHeight =
+      std::max(120.0f, ImGui::GetContentRegionAvail().y * 0.55f);
+  if (game != nullptr) {
+    BlueprintPreview::DrawCanvas("designer_preview_canvas", blueprint,
+                                 design.expansion, blueprintZoom, game->tileRegistry,
+                                 &game->objectFactory, game->resourceManager,
+                                 canvasHeight);
+    BlueprintPreview::DrawLegend(design.expansion, game->tileRegistry);
+  }
+
+  // No second switch here any more. The run is driven by the header's "Art
+  // automatically", and this line says so where the assets it will build are listed --
+  // otherwise the same question is answered by a control the user has to find twice.
+  if (autoRequestArt && !design.needs.empty()) {
+    ImGui::TextDisabled(
+        "Art automatically is on: these will be created when the design is saved.");
+  }
+
+  // What this design cannot be drawn with, and a button per item. Shared with the
+  // Blueprints window so the two previews cannot disagree about what is missing, and
+  // shown for "no art yet" as well as for genuinely absent materials.
+  if (game != nullptr) {
+    SpriteGapPanel::Draw(game, game->tileRegistry, game->objectFactory, blueprint,
+                         design.needs);
+  }
+
+  // The designer's own critique, which is the reason this pane sits next to the
+  // transcript rather than behind a button.
+  if (!design.notes.empty()) {
+    if (ImGui::TreeNodeEx("Designer's notes", ImGuiTreeNodeFlags_DefaultOpen)) {
+      ImGui::TextWrapped("%s", design.notes.c_str());
+      ImGui::TreePop();
+    }
+  }
+}
+
+void DesignerWindow::InspectFinishedExchange(size_t index) {
+  // The reply verbatim, logged before anything is extracted from it, with the request
+  // number and how long the backend took. Both are the session's, so every domain's
+  // transcript reports them the same way.
+  if (index >= session->Size()) return;
+  const DesignerSession::Exchange finished = session->BeginInspection(index);
 
   // A pixel-document reply is inspected by the compiler, not by the definition
   // validators: it has no `name`, no components and no glyph, and handing it to
   // ApplyReply would refuse it for the wrong reason.
-  if (finished.isArtDocument) {
+  if (finished.conversation == kArtConversation) {
     InspectFinishedArtDocument(index, finished);
     return;
   }
 
   if (finished.failed) {
-    LogEvent("TRANSPORT FAILURE: " + finished.error);
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    if (index < exchanges.size()) exchanges[index].inspected = true;
-    history.push_back({"user", finished.prompt});
+    session->LogEvent("TRANSPORT FAILURE: " + finished.error);
+    session->Update(index, [](DesignerSession::Exchange &exchange) {
+      exchange.inspected = true;
+    });
+    session->PushTurn(kDefinitionConversation, finished.prompt, "");
+    return;
+  }
+
+  // A building reply is a blueprint, not a definition: it has no glyph, no components and
+  // no art of its own, and handing it to either sprite validator would refuse it for
+  // lacking fields the building grammar never had.
+  if (designMode == DesignerDomains::Domain::Blueprint) {
+    InspectBlueprintReply(index, finished);
     return;
   }
 
@@ -1034,14 +1334,14 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
   // Four combinations, because the two axes are genuinely independent: kind picks the
   // document and the validator, shape picks how many definitions one reply carries. Written
   // as two nested branches rather than a table so each arm reads as what it does.
-  if (designMode == SpriteKinds::Kind::Object && finished.wasSet) {
+  if (designMode == DesignerDomains::Domain::Object && finished.wasSet) {
     ObjectFactory *objects = Objects();
     if (objects == nullptr) {
       reason = "there is no object factory to add to.";
     } else {
       const ObjectDesigner::SetApplyResult set = ObjectDesigner::ApplySetReply(
           finished.ParsedAnswer(), *objects,
-          ModeOverlayDirectoryFor(SpriteKinds::Kind::Object),
+          ModeOverlayDirectoryFor(designMode),
           game != nullptr ? &game->tileRegistry : nullptr);
       applied.wasSet = true;
       applied.setName = set.setName;
@@ -1073,14 +1373,14 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
         applied.name = entry.name;
       }
     }
-  } else if (designMode == SpriteKinds::Kind::Tile && finished.wasSet) {
+  } else if (designMode == DesignerDomains::Domain::Tile && finished.wasSet) {
     TileRegistry *registry = game != nullptr ? &game->tileRegistry : nullptr;
     if (registry == nullptr) {
       reason = "there is no tile catalog to add to.";
     } else {
       const TileDesigner::SetApplyResult set = TileDesigner::ApplySetReply(
           finished.ParsedAnswer(), *registry,
-          ModeOverlayDirectoryFor(SpriteKinds::Kind::Tile));
+          ModeOverlayDirectoryFor(designMode));
       applied.wasSet = true;
       applied.setName = set.setName;
       applied.ok = set.ok && set.accepted > 0;
@@ -1103,14 +1403,14 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
         applied.savedPath = entry.savedPath;
       }
     }
-  } else if (designMode == SpriteKinds::Kind::Object) {
+  } else if (designMode == DesignerDomains::Domain::Object) {
     ObjectFactory *objects = Objects();
     if (objects == nullptr) {
       reason = "there is no object factory to add to.";
     } else {
       const ObjectDesigner::ApplyResult result = ObjectDesigner::ApplyReply(
-          finished.ParsedAnswer(), *objects, ModeOverlayDirectoryFor(
-                                              SpriteKinds::Kind::Object),
+          finished.ParsedAnswer(), *objects,
+          ModeOverlayDirectoryFor(DesignerDomains::Domain::Object),
           game != nullptr ? &game->tileRegistry : nullptr);
       applied.ok = result.ok;
       applied.error = result.error;
@@ -1131,7 +1431,7 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     } else {
       const TileDesigner::ApplyResult result = TileDesigner::ApplyReply(
           finished.ParsedAnswer(), *registry,
-          ModeOverlayDirectoryFor(SpriteKinds::Kind::Tile));
+          ModeOverlayDirectoryFor(DesignerDomains::Domain::Tile));
       applied.ok = result.ok;
       applied.error = result.error;
       applied.name = result.name;
@@ -1143,32 +1443,28 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     }
   }
 
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    if (index < exchanges.size()) {
-      Exchange &ex = exchanges[index];
-      ex.inspected = true;
-      ex.ok = applied.ok;
-      ex.failureReason =
-          applied.ok ? std::string() : reason.empty() ? applied.error : reason;
-      ex.tileName = applied.name;
-      ex.savedPath = applied.savedPath;
-      ex.notes = applied.notes;
-      ex.warnings = applied.warnings;
-      ex.saveFailed = applied.saveFailed;
-      ex.definition = applied.tileDefinition;
-      ex.wasSet = applied.wasSet;
-      ex.setName = applied.setName;
-      ex.acceptedNames = applied.acceptedNames;
-      ex.entryVerdicts = applied.entryVerdicts;
-    }
-  }
+  session->Update(index, [&](DesignerSession::Exchange &ex) {
+    ex.inspected = true;
+    ex.ok = applied.ok;
+    ex.failureReason =
+        applied.ok ? std::string() : reason.empty() ? applied.error : reason;
+    ex.name = applied.name;
+    ex.savedPath = applied.savedPath;
+    ex.notes = applied.notes;
+    ex.warnings = applied.warnings;
+    ex.saveFailed = applied.saveFailed;
+    ex.definition = applied.tileDefinition;
+    ex.wasSet = applied.wasSet;
+    ex.setName = applied.setName;
+    ex.acceptedNames = applied.acceptedNames;
+    ex.entryVerdicts = applied.entryVerdicts;
+  });
 
   // The preview, on the accepted branch only. For a tile this is the pointer the editor
   // writes through; for an object it is a copy, because ObjectFactory owns its templates
   // by value and a pointer into that map is invalidated by the next runtime add.
   if (applied.ok) {
-    if (designMode == SpriteKinds::Kind::Object) {
+    if (designMode == DesignerDomains::Domain::Object) {
       editedObject = applied.objectDefinition;
       editedObjectKey = applied.objectKey;
       editedObjectOverlayPath = applied.objectOverlayPath;
@@ -1179,43 +1475,60 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
         LoadEditorFrom(*edited);
       }
     }
+
+    // One entry per accepted reply, not per entry of a set: the panes show one thing -- the
+    // last definition the reply produced -- and an entry per sprite would make the arrows
+    // walk a set while the pane showed the same object six times.
+    ViewedResult result;
+    result.domain = designMode;
+    result.label = applied.wasSet && !applied.setName.empty() ? applied.setName
+                                                             : applied.name;
+    result.tileIsRuntime = true;
+    if (designMode == DesignerDomains::Domain::Object) {
+      result.object = editedObject;
+      result.objectKey = editedObjectKey;
+      result.objectOverlayPath = editedObjectOverlayPath;
+    } else {
+      result.tileName = applied.name;
+    }
+    CaptureViewed(std::move(result));
   }
 
   // The conversation both sides saw, so a follow-up can refer to this tile. The
-  // assistant turn is the raw reply; the capped replay is what keeps a large
-  // definition from accumulating.
-  history.push_back({"user", finished.prompt});
-  history.push_back({"assistant", finished.HistoryAnswer()});
+  // assistant turn is the raw reply minus its JSON block; the capped replay is what keeps
+  // a large definition from accumulating.
+  session->PushTurn(kDefinitionConversation, finished.prompt,
+                    finished.HistoryAnswer(session->HiddenMarker()));
 
   if (applied.ok) {
     if (applied.wasSet) {
       // Names every accepted entry: the point of a set is *which* sprites it produced, and a
       // single "ADDED: <last one>" line would hide the rest.
-      LogEvent("ADDED SET" +
+      session->LogEvent("ADDED SET" +
                (applied.setName.empty() ? std::string()
                                         : " '" + applied.setName + "'") +
                ": " + std::to_string(applied.acceptedNames.size()) + " of " +
                std::to_string(applied.entryVerdicts.size()) + " definition(s)");
       for (size_t entry = 0; entry < applied.entryVerdicts.size(); ++entry) {
         const bool accepted = applied.entryVerdicts[entry].first;
-        Log("  [" + std::to_string(entry) + "] " +
+        session->Log("  [" + std::to_string(entry) + "] " +
             (accepted ? "ACCEPTED " : "REFUSED  ") + applied.entryVerdicts[entry].second +
             "\n");
       }
     } else {
-      LogEvent("ADDED: " + applied.name +
+      session->LogEvent("ADDED: " + applied.name +
                (applied.savedPath.empty() ? " (not saved)"
                                           : " -> " + applied.savedPath));
     }
     if (!applied.notes.empty()) {
-      Log("designerNotes: " + applied.notes + "\n");
+      session->Log("designerNotes: " + applied.notes + "\n");
     }
     for (const std::string &warning : applied.warnings) {
-      Log("warning: " + warning + "\n");
+      session->Log("warning: " + warning + "\n");
     }
     if (game != nullptr && game->debugLog) {
       game->debugLog->LogInfo(std::string("Sprite designer: added ") +
-                              SpriteKinds::IdOf(designMode) + " '" + applied.name +
+                              ModeName() + " '" + applied.name +
                               "'" +
                               (applied.savedPath.empty()
                                    ? ""
@@ -1258,14 +1571,14 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
                   "automatically\" to ask for it as tiles are accepted)";
       } else {
         const std::string &subject = artNames.front();
-        RequestSpriteDocument(subject, designMode);
+        RequestSpriteDocument(subject, SpriteKindOf(designMode));
         artNote = "asked for a sprite document for '" + subject +
                   "' -- it is compiled before anything is written";
         if (artNames.size() > 1) {
           artNote += "; the other " + std::to_string(artNames.size() - 1) +
                      " of the set need their own request";
         }
-        LogEvent("SPRITE DOCUMENT REQUESTED (automatic): " + subject);
+        session->LogEvent("SPRITE DOCUMENT REQUESTED (automatic): " + subject);
       }
     } else if (game != nullptr && !artNames.empty()) {
       const TileArtQueue &queue = game->TileArtQueueState();
@@ -1279,7 +1592,7 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
       } else if (!unavailable.empty()) {
         // Refused before spending anything, and the reason is actionable.
         artNote = "no art was requested -- " + unavailable;
-        LogEvent("ART NOT REQUESTED: " + unavailable);
+        session->LogEvent("ART NOT REQUESTED: " + unavailable);
       } else {
         // The estimate, worked out from the number of accepted sprites and the cap rather
         // than guessed: one request holds at most `maxCellsPerRequest` sprites, so the count
@@ -1318,19 +1631,19 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
           artNote += std::string(". Batched for up to ") + window +
                      "s, then generated on a worker thread; sprites appear as they "
                      "arrive.";
-          LogEvent(std::string("ART REQUESTED (automatic): ") + estimate);
+          session->LogEvent(std::string("ART REQUESTED (automatic): ") + estimate);
           for (const std::string &name : accepted) {
-            Log("  queued: " + name + "\n");
+            session->Log("  queued: " + name + "\n");
           }
         }
         if (!refused.empty()) {
           if (artNote.empty()) artNote = "no art was requested -- ";
           else artNote += " ";
           artNote += std::to_string(refused.size()) + " refused";
-          LogEvent("ART NOT REQUESTED for " + std::to_string(refused.size()) +
+          session->LogEvent("ART NOT REQUESTED for " + std::to_string(refused.size()) +
                    " sprite(s):");
           for (const std::string &line : refused) {
-            Log("  " + line + "\n");
+            session->Log("  " + line + "\n");
           }
           // The reason for the first refusal is the one worth showing in the transcript: a
           // cap or a disabled feature explains all of them.
@@ -1347,100 +1660,129 @@ void TileDesignerWindow::InspectFinishedExchange(size_t index) {
     }
     // Published on the exchange now that it has been worked out, in the same place
     // the other post-inspection fields are written.
-    {
-      std::lock_guard<std::mutex> lock(transcriptMutex);
-      if (index < exchanges.size()) {
-        exchanges[index].artNote = artNote;
-      }
-    }
-    attempts = 0;
+    session->Update(index, [&](DesignerSession::Exchange &exchange) {
+      exchange.artNote = artNote;
+    });
+    session->ResetAttempts(kDefinitionConversation);
     return;
   }
 
-  // Refused: say why, in the same conversation, and try again. Bounded, so a
-  // model that cannot satisfy the contract cannot spend the whole budget.
-  LogEvent("REFUSED: " + applied.error);
-  ++attempts;
-  const int maxAttempts = game != nullptr ? game->maxDesignAttempts() : 3;
-  if (attempts >= maxAttempts) {
-    LogEvent("GIVING UP after " + std::to_string(attempts) + " attempt(s)");
-    if (game != nullptr && game->debugLog) {
-      game->debugLog->LogWarning(std::string("Sprite designer: giving up on a ") +
-                                 SpriteKinds::IdOf(designMode) + " after " +
-                                 std::to_string(attempts) +
-                                 " attempt(s); last reason: " + applied.error);
-    }
-    return;
-  }
-
-  LogEvent("RETRYING (" + std::to_string(attempts) + " of " +
-           std::to_string(maxAttempts) + " used)");
-
-  Exchange retry;
-  // The same shape as the attempt being retried. Without this a set is retried as a single
-  // definition, refused again for having no top-level "name", and burns the whole attempt
-  // budget on a question the model already answered -- which is exactly what the first run of
-  // this did.
-  retry.wasSet = finished.wasSet;
-  retry.prompt = std::string("That ") + SpriteKinds::IdOf(designMode) +
-                 " was refused: " + applied.error +
-                 "\n\nSend the corrected " + SpriteKinds::IdOf(designMode) +
-                 " as a complete ```json block, with designerNotes. Do not describe the "
-                 "fix in prose instead of sending it.";
-  retry.fromUser = false;
-
-  size_t retryIndex = 0;
-  {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    exchanges.push_back(std::move(retry));
-    retryIndex = exchanges.size() - 1;
-  }
-
-  Log(retry.prompt);
-  Log("\n");
-
-  GenerateResponse(retryIndex, exchanges[retryIndex].prompt);
+  // Refused: say why, in the same conversation, and try again. Bounded, so a model that
+  // cannot satisfy the contract cannot spend the whole budget.
+  //
+  // `finished.wasSet` carries the shape into the retry: without it a set is retried as a
+  // single definition, refused again for having no top-level "name", and burns the whole
+  // budget on a question the model already answered -- which is what the first run of this
+  // did.
+  session->RetryRefused(kDefinitionConversation, applied.error,
+                        ArtifactNoun(designMode), finished.wasSet);
 }
 
-const SpriteKinds::Descriptor *TileDesignerWindow::ModeDescriptor() const {
-  // Address of the table row. The table is a function-local static, so the pointer is
+const DesignerDomains::Descriptor &DesignerWindow::ModeDescriptor() const {
+  // Address of the table row. The table is a function-local static, so the reference is
   // stable for the run and a caller may hold it.
-  return &SpriteKinds::For(mode);
+  return DesignerDomains::For(mode);
 }
 
-const char *TileDesignerWindow::ModeName() const {
-  // A literal rather than the descriptor's `id`, because this is used in log lines and
-  // prose that outlive a mode change and a dangling reference into the table would be a
-  // worse bug than a missing abbreviation.
-  return mode == SpriteKinds::Kind::Object ? "object" : "tile";
+const char *DesignerWindow::ModeName() const {
+  // The descriptor's id, which is a stable string literal in the table rather than a
+  // temporary: this is used in log lines and prose that outlive a mode change. Returning
+  // the pointer into the table is what makes it safe -- a std::string here would dangle
+  // the moment the expression ended.
+  return DesignerDomains::For(mode).id.c_str();
 }
 
-std::string TileDesignerWindow::ModeOverlayDirectoryFor(SpriteKinds::Kind kind) const {
+SpriteKinds::Kind DesignerWindow::SpriteKindOf(
+    DesignerDomains::Domain domain) {
+  return DesignerDomains::SpriteOf(domain);
+}
+
+std::string DesignerWindow::ModeOverlayDirectoryFor(
+    DesignerDomains::Domain domain) const {
+  // A building has no overlay: a blueprint is saved by the blueprint registry into
+  // content.blueprints, and an overlay directory it never uses would be a path a caller
+  // could write a blueprint into and watch vanish.
+  if (!DesignerDomains::IsSprite(domain)) {
+    return {};
+  }
   // Read from the settings rather than from the descriptor's default: the descriptor
   // carries the default so a caller with no settings can still name a path, and this is
   // the caller that has settings.
   const GameSettings &settings = Settings();
-  return kind == SpriteKinds::Kind::Object ? settings.content.generatedObjects
-                                           : settings.content.generatedTiles;
+  return SpriteKindOf(domain) == SpriteKinds::Kind::Object
+             ? settings.content.generatedObjects
+             : settings.content.generatedTiles;
 }
 
-std::string TileDesignerWindow::ModeOverlayDirectory() const {
+std::string DesignerWindow::ModeOverlayDirectory() const {
   return ModeOverlayDirectoryFor(mode);
 }
 
-ObjectFactory *TileDesignerWindow::Objects() const {
+ObjectFactory *DesignerWindow::Objects() const {
   return game != nullptr ? &game->objectFactory : nullptr;
 }
 
-void TileDesignerWindow::RefreshRewriteBrief() {
+void DesignerWindow::RefreshRewriteBrief() {
   // The Improve button has to speak the vocabulary of the kind being designed, or an
   // "improved" object request comes back enriched with ground-surface words and the
   // designer has no way to honour it. See RewriteBriefs.hpp.
-  rewriter.SetBrief(mode == SpriteKinds::Kind::Object ? RewriteBriefs::Object()
-                                                      : RewriteBriefs::Tile());
+  if (mode == DesignerDomains::Domain::Blueprint) {
+    rewriter.SetBrief(RewriteBriefs::Blueprint());
+  } else if (mode == DesignerDomains::Domain::Object) {
+    rewriter.SetBrief(RewriteBriefs::Object());
+  } else {
+    rewriter.SetBrief(RewriteBriefs::Tile());
+  }
 }
 
-void TileDesignerWindow::RequestRoute(const std::string &text) {
+void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
+  if (game == nullptr) return;
+
+  // The name in the box is the filename, and the same slug the actor registry uses, so an
+  // actor authored later with this name finds the sprite that was drawn for it.
+  nlohmann::json named = nlohmann::json::object();
+  named["name"] = std::string(actorSpriteNameBuffer);
+  const std::string name = ActorSpriteRegistry::IdFor(named);
+  if (name.empty()) {
+    statusIsError = true;
+    statusLine = "Give the sprite a name first: the box beside the mode is the filename "
+                 "an actor will look for.";
+    return;
+  }
+
+  // A sprite with no entry is not browsable: the Content Editor lists the catalogue, so
+  // the catalogue gains an entry for what was drawn. It records the name and the
+  // description only -- appearance, never a creature's stats, race or behaviour.
+  if (!Settings().content.actorSprites.empty()) {
+    nlohmann::json entry = nlohmann::json::object();
+    entry["name"] = std::string(actorSpriteNameBuffer);
+    if (!description.empty()) entry["description"] = description;
+    const std::filesystem::path directory = Settings().content.actorSprites;
+    std::error_code ec;
+    std::filesystem::create_directories(directory, ec);
+    const std::filesystem::path path = directory / (name + ".json");
+    std::ofstream out(path);
+    std::string error;
+    std::vector<std::string> warnings;
+    if (!out.is_open()) {
+      statusIsError = true;
+      statusLine = "Could not write the sprite catalogue entry to " + path.string();
+      return;
+    }
+    out << entry.dump(2) << "\n";
+    out.close();
+    // Live too, so it appears without a restart.
+    game->actorSpriteRegistry.AddOrReplace(entry, path.string(), &error, &warnings);
+    session->LogEvent("ACTOR SPRITE ENTRY WRITTEN: " + path.string());
+  }
+
+  // `requirement` overrides the catalog description, which is what makes this a prompt for
+  // a *new* being rather than a redraw of one that exists: the text typed is the brief.
+  RequestSpriteDocument(name, SpriteKinds::Kind::Actor, /*replaceGenerated=*/true,
+                        std::string(), description);
+}
+
+void DesignerWindow::RequestRoute(const std::string &text, bool automatic) {
   if (game == nullptr || game->systemOneClassifier == nullptr) {
     routeNote = "no System 1 classifier is configured, so the request cannot be read. "
                 "Pick the kind with the dropdown instead.";
@@ -1466,8 +1808,9 @@ void TileDesignerWindow::RequestRoute(const std::string &text) {
   }
 
   routeInFlight = true;
-  routeNote = "asking which kind this is...";
-  LogEvent("ROUTE REQUESTED: " + text);
+  routeNote = "asking which domain this is...";
+  session->LogEvent(std::string("ROUTE REQUESTED") +
+                    (automatic ? " (automatic)" : "") + ": " + text);
 
   // The callback runs on the classifier's own thread. It only latches the verdict; `Draw`
   // picks it up and applies it on the main thread. Touching ImGui, the ECS or the
@@ -1493,45 +1836,74 @@ void TileDesignerWindow::RequestRoute(const std::string &text) {
       /*stoken=*/{}, /*minConfidence=*/minConfidence);
 }
 
-void TileDesignerWindow::ApplyRouteVerdict(const SpriteRouter::Verdict &verdict) {
+bool DesignerWindow::BeginAutoRoute(const std::string &prompt) {
+  // No classifier: send with the domain that is already selected rather than dropping the
+  // request. The setting cannot be honoured, so the request still goes out and the note
+  // says why -- the alternative is a Send button that silently does nothing.
+  if (game == nullptr || game->systemOneClassifier == nullptr) {
+    routeNote = "automatic routing is on, but no System 1 classifier is configured; "
+                "this request was built for the current domain";
+    SendUserMessage(prompt);
+    return true;
+  }
+  // The Send button is disabled while a route is pending, so this is a belt-and-braces
+  // guard rather than the normal path. Declining rather than queueing is deliberate: the
+  // caller keeps the text, so nothing is lost and the user can press Send again.
+  if (routeInFlight || !autoSendPrompt.empty()) return false;
+
+  autoSendPrompt = prompt;
+  RequestRoute(prompt, /*automatic=*/true);
+  return true;
+}
+
+void DesignerWindow::ApplyRouteVerdict(const SpriteRouter::Verdict &verdict) {
   if (verdict.unsure) {
     // The answer arrived but is below the active profile's threshold. The mode stays
     // where it is -- switching on a coin flip is worse than doing nothing -- and the
     // window says what it read so the threshold itself can be judged.
     routeNote = "the classifier was not confident enough to act: " + verdict.why;
-    LogEvent("ROUTE: unsure -- " + routeNote);
+    session->LogEvent("ROUTE: unsure -- " + routeNote);
     return;
   }
 
-  if (verdict.kind == nullptr) {
+  if (verdict.domain == nullptr) {
     // Unanswered is not a verdict. The mode stays where it is, and the window says why
     // rather than picking the more likely kind.
     routeNote = verdict.error.empty()
-                    ? "the classifier did not say which kind this is, so the mode is "
+                    ? "the classifier did not say what this is, so the mode is "
                       "unchanged"
                     : "the classifier could not be used: " + verdict.error;
-    LogEvent("ROUTE: no kind -- " + routeNote);
+    session->LogEvent("ROUTE: no domain -- " + routeNote);
     return;
   }
 
-  mode = verdict.kind->kind;
+  mode = verdict.domain->domain;
   RefreshRewriteBrief();
   if (game != nullptr) {
-    systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+    session->SetSystemPrompt(kDefinitionConversation,
+                             game->BuildDesignerPrompt(mode, requestSet));
   }
 
   // The shape too, when the classifier answered it -- that is what the question is for. An
   // unanswered shape leaves the checkbox alone rather than being guessed, for the same reason
-  // an unanswered kind leaves the dropdown alone.
+  // an unanswered domain leaves the dropdown alone. A building never answers it: one reply
+  // is one blueprint, and `SpriteRouter::Parse` clears the shape for a building so a caller
+  // cannot apply a sprite's idea of "single" to it.
   if (verdict.shapeAnswered) {
     requestSet = verdict.sheet;
     requestSetSize = verdict.requested;
     if (game != nullptr) {
-      systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+      session->SetSystemPrompt(kDefinitionConversation,
+                               game->BuildDesignerPrompt(mode, requestSet));
     }
+  } else if (!DesignerDomains::IsSprite(mode)) {
+    // Leaving a stale "Set" checkbox ticked under a building would build the next
+    // building's prompt as if a set had been asked for.
+    requestSet = false;
+    requestSetSize = 0;
   }
 
-  routeNote = "the classifier read this as " + verdict.kind->label;
+  routeNote = "the classifier read this as " + verdict.domain->label;
   if (verdict.shapeAnswered) {
     routeNote += verdict.sheet
                      ? ", a set of about " + std::to_string(verdict.requested)
@@ -1545,10 +1917,10 @@ void TileDesignerWindow::ApplyRouteVerdict(const SpriteRouter::Verdict &verdict)
   if (!verdict.why.empty()) {
     routeNote += " -- " + verdict.why;
   }
-  LogEvent("ROUTE: " + verdict.kind->id + " -- " + routeNote);
+  session->LogEvent("ROUTE: " + verdict.domain->id + " -- " + routeNote);
 }
 
-void TileDesignerWindow::DrawObjectPreview() {
+void DesignerWindow::DrawObjectPreview() {
   // Read-only by design, for this phase. An object is a component set, a palette and an
   // art block, and an editor for all four is a larger surface than phase 5 needs to
   // claim; what matters here is that the accepted definition is *visible*, so a model
@@ -1687,7 +2059,7 @@ void TileDesignerWindow::DrawObjectPreview() {
   }
 }
 
-void TileDesignerWindow::DrawPreviewPane() {
+void DesignerWindow::DrawPreviewPane() {
   if (edited == nullptr) {
     ImGui::TextWrapped(
         "The tile from the latest reply appears here, live and editable. A tile "
@@ -1833,7 +2205,7 @@ void TileDesignerWindow::DrawPreviewPane() {
   DrawArtSection();
 }
 
-std::string TileDesignerWindow::DescribeArtState() const {
+std::string DesignerWindow::DescribeArtState() const {
   if (game == nullptr) return "no game";
 
   const TileArtQueue &queue = game->TileArtQueueState();
@@ -1866,7 +2238,7 @@ std::string TileDesignerWindow::DescribeArtState() const {
   return out;
 }
 
-void TileDesignerWindow::DrawDslPanels(const std::string &name,
+void DesignerWindow::DrawDslPanels(const std::string &name,
                                        SpriteKinds::Kind kind) {
   const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
   const SpriteDSLDocument document = FindSpriteDSLDocument(conventionId);
@@ -2023,7 +2395,7 @@ void TileDesignerWindow::DrawDslPanels(const std::string &name,
   }
 }
 
-void TileDesignerWindow::DrawArtSection() {
+void DesignerWindow::DrawArtSection() {
   if (game == nullptr || edited == nullptr) return;
 
   ImGui::Separator();
@@ -2154,7 +2526,7 @@ void TileDesignerWindow::DrawArtSection() {
   }
 }
 
-std::optional<TileArtQueue::Job> TileDesignerWindow::JobForEditedTile() const {
+std::optional<TileArtQueue::Job> DesignerWindow::JobForEditedTile() const {
   if (game == nullptr || edited == nullptr) return std::nullopt;
   for (const TileArtQueue::Job &candidate : game->TileArtQueueState().Snapshot()) {
     if (candidate.tileName == edited->name) {
@@ -2164,7 +2536,7 @@ std::optional<TileArtQueue::Job> TileDesignerWindow::JobForEditedTile() const {
   return std::nullopt;
 }
 
-int TileDesignerWindow::CellIndexInWorklist(const TileArtQueue::Job &job) const {
+int DesignerWindow::CellIndexInWorklist(const TileArtQueue::Job &job) const {
   if (job.worklistPath.empty() || edited == nullptr) return -1;
 
   // Keyed on the file's modification time as well as its path: a second generation
@@ -2197,7 +2569,7 @@ int TileDesignerWindow::CellIndexInWorklist(const TileArtQueue::Job &job) const 
   return worklistCellIndex;
 }
 
-std::vector<TileDesignerWindow::Artifact> TileDesignerWindow::ArtifactsFor(
+std::vector<DesignerWindow::Artifact> DesignerWindow::ArtifactsFor(
     const TileArtQueue::Job &job) const {
   std::vector<Artifact> artifacts;
   if (job.worklistPath.empty()) return artifacts;
@@ -2242,7 +2614,7 @@ std::vector<TileDesignerWindow::Artifact> TileDesignerWindow::ArtifactsFor(
   return artifacts;
 }
 
-void TileDesignerWindow::DrawArtifactsPanel(const TileArtQueue::Job &job) {
+void DesignerWindow::DrawArtifactsPanel(const TileArtQueue::Job &job) {
   const std::vector<Artifact> artifacts = ArtifactsFor(job);
   if (artifacts.empty()) {
     ImGui::TextDisabled(
@@ -2288,7 +2660,7 @@ void TileDesignerWindow::DrawArtifactsPanel(const TileArtQueue::Job &job) {
   }
 }
 
-void TileDesignerWindow::EnsurePaletteLoaded() {
+void DesignerWindow::EnsurePaletteLoaded() {
   if (paletteLoaded) return;
   paletteLoaded = true;  // once, even on failure: a missing file is not retried per frame
 
@@ -2308,7 +2680,7 @@ void TileDesignerWindow::EnsurePaletteLoaded() {
   }
 }
 
-int TileDesignerWindow::NearestPaletteIndex(unsigned char r, unsigned char g,
+int DesignerWindow::NearestPaletteIndex(unsigned char r, unsigned char g,
                                             unsigned char b) const {
   int best = -1;
   long bestDistance = 0;
@@ -2326,7 +2698,7 @@ int TileDesignerWindow::NearestPaletteIndex(unsigned char r, unsigned char g,
   return best;
 }
 
-void TileDesignerWindow::EnsurePixelView(const std::string &spritePath) {
+void DesignerWindow::EnsurePixelView(const std::string &spritePath) {
   if (spritePath.empty()) return;
 
   // Identity is the path *and* the file's modification time, for the same reason
@@ -2423,7 +2795,7 @@ void TileDesignerWindow::EnsurePixelView(const std::string &spritePath) {
   pixelViewStamp = hasStamp ? stamp : std::filesystem::file_time_type{};
 }
 
-void TileDesignerWindow::DrawPixelViewPanel(const TileArtQueue::Job &job) {
+void DesignerWindow::DrawPixelViewPanel(const TileArtQueue::Job &job) {
   if (job.path.empty()) {
     ImGui::TextDisabled("No sprite to inspect yet.");
     return;
@@ -2539,7 +2911,7 @@ void TileDesignerWindow::DrawPixelViewPanel(const TileArtQueue::Job &job) {
   ImGui::Dummy(ImVec2(perRow * (swatch + 2.0f), rows * (swatch + 2.0f)));
 }
 
-raylib::Texture *TileDesignerWindow::LoadThumbnail(const std::string &path,
+raylib::Texture *DesignerWindow::LoadThumbnail(const std::string &path,
                                                    int maxSide) {
   // The file's identity is its path *and* its modification time. A regeneration
   // overwrites the stage files in place, so the path alone is not enough to tell a
@@ -2611,7 +2983,7 @@ raylib::Texture *TileDesignerWindow::LoadThumbnail(const std::string &path,
   return raw;
 }
 
-void TileDesignerWindow::DrawFilmstripPanel(const TileArtQueue::Job &job) {
+void DesignerWindow::DrawFilmstripPanel(const TileArtQueue::Job &job) {
   const std::vector<Artifact> artifacts = ArtifactsFor(job);
   std::vector<Artifact> images;
   for (const Artifact &artifact : artifacts) {
@@ -2666,7 +3038,7 @@ void TileDesignerWindow::DrawFilmstripPanel(const TileArtQueue::Job &job) {
   }
 }
 
-TileDesignerWindow::ThumbnailLookup TileDesignerWindow::InspectThumbnailForTest(
+DesignerWindow::ThumbnailLookup DesignerWindow::InspectThumbnailForTest(
     const std::string &path) {
   ThumbnailLookup lookup;
   raylib::Texture *texture = LoadThumbnail(path, 320);
@@ -2677,7 +3049,7 @@ TileDesignerWindow::ThumbnailLookup TileDesignerWindow::InspectThumbnailForTest(
   return lookup;
 }
 
-TileDesignerWindow::PixelViewLookup TileDesignerWindow::InspectPixelViewForTest(
+DesignerWindow::PixelViewLookup DesignerWindow::InspectPixelViewForTest(
     const std::string &spritePath) {
   PixelViewLookup lookup;
   EnsurePixelView(spritePath);
@@ -2689,104 +3061,416 @@ TileDesignerWindow::PixelViewLookup TileDesignerWindow::InspectPixelViewForTest(
   return lookup;
 }
 
-void TileDesignerWindow::Draw() {
+std::string DesignerWindow::DefinitionPromptFor(const std::string &name,
+                                                    SpriteKinds::Kind kind,
+                                                    const std::string &requirement) const {
+  std::string prompt = std::string("Create a new ") +
+                       (kind == SpriteKinds::Kind::Tile ? "ground tile" : "object") +
+                       " named \"" + name + "\".";
+  if (!requirement.empty()) {
+    prompt += " " + requirement;
+  }
+  prompt += kind == SpriteKinds::Kind::Tile
+                ? " It is a ground surface, so it does not block movement."
+                : " It is an object that stands on the ground in a building.";
+  return prompt;
+}
+
+void DesignerWindow::StartAutoArt(const Blueprint &design,
+                                      const std::vector<BlueprintNeed> &needs) {
+  // The design itself is not used yet: the automatic path carries the designer's own
+  // description of each asset, which is the brief that matters. The crop and style read
+  // stay on the manual path until this one has been seen working.
+  (void)design;
+  if (game == nullptr || !session->HasBackend() || needs.empty()) {
+    return;
+  }
+  autoNeeds = needs;
+  autoIndex = 0;
+  autoStarted = false;
+  autoIdleFrames = 0;
+  autoFailures.clear();
+  autoRunning = true;
+  // The run advances in this window's Draw, so it has to be visible: without this the run
+  // would sit idle because nothing pumps it.
+  game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+  statusIsError = false;
+  statusLine = "Creating " + std::to_string(autoNeeds.size()) +
+               " requested asset(s), one at a time.";
+  session->LogEvent("AUTO ART STARTED: " + std::to_string(autoNeeds.size()) + " asset(s)");
+}
+
+void DesignerWindow::PumpAutoArt() {
+  if (!autoRunning) return;
+
+  if (autoIndex >= autoNeeds.size()) {
+    autoRunning = false;
+    if (autoFailures.empty()) {
+      statusIsError = false;
+      statusLine =
+          "Created all " + std::to_string(autoNeeds.size()) + " requested asset(s).";
+      session->LogEvent("AUTO ART DONE: all assets created");
+    } else {
+      std::string names;
+      for (const std::string &failure : autoFailures) {
+        names += (names.empty() ? "" : ", ") + failure;
+      }
+      statusIsError = true;
+      statusLine = "Auto art finished; could not create: " + names;
+      session->LogEvent("AUTO ART DONE WITH FAILURES: " + names);
+    }
+    return;
+  }
+
+  const BlueprintNeed &need = autoNeeds[autoIndex];
+
+  // A turn in flight is this item's turn: the run only starts from an idle window.
+  if (session->IsBusy()) {
+    autoIdleFrames = 0;
+    return;
+  }
+
+  // Done when the asset exists in the world. The sprite document and its compile follow
+  // the definition through the normal acceptance path, so this one check covers the whole
+  // item -- and it is a fact about the catalog rather than a flag some handler has to
+  // remember to set.
+  const bool exists =
+      need.kind == "tile"
+          ? game->tileRegistry.Get(need.name) != nullptr
+          : game->objectFactory.GetTemplates().count(need.name) != 0;
+
+  if (!autoStarted) {
+    // Already there: nothing to build, and asking for it again would be a wasted model
+    // call and a revision of something nobody complained about.
+    if (exists) {
+      ++autoIndex;
+      return;
+    }
+    autoStarted = true;
+    autoIdleFrames = 0;
+    const SpriteKinds::Kind kind =
+        need.kind == "tile" ? SpriteKinds::Kind::Tile : SpriteKinds::Kind::Object;
+    mode = need.kind == "tile" ? DesignerDomains::Domain::Tile
+                               : DesignerDomains::Domain::Object;
+    requestSet = false;
+    session->SetSystemPrompt(kDefinitionConversation,
+                             game->BuildDesignerPrompt(mode, false));
+    session->LogEvent("AUTO ART ITEM: " + need.name);
+    SendUserMessage(DefinitionPromptFor(need.name, kind, need.description));
+    return;
+  }
+
+  if (exists) {
+    ++autoIndex;
+    autoStarted = false;
+    return;
+  }
+
+  // Nothing in flight and the asset still absent: a retry may be queued for the next
+  // frame, so give it a moment before calling the item failed.
+  if (++autoIdleFrames > 120) {
+    autoFailures.push_back(need.name);
+    session->LogEvent("AUTO ART ITEM FAILED: " + need.name);
+    ++autoIndex;
+    autoStarted = false;
+    autoIdleFrames = 0;
+  }
+}
+
+void DesignerWindow::DrawGapOffer() {
+  if (game == nullptr) return;
+  SpriteGapOffer *offer = game->spriteGapOffer.get();
+  if (offer == nullptr || !offer->Active()) return;
+
+  ImGui::PushID("sprite-gap-offer");
+  ImGui::Separator();
+
+  const bool reading = offer->GetState() == SpriteGapOffer::State::Reading;
+  const bool failed = offer->GetState() == SpriteGapOffer::State::Failed;
+
+  ImGui::Text("%s", offer->IsGap() ? "A gap the design needs drawn"
+                                   : "A sprite this design uses but cannot draw");
+  ImGui::SameLine();
+  if (ImGui::SmallButton("Dismiss##gap")) {
+    // Cancelled, not destroyed: this runs inside the offer's own frame, and destroying it
+    // would unload the texture whose draw command is already queued for this frame. The
+    // object stays until Game replaces it or the run ends.
+    offer->Cancel();
+    ImGui::PopID();
+    return;
+  }
+
+  if (offer->IsGap()) {
+    ImGui::TextWrapped("\"%s\" -- the %s \"%s\", %d cell(s) marked in the crop.",
+                       offer->Design().name.c_str(),
+                       offer->Gap().kind == "paint" ? "ground tile" : "object",
+                       offer->Gap().material.c_str(), offer->GapCells());
+  } else {
+    ImGui::TextWrapped(
+        "\"%s\" -- the %s \"%s\", which this design uses. The definition exists and the "
+        "art pack has no sprite for it, so nothing is marked: the crop is the building as "
+        "it stands.",
+        offer->Design().name.c_str(),
+        offer->Gap().kind == "paint" ? "ground tile" : "object",
+        offer->Gap().material.c_str());
+  }
+
+  if (const Texture2D *crop = offer->CropTexture()) {
+    // Whole-number scaling only. The pane exists so the style brief can be judged against
+    // what the model saw, and a smoothed or fractional resample would be a picture of
+    // something the model never saw.
+    float scale = 2.0f;
+    const float available = ImGui::GetContentRegionAvail().x;
+    while (scale > 1.0f && crop->width > 0 && crop->width * scale > available) {
+      scale -= 1.0f;
+    }
+    ImGui::Image(static_cast<ImTextureID>(static_cast<std::intptr_t>(crop->id)),
+                 ImVec2(static_cast<float>(crop->width) * scale,
+                        static_cast<float>(crop->height) * scale));
+  } else {
+    ImGui::TextDisabled("(the crop exists but could not be shown)");
+  }
+  if (!offer->CropPath().empty()) {
+    ImGui::TextDisabled("%s", offer->CropPath().c_str());
+  }
+
+  ImGui::TextWrapped("%s", offer->Status().c_str());
+  if (!offer->Requirement().empty()) {
+    ImGui::TextDisabled("What the designer asked for:");
+    ImGui::TextWrapped("%s", offer->Requirement().c_str());
+  }
+  if (offer->ReadStyle().ok) {
+    ImGui::TextWrapped("%s", offer->ReadStyle().summary.c_str());
+  }
+
+  // Disabled while reading, and when the crop itself failed: the numeric brief alone is
+  // still a usable request, but a design that could not be drawn has nothing to offer.
+  ImGui::BeginDisabled(reading || failed);
+  const char *label =
+      offer->IsGap() ? "Create this asset" : "Send document request";
+  if (ImGui::Button(label)) {
+    const std::string name = offer->Gap().material;
+    const SpriteKinds::Kind kind = offer->Gap().kind == "paint"
+                                       ? SpriteKinds::Kind::Tile
+                                       : SpriteKinds::Kind::Object;
+    const std::string surroundings =
+        offer->ReadStyle().ok ? offer->ReadStyle().summary : std::string();
+    const std::string requirement = offer->Requirement();
+    const bool needsDefinition = offer->IsGap();
+    offer->Cancel();
+
+    if (needsDefinition) {
+      // A sprite for a template nobody can spawn is a picture of nothing, so the
+      // definition comes first. That is the definition turn, and accepting it is what
+      // requests the document (the acceptance path calls RequestSpriteDocument when the
+      // DSL source is active) -- so this one prompt is the whole chain, in the order the
+      // pipeline requires.
+      if (kind != SpriteKinds::Kind::Actor) {
+        mode = kind == SpriteKinds::Kind::Object ? DesignerDomains::Domain::Object
+                                                 : DesignerDomains::Domain::Tile;
+      }
+      requestSet = false;
+      if (game != nullptr) {
+        session->SetSystemPrompt(kDefinitionConversation,
+                                 game->BuildDesignerPrompt(mode, false));
+      }
+      std::string prompt =
+          std::string("Create a new ") +
+          (kind == SpriteKinds::Kind::Tile ? "ground tile" : "object") + " named \"" +
+          name + "\".";
+      if (!requirement.empty()) {
+        prompt += " " + requirement;
+      }
+      prompt += kind == SpriteKinds::Kind::Tile
+                    ? " It is a ground surface, so it does not block movement."
+                    : " It is an object that stands on the ground in a building.";
+      SendUserMessage(prompt);
+    } else {
+      RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, surroundings,
+                            requirement);
+    }
+    ImGui::EndDisabled();
+    ImGui::PopID();
+    return;
+  }
+  ImGui::EndDisabled();
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        reading   ? "Waiting for the style read to finish."
+        : failed  ? "The building could not be rendered, so there is nothing to send."
+                  : "Ask the document turn for this sprite. The style brief above, if "
+                    "one was read, goes into the request.");
+  }
+
+  ImGui::Separator();
+  ImGui::PopID();
+}
+
+void DesignerWindow::DrawDomainPicker(
+    const DesignerDomains::Descriptor &current) {
+  ImGui::SetNextItemWidth(120.0f);
+  if (ImGui::BeginCombo("##designer_domain", current.label.c_str())) {
+    for (const DesignerDomains::Descriptor &candidate : DesignerDomains::All()) {
+      const bool selected = candidate.domain == mode;
+      if (ImGui::Selectable(candidate.label.c_str(), selected)) {
+        if (candidate.domain != mode) {
+          mode = candidate.domain;
+          // With nothing in the history there is nothing pinned, so the pane follows the
+          // domain about to be designed for. Once something is being viewed, changing
+          // the design domain must not yank the pane away from it.
+          if (viewed.empty()) paneDomain = mode;
+          // A building has no shape: leaving "Set" ticked from a sprite request would
+          // rebuild the next building's prompt as if a set had been asked for.
+          if (!DesignerDomains::IsSprite(mode)) {
+            requestSet = false;
+            requestSetSize = 0;
+          }
+          RefreshRewriteBrief();
+          if (game != nullptr) {
+            session->SetSystemPrompt(kDefinitionConversation,
+                                     game->BuildDesignerPrompt(mode, requestSet));
+          }
+          // A domain change invalidates the prompt, not the transcript: the conversation
+          // so far stays readable, and the next request is built from the new domain's
+          // document.
+          routeNote.clear();
+          session->LogEvent(std::string("DOMAIN: switched to ") + candidate.id +
+                            " by hand; the next request uses the " + candidate.id +
+                            " prompt");
+        }
+      }
+      if (selected) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "What the next request is built for: a building, a tile or an object.\n"
+        "The classifier guesses this from your text when you press Route;\n"
+        "this dropdown overrides it, and the choice is what the prompt is built "
+        "from.");
+  }
+}
+
+void DesignerWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(780, 560), ImGuiCond_FirstUseEver);
-  // Renamed user-facing only: the class, the files and the settings keys keep their
-  // names (see docs/sprite-designer-design.md, decision 6), so nothing that referenced
-  // "Tile Designer" breaks -- only the label a person reads changes, because it now
-  // designs two kinds of thing.
-  ImGui::Begin("Sprite Designer", &isOpen, ImGuiWindowFlags_None);
+  // The window designs buildings, tiles and objects, so the title is the domain-neutral
+  // one. The class, the files and the settings keys keep their names (see
+  // docs/sprite-designer-design.md, decision 6), so nothing that referenced "Tile
+  // Designer" breaks -- only the label a person reads changes.
+  ImGui::Begin("Designer", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
-    game->tileDesignerWindowEntity.remove<ActiveWindow>();
+    game->designerWindowEntity.remove<ActiveWindow>();
     ImGui::End();
     return;
   }
+
+  // At the very top: when an offer is open it is the reason this window is open, and it
+  // is what the next document request will be about.
+  DrawGapOffer();
+
+  // The automatic run advances here rather than on a timer: this is the only place the
+  // window's own state (busy, or idle with a queue) is meaningful.
+  PumpAutoArt();
 
   // What is being designed, and who decided. The dropdown is the correction path for the
   // router: a wrong classification costs one decision call, and switching it here before
   // sending means the prompt is built for the right kind from the start.
   {
-    const SpriteKinds::Descriptor &current = SpriteKinds::For(mode);
+    const DesignerDomains::Descriptor &current = ModeDescriptor();
     ImGui::TextDisabled("Designing:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(120.0f);
-    if (ImGui::BeginCombo("##sprite_kind", current.label.c_str())) {
-      for (const SpriteKinds::Descriptor &candidate : SpriteKinds::All()) {
-        const bool selected = candidate.kind == mode;
-        if (ImGui::Selectable(candidate.label.c_str(), selected)) {
-          if (candidate.kind != mode) {
-            mode = candidate.kind;
-            RefreshRewriteBrief();
-            if (game != nullptr) {
-              systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
-            }
-            // A mode change invalidates the prompt, not the transcript: the
-            // conversation so far stays readable, and the next request is built from
-            // the new kind's document.
-            routeNote.clear();
-            LogEvent(std::string("MODE: switched to ") + candidate.id +
-                     " by hand; the next request uses the " + candidate.id +
-                     " prompt");
-          }
-        }
-        if (selected) ImGui::SetItemDefaultFocus();
+    if (Settings().designer.autoRoute) {
+      // Not a combo: with automatic routing the classifier sets the domain per request,
+      // so a dropdown here would be a control the next Send overwrites. It is still shown
+      // as text, because "what is this about to build" has to stay visible.
+      ImGui::TextUnformatted(current.label.c_str());
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "Automatic routing is on (designer.autoRoute): the classifier reads your "
+            "request, picks the domain, and the request is sent once it answers.\n"
+            "Turn the setting off to choose the domain by hand.");
       }
-      ImGui::EndCombo();
+    } else {
+      DrawDomainPicker(current);
     }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip(
-          "Which kind of sprite the next request is built for.\n"
-          "The classifier guesses this from your text when you press Route;\n"
-          "this dropdown overrides it, and the choice is what the prompt is built "
-          "from.");
+
+    // The sprite needs a filename before the request can be sent, and the mode is the one
+    // place it can be asked for. Only drawn in this mode: a name box beside "Building"
+    // would be a control with nothing to name.
+    if (mode == DesignerDomains::Domain::ActorSprite) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("as");
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(140.0f);
+      ImGui::InputTextWithHint("##actorSpriteName", "name (baker)", actorSpriteNameBuffer,
+                               sizeof(actorSpriteNameBuffer));
     }
 
     // Single or set. The router proposes it, but a person can ask for one without a
     // classifier, and can correct the router -- so it is a control, not a hidden decision.
+    //
+    // Disabled for a building rather than hidden: a blueprint reply is one design, and a
+    // checkbox that vanished would read as a bug in the dropdown.
     ImGui::SameLine();
+    ImGui::BeginDisabled(!DesignerDomains::IsSprite(mode));
     if (ImGui::Checkbox("Set", &requestSet)) {
-      // The prompt is per shape, so a shape change rebuilds it, exactly as a kind change
+      // The prompt is per shape, so a shape change rebuilds it, exactly as a domain change
       // does. The transcript is left alone: what was already designed is still true.
       if (game != nullptr) {
-        systemPrompt = game->BuildSpriteSystemPrompt(mode, requestSet);
+        session->SetSystemPrompt(
+            kDefinitionConversation,
+            game->BuildDesignerPrompt(mode, requestSet));
       }
-      LogEvent(std::string("SHAPE: ") + (requestSet ? "set" : "single") +
+      session->LogEvent(std::string("SHAPE: ") + (requestSet ? "set" : "single") +
                " by hand; the next request uses the " +
                (requestSet ? "set" : "single") + " prompt");
     }
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip(
-          "Ask for a set of sprites that belong together, instead of one.\n"
-          "The designer answers with a \"sprites\" array; every entry is validated on its "
-          "own, so one bad entry does not discard the rest.\nArt for the set is requested "
-          "one batch at a time, at most art.generation.maxCellsPerRequest sprites per "
-          "image request.");
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+      if (!DesignerDomains::IsSprite(mode)) {
+        ImGui::SetTooltip("A building is always one blueprint, so there is no set to ask "
+                          "for.");
+      } else {
+        ImGui::SetTooltip(
+            "Ask for a set of sprites that belong together, instead of one.\n"
+            "The designer answers with a \"sprites\" array; every entry is validated on "
+            "its own, so one bad entry does not discard the rest.\nArt for the set is "
+            "requested one batch at a time, at most art.generation.maxCellsPerRequest "
+            "sprites per image request.");
+      }
     }
     if (requestSet && requestSetSize > 0) {
       ImGui::SameLine();
       ImGui::TextDisabled("(~%d)", requestSetSize);
     }
 
-    // The router. Disabled with a reason rather than hidden: a missing classifier is a
-    // configuration state, and a control that vanishes explains nothing.
-    const bool canRoute = game != nullptr && game->systemOneClassifier != nullptr &&
-                          !routeInFlight;
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!canRoute);
-    if (ImGui::Button("Route from text")) {
-      RequestRoute(inputBuffer);
-    }
-    ImGui::EndDisabled();
-    if (ImGui::IsItemHovered()) {
-      ImGui::SetTooltip(
-          game != nullptr && game->systemOneClassifier != nullptr
-              ? "Ask a decision model which kind, shape and size your request is, then "
-                "switch the dropdown to match.\nIt reads the text currently in the box. "
-                "Costs a fraction of a cent -- no image is generated."
-              : "No System 1 classifier is configured (system1.model.apiKey or "
-                "model.apiKey), so the request cannot be read.\nPick the kind with the "
-                "dropdown instead.");
+    if (Settings().designer.autoRoute) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("| routed automatically on send");
+    } else {
+      // The router. Disabled with a reason rather than hidden: a missing classifier is a
+      // configuration state, and a control that vanishes explains nothing.
+      const bool canRoute = game != nullptr && game->systemOneClassifier != nullptr &&
+                            !routeInFlight;
+      ImGui::SameLine();
+      ImGui::BeginDisabled(!canRoute);
+      if (ImGui::Button("Route from text")) {
+        RequestRoute(inputBuffer);
+      }
+      ImGui::EndDisabled();
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            game != nullptr && game->systemOneClassifier != nullptr
+                ? "Ask a decision model which domain, shape and size your request is, "
+                  "then switch the dropdown to match.\nIt reads the text currently in "
+                  "the box. Costs a fraction of a cent -- no image is generated.\n"
+                  "Set designer.autoRoute to do this on every send."
+                : "No System 1 classifier is configured (system1.model.apiKey or "
+                  "model.apiKey), so the request cannot be read.\nPick the domain with "
+                  "the dropdown instead.");
+      }
     }
     if (routeInFlight) {
       ImGui::SameLine();
@@ -2802,8 +3486,9 @@ void TileDesignerWindow::Draw() {
   ImGui::TextDisabled("Backend: %s",
                       modelLabel.empty() ? "(none)" : modelLabel.c_str());
   ImGui::SameLine();
-  ImGui::TextDisabled("| %d of %d attempts used", attempts,
-                      game != nullptr ? game->maxDesignAttempts() : 0);
+  ImGui::TextDisabled("| %d of %d attempts used",
+                      session->Attempts(kDefinitionConversation),
+                      session->MaxAttempts(kDefinitionConversation));
   ImGui::SameLine();
   ImGui::Checkbox("Show thinking", &showThoughts);
   if (ImGui::IsItemHovered()) {
@@ -2827,9 +3512,14 @@ void TileDesignerWindow::Draw() {
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip(
         game != nullptr && game->TileArtQueueState().Enabled()
-            ? "Ask for generated art as soon as a tile is accepted, so naming the "
-              "tile is the whole instruction.\nRequests are batched, so a run of "
-              "creations still costs one request.\nPersisted in debug_windows_state."
+            ? "One switch for making art automatically.\n"
+              "For a tile or object: ask for its sprite as soon as it is accepted, so "
+              "naming it is the whole instruction.\n"
+              "For a building: after a design is saved, create every asset it asked "
+              "for -- definition first, then its sprite -- one at a time, with no "
+              "further input.\n"
+              "Requests are batched where they can be, and the run names what it could "
+              "not make.\nPersisted in debug_windows_state."
             : "Art generation is off (art.generation.enabled in settings.json), so "
               "there is nothing to request automatically.\nThe setting spends "
               "money, so it is off by default.");
@@ -2867,7 +3557,7 @@ void TileDesignerWindow::Draw() {
   }
   ImGui::Separator();
 
-  if (ai == nullptr) {
+  if (!session->HasBackend()) {
     ImGui::TextWrapped(
         "No designer backend is configured, so nothing can be sent. The tile "
         "designer shares the Designer Chat backend; set \"designer\" in "
@@ -2878,23 +3568,35 @@ void TileDesignerWindow::Draw() {
 
   if (!layoutLoaded && game != nullptr && game->debugWindowState) {
     showJson = game->debugWindowState->GetDesignerShowJson();
-    autoRequestArt = game->debugWindowState->GetTileDesignerAutoArt();
+    autoRequestArt = game->debugWindowState->GetDesignerAutoArt();
+    paneWidth = game->debugWindowState->GetDesignerPaneWidth();
+    blueprintZoom = game->debugWindowState->GetDesignerZoom();
     // A first launch has no stored preference, so it follows the setting that
     // already exists: turning art generation on is one deliberate act, and asking
     // for it to then need a second click per tile is friction with no safety value
     // -- `art.generation.enabled` is itself off by default, which is where the
     // money decision belongs. `maxRequestsPerSession` caps the consequence, and
     // the checkbox below turns it back off.
-    if (autoRequestArt == false && !game->debugWindowState->HasTileDesignerAutoArt()) {
+    if (autoRequestArt == false && !game->debugWindowState->HasDesignerAutoArt()) {
       autoRequestArt = game->TileArtQueueState().Enabled();
     }
     layoutLoaded = true;
   }
 
-  // Left: the tile, editable. Right: the conversation.
+  // Left: the design, editable where it is a tile. Right: the conversation, with a
+  // draggable splitter between them.
+  //
+  // Clamped every frame rather than only when dragged, so a pane width read from a
+  // hand-edited state file, or left over from a larger window, cannot produce a layout
+  // with an ungrabbable pane. The splitter is the one piece of the old Designer window's
+  // layout worth keeping now that it is one window: a fixed fraction was always too wide
+  // for a sprite and too narrow for a building.
   const float available = ImGui::GetContentRegionAvail().x;
-  const float paneWidth = std::clamp(available * 0.42f, 220.0f,
-                                     std::max(220.0f, available - 260.0f));
+  const float maxPaneWidth =
+      std::max(kMinPaneWidth, available - kMinTranscriptWidth - 8.0f);
+  paneWidth = std::clamp(paneWidth, kMinPaneWidth, maxPaneWidth);
+  blueprintZoom =
+      std::clamp(blueprintZoom, BlueprintPreview::kMinZoom, BlueprintPreview::kMaxZoom);
 
   // The router's answer, applied on the main thread on the frame it arrives. Doing it in
   // the callback would mean switching the mode and rebuilding a prompt from a worker
@@ -2910,155 +3612,184 @@ void TileDesignerWindow::Draw() {
     }
     if (pending.has_value()) {
       ApplyRouteVerdict(*pending);
+      // The verdict has just rebuilt the prompt for the domain it read, so this is the
+      // first moment the parked request can be sent as the right kind of design.
+      if (!autoSendPrompt.empty()) {
+        const std::string prompt = std::move(autoSendPrompt);
+        autoSendPrompt.clear();
+        SendUserMessage(prompt);
+      }
     }
   }
 
-  ImGui::BeginChild("tile_designer_preview", ImVec2(paneWidth, -70), true);
-  if (mode == SpriteKinds::Kind::Object) {
+  // Every request of this session, not only the edited tile's. The per-tile art section
+  // lower down filters on the tile it is showing, so a job started anywhere else -- the
+  // Content Editor's Regenerate button, for instance -- used to be invisible in this window
+  // even though it was queued and running.
+  // Opens itself as soon as there is anything in the queue: a header that starts closed
+  // would hide exactly the requests this section exists to show. ImGui remembers a state
+  // the user changes afterwards.
+  {
+    const TileArtQueue &queue = game->TileArtQueueState();
+    const bool anyRequests = !queue.Snapshot().empty();
+    if (ImGui::CollapsingHeader(
+            "Art requests",
+            anyRequests ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None)) {
+      ArtRequestsPanel::Draw(queue,
+                             edited != nullptr ? edited->name : std::string());
+    }
+  }
+
+  ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -70), true);
+  DrawViewedToolbar();
+  // What is *shown* and what is *being designed for* are deliberately two values now.
+  // Before the history existed they were one, which is why looking at a building meant
+  // the next request would be built as a building.
+  const DesignerDomains::Domain shown =
+      viewed.empty() && !refusedAttempt.has_value() ? mode : paneDomain;
+  if (shown == DesignerDomains::Domain::Blueprint) {
+    DrawBlueprintPreview();
+  } else if (shown == DesignerDomains::Domain::Object) {
     DrawObjectPreview();
   } else {
     DrawPreviewPane();
   }
   ImGui::EndChild();
 
-  ImGui::SameLine();
-
-  ImGui::BeginChild("tile_designer_transcript", ImVec2(0, -70), true);
-  std::vector<Exchange> snapshot;
+  // The splitter. Built from an invisible button rather than a widget with its own look,
+  // so the only thing drawn is the line below -- ImGui has no splitter control, and this
+  // is the idiomatic way to make one.
+  ImGui::SameLine(0.0f, 0.0f);
+  const float paneLeft = ImGui::GetCursorScreenPos().x;
+  ImGui::InvisibleButton("designer_splitter", ImVec2(8.0f, -70));
+  const bool splitterHovered = ImGui::IsItemHovered();
+  const bool splitterActive = ImGui::IsItemActive();
+  if (splitterHovered || splitterActive) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+  }
+  if (splitterActive) {
+    // Measured from the mouse's absolute position rather than from accumulated drag
+    // deltas, so the splitter stays under the cursor and cannot drift when the clamp
+    // stops it or the window is resized mid-drag.
+    paneWidth = ImGui::GetIO().MousePos.x - paneLeft;
+  }
   {
-    std::lock_guard<std::mutex> lock(transcriptMutex);
-    snapshot = exchanges;
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    const float centerX = (min.x + max.x) * 0.5f;
+    const ImU32 color = splitterActive ? IM_COL32(255, 170, 80, 255)
+                        : splitterHovered ? IM_COL32(200, 200, 200, 255)
+                                          : IM_COL32(90, 90, 90, 255);
+    ImGui::GetWindowDrawList()->AddLine(ImVec2(centerX, min.y),
+                                        ImVec2(centerX, max.y), color,
+                                        splitterActive ? 3.0f : 1.0f);
   }
 
-  if (snapshot.empty()) {
-    if (mode == SpriteKinds::Kind::Object) {
-      ImGui::TextWrapped(
-          "Ask for an object -- \"a wooden crate\", \"a brass candelabra\", \"a "
-          "young apple tree\". The designer replies with one object definition and its "
-          "own notes; an accepted object is written to the generated overlay and is "
-          "available to blueprints and spawns on the next load.\n\nPress \"Route from "
-          "text\" to have a classifier read your request before the designer does.");
-    } else {
-      ImGui::TextWrapped(
-          "Ask for a tile -- \"a stone hearth\", \"mossy flagstones\", \"a puddle\". "
-          "The designer replies with one tile definition and its own notes; an "
-          "accepted tile is written to the generated overlay and is immediately "
-          "paintable from a blueprint.\n\nPress \"Route from text\" to have a "
-          "classifier read your request before the designer does.");
-    }
-  }
+  ImGui::SameLine(0.0f, 0.0f);
 
-  bool needsInspection = false;
-  for (size_t i = 0; i < snapshot.size(); ++i) {
-    Exchange &ex = snapshot[i];
-    if (!ex.inspected && ex.done) {
-      needsInspection = true;
-    }
-
-    if (ex.fromUser && !ex.prompt.empty()) {
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.8f, 1.0f, 1.0f));
-      ImGui::TextWrapped("You: %s", ex.prompt.c_str());
-      ImGui::PopStyleColor();
-    } else if (!ex.prompt.empty()) {
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.5f, 1.0f));
-      ImGui::TextWrapped("Retry (%d): %s", static_cast<int>(i), ex.prompt.c_str());
-      ImGui::PopStyleColor();
-    }
-
-    if (!ex.answer.empty()) {
-      const std::string shown = ex.DisplayAnswer(showThoughts, showJson);
-      if (showThoughts && shown.find("<think>") != std::string::npos) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.66f, 0.72f, 1.0f));
-        ImGui::TextWrapped("%s", shown.c_str());
-        ImGui::PopStyleColor();
-      } else {
-        ImGui::TextWrapped("%s", shown.c_str());
-      }
-    }
-    if (!ex.done) {
-      ImGui::TextDisabled("...");
-    }
-
-    if (ex.inspected) {
-      // A set is shown entry by entry: the interesting fact about a six-entry reply where one
-      // failed is *which* one, and a single "Added" line would hide it.
-      if (ex.wasSet && !ex.entryVerdicts.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-        ImGui::TextWrapped("Set '%s' -- %zu of %zu accepted",
-                           ex.setName.empty() ? "(unnamed)" : ex.setName.c_str(),
-                           ex.acceptedNames.size(), ex.entryVerdicts.size());
-        ImGui::PopStyleColor();
-        for (size_t entry = 0; entry < ex.entryVerdicts.size(); ++entry) {
-          const bool accepted = ex.entryVerdicts[entry].first;
-          ImGui::PushStyleColor(ImGuiCol_Text,
-                                accepted ? ImVec4(0.55f, 0.85f, 0.55f, 1.0f)
-                                         : ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
-          ImGui::TextWrapped("  [%zu] %s %s", entry,
-                             accepted ? "accepted" : "refused",
-                             ex.entryVerdicts[entry].second.c_str());
+  ImGui::BeginChild("designer_transcript", ImVec2(0, -70), true);
+  // The transcript itself -- prompts, replies, the thinking tint, the streaming ellipsis,
+  // the error line, the speech bar and the separator -- is DesignerSession's. What stays
+  // here is the verdict: "Added", a per-entry set list and the art note are sprite facts,
+  // and a blueprint reply has none of them.
+  // The hint's last sentence depends on how routing is configured: telling someone to
+  // press a button that is not drawn is worse than saying nothing at all.
+  const std::string routeHint =
+      Settings().designer.autoRoute
+          ? " Requests are routed automatically: a classifier reads what you type and "
+            "picks the domain before the designer is asked."
+          : " Press \"Route from text\" to have a classifier read your request before "
+            "the designer does.";
+  const std::string emptyHint =
+      std::string(mode == DesignerDomains::Domain::Blueprint
+                      ? "Ask for a building -- \"a two-bedroom house\", \"a blacksmith's "
+                        "workshop\", \"a prison cell\". The designer replies with one "
+                        "blueprint and its own notes; a valid design is saved into "
+                        "data/blueprints/ and appears in the Blueprints window straight "
+                        "away."
+                      : mode == DesignerDomains::Domain::Object
+                            ? "Ask for an object -- \"a wooden crate\", \"a brass "
+                              "candelabra\", \"a young apple tree\". The designer replies "
+                              "with one object definition and its own notes; an accepted "
+                              "object is written to the generated overlay and is available "
+                              "to blueprints and spawns on the next load."
+                            : "Ask for a tile -- \"a stone hearth\", \"mossy "
+                              "flagstones\", \"a puddle\". The designer replies with one "
+                              "tile definition and its own notes; an accepted tile is "
+                              "written to the generated overlay and is immediately "
+                              "paintable from a blueprint.") +
+      routeHint;
+  session->DrawTranscript(
+      showThoughts, showJson, emptyHint,
+      [](DesignerSession::Exchange &ex) {
+        if (!ex.inspected) {
+          return;
+        }
+        // A set is shown entry by entry: the interesting fact about a six-entry reply where
+        // one failed is *which* one, and a single "Added" line would hide it.
+        if (ex.wasSet && !ex.entryVerdicts.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+          ImGui::TextWrapped("Set '%s' -- %zu of %zu accepted",
+                             ex.setName.empty() ? "(unnamed)" : ex.setName.c_str(),
+                             ex.acceptedNames.size(), ex.entryVerdicts.size());
+          ImGui::PopStyleColor();
+          for (size_t entry = 0; entry < ex.entryVerdicts.size(); ++entry) {
+            const bool accepted = ex.entryVerdicts[entry].first;
+            ImGui::PushStyleColor(ImGuiCol_Text,
+                                  accepted ? ImVec4(0.55f, 0.85f, 0.55f, 1.0f)
+                                           : ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
+            ImGui::TextWrapped("  [%zu] %s %s", entry,
+                               accepted ? "accepted" : "refused",
+                               ex.entryVerdicts[entry].second.c_str());
+            ImGui::PopStyleColor();
+          }
+          if (!ex.artNote.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+            ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
+            ImGui::PopStyleColor();
+          }
+          for (const std::string &warning : ex.warnings) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
+            ImGui::TextWrapped("Note: %s", warning.c_str());
+            ImGui::PopStyleColor();
+          }
+        } else if (ex.ok) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+          ImGui::TextWrapped("Added '%s'%s", ex.name.c_str(),
+                             ex.savedPath.empty()
+                                 ? " (session only -- not written to disk)"
+                                 : (" to " + ex.savedPath).c_str());
+          ImGui::PopStyleColor();
+          // What happened about the art, immediately under the verdict -- the place
+          // someone looks after accepting a tile and not seeing a sprite. Coloured
+          // differently from the verdict because "no art was requested" is not a
+          // failure, it is the state of a setting.
+          if (!ex.artNote.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+            ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
+            ImGui::PopStyleColor();
+          }
+          if (!ex.notes.empty()) {
+            ImGui::TextDisabled("Designer's notes:");
+            ImGui::TextWrapped("%s", ex.notes.c_str());
+          }
+          for (const std::string &warning : ex.warnings) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
+            ImGui::TextWrapped("Note: %s", warning.c_str());
+            ImGui::PopStyleColor();
+          }
+        } else if (!ex.failureReason.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
+          ImGui::TextWrapped("Refused: %s", ex.failureReason.c_str());
           ImGui::PopStyleColor();
         }
-        if (!ex.artNote.empty()) {
-          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
-          ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
-          ImGui::PopStyleColor();
-        }
-        for (const std::string &warning : ex.warnings) {
-          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
-          ImGui::TextWrapped("Note: %s", warning.c_str());
-          ImGui::PopStyleColor();
-        }
-      } else if (ex.ok) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
-        ImGui::TextWrapped("Added '%s'%s", ex.tileName.c_str(),
-                           ex.savedPath.empty()
-                               ? " (session only -- not written to disk)"
-                               : (" to " + ex.savedPath).c_str());
-        ImGui::PopStyleColor();
-        // What happened about the art, immediately under the verdict -- the place
-        // someone looks after accepting a tile and not seeing a sprite. Coloured
-        // differently from the verdict because "no art was requested" is not a
-        // failure, it is the state of a setting.
-        if (!ex.artNote.empty()) {
-          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
-          ImGui::TextWrapped("Art: %s", ex.artNote.c_str());
-          ImGui::PopStyleColor();
-        }
-        if (!ex.notes.empty()) {
-          ImGui::TextDisabled("Designer's notes:");
-          ImGui::TextWrapped("%s", ex.notes.c_str());
-        }
-        for (const std::string &warning : ex.warnings) {
-          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
-          ImGui::TextWrapped("Note: %s", warning.c_str());
-          ImGui::PopStyleColor();
-        }
-      } else if (!ex.failureReason.empty()) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.4f, 1.0f));
-        ImGui::TextWrapped("Refused: %s", ex.failureReason.c_str());
-        ImGui::PopStyleColor();
-      }
-    }
-    if (ex.failed && !ex.error.empty()) {
-      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
-      ImGui::TextWrapped("Error: %s", ex.error.c_str());
-      ImGui::PopStyleColor();
-    }
-
-    ImGui::Separator();
-  }
+      });
   ImGui::EndChild();
 
   // Inspection runs on the main thread, after the transcript is drawn. Doing it
   // on the worker would mean validating and writing content from a background
   // thread while the ECS is mid-frame.
-  if (needsInspection) {
-    for (size_t i = 0; i < snapshot.size(); ++i) {
-      if (!snapshot[i].inspected && snapshot[i].done) {
-        InspectFinishedExchange(i);
-      }
-    }
-  }
+  session->Pump([this](size_t i) { InspectFinishedExchange(i); });
 
   if (!statusLine.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text,
@@ -3068,7 +3799,10 @@ void TileDesignerWindow::Draw() {
     ImGui::PopStyleColor();
   }
 
-  const bool busy = IsBusy();
+  // A parked request waiting for its route counts as busy: the prompt it will be sent with
+  // does not exist yet, so a second Send would either race it or be built for the wrong
+  // domain.
+  const bool busy = session->IsBusy() || !autoSendPrompt.empty();
 
   // Collect a rewrite that landed since the last frame. Before the buttons, so the
   // result is in the box on the same frame the user sees the state change.
@@ -3078,7 +3812,11 @@ void TileDesignerWindow::Draw() {
   const bool send = ImGui::Button("Send");
   ImGui::EndDisabled();
   ImGui::SameLine();
-  ImGui::TextDisabled("Enter to send, Shift+Enter for a newline");
+  if (!autoSendPrompt.empty()) {
+    ImGui::TextDisabled("routing this request before sending...");
+  } else {
+    ImGui::TextDisabled("Enter to send, Shift+Enter for a newline");
+  }
   ImGui::SameLine();
 
   // The Improve affordance sits on the Send row, immediately beside the box it
@@ -3116,17 +3854,28 @@ void TileDesignerWindow::Draw() {
       prompt.pop_back();
     }
     if (!prompt.empty()) {
-      inputBuffer[0] = '\0';
-      // Forget the pre-rewrite text: the next message must not offer to undo back
-      // into the one just sent.
-      promptBox.Reset();
-      SendUserMessage(prompt);
+      if (Settings().designer.autoRoute) {
+        // Only clear the box once the prompt has been taken: a route already in flight
+        // makes BeginAutoRoute decline, and clearing first would eat what was typed.
+        if (BeginAutoRoute(prompt)) {
+          inputBuffer[0] = '\0';
+          promptBox.Reset();
+        }
+      } else {
+        inputBuffer[0] = '\0';
+        // Forget the pre-rewrite text: the next message must not offer to undo back
+        // into the one just sent.
+        promptBox.Reset();
+        SendUserMessage(prompt);
+      }
     }
   }
 
   if (layoutLoaded && game != nullptr && game->debugWindowState) {
     game->debugWindowState->SetDesignerShowJson(showJson);
-    game->debugWindowState->SetTileDesignerAutoArt(autoRequestArt);
+    game->debugWindowState->SetDesignerAutoArt(autoRequestArt);
+    game->debugWindowState->SetDesignerPaneWidth(paneWidth);
+    game->debugWindowState->SetDesignerZoom(blueprintZoom);
   }
 
   ImGui::End();

@@ -1,5 +1,8 @@
 #include "AI.h"
+#include "BlueprintExpansion.hpp"
+#include "BlueprintPrompt.hpp"
 #include "BlueprintRegistry.h"
+#include "ContentKinds.h"
 #include "BlueprintSnapshot.hpp"
 #include "OllamaAI.h"
 #include "DebugLog.h"
@@ -574,6 +577,91 @@ int RunSpriteDocumentCheck(const std::string &replyPath) {
 // backend at all, which is what lets a change to the renderer be reviewed on its own;
 // with it, the style record is printed so the wording of the brief can be judged
 // against the picture rather than trusted.
+// Headless validation of one blueprint file: parse it, expand it, and apply the rules the
+// registry and the designer apply -- the no-voids rule included.
+//
+// Why this exists. The engine's verdict on a design is otherwise only visible in the
+// in-game Debug Log, which is in memory and needs a window, so a rule like "every covered
+// cell must have a floor" could not be run against a file without authoring it in-game and
+// reading a panel. A test that cannot be run is a test nobody runs.
+int RunBlueprintCheck(const std::string &blueprintPath) {
+  const GameSettings &settings = Settings();
+  DebugLog log(settings.debug.logMaxEntries);
+
+  TileRegistry tiles;
+  tiles.SetDebugLog(&log);
+  tiles.LoadTiles(settings.content.tiles);
+
+  ObjectFactory objects;
+  objects.SetDebugLog(&log);
+  objects.LoadTemplates(settings.content.objects);
+
+  std::ifstream file(blueprintPath);
+  if (!file.is_open()) {
+    std::cerr << "blueprint check: could not read " << blueprintPath << "\n";
+    return 1;
+  }
+  nlohmann::json json;
+  try {
+    file >> json;
+  } catch (const std::exception &error) {
+    std::cerr << "blueprint check: " << blueprintPath << " is not JSON: "
+              << error.what() << "\n";
+    return 1;
+  }
+
+  Blueprint blueprint;
+  std::string error;
+  std::vector<std::string> warnings;
+  const std::string id = std::filesystem::path(blueprintPath).stem().string();
+  std::cout << "file:       " << blueprintPath << "\n";
+
+  if (!BlueprintRegistry::ParseBlueprint(json, id, blueprintPath, blueprint, error,
+                                         warnings)) {
+    std::cout << "parse:      REFUSED -- " << error << "\n";
+    std::cout << "RESULT:     refused\n";
+    return 1;
+  }
+  std::cout << "parse:      ok (id '" << blueprint.id << "')\n";
+  for (const std::string &warning : warnings) {
+    std::cout << "warning:    " << warning << "\n";
+  }
+
+  const BlueprintExpansion::Expansion expansion = BlueprintExpansion::Expand(blueprint);
+  size_t withTile = 0;
+  size_t withObject = 0;
+  size_t both = 0;
+  size_t carved = 0;
+  for (const BlueprintExpansion::ExpandedCell &cell : expansion.cells) {
+    if (!cell.tile.empty()) ++withTile;
+    if (!cell.object.empty()) ++withObject;
+    if (!cell.tile.empty() && !cell.object.empty()) ++both;
+    if (cell.carve) ++carved;
+  }
+
+  std::cout << "cells:      " << expansion.cells.size() << " (" << withTile
+            << " with a ground tile, " << withObject << " with an object, " << both
+            << " with both, " << carved << " carved)\n";
+
+  bool ok = true;
+  for (const std::string &message : expansion.errors) {
+    std::cout << "expand:     " << message << "\n";
+    ok = false;
+  }
+
+  // The same rule the loader enforces and the designer feeds back to the model.
+  const BlueprintExpansion::VoidReport voids = BlueprintExpansion::FindVoids(expansion);
+  if (voids.ok()) {
+    std::cout << "voids:      none\n";
+  } else {
+    std::cout << "voids:      " << voids.count << " -- " << voids.Summary() << "\n";
+    ok = false;
+  }
+
+  std::cout << "RESULT:     " << (ok ? "ok" : "refused") << "\n";
+  return ok ? 0 : 1;
+}
+
 int RunBlueprintSnapshot(const std::string &blueprintPath, const std::string &outputPath,
                          bool describe) {
   const GameSettings &settings = Settings();
@@ -793,6 +881,26 @@ int RunSpriteGrammar() {
 // the half that exists before any validator: the prompt assembly, the contract
 // substitution and the vocabulary list are all inspectable with no world and no
 // window, which is the same reason --gaps exists.
+// The text with backticked spans removed, for the placeholder scan below.
+//
+// A document is allowed to *mention* a token in prose (`... where it says %CONTRACT%
+// ...`) and a mention is not a substitution failure; without this a document that
+// explains its own assembly would report itself as broken. Matched by position, so a
+// stray backtick in the document's own text cannot shift the scan out of alignment.
+std::string WithoutBacktickedSpans(const std::string &text) {
+  std::string scan;
+  scan.reserve(text.size());
+  bool inSpan = false;
+  for (const char c : text) {
+    if (c == '`') {
+      inSpan = !inSpan;
+      continue;
+    }
+    if (!inSpan) scan += c;
+  }
+  return scan;
+}
+
 int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
                     const std::string &shapeName) {
   const GameSettings &settings = Settings();
@@ -815,7 +923,7 @@ int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
     for (const std::string &line : legend) {
       vocabulary.glyphs += line + "\n";
     }
-    promptFile = settings.content.tileDesignerPromptFile;
+    promptFile = settings.content.tilePromptFile;
 
     std::cout << "catalog:    " << tiles.Count() << " tile(s) (" << generated
               << " from the generated overlay)\n";
@@ -827,7 +935,7 @@ int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
     ObjectFactory objects;
     objects.SetDebugLog(&log);
     vocabulary.body = ObjectDesigner::ComponentVocabulary(objects);
-    promptFile = settings.content.objectDesignerPromptFile;
+    promptFile = settings.content.objectPromptFile;
 
     std::cout << "components: " << objects.ComponentNames().size() << " registered\n";
   }
@@ -858,22 +966,7 @@ int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
   // The substitutions that must not silently fail. A prompt still containing a
   // placeholder has shipped a literal token to the model, which is the failure mode of
   // every template system and is invisible from "it built".
-  //
-  // The scan strips backticked spans first, because a document is allowed to *mention*
-  // a token in prose (`... where it says %CONTRACT% ...`) and a mention is not a
-  // substitution failure. Without that, a document that explains its own assembly
-  // would report itself as broken. Matched by position so a stray backtick in the
-  // document's own text cannot shift the scan out of alignment.
-  std::string scan;
-  scan.reserve(prompt.size());
-  bool inSpan = false;
-  for (const char c : prompt) {
-    if (c == '`') {
-      inSpan = !inSpan;
-      continue;
-    }
-    if (!inSpan) scan += c;
-  }
+  const std::string scan = WithoutBacktickedSpans(prompt);
 
   int unsubstituted = 0;
   for (const char *placeholder : {"%CONTRACT%", "%GLYPHS%", "%VOCAB%", "%TILES%"}) {
@@ -884,6 +977,76 @@ int RunSpritePrompt(const SpriteKinds::Descriptor &kind,
     std::cout << "  UNSUBSTITUTED: " << placeholder << "\n";
     ++unsubstituted;
   }
+  std::cout << "----\n" << prompt;
+  if (prompt.empty() || prompt.back() != '\n') std::cout << "\n";
+  return unsubstituted == 0 ? 0 : 1;
+}
+
+// One prompt-inspection mode for all three domains.
+//
+// `--sprite-prompt` still exists and still means what it always meant (tile or object),
+// but a building is not a sprite and there was no way to see its prompt without reading
+// a self-test log. This dispatches through the same table the window and the router use,
+// so a domain added there is inspectable here without a second flag.
+int RunDesignerPrompt(const std::string &domainId, const std::string &shapeName) {
+  const DesignerDomains::Descriptor *domain = DesignerDomains::Parse(domainId);
+  if (domain == nullptr) {
+    std::cerr << "designer prompt: unknown domain '" << domainId << "'. Known domains:";
+    for (const DesignerDomains::Descriptor &candidate : DesignerDomains::All()) {
+      std::cerr << " " << candidate.id;
+    }
+    std::cerr << "\n";
+    return 1;
+  }
+
+  if (DesignerDomains::IsSprite(domain->domain)) {
+    return RunSpritePrompt(*domain->sprite, shapeName);
+  }
+
+  if (!shapeName.empty()) {
+    std::cerr << "designer prompt: a building has no shape, so there is no '"
+              << shapeName << "' prompt\n";
+    return 1;
+  }
+
+  const GameSettings &settings = Settings();
+  DebugLog log(settings.debug.logMaxEntries);
+
+  // The live world, loaded exactly as Game::ECSInit loads it, so the palette the model
+  // is shown is the palette the world has -- generated overlay included.
+  TileRegistry tiles;
+  tiles.SetDebugLog(&log);
+  tiles.LoadTiles(settings.content.tiles);
+  const size_t generated = TileDesigner::LoadOverlayDirectory(
+      settings.content.generatedTiles, tiles, &log);
+
+  // The catalog and then the generated overlay, exactly as ObjectFactory is fed in
+  // Game::ECSInit. Skipping this is not a cosmetic gap: the palette is the list of
+  // materials a design may name, so a CLI that forgot the templates printed a prompt
+  // whose object list was empty while the window offered every object in the world.
+  ObjectFactory objects;
+  objects.SetDebugLog(&log);
+  objects.LoadTemplates(settings.content.objects);
+  const size_t generatedObjects = ObjectDesigner::LoadOverlayDirectory(
+      settings.content.generatedObjects, objects, &log);
+
+  const std::string prompt = BlueprintPrompt::Build(settings.designer.promptFile, tiles,
+                                                    objects, &log);
+
+  std::cout << "domain:     " << domain->id << " (" << domain->label << ")\n";
+  std::cout << "prompt:     " << settings.designer.promptFile << "\n";
+  std::cout << "palette:    " << tiles.Count() << " tile(s) (" << generated
+            << " from the generated overlay), " << objects.GetTemplates().size()
+            << " object(s) (" << generatedObjects << " from the generated overlay)\n";
+  std::cout << "result:     " << prompt.size() << " byte(s)\n";
+
+  int unsubstituted = 0;
+  if (WithoutBacktickedSpans(prompt).find(BlueprintPrompt::kMaterialsPlaceholder) !=
+      std::string::npos) {
+    std::cout << "  UNSUBSTITUTED: " << BlueprintPrompt::kMaterialsPlaceholder << "\n";
+    ++unsubstituted;
+  }
+
   std::cout << "----\n" << prompt;
   if (prompt.empty() || prompt.back() != '\n') std::cout << "\n";
   return unsubstituted == 0 ? 0 : 1;
@@ -1597,14 +1760,14 @@ int RunTileArtQueueTest(Game &game, const std::string &tileName, int holdFrames)
   return 0;
 }
 
-// The most recently written tile designer log, or empty when there is none.
+// The most recently written designer log, or empty when there is none.
 //
-// Used only by --tile-designer-logtest, to print the path it produced. The window
+// Used only by the designer self-tests, to print the path they produced. The window
 // names its log after the time the conversation started, which is deliberately not
 // knowable before the run -- so the test asks the filesystem afterwards rather than
 // predicting the name.
-std::string NewestTileDesignerLog() {
-  const std::filesystem::path directory = LogPaths::Subdir("tile-designer");
+std::string NewestDesignerLog() {
+  const std::filesystem::path directory = LogPaths::Subdir("designer");
   std::error_code ec;
   if (!std::filesystem::is_directory(directory, ec)) return {};
 
@@ -1657,18 +1820,23 @@ int main(int argc, char *argv[]) {
   //   AIRogue --tile-art <name> --tile-art-dsl
   //                                  -> compile its .sprite document, place it,
   //                                     and report the same two contracts
+  //   AIRogue --blueprint-check <file>                   -> parse, expand and apply
+  //                                                         the no-voids rule to one
+  //                                                         design, with no window
   //   AIRogue --tile-art <name>      -> report where a tile's art would go
   //   AIRogue --tile-art <name> --tile-art-sprite <png>  -> place and verify it
   //   AIRogue --tile-art <name> --tile-art-selftest      -> prove the in-world swap
   //   AIRogue --tile-art <name> --tile-art-queue         -> prove the live queue
   //   AIRogue --tile-art <name> --tile-art-queue --tile-art-hold <n>
   //                                       -> then draw the window for n frames
-  //   AIRogue --tile-designer-logtest                    -> write one designer log
+  //   AIRogue --designer-logtest                    -> write one designer log
   //                                                         and exit (no backend)
   //   AIRogue --sprite-designer-objecttest               -> the same conversation
   //                                                         designing an object
   //   AIRogue --sprite-designer-settest                  -> the same conversation
   //                                                         asking for a set
+  //   AIRogue --designer-bluetest                        -> the same conversation
+  //                                                         designing a building
   //   AIRogue --tile-art-split <n>                       -> n sprites become
   //                                                         ceil(n/cap) requests
   //   AIRogue --object-art-swap <key>                    -> a spawned object picks up a
@@ -1694,6 +1862,7 @@ int main(int argc, char *argv[]) {
   std::string spriteDesignKind;
   std::string spriteDesignPath;
   std::string spritePromptKind;
+  std::string designerPromptDomain;
   std::string spritePromptShape;
   std::string spriteRouteText;
   std::string spriteDesignOverlay;
@@ -1712,14 +1881,17 @@ int main(int argc, char *argv[]) {
   bool tileArtSelfTest = false;
   bool tileArtDsl = false;
   bool tileArtQueueTest = false;
-  bool tileDesignerLogTest = false;
-  bool tileDesignerArtTest = false;
+  bool designerLogTest = false;
+  bool designerArtTest = false;
   bool spriteDesignerObjectTest = false;
   bool spriteDesignerSetTest = false;
+  bool designerBlueprintTest = false;
   std::string objectArtSwapKey;
   bool artCacheTest = false;
   std::string objectCheckKey;
   bool combatCheck = false;
+  std::string blueprintCheckPath;
+  std::string contentOverrideTestTile;
   std::string drawProbeKey;
   int tileArtSplitCount = 0;
   bool paintMemoTest = false;
@@ -1758,6 +1930,10 @@ int main(int argc, char *argv[]) {
       // rather than a second mode, because the prompt dump exists to show what the model
       // would be told and the shape is part of that.
       spritePromptShape = argv[++i];
+    } else if (arg == "--designer-prompt" && i + 1 < argc) {
+      // The domain-aware form. Prints the system prompt the window would send, with no
+      // backend and no window: the cheapest way to check a prompt document.
+      designerPromptDomain = argv[++i];
     } else if (arg == "--sprite-prompt" && i + 1 < argc) {
       // Prints the built system prompt for a kind and exits. No world, no window, no
       // cost -- the verification for the half of the feature that exists before any
@@ -1817,10 +1993,10 @@ int main(int argc, char *argv[]) {
       rewriteText = argv[++i];
     } else if (arg == "--rewrite-brief" && i + 1 < argc) {
       rewriteBrief = argv[++i];
-    } else if (arg == "--tile-designer-logtest") {
+    } else if (arg == "--designer-logtest") {
       // Needs a Game (the window reports through it), so it runs Init and exits
       // rather than being a pre-window mode like --tile-design.
-      tileDesignerLogTest = true;
+      designerLogTest = true;
     } else if (arg == "--sprite-designer-settest") {
       // The canned conversation asking for a *set* of objects, with one entry deliberately
       // broken, so the per-entry verdicts are exercised end to end through the window.
@@ -1829,20 +2005,27 @@ int main(int argc, char *argv[]) {
       // whose input does not match its kind tests the refusal path instead of the accept
       // path -- which is exactly what the first version of this did: every entry was refused
       // for having a "components" field the *tile* validator does not know.
-      tileDesignerLogTest = true;
+      designerLogTest = true;
       spriteDesignerSetTest = true;
       spriteDesignerObjectTest = true;
+    } else if (arg == "--designer-bluetest") {
+      // The same canned conversation as the sprite tests, but designing a *building*:
+      // it exercises the blueprint half of the window's inspection path -- the parse,
+      // the expansion, the save and the preview -- which is otherwise reachable only by
+      // a live model and a person at a keyboard. Needs a Game and a window, and exits.
+      designerLogTest = true;
+      designerBlueprintTest = true;
     } else if (arg == "--sprite-designer-objecttest") {
-      // The same canned conversation as --tile-designer-logtest, but designing an
+      // The same canned conversation as --designer-logtest, but designing an
       // *object*: it exercises the object half of the window's inspection path, which is
       // otherwise reachable only by a live model and a person at a keyboard. Needs a Game
       // and a window, and exits.
-      tileDesignerLogTest = true;
+      designerLogTest = true;
       spriteDesignerObjectTest = true;
-    } else if (arg == "--tile-designer-arttest") {
+    } else if (arg == "--designer-arttest") {
       // The same canned conversation with the automatic art request on. Also needs
       // a Game, and also exits.
-      tileDesignerArtTest = true;
+      designerArtTest = true;
     } else if (arg == "--tile-art-split" && i + 1 < argc) {
       // Queue N sprites and check the per-request cap splits them. Needs a world and a
       // generation command (a stub is fine and free), and exits.
@@ -1851,6 +2034,15 @@ int main(int argc, char *argv[]) {
       // Proves a spawned object picks up a newly generated sprite without a reload. Needs a
       // world (it spawns an entity), and exits.
       objectArtSwapKey = argv[++i];
+    } else if (arg == "--content-override-test" && i + 1 < argc) {
+      // Round-trips one override: write it through the Content Editor's own writer into a
+      // temporary override directory, let ECSInit's loader apply it, then ask the live
+      // registry what it holds. The intended tile must be one that does NOT block
+      // movement in the shipped content.
+      contentOverrideTestTile = argv[++i];
+    } else if (arg == "--blueprint-check" && i + 1 < argc) {
+      // Validates one design file headlessly: parse, expand, no-voids. Free and instant.
+      blueprintCheckPath = argv[++i];
     } else if (arg == "--object-check" && i + 1 < argc) {
       // Asks the *running game's* factory whether a key resolved. Needs a world, because
       // the point is to check the load path Game::ECSInit actually runs rather than a
@@ -1961,6 +2153,10 @@ int main(int argc, char *argv[]) {
     }
     return RunSpriteDesign(*kind, spriteDesignPath, spriteDesignOverlay);
   }
+  if (!designerPromptDomain.empty()) {
+    return RunDesignerPrompt(designerPromptDomain, spritePromptShape);
+  }
+
   if (!spritePromptKind.empty()) {
     const SpriteKinds::Descriptor *kind = SpriteKinds::Parse(spritePromptKind);
     if (kind == nullptr) {
@@ -1993,6 +2189,10 @@ int main(int argc, char *argv[]) {
   // A blueprint rendered to a crop, and the art around its gaps read into a brief.
   // Before the window: the renderer is CPU-only and the describer is one HTTP call, so
   // neither needs a display.
+  if (!blueprintCheckPath.empty()) {
+    return RunBlueprintCheck(blueprintCheckPath);
+  }
+
   if (!blueprintSnapshotPath.empty()) {
     return RunBlueprintSnapshot(blueprintSnapshotPath, blueprintSnapshotOut,
                                 blueprintSnapshotDescribe);
@@ -2007,14 +2207,48 @@ int main(int argc, char *argv[]) {
     return RunTileArt(tileArtName, tileArtSource, tileArtPalette);
   }
 
+  // The override round-trip's first half: point the editor layer at a temporary directory
+  // and write an override through the production writer. Init's loader is then the thing
+  // that reads it back, which is the half that was never exercised.
+  std::filesystem::path contentOverrideRoot;
+  if (!contentOverrideTestTile.empty()) {
+    contentOverrideRoot =
+        std::filesystem::temp_directory_path() / "airouge-override-test";
+    std::error_code cleanupEc;
+    std::filesystem::remove_all(contentOverrideRoot, cleanupEc);
+    MutableSettings().content.editor = contentOverrideRoot.string();
+
+    const ContentKinds::Kind *tiles = ContentKinds::For("tiles");
+    if (tiles == nullptr) {
+      std::cerr << "override test: the tiles kind is not registered\n";
+      return 1;
+    }
+    nlohmann::json document = nlohmann::json::object();
+    document["name"] = contentOverrideTestTile;
+    // The flip the test looks for. A glyph is given so the definition is a normal one
+    // rather than a special case the parser treats differently.
+    document["blocksTile"] = true;
+    document["character"] = "@";
+    std::string path;
+    std::string error;
+    if (!ContentKinds::WriteOverrideFile(*tiles, contentOverrideRoot.string(), document,
+                                         &path, &error)) {
+      std::cerr << "override test: could not write the override: " << error << "\n";
+      return 1;
+    }
+    std::cout << "override:   wrote " << path << "\n";
+  }
+
   Game game;
-  game.tileDesignerLogSelfTest = tileDesignerLogTest || tileDesignerArtTest;
-  game.tileDesignerArtSelfTest = tileDesignerArtTest;
-  // Which kind the canned conversation designs. Set before Init, because the window (and
-  // its first system prompt) is constructed inside ECSInit.
-  game.tileDesignerSelfTestKind = spriteDesignerObjectTest ? SpriteKinds::Kind::Object
-                                                          : SpriteKinds::Kind::Tile;
-  game.tileDesignerSelfTestSet = spriteDesignerSetTest;
+  game.designerLogSelfTest = designerLogTest || designerArtTest;
+  game.designerArtSelfTest = designerArtTest;
+  // Which domain the canned conversation designs. Set before Init, because the window
+  // (and its first system prompt) is constructed inside ECSInit.
+  game.designerSelfTestDomain =
+      designerBlueprintTest    ? DesignerDomains::Domain::Blueprint
+      : spriteDesignerObjectTest ? DesignerDomains::Domain::Object
+                                 : DesignerDomains::Domain::Tile;
+  game.designerSelfTestSet = spriteDesignerSetTest;
   game.Init();
 
   // One real exchange through the whole combat path: target, range, damage fold,
@@ -2026,18 +2260,33 @@ int main(int argc, char *argv[]) {
     return code;
   }
 
+  if (!contentOverrideTestTile.empty()) {
+    // The second half: the loader has run, so ask the registry rather than the file.
+    const bool blocks = game.TileBlocksMovement(contentOverrideTestTile);
+    std::error_code cleanupEc;
+    std::filesystem::remove_all(contentOverrideRoot, cleanupEc);
+    std::cout << "tile:       " << contentOverrideTestTile << " blocksTile="
+              << (blocks ? "true" : "false") << " (the override sets true)\n";
+    std::cout << "cleanup:    removed " << contentOverrideRoot.string() << "\n";
+    std::cout << (blocks ? "RESULT:     PASS -- the override reached the live registry\n"
+                         : "RESULT:     FAIL -- the override did not apply\n");
+    game.Shutdown();
+    return blocks ? 0 : 1;
+  }
+
   // Writes one complete designer log (header, system prompt, request, reply,
   // verdict) with no backend, then exits. Exists because the log is the only record
   // of a conversation and a log you cannot verify by making it is not verified.
   //
-  // `--tile-designer-arttest` runs the same conversation with the automatic art
+  // `--designer-arttest` runs the same conversation with the automatic art
   // request switched on, so the accept-then-request path is covered too: with
   // generation off it must report a refusal, and with a stub command configured it
   // must land in the queue.
-  if (tileDesignerLogTest || tileDesignerArtTest) {
-    const size_t inspected = game.RunTileDesignerLogSelfTest();
-    const std::string newest = NewestTileDesignerLog();
-    std::cout << (tileDesignerArtTest   ? "art test: "
+  if (designerLogTest || designerArtTest) {
+    const size_t inspected = game.RunDesignerLogSelfTest();
+    const std::string newest = NewestDesignerLog();
+    std::cout << (designerArtTest      ? "art test: "
+                  : designerBlueprintTest  ? "blueprint test: "
                   : spriteDesignerObjectTest ? "object test: "
                   : spriteDesignerSetTest    ? "set test: "
                                              : "log test: ")

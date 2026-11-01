@@ -87,7 +87,7 @@ Verdict Parse(const std::vector<SystemOne::Answer> &answers, float minConfidence
     // necessarily one of ours. `Parse` returns null for a key this build does not know,
     // which is a state the caller resolves; a `static_cast` would turn an unknown key into
     // an arbitrary kind.
-    verdict.kind = SpriteKinds::Parse(answer->choice);
+    verdict.domain = DesignerDomains::Parse(answer->choice);
     verdict.kindConfidence = answer->confidence;
     if (!answer->choice.empty()) {
       why.push_back("kind=" + answer->choice +
@@ -95,7 +95,7 @@ Verdict Parse(const std::vector<SystemOne::Answer> &answers, float minConfidence
                          ? " (confidence " + std::to_string(answer->confidence) + ")"
                          : std::string(" (no confidence reported)")));
     }
-    if (verdict.kind == nullptr && !answer->choice.empty()) {
+    if (verdict.domain == nullptr && !answer->choice.empty()) {
       // Not an error the caller has to fix by editing the classifier: the model named a key
       // from a newer build, or something that is not one of ours at all. Reported so the
       // dropdown can say "the classifier said 'item', which this build does not have".
@@ -131,10 +131,20 @@ Verdict Parse(const std::vector<SystemOne::Answer> &answers, float minConfidence
                        : std::string(" (no confidence reported)")));
   }
 
-  // A single sprite is one sprite whatever the size question said, so that answer is only
-  // read for a set. This is also why the two questions are asked rather than inferred from
-  // each other: "a set of one" is not a shape anyone means.
-  if (!verdict.sheet) {
+  // A building has no shape and no size: one reply is one blueprint, and the questions
+  // were written for sprites. The answers are cleared rather than left for a caller to
+  // ignore, because "shape answered, single" would make a building request look like it
+  // had asked for one sprite.
+  if (verdict.domain != nullptr &&
+      !DesignerDomains::IsSprite(verdict.domain->domain)) {
+    verdict.shapeAnswered = false;
+    verdict.sheet = false;
+    verdict.requested = 1;
+    verdict.sizeClass.clear();
+  } else if (!verdict.sheet) {
+    // A single sprite is one sprite whatever the size question said, so that answer is
+    // only read for a set. This is also why the two questions are asked rather than
+    // inferred from each other: "a set of one" is not a shape anyone means.
     verdict.requested = 1;
     verdict.sizeClass.clear();
   } else {
@@ -149,7 +159,7 @@ Verdict Parse(const std::vector<SystemOne::Answer> &answers, float minConfidence
   // on: shape and size are refinements, and a certain kind with a doubtful size is still
   // worth using. Choice answers carry no confidence at all on some backends, in which case
   // the value is 0 and this never fires -- which is why the threshold defaults to 0.
-  if (minConfidence > 0.0f && verdict.kind != nullptr &&
+  if (minConfidence > 0.0f && verdict.domain != nullptr &&
       verdict.kindConfidence < minConfidence) {
     verdict.unsure = true;
     why.push_back("confidence " + std::to_string(verdict.kindConfidence) +
@@ -170,7 +180,7 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
   // `state` is the engine's own description of the situation, never chat history. The
   // request text is quoted rather than embedded, so a request containing a line that looks
   // like a label cannot be mistaken for one.
-  std::string state = "A person has asked the sprite designer for the following:\n\n" +
+  std::string state = "A person has asked a designer agent for the following:\n\n" +
                       text + "\n";
   if (!context.objectVocabulary.empty()) {
     state += "\nThe object capabilities this engine has are: " + context.objectVocabulary +
@@ -180,6 +190,12 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
              "water, a path. \"It stores things\" makes something an object even though a\n"
              "crate is also furniture.\n";
   }
+  state +=
+      "\nA building is a whole structure someone can walk into: its floors and walls, its\n"
+      "doors and windows, and the furniture inside it, described as one blueprint. A\n"
+      "building is made *of* tiles and objects -- it is not either of them, and a request\n"
+      "that names a room or a kind of building is a building even when it mentions the\n"
+      "furniture it should contain.\n";
   state += "\nAnswer about the request itself, not about what you would design.";
 
   std::vector<SystemOne::Option> questions;
@@ -187,20 +203,28 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
   SystemOne::Option kind;
   kind.id = kKindQuestion;
   kind.type = SystemOne::OptionType::Choice;
-  kind.instructions = "Is this request for one or more tiles, or one or more objects?";
-  // The keys are the engine's, not the model's: they are what `SpriteKinds::Parse` matches,
-  // and the protocol lets the caller name them precisely so a reply does not depend on the
-  // model spelling anything a particular way.
-  kind.options = {{"tile", "ground only: a floor, path, grass, water or other square of terrain"},
-                  {"object", "a thing with a capability: a wall, door, usable, carryable, "
-                             "openable, harvestable, craftable or growing"}};
+  kind.instructions =
+      "Is this request for a whole building, one or more tiles, or one or more objects?";
+  // The keys are the engine's, not the model's: they are what `DesignerDomains::Parse`
+  // matches, and the protocol lets the caller name them precisely so a reply does not
+  // depend on the model spelling anything a particular way.
+  kind.options = {
+      {"building", "a whole structure to walk into: a house, a workshop, a prison block, "
+                   "a room's worth of walls and furniture, described as one blueprint"},
+      {"tile", "ground only: a floor, path, grass, water or other square of terrain"},
+      {"object", "a thing with a capability: a wall, door, usable, carryable, "
+                 "openable, harvestable, craftable or growing"}};
   questions.push_back(std::move(kind));
 
   SystemOne::Option shape;
   shape.id = kShapeQuestion;
   shape.type = SystemOne::OptionType::Choice;
+  // A building is always one blueprint, so the shape question is still asked (one
+  // request, one protocol round trip) and its answer is discarded for a building by
+  // `Parse`.
   shape.instructions =
-      "Does the request describe a single sprite, or a set of several?";
+      "Does the request describe a single sprite, or a set of several? A building is "
+      "always one blueprint -- answer single for one.";
   shape.options = {
       {"single", "one thing, named or described as one"},
       {"set", "several things: a themed group, a room's contents, a family of variants"}};
@@ -327,7 +351,7 @@ int RunRouteTest(const std::string &text) {
   }
   std::cout << "verdict:\n";
   std::cout << "  kind:     "
-            << (verdict.kind != nullptr ? verdict.kind->id : std::string("(unanswered)"))
+            << (verdict.domain != nullptr ? verdict.domain->id : std::string("(unanswered)"))
             << "  confidence " << verdict.kindConfidence << "\n";
   std::cout << "  shape:    "
             << (verdict.shapeAnswered ? (verdict.sheet ? "set" : "single")
@@ -350,7 +374,7 @@ int RunRouteTest(const std::string &text) {
               << " confidence=" << raw.confidence << "\n";
   }
 
-  if (verdict.kind == nullptr) {
+  if (verdict.domain == nullptr) {
     std::cout << "RESULT:     no kind, so the caller resolves it (the window keeps its "
                  "current mode)\n";
     return 1;
@@ -360,11 +384,11 @@ int RunRouteTest(const std::string &text) {
     // game does with it: below the active profile's threshold the window keeps the mode
     // it was already in. A harness that printed the verdict here would make an ignored
     // answer look like an applied one.
-    std::cout << "RESULT:     unsure (" << verdict.kind->id
+    std::cout << "RESULT:     unsure (" << verdict.domain->id
               << " below the threshold), so the caller keeps its current mode\n";
     return 0;
   }
-  std::cout << "RESULT:     " << verdict.kind->id << ", "
+  std::cout << "RESULT:     " << verdict.domain->id << ", "
             << (verdict.sheet ? (verdict.sizeClass.empty()
                                      ? std::string("a set (size unanswered)")
                                      : "a " + verdict.sizeClass + " set (~" +
