@@ -79,6 +79,17 @@ bool AttachSprite(flecs::entity entity, const std::string &explicitPath,
 // Empty for an empty `conventionId`. See GameSettings::ArtSection for the roots.
 std::vector<std::string> SpriteCandidatePaths(const std::string &conventionId);
 
+// The Content Editor's "use this generated sprite" marker and the pack's own sprite.
+//
+// An empty marker path means there is no generated layer to prefer. Preferring a
+// generated sprite is per asset on purpose: the pack-wins rule is what keeps a generated
+// image from silently shadowing hand-authored art, and one asset at a time is the
+// smallest change that still lets a person say "no, this one".
+std::string GeneratedSpriteMarkerPath(const std::string &conventionId);
+bool PrefersGeneratedSprite(const std::string &conventionId);
+// The art pack's sprite for this id, or empty when the pack has none.
+std::string ArtPackSpritePath(const std::string &conventionId);
+
 // The sprite DSL document for a convention id, looked for in the same roots, in
 // the same order, as the PNG: the art pack first, then the generated layer (and
 // `data/sprites/` when no pack is configured).

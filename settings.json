@@ -1,18 +1,15 @@
 {
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
-
   "map": {
-    "file": "./maps/Map_Village_Quest.json",
+    "file": "./maps/Place_Test.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
-
   "art": {
     "generation": {
       "source": "dsl"
     }
   },
-
   "model": {
     "type": "openrouter",
     "model": "deepseek/deepseek-v4-flash",
@@ -31,7 +28,6 @@
       "require_parameters": true
     }
   },
-
   "ai": {
     "npcPromptFile": "",
     "memoryDigest": true,
@@ -42,14 +38,12 @@
     "memoryDigestMaxTokens": 1200,
     "memorySalience": false
   },
-
   "vision": {
     "enabled": true,
     "model": "qwen2.5vl",
     "endpoint": "http://localhost:11434/api/generate",
     "keepAlive": "30m"
   },
-
   "designer": {
     "maxTokens": 3000,
     "tts": {
@@ -58,9 +52,21 @@
       "voice": "models/tts/en_GB-alba-medium.onnx",
       "volume": 1.0,
       "content": "notes"
+    },
+    "useMainModel": false,
+    "model": {
+      "type": "openrouter",
+      "model": "google/gemini-3.8-flash"
+    },
+    "rewriter": {
+      "enabled": true,
+      "disableReasoning": true,
+      "model": {
+        "type": "openrouter",
+        "model": "google/gemini-3.8-flash"
+      }
     }
   },
-
   "navigation": {
     "agent": "single",
     "single": {
@@ -89,11 +95,9 @@
       "maxGroupDetails": 8
     }
   },
-
   "regions": {
-      "farRadius": 48
+    "farRadius": 48
   },
-
   "system1": {
     "useMainModel": true,
     "disableReasoning": true,
@@ -118,25 +122,21 @@
     "targetFPS": 60,
     "monitor": -1
   },
-
   "render": {
     "fontPath": "./fonts/oldschool/otb - Bm (linux bitmap)/BmPlus_IBM_CGA.otb",
     "fontSize": 32,
     "cameraMode": "follow",
     "cameraZoom": 0.0
   },
-
   "player": {
     "name": "playerCharacter",
     "startX": 12,
     "startY": 48,
     "race": ""
   },
-
   "world": {
     "seed": 0
   },
-
   "content": {
     "objects": "data/objects",
     "recipes": "data/recipes",
@@ -145,7 +145,6 @@
     "items": "data/items",
     "races": "data/races"
   },
-
   "debug": {
     "windowStateFile": "./debug_windows_state.json",
     "restServer": true,

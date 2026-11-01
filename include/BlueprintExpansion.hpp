@@ -75,4 +75,29 @@ struct Expansion {
 
 Expansion Expand(const Blueprint &blueprint);
 
+// Cells a part covered and left with no ground under them.
+//
+// The rule: every cell a part touches must end up with a tile. A `place` on a cell
+// nobody painted leaves an object standing on nothing, and a `carve` on an unpainted cell
+// leaves a hole -- and a hole is not cosmetic: the placed building shows the map's own
+// ground in the middle of a room, so the room reads as a patchwork of two different
+// floors.
+//
+// Reported rather than thrown so the loader can refuse a design on disk and the designer
+// can hand the same sentence back to the model, which is the only way it learns.
+struct VoidReport {
+  size_t count = 0;
+  // One sentence per offending cell, up to the limit the caller asked for.
+  std::vector<std::string> messages;
+
+  bool ok() const { return count == 0; }
+
+  // The cells named, the rule, and how to fix it -- one sentence, ready to log or to use
+  // as a refusal reason. Kept here rather than spelled out at each call site so the
+  // loader and the designer cannot tell a model two different things.
+  std::string Summary() const;
+};
+
+VoidReport FindVoids(const Expansion &expansion, size_t limit = 8);
+
 }  // namespace BlueprintExpansion

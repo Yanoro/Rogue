@@ -300,7 +300,7 @@ public:
             // Objects expose their verbs through InteractionTarget so a
             // follow-up [STORE] / [HARVEST] resolves against this target.
             // Characters are talked to, so they are deliberately excluded.
-            if (targetEntity.is_alive() && !targetEntity.has<CharacterTag>()) {
+            if (targetEntity.is_alive() && !targetEntity.has<Actor>()) {
               entity.set<InteractionTarget>({targetEntity});
             }
             return ActionStatus::Done;
@@ -322,7 +322,7 @@ public:
           std::string message =
               "System: You have arrived next to " + targetName + ".\n";
 
-          if (!targetEntity.is_alive() || targetEntity.has<CharacterTag>()) {
+          if (!targetEntity.is_alive() || targetEntity.has<Actor>()) {
             return message;
           }
 
@@ -3407,12 +3407,12 @@ public:
 
         ActionStatus update(float, flecs::entity entity) override {
           std::string characterNames;
-          auto name_filter = entity.world().filter<DisplayName, CharacterTag>();
+          auto name_filter = entity.world().filter<DisplayName, Actor>();
           
           const DisplayName* myNameComp = entity.get<DisplayName>();
           std::string myName = myNameComp ? myNameComp->name : "";
 
-          name_filter.each([&characterNames, &myName](const DisplayName &displayName, const CharacterTag &) {
+          name_filter.each([&characterNames, &myName](const DisplayName &displayName, const Actor &) {
             if (!displayName.name.empty() && displayName.name != myName) {
               characterNames += displayName.name + ", ";
             }

@@ -409,7 +409,8 @@ std::string ObjectFactory::KeyFor(const nlohmann::json& definition) {
 
 ObjectFactory::RuntimeAddResult ObjectFactory::AddRuntime(
     const nlohmann::json& definition, const std::string& source,
-    bool replaceExisting, bool requireAtLeastOneComponent) {
+    bool replaceExisting, bool requireAtLeastOneComponent,
+    bool allowCatalogReplace) {
   RuntimeAddResult result;
 
   if (!definition.is_object()) {
@@ -426,7 +427,7 @@ ObjectFactory::RuntimeAddResult ObjectFactory::AddRuntime(
 
   const bool isLoaded = templates.find(result.key) != templates.end() &&
                         runtimeKeys.find(result.key) == runtimeKeys.end();
-  if (isLoaded) {
+  if (isLoaded && !allowCatalogReplace) {
     // The hand-authored catalog is read-only to a designer. The refusal names the key
     // because that is what the caller has to change.
     result.error = "the key '" + result.key +

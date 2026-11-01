@@ -39,7 +39,7 @@ private:
 
   // Borrowed. Game owns it for the whole run, so it outlives every window
   // instance; a null pointer is supported and reported rather than crashing,
-  // matching the DesignerChatWindow convention for a missing backend.
+  // matching the designer window's convention for a missing backend.
   SystemOne::SystemOneRecorder *recorder = nullptr;
 
   // View state, deliberately not persisted: this is a debugging view, and a

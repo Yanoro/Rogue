@@ -23,11 +23,13 @@
 #include "BlueprintRegistry.h"
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
+#include "ActorSpriteRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "SpriteGapOffer.hpp"
+#include "DesignerDomains.h"
 #include "SpriteKinds.hpp"
 #include "TileArtQueue.hpp"
 #include "SpeechQueue.h"
@@ -155,16 +157,6 @@ public:
   // that does not exist and every design is refused.
   std::string BuildDesignerSystemPrompt() const;
 
-  // The tile designer's system prompt: settings.content.tileDesignerPromptFile
-  // (data/tiles/TILEDESIGNER.md by default) with the glyph table and the tile
-  // list substituted for %GLYPHS% and %TILES%.
-  //
-  // Generated rather than written into the prompt file for the same reason the
-  // material palette is: the glyph table has to match the live catalog, and a
-  // hand-written one drifts the moment a tile is created -- which then has an
-  // agent pick a glyph that is already in use, or a name that is already taken.
-  std::string BuildTileDesignerSystemPrompt() const;
-
   // The same prompt for an arbitrary sprite kind: the tile catalog's glyphs and names
   // for a tile, the object factory's capabilities for an object.
   //
@@ -175,6 +167,20 @@ public:
   std::string BuildSpriteSystemPrompt(
       SpriteKinds::Kind kind,
       bool set = false) const;
+
+  // The one seam a window uses: the system prompt for whatever it is designing.
+  //
+  // A building and a sprite are different questions asked of different documents, and
+  // this is the only place that difference is dispatched on. A window that held the
+  // branch instead would be a second place for "which prompt does a building use" to be
+  // answered, and the headless modes and the window would eventually disagree.
+  std::string BuildDesignerPrompt(DesignerDomains::Domain domain,
+                                  bool set = false) const;
+
+  // The instruction document for a domain, resolved from the live settings with the
+  // descriptor's default as the fallback. Used by the session header, which records the
+  // file the model was actually given rather than the one compiled in.
+  std::string DesignerPromptFile(DesignerDomains::Domain domain) const;
 
   // Whether an object template is loaded in the *running game's* factory, and whether it
   // came from the generated overlay or from the hand-authored catalog.
@@ -224,6 +230,9 @@ private:
   SkillRegistry skillRegistry;
   ItemRegistry itemRegistry;
   RaceRegistry raceRegistry;
+  // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
+  // what marks an entity as living; this holds appearance only.
+  ActorSpriteRegistry actorSpriteRegistry;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;
@@ -402,15 +411,24 @@ private:
   // on one returns no answer at all (see Settings.h: RewriterSection). Null when no
   // backend could be built, which the windows report rather than crash on.
   std::unique_ptr<AI> rewriterAI;
-  std::shared_ptr<class DesignerChatWindow> designerWindow;
+
+  // The one designer window: buildings, tiles and objects in a single conversation.
+  //
+  // The class is still called DesignerWindow because the design doc's decision 6 is
+  // "no full rename" and every settings key, log path and CLI flag that says "tile
+  // designer" is still that name. What changed is the window's scope, not its identity.
+  //
+  // Created once and kept so the conversation survives a toggle, borrowing
+  // `designerAI` with its own provider context. It owns no backend of its own -- see
+  // the comment where it is constructed in Game::ECSInit.
+  std::shared_ptr<class DesignerWindow> designerWindow;
   flecs::entity designerWindowEntity;
 
-  // The tile designer's window. Same lifetime rules as the pair above: created
-  // once and kept so a tile conversation survives a toggle, borrowing
-  // `designerAI` with its own provider context. It owns no backend of its own --
-  // see the comment where it is constructed in Game::ECSInit.
-  std::shared_ptr<class TileDesignerWindow> tileDesignerWindow;
-  flecs::entity tileDesignerWindowEntity;
+  // The Content Editor: one window over the data registries (see ContentKinds). Kept
+  // like the designer, because it holds a working copy of a document and the selection
+  // the user was looking at -- rebuilding it on every toggle would throw both away.
+  std::shared_ptr<class ContentEditorWindow> contentEditorWindow;
+  flecs::entity contentEditorWindowEntity;
 
   // The one gap-to-sprite request in flight (see SpriteGapOffer.hpp). Null when nothing
   // is being designed; replaced rather than queued when a second gap is offered, because
@@ -430,24 +448,24 @@ private:
   // Set once at Init. Not read anywhere else, so it is not exposed.
   bool tileArtCompletionWired = false;
 
-  // Set by `--tile-designer-logtest` before Init, which constructs the tile designer
+  // Set by `--designer-logtest` before Init, which constructs the tile designer
   // window in its self-test mode so the conversation logging can be exercised with
   // no backend. Public: main() sets it before Init runs, and the rest of the class
   // below this point stays private.
 public:
-  bool tileDesignerLogSelfTest = false;
-  // Which kind the canned self-test conversation designs for. A member rather than a
+  bool designerLogSelfTest = false;
+  // Which domain the canned self-test conversation designs for. A member rather than a
   // parameter because the test hook is set from main() before Init, and the window is
   // constructed later inside ECSInit.
-  SpriteKinds::Kind tileDesignerSelfTestKind = SpriteKinds::Kind::Tile;
+  DesignerDomains::Domain designerSelfTestDomain = DesignerDomains::Domain::Tile;
   // Whether the canned conversation asks for a *set*. Separate from the kind because the two
   // axes are independent and the point of the set case is the per-entry verdicts.
-  bool tileDesignerSelfTestSet = false;
-  // Set by `--tile-designer-arttest`, which is the same canned conversation with the
+  bool designerSelfTestSet = false;
+  // Set by `--designer-arttest`, which is the same canned conversation with the
   // window's automatic art request switched on -- so accepting a tile and asking for
   // its art in one step is exercised without a backend and without spending
   // anything, provided art.generation.command is a stub.
-  bool tileDesignerArtSelfTest = false;
+  bool designerArtSelfTest = false;
 
 private:
 
@@ -478,8 +496,12 @@ private:
   friend class FontSelectionWindow;
   friend class MapEditorWindow;
   friend class BlueprintWindow;
-  friend class DesignerChatWindow;
-  friend class TileDesignerWindow;
+  friend class DesignerWindow;
+  friend class ContentEditorWindow;
+  // The shared chat shell reads debugLog, the speech queue and the reason it is
+  // unavailable. It is not a Window, but it is the half of both designer windows that
+  // needs the same access they have.
+  friend class DesignerSession;
   friend class PlaceSeedNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
@@ -608,6 +630,11 @@ private:
   void OpenNavigationDebugWindow(flecs::entity character);
 
   void ECSInit();
+
+  // Applies the Content Editor's overrides, one directory per kind beneath
+  // `content.editor`, after the catalog and the generated overlay have loaded. The last
+  // word, because a human edit outranks both.
+  void LoadContentOverrides();
   void ECSInitRenderSystems();
 
   // The render systems that draw over the tile and entity layers (name tags and
@@ -716,6 +743,16 @@ public:
   //
   // The one way to spend money in this feature, which is why it is gated on
   // art.generation.enabled and capped by art.generation.maxRequestsPerSession.
+  // Whether the live tile catalog says this tile blocks movement. Exposed for
+  // --content-override-test, which has to ask the registry what it ended up with rather
+  // than trust the file it wrote.
+  bool TileBlocksMovement(const std::string &tileName) const;
+
+  // Drops the memoised texture for one actor sprite, so the next resolve reads the file
+  // again. An actor sprite is not a tile: its convention id is the bare id, and the
+  // tile-side refresh would look for `tile_<name>` and leave the real one cached.
+  void ForgetActorSprite(const std::string &conventionId);
+
   bool RequestTileArt(const std::string &tileName, std::string *reason = nullptr);
 
   // Kind-explicit. The by-name form guesses the kind because a name can exist in
@@ -813,9 +850,9 @@ public:
   int RunObjectArtSelfTest(const std::string &templateKey);
 
   // Drives the tile designer's logged conversation once, with no backend, and
-  // returns how many exchanges were inspected. Used by `--tile-designer-logtest`;
+  // returns how many exchanges were inspected. Used by `--designer-logtest`;
   // the window does the work, this only finds it and reports.
-  size_t RunTileDesignerLogSelfTest();
+  size_t RunDesignerLogSelfTest();
 
   // Proves the tile designer's pipeline-artifact caches notice a file that changed
   // underneath them. Writes a two-colour PNG, loads it as a thumbnail, rewrites the

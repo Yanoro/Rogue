@@ -18,7 +18,7 @@ class DebugLog;
 // and the *designing* model stays text-only. The alternative -- sending the crop
 // straight to the document turn -- is better information and a worse trade today,
 // because the designer backend is text-only by construction
-// (DesignerChatWindow's own comment says so) and a provider is allowed to ignore an
+// (the designer's own comment says so) and a provider is allowed to ignore an
 // image list silently. A no-op is the one failure mode worth paying a hop to avoid.
 //
 // What this deliberately does NOT do is describe the gap. An image model looking at a

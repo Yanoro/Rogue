@@ -107,6 +107,14 @@ struct GameSettings {
     // up. Every attempt is shown, so this bounds cost rather than hiding failure.
     int maxDesignAttempts = 3;
 
+    // Ask the classifier which domain a request is for, and send when it answers,
+    // instead of waiting for the "Route from text" button. With this on the domain
+    // dropdown is hidden, because the route decides the domain per request.
+    //
+    // Off by default: it costs one decision call per request, and a person who
+    // wants a specific domain should not have a classifier overrule them.
+    bool autoRoute = false;
+
     // How much completion budget the designer gets, overriding the `maxTokens` of
     // whichever backend it ends up on. 0 means "inherit", which is what this
     // section did before the field existed -- and that inheritance was the bug it
@@ -125,16 +133,6 @@ struct GameSettings {
     // the only backend BuildAIBackend sets an output limit on at all. See
     // AI::setMaxTokens.
     int maxTokens = 0;
-
-    // With this on, a design that asks for assets the world does not have is followed
-    // through without a person pressing anything: each requested asset is created
-    // (definition first, then its sprite) one at a time, and the run names what it could
-    // not make at the end.
-    //
-    // Off by default, because it spends model calls and writes to the generated layer on
-    // every design that asks for something, and a shipped default that quietly writes
-    // content is a bad default.
-    bool autoArt = false;
 
     // Reading the designer's reply aloud. Off by default: it is a development
     // window, and a feature that starts making noise on first launch is a
@@ -589,15 +587,30 @@ struct GameSettings {
     // the two layers separately deletable: removing this directory reverts the
     // world to hand-authored vocabulary exactly.
     std::string generatedTiles = "data/generated/tiles";
+    // Actor assets: the beings a spawn can produce (data/actors/*.json). Sibling of the
+    // other content registries, and read by ActorSpriteRegistry.
+    // The actor-sprite catalogue: art for beings, keyed by sprite id (data/actor_sprites).
+    // Not a definition of a creature -- `Actor` is the tag that says something is alive.
+    std::string actorSprites = "data/actor_sprites";
+    // Where the Content Editor writes its overrides, one directory per kind beneath
+    // it (tiles/, objects/). Loaded last, so a human edit wins over both the catalog
+    // and the generated overlay -- and the hand-authored files stay untouched, which
+    // matters because they are git-tracked content.
+    //
+    // A sibling of the generated layer rather than a subdirectory of it: the two are
+    // different authors with different precedence, and putting a human override inside
+    // an agent's overlay would make "clear the generated layer" silently clear the
+    // user's edits too.
+    std::string editor = "data/editor";
     // The tile designer's instructions: the field grammar, the reply contract and
     // the glyph table. Empty falls back to the generated vocabulary alone, the
     // same way designer.promptFile does.
-    std::string tileDesignerPromptFile = "data/tiles/TILEDESIGNER.md";
+    std::string tilePromptFile = "data/tiles/TILEDESIGNER.md";
     // The object designer's instructions: the capability vocabulary, the art block
     // grammar and what an object may not do. The reply format is not repeated here --
     // it is substituted from `spriteContractFile` below, so the two kinds cannot
     // drift about how a reply is shaped.
-    std::string objectDesignerPromptFile = "data/objects/OBJECTDESIGNER.md";
+    std::string objectPromptFile = "data/objects/OBJECTDESIGNER.md";
     // The generated overlay for agent-created objects, the object counterpart of
     // `generatedTiles` above and a sibling of data/objects for the same reason:
     // ObjectFactory::LoadTemplates reads one directory and is not recursive. Empty

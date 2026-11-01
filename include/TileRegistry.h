@@ -167,7 +167,7 @@ public:
   // catalogRevision, exactly like an add.
   //
   // Pointers handed out earlier stay VALID but stop resolving: the definition is
-  // retired rather than freed, because TileDesignerWindow holds a TileDef* for the
+  // retired rather than freed, because DesignerWindow holds a TileDef* for the
   // tile it is editing across frames and a deletion made in another window must
   // not turn its next frame into a use-after-free. TouchRuntime on a retired
   // definition therefore returns false, which is the correct answer -- it is no
@@ -194,6 +194,19 @@ public:
   uint64_t CatalogRevision() const { return catalogRevision; }
 
   void SetDebugLog(DebugLog* log) { debugLog = log; }
+
+  // Replaces whatever holds `name` -- the hand-authored catalog, the generated
+  // overlay, or an earlier override -- with this definition.
+  //
+  // Only the Content Editor calls this. AddRuntime's job is to *add* agent content and
+  // it refuses to touch the catalog on purpose; the editor's job is to let a person say
+  // what a name means, and a person editing the tile the world already paints must be
+  // able to change it rather than fork it under a new name.
+  //
+  // The replaced definition is retired rather than freed, for the reason RemoveDefinition
+  // gives: other windows hold TileDef* across frames.
+  AddResult OverrideDefinition(const nlohmann::json& json,
+                               const std::string& sourcePath);
 
 private:
   // Owned by pointer, not stored by value, purely so Get's stability promise

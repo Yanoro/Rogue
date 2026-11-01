@@ -191,7 +191,7 @@ already is.
 5. **Verification** — `--tile-art <name> --tile-art-dsl` runs exactly what the
    worker runs and asserts placement, resolution and "never into the pack".
 
-6. **The second turn (the document turn)** — `TileDesignerWindow::RequestSpriteDocument`,
+6. **The second turn (the document turn)** — `DesignerWindow::RequestSpriteDocument`,
    with its own history, system prompt and provider context so a document is never
    replayed into the next definition. It sends the brief (name, description, and
    whether a tile is walkable) plus the compiler's own grammar and ramps; extracts

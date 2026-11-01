@@ -42,7 +42,7 @@ if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
   cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR"
 fi
 
-cmake --build "$BUILD_DIR" --parallel "$(nproc)"
+cmake --build "$BUILD_DIR" --parallel 4
 
 if [[ ! -x "$BINARY" ]]; then
   echo "error: the build finished but '$BINARY' does not exist." >&2

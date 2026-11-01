@@ -236,7 +236,7 @@ inline void ObserveObjects(SpatialMemory &memory, flecs::world &world,
         auto found = memory.objects.find(other.id());
         if (found == memory.objects.end()) {
           SeenObject record;
-          record.character = other.has<CharacterTag>();
+          record.character = other.has<Actor>();
           record.firstSeenTick = tick;
           found = memory.objects.emplace(other.id(), std::move(record)).first;
           ++memory.contentRevision;

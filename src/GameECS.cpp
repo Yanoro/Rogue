@@ -17,9 +17,9 @@
 #include "StorageWindow.h"
 #include "Game.h"
 #include "ObjectDesigner.hpp"
-#include "DesignerChatWindow.h"
 #include "TileDesigner.hpp"
-#include "TileDesignerWindow.h"
+#include "ContentEditorWindow.h"
+#include "DesignerWindow.h"
 #include "TileArtQueue.hpp"
 #include "PiperSpeech.h"
 #include "SpeechQueue.h"
@@ -246,7 +246,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
           .set<WindowOnClick>({WindowType::NPCContextWindowType})
           .add<BlocksTile>();
 
-  entity.add<CharacterTag>();
+  entity.add<Actor>();
 
   // The agent phase of docs/spatial-memory-design.md: an NPC perceives through
   // the same `Vision` + `SpatialMemory` pair the player does. It is not told
@@ -463,7 +463,7 @@ void Game::ECSInitOverlaySystems() {
         if (e.has<Structural>()) {
           return;
         }
-        if (!e.has<ShowNameTag>() && !e.has<CharacterTag>()) {
+        if (!e.has<ShowNameTag>() && !e.has<Actor>()) {
           return;
         }
 
@@ -1029,7 +1029,7 @@ void Game::ECSInitActionSystems() {
   //
   // Registered after the steer system in the same function so it reads the
   // velocity that was just written rather than last frame's. It has no
-  // CharacterTag term on purpose: what makes an entity faceable is having the
+  // Actor term on purpose: what makes an entity faceable is having the
   // component, and that is exactly what stage 1 will sample from -- so this stays
   // correct if a future non-character ever needs a direction.
   ecs.system<const Velocity, const ScreenPosition, const Hitbox, Facing>()
@@ -2324,6 +2324,11 @@ void Game::ECSInit() {
 
   raceRegistry.SetDebugLog(debugLog.get());
   raceRegistry.LoadRaces(settings.content.races);
+
+  // The actor-sprite catalogue. Independent of races: a sprite says what something looks
+  // like, not what body it wears.
+  actorSpriteRegistry.SetDebugLog(debugLog.get());
+  actorSpriteRegistry.Load(settings.content.actorSprites);
   ecs.set<RaceRegistryResource>({&raceRegistry});
 
   // The place vocabulary. Loaded before LoadMap for the same reason the tile
@@ -2402,6 +2407,13 @@ void Game::ECSInit() {
     }
   }
   ecs.set<TileRegistryResource>({&tileRegistry});
+
+  // The Content Editor's overrides, last of all: a human edit outranks both the catalog
+  // and the agent-generated overlay, so whatever a person decided is what the world runs.
+  // Splitting this into its own pass rather than folding it into the overlay loaders keeps
+  // the precedence readable in one place -- catalog, generated, editor -- instead of
+  // hidden in two loaders that each know about their own layer.
+  LoadContentOverrides();
 
   // Building designs. Loaded after the tile catalog and the object factory
   // because it validates every design's materials against both: a "paint" naming
@@ -3671,7 +3683,7 @@ void Game::ECSInit() {
       static_cast<size_t>(map->GetTileHeight()),
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
-  playerEntity.add<CharacterTag>();
+  playerEntity.add<Actor>();
   if (auto registryRes = ecs.get<StatRegistryResource>()) {
     GiveDefaultStats(playerEntity, registryRes->registry);
   }
@@ -3706,7 +3718,7 @@ void Game::ECSInit() {
   visionDebugWindowEntity = ecs.entity("Vision Debug Window");
   visionChatWindowEntity = ecs.entity("Vision Chat Window");
   designerWindowEntity = ecs.entity("Designer Window");
-  tileDesignerWindowEntity = ecs.entity("Tile Designer Window");
+  contentEditorWindowEntity = ecs.entity("Content Editor Window");
   settingsWindowEntity = ecs.entity("Settings Window");
 
   // Built once and kept, unlike the other debug windows: a rebuilt window would
@@ -3723,28 +3735,29 @@ void Game::ECSInit() {
     visionChatWindowEntity.set<ActiveWindow>({visionChatWindow});
   }
 
-  // Same treatment: built once and kept, so the designer conversation survives a
-  // toggle. Losing the transcript on every close would make iterating on a design
-  // impossible.
+  // Built once and kept, so the designer conversation survives a toggle. Losing the
+  // transcript on every close would make iterating on a design impossible.
+  //
+  // One window for all three domains, and one backend for all three: producing a valid
+  // definition and producing a valid design are the same skill, and asking for a second
+  // API key to do it would be a worse trade than sharing. It keeps its own provider
+  // conversation per domain inside DesignerSession, so a tile and a building cannot see
+  // each other's tokens.
   std::string designerLabel;
   if (designerAI) {
     designerLabel = designerAI->getAIName() + " / " + designerAI->getModelName();
   }
-  designerWindow =
-      std::make_shared<DesignerChatWindow>(this, designerAI.get(), designerLabel);
+  designerWindow = std::make_shared<DesignerWindow>(
+      this, designerAI.get(), designerLabel, designerLogSelfTest);
   if (debugWindowState->GetShowDesignerWindow()) {
     designerWindowEntity.set<ActiveWindow>({designerWindow});
   }
 
-  // The tile designer borrows the same backend as the blueprint designer, and its
-  // own provider context (assigned in its constructor), so the two conversations
-  // cannot see each other's tokens. It gets no backend of its own on purpose:
-  // producing a valid definition is the same skill as producing a valid design,
-  // and asking for a second API key to do it would be a worse trade than sharing.
-  tileDesignerWindow = std::make_shared<TileDesignerWindow>(
-      this, designerAI.get(), designerLabel, tileDesignerLogSelfTest);
-  if (debugWindowState->GetShowTileDesignerWindow()) {
-    tileDesignerWindowEntity.set<ActiveWindow>({tileDesignerWindow});
+  // The Content Editor. Kept rather than rebuilt, because it holds the document being
+  // edited and the selection it belongs to.
+  contentEditorWindow = std::make_shared<ContentEditorWindow>(this);
+  if (debugWindowState->GetShowContentEditorWindow()) {
+    contentEditorWindowEntity.set<ActiveWindow>({contentEditorWindow});
   }
 
   // Live tile-art generation. Configured through Game so the callback and the

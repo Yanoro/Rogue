@@ -904,7 +904,19 @@ struct AgentSleepTimer {
   float time_remaining_ms;
 };
 
-struct CharacterTag {};
+// A living being: the player, and every NPC or agent that can perceive, want and act.
+//
+// The distinction this draws is being *alive*, not being *drawn*. It is deliberately not
+// called Character: `TileDef::character` is the glyph a tile prints, and `AgentBrain` is
+// the AI that drives one of these -- neither is the thing this tag names. A crate is an
+// object, a wall is structural, and both are inanimate; these are the entities that have a
+// body in the world and a point of view on it.
+//
+// Assigned where a being is created, never added or removed later: the player in
+// GameECS's setup, and every NPC/agent through the character spawn builder beside it. If a
+// future spawn path creates something with Vision or Needs, it must add this too or the
+// world will treat it as scenery.
+struct Actor {};
 
 struct NPCContext {
   std::vector<ChatMessage> history;
@@ -1130,7 +1142,7 @@ struct BlocksVision {};
 struct Structural {};
 
 // Opt-in floating name label. Objects do not draw one unless they ask; characters
-// always do (the name-tag system treats CharacterTag as implicit consent). This
+// always do (the name-tag system treats Actor as implicit consent). This
 // replaces the old default of labelling every named entity, which made a field of
 // wall objects unreadable.
 struct ShowNameTag {};

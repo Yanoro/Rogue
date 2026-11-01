@@ -1,13 +1,14 @@
 # The sprite designer: tiles and objects
 
-**Status: all seven phases are built and green.** The designer creates tiles and objects
-singly or as sets, validates them per entry, names their art per kind, and hands a set to the
-queue in requests of at most `art.generation.maxCellsPerRequest` sprites. The designer
-window now designs both kinds — a mode dropdown the router can set and the user can
-correct, a per-kind preview, and a per-kind rewrite brief — and every piece is reachable
-headlessly: `--sprite-prompt`, `--sprite-design`, `--sprite-design-overlay`,
-`--sprite-route`, `--object-check`, `--sprite-designer-objecttest` and the existing
-`--tile-designer-logtest`.
+**Status: all seven phases are built and green, and the window has since absorbed the
+blueprint designer (§23).** The designer creates buildings, tiles and objects — singly or,
+for a sprite, as a set — validates them per entry, names their art per kind, and hands a set
+to the queue in requests of at most `art.generation.maxCellsPerRequest` sprites. One window
+serves all three domains: a domain dropdown the router can set and the user can correct, a
+per-domain preview, and a per-domain rewrite brief. Every piece is reachable headlessly:
+`--designer-prompt <domain>`, `--sprite-design`, `--sprite-design-overlay`,
+`--sprite-route`, `--object-check`, `--sprite-designer-objecttest`, `--designer-logtest`,
+`--designer-arttest` and `--designer-bluetest`.
 
 **Four design guesses have now been killed by measurement, which is why they were written
 as guesses.** Phase 3's free sheet measurement cannot be made (§16); phase 4's numeric
@@ -78,11 +79,20 @@ re-litigate them without asking.
 | 3 | Object power | **Recombine the ten registered object components and their parameters.** Nothing may be invented that the engine cannot simulate. |
 | 4 | Sheets | **Both, with sheets first-class.** "a prison sheet" yields several named sprites; "a ratty prison blanket" stays single. |
 | 5 | Created objects | **Same as tiles**: they join the object catalog and are usable by blueprints and spawns. Nothing is placed automatically. |
-| 6 | Renaming | **User-facing only.** The window, prompt prose and docs say "sprite designer"; `TileDesigner*`, `tileDesignerPromptFile` and `TILEDESIGNER.md` keep their names, and `--tile-design` keeps working. |
+| 6 | Renaming | ~~**User-facing only.**~~ **Superseded 2026-10-31 (§23): renamed fully.** The window is `DesignerWindow`; `content.tilePromptFile` and `content.objectPromptFile` replace the `*DesignerPromptFile` spellings (the old keys are still read as aliases, so no config breaks silently); the self-test flags are `--designer-logtest` / `--designer-arttest`. |
 
 The follow-up is also settled: the router asks **single-or-multiple and how many** in the
 same call as the kind, so the prompt can be chosen for the case rather than the case being
 inferred from what the model happened to send (§3).
+
+**Amended 2026-10-31 by the owner: routing can be automatic.** `designer.autoRoute` (off by
+default) makes each *send* classify its own text and then send, instead of waiting for the
+Route button, and hides the domain dropdown. That is the one part of decision 1 it changes:
+with the setting off, the one-shot router still runs once per design and the transcript still
+says which mode each exchange used; with it on, "one classification per request" is the
+behaviour, because there is no other moment at which the domain could be chosen. The setting
+is the escape hatch for anyone who wants a specific domain rather than the classifier's
+guess.
 
 ---
 
@@ -574,6 +584,11 @@ The existing window becomes mode-aware, with the mode visible rather than implic
 a brief per kind, or improving an object request will push it back toward tile
 vocabulary — which is precisely the failure the rewriter was added to avoid.
 
+> **Since §23 the window is shared with the blueprint designer.** This section describes the
+> sprite half as phase 5 built it. The dropdown it describes now lists three domains, the
+> "mode" is a `DesignerDomains::Domain` rather than a `SpriteKinds::Kind`, and the left pane
+> dispatches to a third preview (the blueprint canvas) that did not exist here.
+
 ---
 
 ## 10. Order
@@ -583,7 +598,7 @@ change comes last and the free measurement comes first.
 
 1. **Kind registry and prompts.** `SpriteKinds` (§1); split `TILEDESIGNER.md` into the
    shared reply contract plus a *one tile* / *a set of tiles* pair; write
-   `data/objects/OBJECTDESIGNER.md` the same way; add `content.objectDesignerPromptFile`
+   `data/objects/OBJECTDESIGNER.md` the same way; add `content.objectPromptFile`
    and `content.generatedObjects`; keep `--tile-design` defaulting to the tile kind and
    add `--sprite-design <kind> <file>`.
 2. **Object validation and runtime registration.** `ObjectDesigner` validating through
@@ -648,7 +663,10 @@ These hold across every phase and are the things to check a change against.
 - **No per-message reclassification.** One verdict per design (decision 1). A
   conversation that drifts from tile to object mid-way is a new design, and the window
   says so rather than swapping prompts underneath a transcript.
-- **No full rename** (decision 6).
+- ~~**No full rename** (decision 6).~~ **Superseded 2026-10-31 (§23):** once one window
+  designed buildings too, "the sprite designer" was the wrong name for it, and the owner
+  chose the full rename. Decision 6's actual intent — never break a configuration
+  silently — is kept by reading the old settings spellings as aliases.
 - **No local-model path for classification.** `JevClassifier` speaks the decisions
   protocol over HTTP; the local-LoRA backend question in
   `docs/tile-art-wiring-design.md` §5 is untouched by this document.
@@ -687,7 +705,7 @@ Built and green. What it added:
 | `data/tiles/TILEDESIGNER.md` | rewritten as the tile half, pulling in the contract |
 | `data/objects/OBJECTDESIGNER.md` | the object half: the capability vocabulary and the art-block grammar |
 | `TileDesigner::BuildPromptForKind` | the kind-agnostic builder, plus `PromptVocabulary` and `TileVocabulary` |
-| `Settings` | `content.objectDesignerPromptFile`, `content.generatedObjects`, `content.spriteContractFile` |
+| `Settings` | `content.objectPromptFile`, `content.generatedObjects`, `content.spriteContractFile` |
 | `src/main.cpp` | `--sprite-prompt <kind>`, `--sprite-design <kind> <file>` |
 
 Two CLI modes, because the two halves of phase 1 fail differently:
@@ -729,9 +747,9 @@ document. Replace-only has one.
 Twelve green, no image requests spent: `--sprite-prompt` for both kinds (asserting zero
 surviving tokens), `--tile-design` over an accept and a refusal, `--sprite-design tile`,
 the missing-prompt fallback, `--gaps`, `--art-cache-test`, `--paint-memo-test`,
-`--tile-art-queue --tile-art-hold`, `--tile-designer-logtest`, `--tile-designer-arttest`,
+`--tile-art-queue --tile-art-hold`, `--designer-logtest`, `--designer-arttest`,
 and `gen_tile_art.py --cut-check`. The window's own path was checked through
-`--tile-designer-logtest`: the prompt it sent is 9,660 bytes, has one reply-format
+`--designer-logtest`: the prompt it sent is 9,660 bytes, has one reply-format
 section, one vocabulary section and all 27 live tiles — and the assembled prompt contains
 zero placeholder tokens.
 
@@ -839,7 +857,7 @@ falls out is that the vocabulary is built in exactly one place per kind.
 
 Twelve green, no image requests spent: `--sprite-prompt` for both kinds, `--tile-design`,
 `--sprite-design` for both kinds, `--gaps`, `--art-cache-test`, `--paint-memo-test`,
-`--tile-art-queue --tile-art-hold`, `--tile-designer-logtest`, `--tile-designer-arttest`,
+`--tile-art-queue --tile-art-hold`, `--designer-logtest`, `--designer-arttest`,
 and `gen_tile_art.py --cut-check`. Eleven object fixtures cover three accepts and eight
 refusals. The end-to-end path was checked through a **real boot**: the designer writes
 `apple_sapling.json` to a disposable overlay, the game loads it at startup and runs to the
@@ -1057,7 +1075,7 @@ Built and green. The window is now driven by the kind table rather than by one k
 
 | change | where |
 |---|---|
-| the mode dropdown, with the route button beside it | `TileDesignerWindow::Draw` |
+| the mode dropdown, with the route button beside it | `DesignerWindow::Draw` |
 | the live classifier the route button needs | `Game::systemOneClassifier`, built in `Game::Init` |
 | routing off the main thread, applied on it | `RequestRoute` / `ApplyRouteVerdict` / the latch in `Draw` |
 | per-kind inspection and preview | `InspectFinishedExchange`, `DrawObjectPreview` |
@@ -1132,7 +1150,7 @@ were handled in two places.
 Seventeen green: `--sprite-prompt` for both kinds, `--rewrite` for both sprite briefs,
 `--tile-design`, `--sprite-design object`, `--object-check` (overlay and catalog),
 `--gaps`, `--art-cache-test`, `--paint-memo-test`, `--tile-art-queue --tile-art-hold`,
-`--tile-designer-logtest`, `--tile-designer-arttest`, `--sprite-route`,
+`--designer-logtest`, `--designer-arttest`, `--sprite-route`,
 `gen_tile_art.py --cut-check`, and a real boot with an object overlay.
 
 The object half of the window was verified through `--sprite-designer-objecttest`, which runs
@@ -1156,7 +1174,7 @@ window. Collected here because until now they were only in `main.cpp`'s argument
 | `--sprite-route "<text>"` | one live classification, printed with the raw answers | one decision call |
 | `--object-check <key>` | an object is in the **running game's** factory, and from which layer | free |
 | `--sprite-designer-objecttest` | the window's object inspection path, canned reply | free |
-| `--tile-designer-logtest` / `--tile-designer-arttest` | the window's tile path and the auto-art request | free |
+| `--designer-logtest` / `--designer-arttest` | the window's tile path and the auto-art request | free |
 
 `--tile-art-hold <n>` applies to the last three and **draws the window for n real frames**,
 which is what makes "the panel drew" a claim rather than an intention.
@@ -1378,7 +1396,7 @@ for.
 | the reply envelope, shared by both kinds | `include/SpriteReply.hpp`, `src/SpriteReply.cpp` |
 | per-entry validation that does not roll back | `TileDesigner::ApplySetReply`, `ObjectDesigner::ApplySetReply` |
 | the per-request cell cap | `TileArtQueue::Config::maxCellsPerRequest`, `StartWorker` |
-| the shape checkbox, per-entry transcript, and the cost estimate | `TileDesignerWindow` |
+| the shape checkbox, per-entry transcript, and the cost estimate | `DesignerWindow` |
 | `--sprite-prompt-shape`, `--tile-art-split`, `--sprite-designer-settest` | `main.cpp` |
 
 ### The four prompts come from two documents, by stripping
@@ -1667,3 +1685,109 @@ the two causes are distinguishable from the output.
 The first attempt at that control drew the plate *after* the sprite rather than before it, which
 turned the tiles dim as well (`0/1024` sprite pixels matched) — a reminder that a negative
 control has to reproduce the old code and not just the old idea.
+
+---
+
+## 23. Build record: the two designer windows became one
+
+**Asked 2026-10-31**, after the sprite surface had settled: the designer window and the tile
+designer window do a lot of the same work, so could they be merged, routing blueprint
+requests to blueprint logic, tile requests to tile logic, using the same routing the sprite
+window already had?
+
+They could, and the interesting part is that the routing was never the problem. The two
+windows had grown the same chat plumbing *twice*: exchange storage, the history cap, the
+detached-thread `generateStream` call and its empty-token sentinel, the transcript loop, the
+log, the attempt budget, the speech transport bar. `HideJsonBlock` was byte-identical apart
+from one marker word; `Log` differed by a directory name; `StripReasoning` was copied
+outright. Both copies called the other one "the proven implementation of the same handoff",
+which is a description of a copy-paste rather than of a design.
+
+### The decision that shaped it: merge the conversation, not the class
+
+A single 4,600-line `Window` subclass would have kept every difference and lost the only
+thing worth sharing. What was extracted instead is `DesignerSession`: it owns the exchanges,
+N conversations (system prompt + history + provider context each), the streaming handoff, the
+log, the per-conversation attempt budgets, the transcript and the speech bar. It knows about
+*conversations*, not about buildings, tiles or objects. Validation, retry wording and previews
+stayed in the window, because those are the parts that genuinely differ.
+
+Three stages, each with its own before/after measurement:
+
+| stage | what | verified by |
+|---|---|---|
+| 1 | `DesignerSession` extracted; both windows use it | 3 self-test logs byte-identical |
+| 2 | `DesignerDomains` + the `building` domain + the blueprint path moved into the window; `DesignerChatWindow` deleted | 3 sprite logs' *bodies* unchanged; new `--designer-bluetest` saves a blueprint |
+| 3 | full rename, shared retry path, `--designer-prompt` | same three bodies unchanged; CLI and window prompts both 12,915 bytes |
+
+### The domain table is above `SpriteKinds`, not inside it
+
+`SpriteKinds::Kind` is a *sprite* kind: the art convention (`tile_<slug>` vs `<slug>`), the
+generated-overlay directory, the vocabulary heading. It is branched on **78 times**, and
+almost every branch is a two-valued `if`, not a `switch` — so adding `Blueprint` to it would
+have left every one of them quietly treating a building as a tile, with no compiler warning.
+A building has no sprite, no overlay and no art of its own; it is made *of* tiles and
+objects.
+
+So `DesignerDomains` holds one row per domain and the sprite rows **point at** the
+`SpriteKinds` row (`&SpriteKinds::For(Kind::Tile)`). `sprite == nullptr` is what a caller
+tests before asking for an art convention, and that null is what stops building requests
+reaching art code. `SpriteKinds` was not touched at all.
+
+### The router answers it in the question it already had
+
+The `kind` question gained a third option (`building`) rather than a fourth question: the
+model was already reliable at `kind`, and one request is one round trip. Shape and size are
+meaningless for a building, so `Parse` *clears* them for a non-sprite domain rather than
+leaving them for a caller to remember to ignore — "shape answered, single" would have made a
+building request look like a request for one sprite.
+
+`Verdict::kind` became `Verdict::domain`, which is what let `ApplyRouteVerdict` switch the
+dropdown for all three domains without a second code path.
+
+### Renaming was the last thing, and it was the owner's call
+
+Decision 6 said "user-facing only, no full rename". It held while one window designed one
+thing. Once the same window also designed buildings, `TileDesignerWindow` was a name that
+described a third of its job, and the owner chose the full rename: `DesignerWindow`,
+`content.tilePromptFile` / `content.objectPromptFile`, `--designer-logtest` /
+`--designer-arttest`. The old settings spellings are still read as aliases — the point of
+decision 6 was never the letters, it was that a config must not break silently.
+
+### What the measurement actually showed
+
+The three sprite self-tests stayed **byte-identical** across all three stages, not merely
+close: `--designer-logtest` 20,089 bytes, `--sprite-designer-objecttest` 22,344,
+`--sprite-designer-settest` 25,179, matching the pre-merge baseline exactly after normalising
+timestamps. The only changes were three header lines (`SPRITE DESIGNER SESSION` →
+`DESIGNER SESSION`, `kind:` → `domain:`, and the log directory), all of them intended.
+
+The building half is covered by `--designer-bluetest`, which feeds a canned blueprint through
+the real inspection path and asserts it saves. Its prompt is the strongest cross-check the
+seam has: `--designer-prompt building` and the window's own "system prompt as sent" line both
+report **12,915 bytes**, because both go through `BlueprintPrompt::Build` with the same live
+registries.
+
+### Three things this work found, none of them in the merge itself
+
+- **The CLI prompt was missing the object palette.** `--designer-prompt building` first
+  reported `0 object(s)` because a bare `ObjectFactory` has no templates loaded. The palette
+  is the list of materials a design may name, so that prompt would have refused every design
+  that used furniture. The flag existed for one minute before it caught a real bug — which is
+  the argument for it existing.
+- **`LogPaths` names the session directory and the log file by the same second.** Two test
+  runs started in one second append into one file; the first capture of these tests silently
+  mixed the object and set conversations. It only affects parallel test runs, but it will
+  bite anyone scripting these modes.
+- **HEAD does not link.** The working tree carried an uncommitted `src/SpriteGapOffer.cpp`
+  entry in `CMakeLists.txt`; building HEAD fails with undefined `SpriteGapOffer` symbols.
+  Unrelated to this work, and left as found — but it makes "check out and build" broken.
+
+### Not verified
+
+- **The refusal/retry path is compile-checked only.** Every canned reply is a valid one, and a
+  refused reply would start a retry — which sends a real request. The shared `RetryRefused`
+  makes the two former copies one function, but no test drives it without a backend.
+- **The router's `building` classification** has not been run against the live model. It is one
+  decision call: `./build/AIRogue --sprite-route "a two-bedroom cottage"` should print
+  `RESULT: building`. It costs money, so it is left to the owner.
