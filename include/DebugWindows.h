@@ -47,6 +47,12 @@ public:
   void Draw() override;
 private:
   Game* game;
+  // Category filters. Combat is its own stream because it is what a player
+  // reads during a fight; "General" is everything the engine writes for its own
+  // reasons. Both default on, so the window behaves like the old debug log until
+  // the player hides one.
+  bool showCombat = true;
+  bool showGeneral = true;
 };
 
 class MapReloadWindow : public Window {

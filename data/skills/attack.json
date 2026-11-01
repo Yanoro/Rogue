@@ -1,0 +1,33 @@
+{
+  "name": "Attack",
+  "description": "Swing whatever is in your hand. The weapon sets the damage and the tempo, so a better blade is felt immediately; unarmed, this is a fist.",
+  "icon": "data/sprites/skill_attack.png",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "useWeapon": true,
+    "range": 1,
+    "gcd": false,
+    "autoCast": true,
+    "xpPerUse": 4
+  }
+}

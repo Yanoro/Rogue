@@ -35,6 +35,7 @@
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
 #include "EffectResolver.hpp"
+#include "CombatResolver.hpp"
 #include "Equipment.hpp"
 #include "EquipmentRuntime.hpp"
 #include "FloatingText.hpp"
@@ -298,6 +299,22 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
+  // Portrait identity: authored on this NPC, else the people's default. An id the
+  // registry does not know is not an error here -- the HUD draws the unknown
+  // sprite -- so a typo costs a face, not a spawn.
+  {
+    std::string portraitId = data.portrait;
+    if (portraitId.empty()) {
+      const std::string raceId = data.race.empty() ? "human" : data.race;
+      if (const RaceDef *race = raceRegistry.Get(raceId)) {
+        portraitId = race->portrait;
+      }
+    }
+    if (!portraitId.empty()) {
+      entity.set<Portrait>({portraitId});
+    }
+  }
+
   // Life goals are authored data, seeded once here and read-only afterwards
   // (docs/task-system-design.md section 5): a model that re-derives its life
   // goals each session makes a character inconsistent across runs, which is the
@@ -491,7 +508,8 @@ void Game::ECSInitOverlaySystems() {
   // the acting entity and is empty when the action starts, filling as it runs out.
   ecs.system<ActionTimer, ActionActor>("ActionProgressBarSystem")
       .kind<Render>()
-      .each([](const ActionTimer &timer, const ActionActor &action) {
+      .each([this](flecs::entity actionEntity, const ActionTimer &timer,
+                   const ActionActor &action) {
         flecs::entity actor = action.actor;
         if (!actor.is_alive() || !actor.has<ScreenPosition>()) {
           return;
@@ -518,6 +536,51 @@ void Game::ECSInitOverlaySystems() {
         DrawRectangleV({barX, barY},
                        {barWidth * timer.Progress(), DEFAULT_ACTION_BAR_HEIGHT},
                        DEFAULT_ACTION_BAR_FILL);
+
+        // A cast carries its ability name on a small dark strip under the bar.
+        // Every caster gets this, not just the player: the bar belongs to the
+        // action entity, so an NPC's telegraph reads the same as the player's.
+        if (const CastAction *cast = actionEntity.get<CastAction>()) {
+          if (cast->label.empty()) {
+            return;
+          }
+          const Vector2 textSize =
+              MeasureTextEx(gameFont, cast->label.c_str(),
+                            DEFAULT_CAST_LABEL_FONT_SIZE, 0);
+          const float labelWidth =
+              textSize.x + DEFAULT_CAST_LABEL_PAD_X * 2.0f;
+          const float labelHeight =
+              textSize.y + DEFAULT_CAST_LABEL_PAD_Y * 2.0f;
+          const float labelX =
+              std::round(pos.x + entityWidth / 2.0f - labelWidth / 2.0f);
+          const float labelY =
+              std::round(barY + DEFAULT_ACTION_BAR_HEIGHT +
+                         DEFAULT_CAST_LABEL_GAP_Y);
+
+          DrawRectangleRounded(
+              Rectangle{labelX, labelY, labelWidth, labelHeight}, 0.35f, 4,
+              DEFAULT_CAST_LABEL_BACKGROUND);
+          DrawTextEx(gameFont, cast->label.c_str(),
+                     {labelX + DEFAULT_CAST_LABEL_PAD_X,
+                      labelY + DEFAULT_CAST_LABEL_PAD_Y},
+                     DEFAULT_CAST_LABEL_FONT_SIZE, 0, DEFAULT_CAST_LABEL_TEXT);
+        }
+      });
+
+  // Projectiles draw above the world and under the floating numbers, so a hit
+  // report is never hidden by the object that caused it.
+  ecs.system<Projectile, ScreenPosition>("ProjectileRenderSystem")
+      .kind<Render>()
+      .each([this](const Projectile& projectile,
+                   const ScreenPosition& position) {
+        const Texture2D* texture = ResolveSpriteReference(
+            projectile.sprite, resourceManager, debugLog.get());
+        if (texture == nullptr) {
+          return;
+        }
+        DrawSpriteFitted(*texture, position.x - projectile.size / 2.0f,
+                         position.y - projectile.size / 2.0f,
+                         projectile.size, projectile.size);
       });
 
   // Floating change numbers (XP today, damage later). Registered last so they
@@ -566,6 +629,26 @@ void Game::ECSInitOverlaySystems() {
         Color color = floating.color;
         color.a = static_cast<unsigned char>(std::clamp(
             static_cast<float>(color.a) * motion.alpha, 0.0f, 255.0f));
+
+        // An ability call-out carries its own strip. It fades with the word, so
+        // the bar cannot outlive the text it explains.
+        if (floating.background) {
+          const Color background = {
+              DEFAULT_CAST_LABEL_BACKGROUND.r,
+              DEFAULT_CAST_LABEL_BACKGROUND.g,
+              DEFAULT_CAST_LABEL_BACKGROUND.b,
+              static_cast<unsigned char>(
+                  std::clamp(static_cast<float>(
+                                 DEFAULT_CAST_LABEL_BACKGROUND.a) *
+                                 motion.alpha,
+                             0.0f, 255.0f))};
+          DrawRectangleRounded(
+              Rectangle{textPos.x - DEFAULT_CAST_LABEL_PAD_X,
+                        textPos.y - DEFAULT_CAST_LABEL_PAD_Y,
+                        textSize.x + DEFAULT_CAST_LABEL_PAD_X * 2.0f,
+                        textSize.y + DEFAULT_CAST_LABEL_PAD_Y * 2.0f},
+              0.35f, 4, background);
+        }
 
         // A one-pixel drop shadow keeps a small number legible over a bright
         // tile without needing a full outline pass.
@@ -1644,6 +1727,433 @@ std::string FormatBrokenTools(const std::vector<std::string> &broken) {
   return message;
 }
 
+// --- Combat ------------------------------------------------------------------
+//
+// A fight is ordinary timed state in the same world: a locked target, a cooldown
+// per skill, and one damage fold. There is no encounter entity and no turn
+// manager. The auto-cast system is what keeps a fight moving while the player
+// (and, in a later slice, the agent) is deciding.
+
+const SkillDef *FindSkillDef(flecs::world world, const std::string &id) {
+  auto res = world.get<SkillRegistryResource>();
+  if (!res || res->registry == nullptr) {
+    return nullptr;
+  }
+  return res->registry->Get(id);
+}
+
+// A character's display name, falling back to the entity name and then to a
+// caller-chosen noun. Used only for log lines.
+std::string EntityLabel(flecs::entity entity, const char *fallback) {
+  if (const DisplayName *name = entity.get<DisplayName>()) {
+    if (!name->name.empty()) {
+      return name->name;
+    }
+  }
+  if (const char *entityName = entity.name().c_str()) {
+    if (entityName[0] != '\0') {
+      return std::string(entityName);
+    }
+  }
+  return std::string(fallback);
+}
+
+int GridSteps(const GamePosition &a, const GamePosition &b) {
+  return std::max(std::abs(a.x - b.x), std::abs(a.y - b.y));
+}
+
+bool WithinActivationRange(flecs::entity actor, flecs::entity target,
+                           float range) {
+  const GamePosition *from = actor.get<GamePosition>();
+  const GamePosition *to = target.get<GamePosition>();
+  return from != nullptr && to != nullptr &&
+         static_cast<float>(GridSteps(*from, *to)) <= range;
+}
+
+// Whole seconds left on a cooldown, rounded up, for a log line. Rounding up is
+// the honest direction: "1s" while 0.1 seconds remain reads as a lie.
+std::string CooldownLabel(float seconds) {
+  const int whole = static_cast<int>(std::ceil(seconds));
+  return std::to_string(whole) + "s";
+}
+
+struct SkillUseOutcome {
+  bool used = false;
+  std::string message;
+};
+
+// One activation of one skill, for one actor.
+//
+// This is the single door every path goes through -- the hotbar, auto-cast, and
+// later an agent command -- so a cooldown, a range check or a training grant can
+// never apply on one path and not another.
+//
+// It reports whether the skill was used and a human-readable line; it logs
+// nothing itself, because auto-cast has to stay silent when an attack is merely
+// out of range and a manual use has to say why it did nothing.
+// Cancels a cast on `target`. Returns true when there was an interruptible cast
+// to cancel.
+//
+// The action entity is destroyed through the world's defer queue: an interrupt
+// is raised from inside a damage application, which may itself be inside a
+// system iteration over actions, and destroying the action immediately would
+// invalidate the iteration that is about to look at it.
+bool InterruptCast(flecs::entity target) {
+  Casting *casting = target.get_mut<Casting>();
+  if (casting == nullptr || !casting->interruptible) {
+    return false;
+  }
+  const flecs::entity action = casting->actionEntity;
+  target.remove<Casting>();
+  SpawnFloatingCallout(target, "Interrupted!",
+                       DEFAULT_INTERRUPT_CALL_OUT_COLOR);
+  if (const Busy *busy = target.get<Busy>()) {
+    if (busy->actionEntity == action) {
+      target.remove<Busy>();
+    }
+  }
+  if (action.is_alive()) {
+    flecs::world world = target.world();
+    world.defer([action]() {
+      if (action.is_alive()) {
+        action.destruct();
+      }
+    });
+  }
+  return true;
+}
+
+// Applies one resolved hit: fold, armour, floating text, the dummy/player reset,
+// and an optional interrupt.
+//
+// This is the single place damage lands, for instant skills, cast completions and
+// the aggressive dummy's inline strike, so armour and the reset rules cannot
+// differ between them.
+std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage,
+                     const std::string &subjectId, const std::string &label,
+                     bool secondPerson, bool interrupts) {
+  if (!target.is_alive() || !target.has<Vitals>()) {
+    return "There is nothing there to hit.";
+  }
+
+  const ResolutionInputs inputs = MakeResolutionInputs(actor.world());
+  DamageRequest request;
+  request.activity = "attack";
+  request.subjectId = subjectId;
+  request.baseDamage = baseDamage;
+  const FoldResult fold = ResolveDamage(actor, request, inputs.definitions);
+  if (fold.blocked) {
+    return fold.blockReason;
+  }
+
+  const int raw = std::max(1, static_cast<int>(std::lround(fold.value)));
+  const float armour = ArmorOf(target, ItemsOf(actor.world()));
+  const int points =
+      std::max(1, raw - static_cast<int>(std::lround(armour)));
+
+  const std::string actorLabel =
+      secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
+  const std::string targetLabel = EntityLabel(target, "the target");
+
+  Vitals *targetVitals = target.get_mut<Vitals>();
+  targetVitals->health -= static_cast<float>(points);
+  SpawnFloatingDamage(target, points);
+
+  std::string message = actorLabel + (secondPerson ? " hit " : " hits ") +
+                        targetLabel + " with " + label + " for " +
+                        std::to_string(points);
+  if (armour >= 0.5f) {
+    message += " (armour " + std::to_string(static_cast<int>(std::lround(armour))) +
+               ")";
+  }
+  message += ".";
+
+  if (targetVitals->health <= 0.0f) {
+    if (target.has<TrainingDummy>()) {
+      // A dummy exists to be hit forever; resetting is what "immortal" means.
+      targetVitals->health = targetVitals->maxHealth;
+      message += " The dummy shrugs it off.";
+    } else if (target.has<PlayerControlled>()) {
+      // No death system yet. Knocking the player out and restoring them keeps a
+      // test session from ending in a corpse with no way to continue; a real
+      // death and recovery loop is a later slice.
+      targetVitals->health = targetVitals->maxHealth;
+      message += " You are knocked out and recover.";
+    } else {
+      targetVitals->health = 0.0f;
+      message += " " + targetLabel + " falls.";
+    }
+  }
+
+  if (interrupts && InterruptCast(target)) {
+    message += " The cast is interrupted.";
+  }
+
+  return message;
+}
+
+// Progression and wear, shared by the instant path and the cast-completion path
+// so a skill cannot train on one and not the other.
+std::string FinalizeSkillUse(flecs::entity actor, const SkillDef &def) {
+  std::string message;
+
+  if (def.activation.xpPerUse > 0) {
+    if (auto skillRes = actor.world().get<SkillRegistryResource>()) {
+      if (skillRes->registry != nullptr) {
+        if (SkillBlock *block = actor.get_mut<SkillBlock>()) {
+          const std::vector<SkillXp> grants{{def.id, def.activation.xpPerUse}};
+          const std::vector<SkillGain> gains =
+              ApplyTraining(*block, grants, *skillRes->registry, "use");
+          const std::string training = FormatTrainingGains(gains);
+          if (!training.empty()) {
+            message += "\n" + training;
+          }
+        }
+      }
+    }
+  }
+
+  if (def.activation.useWeapon) {
+    const WearResult wear =
+        WearEquipment(actor, "attack", DEFAULT_ATTACK_DURABILITY_COST,
+                      ItemsOf(actor.world()));
+    if (!wear.broken.empty()) {
+      message += "\n" + FormatBrokenTools(wear.broken);
+    }
+  }
+
+  return message;
+}
+
+// The visual centre of an entity, in world pixels: its ScreenPosition is the
+// top-left of its glyph or hitbox, and projectiles and floating text centre on
+// the body rather than on the corner.
+Vector2 ScreenCenterOf(flecs::entity entity) {
+  const ScreenPosition *position = entity.get<ScreenPosition>();
+  if (position == nullptr) {
+    return {0.0f, 0.0f};
+  }
+  float width = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+  float height = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
+  if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
+    width = static_cast<float>(ascii->width);
+    height = static_cast<float>(ascii->height);
+  } else if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+    width = hitbox->width;
+    height = hitbox->height;
+  }
+  return {position->x + width * 0.5f, position->y + height * 0.5f};
+}
+
+// Launches the skill's projectile, if it has one. Returns false when the skill
+// has no projectile id, the registry is missing, or the caster has no screen
+// position -- callers then fall back to applying the impact directly, so a
+// content error costs the flight, not the spell.
+bool SpawnSkillProjectile(flecs::entity actor, flecs::entity target,
+                          const SkillDef &def, float baseDamage,
+                          bool playerCast) {
+  if (def.activation.projectile.empty() || !actor.has<ScreenPosition>()) {
+    return false;
+  }
+  auto registryRes = actor.world().get<ProjectileRegistryResource>();
+  if (!registryRes || registryRes->registry == nullptr) {
+    return false;
+  }
+  const ProjectileDef *projectileDef =
+      registryRes->registry->Get(def.activation.projectile);
+  if (projectileDef == nullptr) {
+    return false;
+  }
+
+  Projectile projectile;
+  projectile.owner = actor;
+  projectile.target = target;
+  projectile.skillId = def.id;
+  projectile.label = def.name;
+  projectile.sprite = projectileDef->sprite;
+  projectile.baseDamage = baseDamage;
+  projectile.speed = projectileDef->speed;
+  projectile.size = projectileDef->size;
+  projectile.playerCast = playerCast;
+  projectile.interrupts = def.activation.interrupts;
+
+  const Vector2 start = ScreenCenterOf(actor);
+  ScreenPosition startPosition;
+  startPosition.x = start.x;
+  startPosition.y = start.y;
+
+  flecs::entity entity = actor.world().entity();
+  entity.set<ScreenPosition>(startPosition);
+  entity.set<Projectile>(std::move(projectile));
+  return entity.is_alive();
+}
+
+// Starts one use of one skill.
+//
+// Instant skills resolve here. Cast-time skills commit the cast here: the
+// cooldown and GCD start immediately, the caster is marked Casting, and an
+// action entity carries the timer. CastResolutionSystem applies the effect when
+// the timer completes.
+SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
+                         flecs::entity target, bool secondPerson,
+                         bool announce) {
+  SkillUseOutcome outcome;
+  if (!actor.is_alive() || !actor.has<Vitals>()) {
+    return outcome;
+  }
+
+  const SkillDef *def = FindSkillDef(actor.world(), skillId);
+  if (def == nullptr) {
+    outcome.message = "Unknown skill '" + skillId + "'.";
+    return outcome;
+  }
+  if (!SkillIsActivatable(def->type)) {
+    outcome.message = def->name + " is a passive skill and has no button.";
+    return outcome;
+  }
+
+  SkillCooldowns *cooldowns = actor.get_mut<SkillCooldowns>();
+  GlobalCooldown *globalCooldown = actor.get_mut<GlobalCooldown>();
+  if (cooldowns == nullptr || globalCooldown == nullptr) {
+    return outcome;
+  }
+
+  if (const Casting *casting = actor.get<Casting>()) {
+    outcome.message = "You are already casting " + casting->label + ".";
+    return outcome;
+  }
+
+  const float readyIn = cooldowns->RemainingFor(skillId);
+  if (readyIn > 0.0f) {
+    outcome.message = def->name + " is not ready yet (" + CooldownLabel(readyIn) + ").";
+    return outcome;
+  }
+  if (def->activation.gcd && globalCooldown->remaining > 0.0f) {
+    outcome.message = "You are still recovering (" +
+                      CooldownLabel(globalCooldown->remaining) + ").";
+    return outcome;
+  }
+
+  if (def->activation.requiresTarget) {
+    if (!target.is_alive()) {
+      outcome.message = "You have no target. Click a creature or press Tab.";
+      return outcome;
+    }
+    if (target == actor) {
+      outcome.message = "You cannot use " + def->name + " on yourself.";
+      return outcome;
+    }
+    if (!target.has<Vitals>()) {
+      outcome.message = "That is not something you can attack.";
+      return outcome;
+    }
+    if (!WithinActivationRange(actor, target, def->activation.rangeTiles)) {
+      outcome.message = "You are too far away to use " + def->name + ".";
+      return outcome;
+    }
+  }
+
+  const ResolutionInputs inputs = MakeResolutionInputs(actor.world());
+
+  float baseDamage = def->activation.baseDamage;
+  float cooldownSeconds = def->activation.cooldownSeconds;
+  std::string weaponId;
+
+  if (def->activation.useWeapon) {
+    const EquippedWeapon weapon = FindEquippedWeapon(actor, inputs.definitions);
+    if (weapon.definition != nullptr) {
+      baseDamage = weapon.definition->damage;
+      cooldownSeconds = weapon.definition->swingTime;
+      weaponId = weapon.id;
+    } else {
+      baseDamage = DEFAULT_UNARMED_DAMAGE;
+      cooldownSeconds = DEFAULT_UNARMED_SWING_SECONDS;
+    }
+
+    DurationRequest durationRequest;
+    durationRequest.activity = "attack";
+    durationRequest.subjectId = weaponId;
+    durationRequest.baseSeconds = cooldownSeconds;
+    const DurationResolution duration =
+        ResolveDuration(actor, durationRequest, inputs.definitions, *inputs.hooks);
+    if (duration.fold.blocked) {
+      outcome.message = duration.fold.blockReason;
+      return outcome;
+    }
+    cooldownSeconds = duration.fold.value;
+  }
+
+  // The cooldown starts now for both paths. A cast that is interrupted has still
+  // spent the skill, which is what makes interrupting worth doing.
+  cooldowns->Start(skillId, cooldownSeconds);
+  if (def->activation.gcd) {
+    globalCooldown->remaining = def->activation.gcdSeconds > 0.0f
+                                    ? def->activation.gcdSeconds
+                                    : DEFAULT_GLOBAL_COOLDOWN_SECONDS;
+  }
+
+  const std::string actorLabel =
+      secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
+
+  if (def->activation.castSeconds > 0.0f) {
+    flecs::entity action =
+        actor.world()
+            .entity()
+            .set<ActionTimer>({def->activation.castSeconds})
+            .set<ActionActor>({actor})
+            .set<CastAction>({skillId, def->name, baseDamage,
+                              def->activation.interruptible, secondPerson});
+    if (def->activation.requiresTarget) {
+      action.set<ActionTarget>({target});
+    }
+    actor.set<Casting>(
+        {action, skillId, def->name, def->activation.interruptible});
+    actor.set<Busy>({action});
+
+    outcome.used = true;
+    outcome.message = actorLabel +
+                      (secondPerson ? " begin casting " : " begins casting ") +
+                      def->name + ".";
+    return outcome;
+  }
+
+  // A projectile is a delivery, not an impact: the hit is applied by
+  // ProjectileUpdateSystem when the object reaches the target. A failed launch
+  // (missing registry/id/position) falls through to a direct hit so a content
+  // error costs the flight, not the spell.
+  if (!def->activation.projectile.empty() &&
+      SpawnSkillProjectile(actor, target, *def, baseDamage, secondPerson)) {
+    outcome.message = actorLabel + (secondPerson ? " hurl " : " hurls ") +
+                      def->name + " at " +
+                      EntityLabel(target, "the target") + ".";
+    outcome.message += FinalizeSkillUse(actor, *def);
+    if (announce) {
+      SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
+    }
+    outcome.used = true;
+    return outcome;
+  }
+
+  if (def->activation.requiresTarget) {
+    outcome.message = ApplyHit(actor, target, baseDamage, skillId, def->name,
+                               secondPerson, def->activation.interrupts);
+  } else {
+    outcome.message =
+        actorLabel + (secondPerson ? " use " : " uses ") + def->name + ".";
+  }
+  outcome.message += FinalizeSkillUse(actor, *def);
+
+  // A deliberate instant use says its name over the caster. Auto-cast passes
+  // `announce == false`: the basic attack repeats every swing, and a name over
+  // the head on every one of those is noise, not feedback.
+  if (announce) {
+    SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
+  }
+
+  outcome.used = true;
+  return outcome;
+}
+
 // What one execution of a recipe produced, plus any skill progress it earned.
 struct RecipeOutcome {
   std::string produced; // empty when every chance failed
@@ -1685,6 +2195,308 @@ std::string FormatBatchedLabel(int batches, const std::string &label) {
 }
 
 } // namespace
+
+// --- Player combat entry points ---------------------------------------------
+
+void Game::SetPlayerTarget(flecs::entity target) {
+  if (!playerEntity.is_alive()) {
+    return;
+  }
+  if (!target.is_alive() || target == playerEntity) {
+    playerEntity.remove<LockedTarget>();
+    if (debugLog) {
+      debugLog->LogCombat("Target cleared.");
+    }
+    return;
+  }
+
+  playerEntity.set<LockedTarget>({target});
+
+  const std::string name = EntityLabel(target, "target");
+  if (const Vitals *vitals = target.get<Vitals>()) {
+    if (debugLog) {
+      debugLog->LogCombat(
+          "Targeting " + name + " (" +
+          std::to_string(static_cast<int>(std::ceil(vitals->health))) + "/" +
+          std::to_string(static_cast<int>(std::ceil(vitals->maxHealth))) + ").");
+    }
+  } else if (debugLog) {
+    debugLog->LogCombat("Targeting " + name + " (it has no health to show).");
+  }
+}
+
+void Game::CyclePlayerTarget() {
+  if (!playerEntity.is_alive()) {
+    return;
+  }
+  const GamePosition *playerPos = playerEntity.get<GamePosition>();
+  if (playerPos == nullptr) {
+    return;
+  }
+
+  // Anything with health is a candidate. Distance decides the order, and the
+  // cap keeps a target across the map from being selected by a Tab press.
+  std::vector<std::pair<int, flecs::entity>> candidates;
+  ecs.filter<GamePosition, Vitals>().each(
+      [&](flecs::entity entity, const GamePosition &pos, Vitals &) {
+        if (entity == playerEntity) {
+          return;
+        }
+        const int dx = pos.x - playerPos->x;
+        const int dy = pos.y - playerPos->y;
+        const int distance = dx * dx + dy * dy;
+        if (distance > 15 * 15) {
+          return;
+        }
+        candidates.push_back({distance, entity});
+      });
+
+  if (candidates.empty()) {
+    if (debugLog) {
+      debugLog->LogCombat("There is nothing to target nearby.");
+    }
+    return;
+  }
+
+  std::sort(candidates.begin(), candidates.end(),
+            [](const auto &a, const auto &b) {
+              if (a.first != b.first) {
+                return a.first < b.first;
+              }
+              return a.second.id() < b.second.id();
+            });
+
+  flecs::entity current = flecs::entity::null();
+  if (const LockedTarget *lock = playerEntity.get<LockedTarget>()) {
+    current = lock->target;
+  }
+
+  size_t next = 0;
+  for (size_t i = 0; i < candidates.size(); ++i) {
+    if (candidates[i].second == current) {
+      next = (i + 1) % candidates.size();
+      break;
+    }
+  }
+  SetPlayerTarget(candidates[next].second);
+}
+
+bool Game::ActivatePlayerSkill(int index) {
+  if (!playerEntity.is_alive() || index < 0) {
+    return false;
+  }
+  const SkillBar *bar = playerEntity.get<SkillBar>();
+  if (bar == nullptr || index >= static_cast<int>(bar->ids.size())) {
+    return false;
+  }
+
+  flecs::entity target = flecs::entity::null();
+  if (const LockedTarget *lock = playerEntity.get<LockedTarget>()) {
+    target = lock->target;
+  }
+
+  const SkillUseOutcome outcome =
+      UseSkill(playerEntity, bar->ids[static_cast<size_t>(index)], target, true,
+               true);
+  if (debugLog && !outcome.message.empty()) {
+    debugLog->LogCombat(outcome.message);
+  }
+  return outcome.used;
+}
+
+int Game::RunCombatSelfCheck() {
+  if (!playerEntity.is_alive()) {
+    std::cout << "combat-check: no player entity\n";
+    return 1;
+  }
+
+  // The plain dummy, not the sparring one: the check drives the player, so the
+  // opponent must not be acting on its own.
+  flecs::entity dummy = flecs::entity::null();
+  ecs.filter<GamePosition, Vitals>().each(
+      [&](flecs::entity entity, const GamePosition &, Vitals &) {
+        if (!dummy.is_alive() && entity.has<TrainingDummy>() &&
+            !entity.has<Aggressive>()) {
+          dummy = entity;
+        }
+      });
+  if (!dummy.is_alive()) {
+    std::cout << "combat-check: this map has no training dummy\n";
+    return 1;
+  }
+
+  // Stand next to it, because every attack is a range check and a check that
+  // teleported the target to the player would not be testing the range rule.
+  const GamePosition dummyPos = *dummy.get<GamePosition>();
+  GamePosition beside{dummyPos.x - 1, dummyPos.y};
+  if (map != nullptr && !map->IsInBounds(static_cast<float>(beside.x),
+                                         static_cast<float>(beside.y))) {
+    beside = {dummyPos.x, dummyPos.y - 1};
+  }
+  playerEntity.set<GamePosition>(beside);
+  if (map != nullptr) {
+    playerEntity.set<ScreenPosition>(
+        map->GameCoordsToScreenCoords(beside.x, beside.y));
+  }
+
+  SetPlayerTarget(dummy);
+
+  const SkillBar *bar = playerEntity.get<SkillBar>();
+  if (bar == nullptr || bar->ids.empty()) {
+    std::cout << "combat-check: the player has no skill bar\n";
+    return 1;
+  }
+
+  // Slots are looked up by id, not by index: every new skill file re-sorts the
+  // bar, and a check that hardcoded "slot 1" would silently start testing
+  // Fireball the day Fireball was added.
+  auto slotOf = [&](const std::string &id) {
+    for (size_t i = 0; i < bar->ids.size(); ++i) {
+      if (bar->ids[i] == id) {
+        return static_cast<int>(i);
+      }
+    }
+    return -1;
+  };
+  const int attackSlot = slotOf("attack");
+  const int heavySlot = slotOf("heavy_swing");
+  const int kickSlot = slotOf("kick");
+  const int fireballSlot = slotOf("fireball");
+  if (attackSlot < 0) {
+    std::cout << "combat-check: the bar has no attack skill\n";
+    return 1;
+  }
+
+  const float healthBefore = dummy.get<Vitals>()->health;
+  const bool first = ActivatePlayerSkill(attackSlot);
+  const float healthAfter = dummy.get<Vitals>()->health;
+  const bool second = ActivatePlayerSkill(attackSlot);
+
+  // The check is the only place that can drive a cast to completion without a
+  // frame clock, so it does: clear the cooldowns, start Heavy Swing, expire its
+  // timer by hand, and let the normal systems resolve it.
+  auto clearCooldowns = [&]() {
+    if (SkillCooldowns *cooldowns = playerEntity.get_mut<SkillCooldowns>()) {
+      cooldowns->cooldowns.clear();
+    }
+    if (GlobalCooldown *gcd = playerEntity.get_mut<GlobalCooldown>()) {
+      gcd->remaining = 0.0f;
+    }
+  };
+
+  clearCooldowns();
+  // The auto-cast would swing the basic attack during progress() and make the
+  // cast's damage unattributable.
+  if (AutoCastSkills *autoCast = playerEntity.get_mut<AutoCastSkills>()) {
+    autoCast->ids.clear();
+  }
+
+  const bool hasCastSkill = heavySlot >= 0;
+  const bool castStarted = hasCastSkill && ActivatePlayerSkill(heavySlot);
+  const float healthBeforeCast = dummy.get<Vitals>()->health;
+  bool castResolved = false;
+  if (const Casting *casting = playerEntity.get<Casting>()) {
+    flecs::entity castAction = casting->actionEntity;
+    if (castAction.is_alive()) {
+      if (ActionTimer *timer = castAction.get_mut<ActionTimer>()) {
+        timer->timeRemaining = 0.0f;
+      }
+      castAction.add<ActionCompleted>();
+      ecs.progress();
+      castResolved = dummy.get<Vitals>()->health < healthBeforeCast;
+    }
+  }
+
+  // Interrupt: put a cast on the dummy and kick it apart. The kick is instant and
+  // flagged `interrupts`, so this exercises the same path an agent will use.
+  clearCooldowns();
+  const bool hasKick = kickSlot >= 0;
+  bool kickUsed = false;
+  bool interrupted = false;
+  if (hasKick) {
+    flecs::entity action =
+        ecs.entity()
+            .set<ActionTimer>({5.0f})
+            .set<ActionActor>({dummy})
+            .set<ActionTarget>({playerEntity})
+            .set<CastAction>({std::string(), "Test Cast", 10.0f, true, false});
+    dummy.set<Casting>({action, std::string(), "Test Cast", true});
+    dummy.set<Busy>({action});
+    kickUsed = ActivatePlayerSkill(kickSlot);
+    interrupted = !dummy.has<Casting>();
+    ecs.progress();  // flush the deferred action destruction
+  }
+
+  // Projectile: launch Fireball, then put the object on the target so the
+  // impact is tested without depending on progress() advancing a frame clock.
+  clearCooldowns();
+  bool fireballUsed = false;
+  bool fireballHit = false;
+  if (fireballSlot >= 0) {
+    const float beforeFireball = dummy.get<Vitals>()->health;
+    fireballUsed = ActivatePlayerSkill(fireballSlot);
+
+    flecs::entity projectile = flecs::entity::null();
+    ecs.filter<Projectile>().each(
+        [&](flecs::entity entity, Projectile &) {
+          if (!projectile.is_alive()) {
+            projectile = entity;
+          }
+        });
+    if (projectile.is_alive()) {
+      if (ScreenPosition *position = projectile.get_mut<ScreenPosition>()) {
+        const Vector2 center = ScreenCenterOf(dummy);
+        position->x = center.x;
+        position->y = center.y;
+      }
+      ecs.progress();
+      fireballHit = dummy.get<Vitals>()->health < beforeFireball;
+    }
+  }
+
+  // Print the combat lines the two calls produced, so the output shows the same
+  // text a player would read in the Log window.
+  if (debugLog) {
+    for (const DebugLog::LogEntry &entry : debugLog->GetEntries()) {
+      if (entry.category == DebugLog::LogCategory::Combat) {
+        std::cout << "  [combat] " << entry.message << "\n";
+      }
+    }
+  }
+
+  std::cout << "combat-check: attack slot = " << attackSlot << " ("
+            << bar->ids[static_cast<size_t>(attackSlot)] << ")\n";
+  if (hasCastSkill) {
+    std::cout << "combat-check: cast slot = " << heavySlot << " ("
+              << bar->ids[static_cast<size_t>(heavySlot)] << ")\n";
+  }
+  if (hasKick) {
+    std::cout << "combat-check: kick slot = " << kickSlot << " ("
+              << bar->ids[static_cast<size_t>(kickSlot)] << ")\n";
+  }
+  if (fireballSlot >= 0) {
+    std::cout << "combat-check: fireball slot = " << fireballSlot << " ("
+              << bar->ids[static_cast<size_t>(fireballSlot)] << ")\n";
+  }
+  std::cout << "combat-check: first swing used=" << first
+            << " damage=" << (healthBefore - healthAfter)
+            << " dummy=" << healthAfter << "/" << dummy.get<Vitals>()->maxHealth
+            << "\n";
+  std::cout << "combat-check: immediate second swing used=" << second
+            << " (expected 0: cooldown)\n";
+  std::cout << "combat-check: cast started=" << castStarted
+            << " resolved=" << castResolved << "\n";
+  std::cout << "combat-check: kick used=" << kickUsed
+            << " interrupted=" << interrupted << "\n";
+  std::cout << "combat-check: fireball used=" << fireballUsed
+            << " impact=" << fireballHit << "\n";
+
+  const bool ok = first && !second && healthAfter < healthBefore &&
+                  castStarted && castResolved && !playerEntity.has<Casting>() &&
+                  kickUsed && interrupted && fireballUsed && fireballHit;
+  std::cout << (ok ? "combat-check: OK\n" : "combat-check: FAILED\n");
+  return ok ? 0 : 1;
+}
 
 // The main-thread half of the tile-art queue: a swap happens here and nowhere else.
 //
@@ -1838,6 +2650,300 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           }
       }
   });
+
+  // Cooldowns tick before auto-cast in registration order, so a skill that came
+  // off cooldown this frame can be used this frame rather than next.
+  ecs.system<SkillCooldowns, GlobalCooldown>("SkillCooldownSystem")
+      .iter([](flecs::iter& it, SkillCooldowns* cooldowns,
+               GlobalCooldown* globalCooldowns) {
+        const float dt = it.delta_time();
+        for (auto i : it) {
+          for (SkillCooldown& entry : cooldowns[i].cooldowns) {
+            if (entry.remaining > 0.0f) {
+              entry.remaining = std::max(0.0f, entry.remaining - dt);
+            }
+          }
+          if (globalCooldowns[i].remaining > 0.0f) {
+            globalCooldowns[i].remaining =
+                std::max(0.0f, globalCooldowns[i].remaining - dt);
+          }
+        }
+      });
+
+  // "Always casts": fire every auto-cast skill whose target is valid, in bar
+  // order. One global-cooldown skill per frame is enough -- the GCD it starts
+  // blocks the rest on its own -- while the basic attack, being exempt, can fire
+  // alongside it.
+  //
+  // This is what lets a fight continue while the player is deciding, and it is
+  // the same mechanism an agent will use later, so it is written against
+  // components rather than against the player entity.
+  ecs.system<LockedTarget, Vitals, SkillCooldowns, GlobalCooldown,
+             AutoCastSkills, SkillBar>("CombatAutoCastSystem")
+      .each([this](flecs::entity entity, LockedTarget& lock, Vitals&,
+                   SkillCooldowns& cooldowns, GlobalCooldown& globalCooldown,
+                   AutoCastSkills& autoCast, SkillBar& bar) {
+        flecs::entity target = lock.target;
+        if (!target.is_alive() || target == entity || !target.has<Vitals>()) {
+          // A dead or destroyed target is a normal end of a lock, not an error:
+          // drop it instead of holding a dangling handle.
+          if (!target.is_alive()) {
+            lock.target = flecs::entity::null();
+          }
+          return;
+        }
+
+        // A committed cast owns the character until it resolves; auto-casting
+        // another skill would either queue behind it or silently cancel it.
+        if (entity.has<Casting>()) {
+          return;
+        }
+
+        for (const std::string& skillId : bar.ids) {
+          if (!autoCast.Has(skillId)) {
+            continue;
+          }
+          const SkillDef* def = FindSkillDef(entity.world(), skillId);
+          if (def == nullptr || !SkillIsActivatable(def->type)) {
+            continue;
+          }
+          if (!cooldowns.IsReady(skillId)) {
+            continue;
+          }
+          if (def->activation.gcd && globalCooldown.remaining > 0.0f) {
+            continue;
+          }
+          if (def->activation.requiresTarget &&
+              !WithinActivationRange(entity, target,
+                                     def->activation.rangeTiles)) {
+            continue;
+          }
+
+          const SkillUseOutcome outcome =
+              UseSkill(entity, skillId, target, entity == playerEntity, false);
+          if (!outcome.used) {
+            continue;
+          }
+
+          if (debugLog) {
+            debugLog->LogCombat(outcome.message);
+          }
+          if (entity != playerEntity && entity.has<AgentBrainWrapper>()) {
+            if (auto* wrapper = entity.get_mut<AgentBrainWrapper>()) {
+              if (wrapper->agBrain) {
+                wrapper->agBrain->appendContext(
+                    "user", "System: " + outcome.message + "\n");
+              }
+            }
+          }
+
+          // The GCD the skill just started blocks every other GCD skill; the
+          // loop ends here rather than continuing to check them.
+          if (def->activation.gcd) {
+            break;
+          }
+        }
+      });
+
+  // The smallest hostile controller: a timer, a range, and one telegraphed
+  // strike. It exists so incoming damage and interrupts are testable without the
+  // LLM path; a real hostile agent will not carry this component.
+  ecs.system<Aggressive, Vitals, GamePosition>("AggressiveCombatSystem")
+      .iter([this](flecs::iter& it, Aggressive* aggressive, Vitals* vitals,
+                   GamePosition* positions) {
+        if (!playerEntity.is_alive()) {
+          return;
+        }
+        const GamePosition* playerPosition = playerEntity.get<GamePosition>();
+        if (playerPosition == nullptr) {
+          return;
+        }
+        const float dt = it.delta_time();
+        for (auto i : it) {
+          flecs::entity entity = it.entity(i);
+          if (vitals[i].health <= 0.0f || entity.has<Casting>()) {
+            continue;
+          }
+          if (aggressive[i].timer > 0.0f) {
+            aggressive[i].timer = std::max(0.0f, aggressive[i].timer - dt);
+            if (aggressive[i].timer > 0.0f) {
+              continue;
+            }
+          }
+          const int dx = positions[i].x - playerPosition->x;
+          const int dy = positions[i].y - playerPosition->y;
+          const int steps = std::max(std::abs(dx), std::abs(dy));
+          if (static_cast<float>(steps) > aggressive[i].range) {
+            continue;
+          }
+
+          const std::string label = aggressive[i].label;
+          const float castSeconds = aggressive[i].castSeconds;
+          const float damage = aggressive[i].damage;
+          aggressive[i].timer = aggressive[i].interval;
+
+          ecs.defer([this, entity, label, castSeconds, damage]() {
+            // The captured handle is const inside a defer lambda; a local copy
+            // is what lets the deferred writes go through.
+            flecs::entity caster = entity;
+            flecs::entity action =
+                ecs.entity()
+                    .set<ActionTimer>({castSeconds})
+                    .set<ActionActor>({caster})
+                    .set<ActionTarget>({playerEntity})
+                    .set<CastAction>(
+                        {std::string(), label, damage, true, false});
+            caster.set<Casting>({action, std::string(), label, true});
+            caster.set<Busy>({action});
+          });
+
+          if (debugLog) {
+            debugLog->LogCombat(EntityLabel(entity, "The opponent") +
+                                " begins " + label + ".");
+          }
+        }
+      });
+
+  // Applies the effect of a cast whose timer completed. Any caster can carry a
+  // CastAction -- the player's skill cast and the aggressive dummy's inline
+  // strike share this one resolution path.
+  ecs.system<ActionActor, CastAction>("CastResolutionSystem")
+      .with<ActionCompleted>()
+      .each([this](flecs::entity actionEntity, ActionActor& a,
+                   CastAction& cast) {
+        flecs::entity actor = a.actor;
+        flecs::entity target = flecs::entity::null();
+        if (const ActionTarget* t = actionEntity.get<ActionTarget>()) {
+          target = t->target;
+        }
+
+        if (actor.is_alive()) {
+          actor.remove<Casting>();
+          if (const Busy* busy = actor.get<Busy>()) {
+            if (busy->actionEntity == actionEntity) {
+              actor.remove<Busy>();
+            }
+          }
+
+          std::string message;
+          bool landed = false;
+          if (!cast.skillId.empty()) {
+            const SkillDef* def = FindSkillDef(actor.world(), cast.skillId);
+            if (def == nullptr) {
+              message = "The cast fizzles: the skill no longer exists.";
+            } else if (def->activation.requiresTarget &&
+                       (!target.is_alive() ||
+                        !WithinActivationRange(actor, target,
+                                               def->activation.rangeTiles))) {
+              message = "The " + def->name +
+                        " fizzles: the target is out of reach.";
+            } else if (def->activation.requiresTarget) {
+              // A cast that launches a projectile finishes here but lands later:
+              // the flight is the delivery, and ProjectileUpdateSystem applies
+              // the hit. No completion call-out yet -- the object is still in the
+              // air.
+              if (!def->activation.projectile.empty() &&
+                  SpawnSkillProjectile(actor, target, *def, cast.baseDamage,
+                                       cast.playerCast)) {
+                message = (cast.playerCast ? std::string("You")
+                                           : EntityLabel(actor, "Someone")) +
+                          (cast.playerCast ? " hurl " : " hurls ") +
+                          def->name + " at " +
+                          EntityLabel(target, "the target") + ".";
+                message += FinalizeSkillUse(actor, *def);
+              } else {
+                message = ApplyHit(actor, target, cast.baseDamage, cast.skillId,
+                                   def->name, cast.playerCast,
+                                   def->activation.interrupts);
+                message += FinalizeSkillUse(actor, *def);
+                landed = true;
+              }
+            } else {
+              message = (cast.playerCast ? std::string("You")
+                                         : EntityLabel(actor, "Someone")) +
+                        " finish casting " + def->name + ".";
+              message += FinalizeSkillUse(actor, *def);
+              landed = true;
+            }
+          } else if (target.is_alive() && target.has<Vitals>()) {
+            message = ApplyHit(actor, target, cast.baseDamage, "", cast.label,
+                               false, false);
+            landed = true;
+          } else {
+            message = cast.label + " finds nothing.";
+          }
+
+          // A completed cast says its name over the caster, the same call-out an
+          // instant use gives, so a landed cast is legible without reading the
+          // log. A fizzle deliberately says nothing: no name, no reward.
+          if (landed) {
+            SpawnFloatingCallout(actor, cast.label,
+                                 DEFAULT_ABILITY_CALL_OUT_COLOR);
+          }
+
+          if (debugLog && !message.empty()) {
+            debugLog->LogCombat(message);
+          }
+          if (actor != playerEntity && actor.has<AgentBrainWrapper>()) {
+            if (auto* wrapper = actor.get_mut<AgentBrainWrapper>()) {
+              if (wrapper->agBrain) {
+                wrapper->agBrain->appendContext(
+                    "user", "System: " + message + "\n");
+              }
+            }
+          }
+        }
+
+        actionEntity.destruct();
+      });
+
+  // Moves every projectile toward its target and applies the impact on arrival.
+  // Delivery only: the damage, the interrupt and the floating numbers all come
+  // from ApplyHit, exactly as a melee hit does.
+  ecs.system<Projectile, ScreenPosition>("ProjectileUpdateSystem").iter(
+      [this](flecs::iter& it, Projectile* projectiles,
+             ScreenPosition* positions) {
+        const float dt = it.delta_time();
+        for (auto i : it) {
+          flecs::entity entity = it.entity(i);
+          Projectile& projectile = projectiles[i];
+
+          if (!projectile.target.is_alive() ||
+              !projectile.target.has<ScreenPosition>()) {
+            if (debugLog) {
+              debugLog->LogCombat(projectile.label + " fizzles.");
+            }
+            entity.destruct();
+            continue;
+          }
+
+          const Vector2 targetCenter = ScreenCenterOf(projectile.target);
+          Vector2 position = {positions[i].x, positions[i].y};
+          const Vector2 delta = {targetCenter.x - position.x,
+                                 targetCenter.y - position.y};
+          const float distance =
+              std::sqrt(delta.x * delta.x + delta.y * delta.y);
+          const float step = projectile.speed * std::max(0.0f, dt);
+
+          if (distance <= projectile.size * 0.5f ||
+              (step > 0.0f && distance <= step)) {
+            const std::string message = ApplyHit(
+                projectile.owner, projectile.target, projectile.baseDamage,
+                projectile.skillId, projectile.label, projectile.playerCast,
+                projectile.interrupts);
+            if (debugLog) {
+              debugLog->LogCombat(message);
+            }
+            entity.destruct();
+            continue;
+          }
+
+          if (step > 0.0f && distance > 0.0f) {
+            positions[i].x += delta.x / distance * step;
+            positions[i].y += delta.y / distance * step;
+          }
+        }
+      });
 
   ecs.system<ActionActor, ActionTarget>("HarvestResolutionSystem")
       .with<HarvestAction>()
@@ -2325,6 +3431,36 @@ void Game::ECSInit() {
   raceRegistry.SetDebugLog(debugLog.get());
   raceRegistry.LoadRaces(settings.content.races);
   ecs.set<RaceRegistryResource>({&raceRegistry});
+
+  // Portraits are content like races, and the HUD is the only consumer. Loaded
+  // before the map so a character spawned during LoadMap can be given its id
+  // without the registry existing twice; an unknown id is the unknown sprite, so
+  // this is not a hard dependency either way.
+  portraitRegistry.SetDebugLog(debugLog.get());
+  portraitRegistry.LoadPortraits(settings.content.portraits);
+
+  // Projectiles are the delivery half of a ranged skill: sprite, speed and size
+  // only. The impact stays on the skill's activation.
+  projectileRegistry.SetDebugLog(debugLog.get());
+  projectileRegistry.LoadProjectiles(settings.content.projectiles);
+  ecs.set<ProjectileRegistryResource>({&projectileRegistry});
+
+  // A skill naming a projectile nobody defines would look like a broken spell at
+  // use time. Report it once here, where the skill's id is still available.
+  for (const SkillDef *def : skillRegistry.GetAll()) {
+    if (def->activation.projectile.empty()) {
+      continue;
+    }
+    if (projectileRegistry.Get(def->activation.projectile) == nullptr) {
+      const std::string message =
+          "Warning: skill '" + def->id + "' names projectile '" +
+          def->activation.projectile +
+          "', which the projectile registry does not define; the skill will "
+          "strike instantly instead.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
 
   // The place vocabulary. Loaded before LoadMap for the same reason the tile
   // catalog is: nothing in a map's content may depend on it being absent, and a
@@ -3619,10 +4755,14 @@ void Game::ECSInit() {
   ECSInitMemorySystems();
   ECSInitTileArtSystems();
 
-  // Starting tile and identity come from settings. The relocation pass inside
-  // LoadMap already moved every colliding entity to open ground, so a spawn
-  // authored on a wall is corrected rather than fatal.
-  GamePosition startPlayerPos = {settings.player.startX, settings.player.startY};
+  // Starting tile and identity come from the map when it authors one, and from
+  // settings otherwise. The relocation pass inside LoadMap already moved every
+  // colliding entity to open ground, so a spawn authored on a wall is corrected
+  // rather than fatal.
+  GamePosition startPlayerPos =
+      map->HasPlayerStart()
+          ? map->GetPlayerStart()
+          : GamePosition{settings.player.startX, settings.player.startY};
   playerEntity = ecs.entity(settings.player.name.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
 
@@ -3658,6 +4798,7 @@ void Game::ECSInit() {
   });
   playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<CharacterTag>();
+  playerEntity.add<PlayerControlled>();
   if (auto registryRes = ecs.get<StatRegistryResource>()) {
     GiveDefaultStats(playerEntity, registryRes->registry);
   }
@@ -3673,13 +4814,92 @@ void Game::ECSInit() {
   GiveBody(playerEntity, &raceRegistry, settings.player.race, {}, std::string(),
            resourceManager, debugLog.get());
 
+  // The player's portrait, authored in settings with the race as the default.
+  // Same rule as an NPC: an id, or no component at all, which the HUD reads as
+  // the unknown sprite.
+  {
+    std::string portraitId = settings.player.portrait;
+    if (portraitId.empty()) {
+      const std::string raceId =
+          settings.player.race.empty() ? "human" : settings.player.race;
+      if (const RaceDef *race = raceRegistry.Get(raceId)) {
+        portraitId = race->portrait;
+      }
+    }
+    if (!portraitId.empty()) {
+      playerEntity.set<Portrait>({portraitId});
+    }
+  }
+
+  // --- Player combat state ---------------------------------------------------
+  //
+  // The bar is every activatable skill the registry currently holds, in the
+  // registry's sorted order, so a new skill file appears on the bar without any
+  // code change. A slot whose definition is later removed is skipped at draw and
+  // activation time rather than crashing.
+  if (auto skillRes = ecs.get<SkillRegistryResource>()) {
+    if (skillRes->registry != nullptr) {
+      SkillBar bar;
+      AutoCastSkills autoCast;
+      for (const SkillDef *def : skillRes->registry->GetAll()) {
+        if (!SkillIsActivatable(def->type)) {
+          continue;
+        }
+        bar.ids.push_back(def->id);
+        if (def->activation.autoCast) {
+          autoCast.ids.push_back(def->id);
+        }
+      }
+      playerEntity.set<SkillBar>(bar);
+      playerEntity.set<AutoCastSkills>(autoCast);
+      playerEntity.set<SkillCooldowns>({});
+      playerEntity.set<GlobalCooldown>({});
+    }
+  }
+
+  // Health is resolved from the same sources everything else uses, so
+  // Constitution (and later a race or a class) raises the ceiling through data.
+  {
+    const ResolutionInputs inputs = MakeResolutionInputs(playerEntity.world());
+    const FoldResult maxHealth =
+        ResolveMaxHealth(playerEntity, inputs.definitions);
+    const float ceiling = std::max(1.0f, maxHealth.value);
+    playerEntity.set<Vitals>({ceiling, ceiling});
+  }
+
+  // The map may author a starting weapon. It is spawned as a real held item and
+  // equipped through the same planner [EQUIP] uses, so authored gear cannot
+  // produce a state the player could not reach by hand. The single-item
+  // "playerWeapon" spelling is the fallback for maps written before the list.
+  std::vector<std::string> startingEquipment = map->GetPlayerEquipment();
+  if (startingEquipment.empty() && !map->GetPlayerWeapon().empty()) {
+    startingEquipment.push_back(map->GetPlayerWeapon());
+  }
+  if (!startingEquipment.empty()) {
+    auto factoryRes = ecs.get<ObjectFactoryResource>();
+    if (factoryRes && factoryRes->factory) {
+      for (const std::string &typeId : startingEquipment) {
+        flecs::entity item = factoryRes->factory->SpawnObject(
+            ecs, playerEntity, nullptr, typeId);
+        if (!item.is_alive()) {
+          continue;
+        }
+        playerEntity.add<Holds>(item);
+        const EquipOutcome outcome = EquipItem(playerEntity, item, &itemRegistry);
+        if (!outcome.ok && debugLog) {
+          debugLog->LogWarning("Warning: player could not equip '" + typeId +
+                               "': " + outcome.message);
+        }
+      }
+    }
+  }
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");
   tileInfoWindowEntity = ecs.entity("Tile Info Window");
   astarWindowEntity = ecs.entity("A* Window");
   entityOverviewWindowEntity = ecs.entity("Entity Overview Window");
-  debugLogWindowEntity = ecs.entity("Debug Log Window");
+  debugLogWindowEntity = ecs.entity("Log Window");
   mapReloadWindowEntity = ecs.entity("Map Reload Window");
   drawAsciiToggleWindowEntity = ecs.entity("DrawAscii Debug Window");
   fontSelectionWindowEntity = ecs.entity("Font Selection Window");

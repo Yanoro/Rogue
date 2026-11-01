@@ -49,6 +49,19 @@ void RaceRegistry::LoadRaces(const std::string& directoryPath) {
         }
       }
 
+      // The race's default portrait id, used only when a character authors none.
+      // Like "sprite" it is resolved at spawn, so a race that names an id the
+      // registry does not know is reported by the HUD's unknown fallback rather
+      // than failing the load.
+      if (j.contains("portrait")) {
+        if (j["portrait"].is_string()) {
+          def.portrait = j["portrait"].get<std::string>();
+        } else {
+          warn("Warning: Race '" + def.id +
+               "' has a non-string 'portrait'; ignoring it.");
+        }
+      }
+
       if (j.contains("slots")) {
         if (!j["slots"].is_array()) {
           warn("Warning: Race '" + def.id +

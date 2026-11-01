@@ -1,9 +1,150 @@
 #pragma once
 
+#include <cctype>
 #include <string>
 #include <vector>
 
 #include "SourceScaling.hpp"
+
+// How a skill is used.
+//
+// The four kinds exist because "skill" is the umbrella, not a synonym for a
+// button: a profession and a combat move are both skills, and the difference is
+// only whether they are always on or have to be activated.
+//
+//   Passive  always on, no button. Farming, Cooking, Blacksmithing.
+//   Active   activated for a one-shot effect (a strike, a heal, a dash).
+//   Hybrid   always-on effects AND an activation. Calling a skill with passive
+//            effects "active" would misdescribe it, which is why this is its own
+//            type rather than a flag.
+//   Toggle   activated on and off; its effects persist only while it is on.
+//            A stance or aura -- a distinct type because a toggle usually costs
+//            a resource or has a downside while on, so the player has to decide
+//            to keep paying it.
+//
+// A toggle's effects are NOT always-on (see SkillHasAlwaysOnEffects), which is
+// what stops a stance from silently applying before it is ever switched on.
+enum class SkillType { Passive, Active, Hybrid, Toggle };
+
+// Case-insensitive, matching every other content vocabulary in the project.
+// Returns false for an unknown name, leaving `out` untouched.
+inline bool ParseSkillType(const std::string &name, SkillType &out) {
+  std::string lower;
+  lower.reserve(name.size());
+  for (char c : name) {
+    lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  if (lower == "passive") {
+    out = SkillType::Passive;
+    return true;
+  }
+  if (lower == "active") {
+    out = SkillType::Active;
+    return true;
+  }
+  if (lower == "hybrid") {
+    out = SkillType::Hybrid;
+    return true;
+  }
+  if (lower == "toggle") {
+    out = SkillType::Toggle;
+    return true;
+  }
+  return false;
+}
+
+inline const char *SkillTypeName(SkillType type) {
+  switch (type) {
+    case SkillType::Passive: return "Passive";
+    case SkillType::Active: return "Active";
+    case SkillType::Hybrid: return "Hybrid";
+    case SkillType::Toggle: return "Toggle";
+  }
+  return "Passive";
+}
+
+// True when the skill has a button. Passive is the only kind that does not.
+inline bool SkillIsActivatable(SkillType type) {
+  return type != SkillType::Passive;
+}
+
+// True when the skill's declared effects apply without being activated.
+// A toggle's effects apply only while it is on, so it is deliberately false
+// here: that is the difference between a stance and a passive.
+inline bool SkillHasAlwaysOnEffects(SkillType type) {
+  return type == SkillType::Passive || type == SkillType::Hybrid;
+}
+
+// What activating an activatable skill does.
+//
+// The numbers are deliberately sparse: a combat skill names its damage and its
+// cadence, and everything else (stats, weapon, skill level) reaches the result
+// through the ordinary fold. Nothing here duplicates a stat's value.
+struct SkillActivation {
+  // Take base damage and the swing time from the equipped weapon. The basic
+  // attack is the reason this exists: its numbers are the weapon's, not the
+  // skill's, so equipping a better sword changes both.
+  bool useWeapon = false;
+
+  // Used when useWeapon is false, and as the weapon's fallback when no weapon
+  // is equipped.
+  float baseDamage = 0.0f;
+
+  // Seconds before it can be used again. Ignored when useWeapon is true: the
+  // cooldown is then the weapon's swing time, resolved through the duration
+  // fold so haste applies.
+  float cooldownSeconds = 1.5f;
+
+  // Centre-to-centre range in tiles. 1 is adjacent in the game's grid.
+  float rangeTiles = 1.0f;
+
+  // Whether using this skill starts the global cooldown. The basic attack is
+  // exempt on purpose: it runs on its own weapon timer, so it keeps flowing
+  // between skills instead of competing with them for the same beat.
+  bool gcd = true;
+  // Per-skill override of the global cooldown length. 0 means the character's
+  // default, so a fast skill can recover sooner without a second clock.
+  float gcdSeconds = 0.0f;
+
+  // Initial state of the right-click "Always casts" toggle. True only for the
+  // basic attack, which is what keeps combat moving while the player (and, in
+  // a later slice, the agent) is deciding.
+  bool autoCast = false;
+
+  // XP granted to the skill itself on a successful use, so an active skill
+  // levels by being used exactly the way a passive one levels by being done.
+  // 0 disables training for this skill.
+  int xpPerUse = 0;
+
+  // False for a self-buff or a utility skill that needs no target.
+  bool requiresTarget = true;
+
+  // Seconds of wind-up before the effect lands. 0 is instant.
+  //
+  // A cast is a real commitment: the cooldown starts when the cast begins, the
+  // caster cannot start another skill until it resolves, and the target can step
+  // out of range or interrupt it. That is what makes a telegraph a decision
+  // rather than a slower button.
+  float castSeconds = 0.0f;
+
+  // Whether a cast of this skill can be interrupted. Most attacks can; a
+  // deliberate "uninterruptible" cast is the exception, and the HUD marks it.
+  bool interruptible = true;
+
+  // Whether landing this skill interrupts the target's cast. This is the one
+  // explicit interrupt rule: ordinary damage does not break concentration, so a
+  // kick has to be a choice rather than something the basic attack does for free.
+  bool interrupts = false;
+
+  // ProjectileRegistry id this skill launches instead of applying its impact
+  // instantly. Empty means the impact lands on the target directly.
+  //
+  // The skill still owns the impact (base damage, interrupt), and the projectile
+  // owns only the flight: sprite, speed, size. That split is what lets the same
+  // arrow visual carry a poisoned arrow later, and the same fireball visual carry
+  // an area blast, without either record growing the other's fields.
+  std::string projectile;
+};
 
 // Definition of one improvable skill, loaded from data/skills/<id>.json.
 //
@@ -33,6 +174,19 @@ struct SkillDef {
   // Flavour for [SKILLS], never a mechanical claim: the "affects harvesting"
   // clause is generated from the registered links (section 9.1).
   std::string description;
+
+  // Optional icon for the ability bar: a sprite convention id ("skill_attack")
+  // or an explicit path. Empty means the slot falls back to the skill's name,
+  // so a skill is usable from data alone without an art dependency.
+  std::string icon;
+
+  // How this skill is used. Defaults to Passive so every skill written before
+  // the type existed keeps meaning "always on", which is what it already did.
+  SkillType type = SkillType::Passive;
+
+  // Only meaningful when SkillIsActivatable(type). A passive skill that declares
+  // an activation block is a content error the loader reports and ignores.
+  SkillActivation activation;
 
   // Stage names, lowest first. The size is the number of stages.
   std::vector<std::string> stages;

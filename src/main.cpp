@@ -1719,6 +1719,7 @@ int main(int argc, char *argv[]) {
   std::string objectArtSwapKey;
   bool artCacheTest = false;
   std::string objectCheckKey;
+  bool combatCheck = false;
   std::string drawProbeKey;
   int tileArtSplitCount = 0;
   bool paintMemoTest = false;
@@ -1855,6 +1856,10 @@ int main(int argc, char *argv[]) {
       // the point is to check the load path Game::ECSInit actually runs rather than a
       // loader the test drives itself.
       objectCheckKey = argv[++i];
+    } else if (arg == "--combat-check") {
+      // One scripted exchange against a training dummy, then exit. Needs a
+      // window like every other world check, but no input device.
+      combatCheck = true;
     } else if (arg == "--draw-probe" && i + 1 < argc) {
       // Draws one frame with the named object placed on a known tile and reads the
       // pixels back. Needs a window and a world: the whole point is the framebuffer.
@@ -2011,6 +2016,15 @@ int main(int argc, char *argv[]) {
                                                           : SpriteKinds::Kind::Tile;
   game.tileDesignerSelfTestSet = spriteDesignerSetTest;
   game.Init();
+
+  // One real exchange through the whole combat path: target, range, damage fold,
+  // cooldown, log. Placed first because it needs nothing but a world and a map
+  // with a training dummy.
+  if (combatCheck) {
+    const int code = game.RunCombatSelfCheck();
+    game.Shutdown();
+    return code;
+  }
 
   // Writes one complete designer log (header, system prompt, request, reply,
   // verdict) with no backend, then exits. Exists because the log is the only record

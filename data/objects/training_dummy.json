@@ -1,0 +1,29 @@
+{
+  "name": "Training Dummy",
+  "description": "A straw-stuffed post on a wooden base. It does not hit back, and it does not fall over.",
+  "components": [
+    "ShowNameTag",
+    "Vitals",
+    "Portrait",
+    "TrainingDummy",
+    "Obstacle"
+  ],
+  "health": 500,
+  "maxHealth": 500,
+  "portrait": "training_dummy",
+  "art": [
+    " O ",
+    "/|\\",
+    " | "
+  ],
+  "palette": {
+    "O": [200, 170, 90, 255],
+    "/": [120, 80, 40, 255],
+    "|": [120, 80, 40, 255],
+    "\\": [120, 80, 40, 255]
+  },
+  "character": "X",
+  "characterColor": [200, 170, 90, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 170, 90, 255]
+}

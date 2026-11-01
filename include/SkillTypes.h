@@ -30,3 +30,23 @@ struct SkillValue {
 struct SkillBlock {
   std::vector<SkillValue> values;
 };
+
+// The toggle skills currently switched on, by definition id.
+//
+// Kept beside SkillBlock rather than inside SkillValue because it is not
+// progression state: a toggle's level is a magnitude like any other skill's,
+// while whether it is on is a switch the character can flip at any time. A
+// toggle that is off contributes no source at all (see GatherSources), which is
+// exactly the difference between a stance and a passive.
+struct ActiveToggles {
+  std::vector<std::string> ids;
+
+  bool Has(const std::string &id) const {
+    for (const std::string &entry : ids) {
+      if (entry == id) {
+        return true;
+      }
+    }
+    return false;
+  }
+};

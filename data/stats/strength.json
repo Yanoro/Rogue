@@ -1,8 +1,12 @@
 {
   "name": "Strength",
-  "description": "Raw physical power. Heavy work comes easier to the strong, and they can carry more before it slows them down.",
+  "description": "Raw physical power. Heavy work comes easier to the strong, they hit harder, and they can carry more before it slows them down.",
   "baseline": 10,
   "scale": 1,
   "min": 1,
-  "max": 20
+  "max": 20,
+  "effects": [
+    { "point": "damage", "activity": "attack", "op": "flat", "perPoint": 1.5 }
+  ]
 }
+

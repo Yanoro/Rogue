@@ -50,6 +50,10 @@ void Game::Init() {
   if (window.IsReady())
     return;
 
+  // The HUD's saved anchor. Loaded before the window and the ECS so the first
+  // frame already draws the bar where the player left it.
+  LoadCombatHudState();
+
   // Everything below reads from the one settings object main() filled in. Taken
   // by reference rather than copied so there is exactly one place a setting can
   // be read from.
@@ -445,6 +449,36 @@ void Game::UpdateGUI() {
       }
     }
 
+    // Combat targeting runs before the window scan: anything with health is a
+    // valid target, and locking it must not depend on whether the creature also
+    // carries a click-window component.
+    flecs::entity clickedTarget = flecs::entity::null();
+    ecs.filter<GamePosition, Vitals>().each(
+        [&](flecs::entity entity, const GamePosition &pos, Vitals &) {
+          if (clickedTarget.is_alive() || entity == playerEntity) {
+            return;
+          }
+          bool hit = false;
+          if (const ScreenPosition *screen = entity.get<ScreenPosition>()) {
+            if (const Hitbox *box = entity.get<Hitbox>()) {
+              raylib::Rectangle rect(screen->x, screen->y, box->width,
+                                     box->height);
+              if (rect.CheckCollision(mouseWorldPos)) {
+                hit = true;
+              }
+            }
+          }
+          if (!hit && gPos == pos) {
+            hit = true;
+          }
+          if (hit) {
+            clickedTarget = entity;
+          }
+        });
+    if (clickedTarget.is_alive()) {
+      SetPlayerTarget(clickedTarget);
+    }
+
     bool clickedWindow = false;
     auto ai = ecs.get<AIBackend>();
     ecs.defer_begin();
@@ -755,6 +789,51 @@ void Game::handleInput() {
       cmd->execute(playerEntity);
     }
   }
+
+  // Combat keys, deliberately after the movement commands so holding W and
+  // pressing a skill does not cancel the walk.
+  //
+  // Gated on ImGui's keyboard capture: typing a filter in the Log window or a
+  // number in a settings field must not swing a sword.
+  if (ImGui::GetIO().WantCaptureKeyboard) {
+    return;
+  }
+
+  if (IsKeyPressed(KEY_TAB)) {
+    CyclePlayerTarget();
+  }
+
+  // 1..9 are contiguous in raylib's key enum, but spelling them out keeps the
+  // mapping obvious and survives any future remap. Slot 10 is 0; slots 11 and 12
+  // are click-only until letter binds exist, which is why the bar draws them
+  // without a key label.
+  static const int skillKeys[10] = {KEY_ONE,  KEY_TWO,   KEY_THREE,
+                                    KEY_FOUR, KEY_FIVE,  KEY_SIX,
+                                    KEY_SEVEN, KEY_EIGHT, KEY_NINE,
+                                    KEY_ZERO};
+  for (int i = 0; i < 10; ++i) {
+    if (IsKeyPressed(skillKeys[i])) {
+      ActivatePlayerSkill(i);
+      break; // one skill per frame, so two keys cannot fire in one tick
+    }
+  }
+
+  // F9 cycles the ability bar's procedural skin; F10 puts every HUD panel back
+  // where it started. Both are layout controls, not game actions, but they live
+  // here because this is the one place raw keys are read.
+  if (IsKeyPressed(KEY_F9)) {
+    abilityBarStyle = (abilityBarStyle + 1) % 3;
+    if (debugLog) {
+      debugLog->LogCombat("Ability bar style " +
+                          std::to_string(abilityBarStyle + 1) + " of 3.");
+    }
+  }
+  if (IsKeyPressed(KEY_F10)) {
+    resetCombatHudPosition = true;
+    if (debugLog) {
+      debugLog->LogCombat("HUD position reset.");
+    }
+  }
 }
 
 bool Game::SaveMapToFile() {
@@ -775,6 +854,67 @@ bool Game::SaveMapToFile() {
   return map->SaveToFile(mapFilePath);
 }
 
+void Game::LoadCombatHudState() {
+  hudStateLoaded = true;
+  std::ifstream file("hud_state.json");
+  if (!file.is_open()) {
+    return;
+  }
+  try {
+    nlohmann::json json;
+    file >> json;
+
+    // Current format: one object per panel, so a missing section means "use the
+    // panel's default" rather than "the old file's x/y happened to land here".
+    if (json.contains("player") && json["player"].is_object()) {
+      playerHudX = json["player"].value("x", playerHudX);
+      playerHudY = json["player"].value("y", playerHudY);
+    } else if (json.contains("x") && json.contains("y")) {
+      // The first HUD could only save one position (its own). Reuse it for the
+      // player panel so an existing layout is not thrown away by the upgrade.
+      playerHudX = json.value("x", playerHudX);
+      playerHudY = json.value("y", playerHudY);
+    }
+    if (json.contains("target") && json["target"].is_object()) {
+      targetHudX = json["target"].value("x", targetHudX);
+      targetHudY = json["target"].value("y", targetHudY);
+    }
+    if (json.contains("bar") && json["bar"].is_object()) {
+      abilityBarX = json["bar"].value("x", abilityBarX);
+      abilityBarY = json["bar"].value("y", abilityBarY);
+    }
+    abilityBarStyle = std::clamp(json.value("barStyle", abilityBarStyle), 0, 2);
+  } catch (const std::exception &e) {
+    // A corrupt file is not fatal: the default anchors are perfectly usable, and
+    // losing a panel position must never keep the game from starting.
+    if (debugLog) {
+      debugLog->LogWarning(std::string("Could not read hud_state.json: ") +
+                           e.what());
+    }
+  }
+}
+
+void Game::SaveCombatHudState() {
+  // Nothing to save if the HUD never drew: the fields are still defaults, and a
+  // headless check that calls Init/Shutdown without a frame must not overwrite
+  // the player's layout.
+  if (!combatHudDrawn) {
+    return;
+  }
+
+  nlohmann::json json;
+  json["player"] = {{"x", playerHudX}, {"y", playerHudY}};
+  json["target"] = {{"x", targetHudX}, {"y", targetHudY}};
+  json["bar"] = {{"x", abilityBarX}, {"y", abilityBarY}};
+  json["barStyle"] = abilityBarStyle;
+
+  std::ofstream file("hud_state.json");
+  if (!file.is_open()) {
+    return;
+  }
+  file << json.dump(2) << "\n";
+}
+
 void Game::Shutdown() {
   if (!window.IsReady())
     return;
@@ -783,6 +923,11 @@ void Game::Shutdown() {
   if (gameFont.glyphCount > 0) {
     UnloadFont(gameFont);
   }
+
+  // Where the player parked the combat HUD. Written here rather than every frame:
+  // the position only has to survive a clean exit, and a per-frame write would
+  // hammer the disk for a value that changed once.
+  SaveCombatHudState();
 
   // And every art-cell rasterization. UnloadFont is a no-op for raylib's default
   // font, which is what a failed ladder load leaves behind.

@@ -53,6 +53,23 @@ struct ItemDef {
   float scale = 1.0f;
   float baseline = 0.0f;
 
+  // What this item hits for as a weapon, and how long one swing takes.
+  //
+  // Deliberately plain fields rather than an effect link: base damage is the
+  // weapon's own number, not a contribution to a fold. Stats, skills and the
+  // weapon's tier still reach the result through the ordinary damage fold, so
+  // this only has to say what the object is worth before anything modifies it.
+  // An item with damage 0 is simply not a weapon.
+  float damage = 0.0f;
+  // Seconds between swings. The duration fold still applies on top (haste), so
+  // a data value of 1.8 is the weapon's unhasted tempo.
+  float swingTime = 1.8f;
+
+  // Flat damage reduction per hit while worn. 0 means not armour. Summed with
+  // any innate Armor the character or object carries, then subtracted from each
+  // hit and floored at one point -- see ArmorOf.
+  float armor = 0.0f;
+
   // The same shape a StatDef and a SkillDef provide, so one contribution builder
   // serves all three.
   SourceScaling Scaling() const {

@@ -1,0 +1,21 @@
+{
+  "name": "Iron Sword",
+  "description": "A plain soldier's sword: straight, heavy enough to matter, and honest about it.",
+  "components": [
+    "ShowNameTag",
+    "Portable"
+  ],
+  "art": [
+    " / ",
+    " | ",
+    " | "
+  ],
+  "palette": {
+    "/": [210, 210, 220, 255],
+    "|": [150, 150, 160, 255]
+  },
+  "character": "/",
+  "characterColor": [210, 210, 220, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [210, 210, 220, 255]
+}

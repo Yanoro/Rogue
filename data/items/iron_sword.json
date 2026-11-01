@@ -1,0 +1,10 @@
+{
+  "slot": "hand",
+  "occupies": 1,
+  "tier": 1,
+  "tags": ["sword", "edge"],
+  "damage": 6,
+  "swingTime": 1.8,
+  "durability": 100,
+  "consumedBy": ["attack"]
+}

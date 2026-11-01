@@ -16,22 +16,38 @@ public:
     DEBUG,
   };
 
+  // What a line is about, orthogonal to its severity. Combat is its own
+  // category because it is the one stream a player wants to read without the
+  // engine's bookkeeping around it; everything else is "General" and is what
+  // the debug toggle and the existing level filters already describe.
+  enum class LogCategory {
+    General,
+    Combat,
+  };
+
   struct LogEntry {
     std::string timestamp;
     LogLevel level;
+    LogCategory category = LogCategory::General;
     std::string message;
 
-    LogEntry(const std::string &ts, LogLevel lv, const std::string &msg)
-        : timestamp(ts), level(lv), message(msg) {}
+    LogEntry(const std::string &ts, LogLevel lv, const std::string &msg,
+             LogCategory cat = LogCategory::General)
+        : timestamp(ts), level(lv), category(cat), message(msg) {}
   };
 
   DebugLog(size_t maxEntries = 1000);
 
-  void Log(const std::string &message, LogLevel level = LogLevel::INFO);
+  void Log(const std::string &message, LogLevel level = LogLevel::INFO,
+           LogCategory category = LogCategory::General);
   void LogInfo(const std::string &message);
   void LogWarning(const std::string &message);
   void LogError(const std::string &message);
   void LogDebug(const std::string &message);
+
+  // A combat line. Always INFO: a hit that lands is a fact about the world, not
+  // a diagnostic, and severity is what the level filters already sort.
+  void LogCombat(const std::string &message);
 
   const std::deque<LogEntry> &GetEntries() const { return entries; }
 

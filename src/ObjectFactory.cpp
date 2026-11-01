@@ -85,6 +85,16 @@ const std::vector<ParamSpec>& ParameterSpecs() {
       {"placement.maxDistance", ParamType::Number, false},
       {"requires", ParamType::Array, true},
       {"trains", ParamType::Array, true},
+      {"health", ParamType::Number, false},
+      {"maxHealth", ParamType::Number, false},
+      {"portrait", ParamType::String, false},
+      {"armor", ParamType::Number, false},
+      {"interval", ParamType::Number, false},
+      {"firstStrikeDelay", ParamType::Number, false},
+      {"range", ParamType::Number, false},
+      {"castSeconds", ParamType::Number, false},
+      {"damage", ParamType::Number, false},
+      {"label", ParamType::String, false},
   };
   return specs;
 }
@@ -162,6 +172,68 @@ void ObjectFactory::RegisterDefaultComponents() {
   RecordComponentInfo("Trains", {"trains"}, "using it teaches a skill");
   RecordComponentInfo("PlaceCategories", {"placeCategories"},
                       "it is part of a kind of place");
+  RecordComponentInfo("Vitals", {"health", "maxHealth"},
+                      "it has health and can be hit");
+  RecordComponentInfo("Portrait", {"portrait"},
+                      "it has a portrait in the HUD");
+  RecordComponentInfo("TrainingDummy", {},
+                      "it is a target that never dies or fights back");
+  RecordComponentInfo("Armor", {"armor"},
+                      "it reduces incoming damage");
+  RecordComponentInfo("Aggressive",
+                      {"interval", "firstStrikeDelay", "range", "castSeconds",
+                       "damage", "label"},
+                      "it attacks the player on a timer");
+
+  RegisterComponent<Portrait>("Portrait", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    const std::string id = tmpl.value("portrait", "");
+    if (!id.empty()) {
+      obj.set<Portrait>({id});
+    }
+  });
+
+  RegisterComponent<Vitals>("Vitals", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Vitals vitals;
+    // `maxHealth` is optional: a definition that only says "health" gets that
+    // same value as its ceiling, which is the common case for a dummy.
+    vitals.maxHealth = tmpl.value("maxHealth", 100.0f);
+    vitals.health = tmpl.value("health", vitals.maxHealth);
+    if (vitals.maxHealth <= 0.0f) {
+      vitals.maxHealth = 100.0f;
+    }
+    if (vitals.health > vitals.maxHealth) {
+      vitals.health = vitals.maxHealth;
+    }
+    obj.set<Vitals>(vitals);
+  });
+  RegisterComponent<TrainingDummy>("TrainingDummy", [](flecs::entity obj, const nlohmann::json&) {
+    obj.add<TrainingDummy>();
+  });
+  RegisterComponent<Armor>("Armor", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    const float value = tmpl.value("armor", 0.0f);
+    if (value > 0.0f) {
+      obj.set<Armor>({value});
+    }
+  });
+  RegisterComponent<Aggressive>("Aggressive", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Aggressive aggressive;
+    aggressive.interval = tmpl.value("interval", 6.0f);
+    aggressive.timer = tmpl.value("firstStrikeDelay", 2.0f);
+    aggressive.range = tmpl.value("range", 1.0f);
+    aggressive.castSeconds = tmpl.value("castSeconds", 2.0f);
+    aggressive.damage = tmpl.value("damage", 8.0f);
+    aggressive.label = tmpl.value("label", std::string("Strike"));
+    if (aggressive.interval <= 0.0f) {
+      aggressive.interval = 6.0f;
+    }
+    if (aggressive.range <= 0.0f) {
+      aggressive.range = 1.0f;
+    }
+    if (aggressive.castSeconds < 0.0f) {
+      aggressive.castSeconds = 0.0f;
+    }
+    obj.set<Aggressive>(aggressive);
+  });
 
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });

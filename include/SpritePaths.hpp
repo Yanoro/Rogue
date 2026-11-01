@@ -59,6 +59,27 @@ const Texture2D *ResolveSpriteTexture(const std::string &explicitPath,
                                       DebugLog *debugLog,
                                       std::string *resolvedPath = nullptr);
 
+// One reference that may be either an explicit image path or a convention id.
+// This is the shape portrait, skill-icon and projectile content uses: a data file
+// names one string and does not have to know which half of the resolver it wants.
+// An explicit path wins, because a string ending in .png or containing a separator
+// was meant literally.
+inline const Texture2D *ResolveSpriteReference(const std::string &reference,
+                                               ResourceManager &resources,
+                                               DebugLog *debugLog) {
+  if (reference.empty()) {
+    return nullptr;
+  }
+  const bool explicitPath =
+      reference.find('/') != std::string::npos ||
+      reference.find('\\') != std::string::npos ||
+      (reference.size() > 4 &&
+       reference.compare(reference.size() - 4, 4, ".png") == 0);
+  return explicitPath
+             ? ResolveSpriteTexture(reference, "", resources, debugLog)
+             : ResolveSpriteTexture("", reference, resources, debugLog);
+}
+
 // Gives `entity` a Sprite when an image resolves, and leaves it untouched
 // otherwise. The untouched case is the common one, and it is what keeps a
 // sprite-less entity on its ASCII art: nothing here clears AsciiArt or DrawAscii,

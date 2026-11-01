@@ -580,6 +580,9 @@ struct GameSettings {
     int startY = 20;
     // Race the player's body slots come from. Empty means the human default.
     std::string race;
+    // PortraitRegistry id for the player's HUD portrait. Empty means the race's
+    // default, and then the unknown sprite.
+    std::string portrait;
   } player;
 
   struct WorldSection {
@@ -596,6 +599,8 @@ struct GameSettings {
     std::string skills = "data/skills";
     std::string items = "data/items";
     std::string races = "data/races";
+    std::string portraits = "data/portraits";
+    std::string projectiles = "data/projectiles";
     // The place taxonomy (docs/place-derivation-design.md section 4): which
     // categories form places, their seed thresholds, link radii and split rule.
     // A file rather than a directory, because it is one vocabulary, not a catalog.

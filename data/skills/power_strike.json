@@ -1,0 +1,34 @@
+{
+  "name": "Power Strike",
+  "description": "A committed blow with the whole body behind it. Slower than a plain attack, and the recovery after it is long enough to be punished.",
+  "icon": "data/sprites/skill_power_strike.png",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 14,
+    "cooldown": 4.0,
+    "range": 1,
+    "gcd": true,
+    "autoCast": false,
+    "xpPerUse": 8
+  }
+}

@@ -909,6 +909,11 @@ struct AgentSleepTimer {
 
 struct CharacterTag {};
 
+// The one character a human is driving. A tag rather than a pointer slot so a
+// resolver that only has an entity (a damage application, an interrupt) can tell
+// "this is the player" without reaching into Game.
+struct PlayerControlled {};
+
 struct NPCContext {
   std::vector<ChatMessage> history;
   std::string contextID;
@@ -1099,6 +1104,227 @@ struct CraftAction {
 };
 
 struct Busy { flecs::entity actionEntity; };
+
+// --- Combat -----------------------------------------------------------------
+//
+// Combat state is a set of small components on the character, not an encounter
+// entity: a fight is just two characters who happen to be targeting each other,
+// and every action a character can take is an ordinary skill activation. That is
+// what keeps combat out of a separate mode and on the same ECS as harvesting.
+//
+// `health` is the only stored progression fact. The maximum is resolved on
+// demand from the character's sources (see ResolveMaxHealth), so a Constitution
+// change or a new item takes effect without a second number to keep in sync --
+// the same rule SkillDef follows for level versus stage.
+
+// Current and ceiling health, in points. `maxHealth` is a cache refreshed by
+// whoever resolves it, not authored state: a definition that sets only health
+// (a training dummy) gets a maximum of that same value.
+struct Vitals {
+  float health = 100.0f;
+  float maxHealth = 100.0f;
+};
+
+// The portrait this character uses in the HUD, by PortraitRegistry id.
+//
+// An id rather than a path or a texture: the image behind a portrait can be
+// restyled by an art pack, and a character should keep pointing at the same
+// identity while the pixels change. Absent means "no portrait authored", which
+// the HUD draws as the unknown sprite rather than as an empty box.
+struct Portrait {
+  std::string id;
+};
+
+// Who this character is fighting. A runtime-only handle, like ActionTarget, so
+// it is not registered with the rest of the serialized components.
+//
+// The target being dead or destroyed is expected, not exceptional: callers
+// check is_alive() and clear the lock rather than requiring the entity to be
+// torn down in a particular order.
+struct LockedTarget {
+  flecs::entity target;
+};
+
+// One skill's remaining cooldown. A vector of these rather than a map because
+// SkillBlock and StatBlock are vectors for the same reason: flecs reflection has
+// a std_vector_support helper and no map equivalent.
+struct SkillCooldown {
+  std::string skillId;
+  float remaining = 0.0f;
+  // The length this cooldown started at, so the HUD can draw a fill fraction
+  // without re-resolving the skill (which may depend on the weapon, stats, and
+  // a live fold). Kept here rather than on the bar slot because it is a fact
+  // about this particular use, not about the skill.
+  float duration = 0.0f;
+};
+
+// Every cooldown this character is running. Absent means "nothing is cooling
+// down", which is also what an entity that has never used a skill looks like.
+//
+// Entries are created on first use and kept at zero afterwards rather than
+// erased, so the set does not churn and a lookup never has to distinguish
+// "absent" from "ready".
+struct SkillCooldowns {
+  std::vector<SkillCooldown> cooldowns;
+
+  float RemainingFor(const std::string &skillId) const {
+    for (const SkillCooldown &entry : cooldowns) {
+      if (entry.skillId == skillId) {
+        return entry.remaining;
+      }
+    }
+    return 0.0f;
+  }
+
+  // False when the skill is not cooling down, which includes one that has never
+  // been used.
+  bool IsReady(const std::string &skillId) const {
+    return RemainingFor(skillId) <= 0.0f;
+  }
+
+  void Start(const std::string &skillId, float seconds) {
+    for (SkillCooldown &entry : cooldowns) {
+      if (entry.skillId == skillId) {
+        entry.remaining = seconds;
+        entry.duration = seconds;
+        return;
+      }
+    }
+    cooldowns.push_back({skillId, seconds, seconds});
+  }
+};
+
+// The shared beat an activated skill starts. The basic attack is deliberately
+// exempt (see SkillActivation::gcd), so this never blocks it.
+struct GlobalCooldown {
+  float remaining = 0.0f;
+};
+
+// Which activatable skills the character auto-fires, in SkillBar order.
+//
+// Membership is the "Always casts" toggle's state, not an activation default:
+// the default in a skill's data only seeds this list when the character is
+// created, so turning the toggle off is a decision that survives.
+struct AutoCastSkills {
+  std::vector<std::string> ids;
+
+  bool Has(const std::string &id) const {
+    for (const std::string &entry : ids) {
+      if (entry == id) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void Set(const std::string &id, bool on) {
+    for (auto it = ids.begin(); it != ids.end(); ++it) {
+      if (*it == id) {
+        if (!on) {
+          ids.erase(it);
+        }
+        return;
+      }
+    }
+    if (on) {
+      ids.push_back(id);
+    }
+  }
+};
+
+// The player's hotbar, in slot order. Runtime-only: it is character state, like
+// a cooldown, not content.
+//
+// The bar holds skill ids rather than pointers, so a hot-reload of the skill
+// registry cannot leave a slot pointing at freed memory; a slot whose id no
+// longer resolves is skipped by the bar and by activation.
+struct SkillBar {
+  std::vector<std::string> ids;
+};
+
+// Marks a target that exists to be hit: no death, no retaliation, and a damage
+// number over its head. A tag rather than a flag so a future "training golem"
+// can be a different template with the same component.
+struct TrainingDummy {};
+
+// One skill winding up, on the action entity that holds the timer.
+//
+// The fields are copied from the skill at cast start rather than re-read on
+// completion: a data reload or a weapon swap mid-cast must not change what the
+// committed cast will do. `skillId` is empty for an inline NPC cast, where the
+// damage and label are the only definition there is.
+struct CastAction {
+  std::string skillId;
+  std::string label;
+  float baseDamage = 0.0f;
+  bool interruptible = true;
+  bool playerCast = false;
+};
+
+// The cast the character is currently committed to, on the CASTER.
+//
+// `actionEntity` is the action entity carrying the timer; it is what the HUD
+// reads for progress and what an interrupt destroys. Runtime-only, like
+// ActionTarget and Busy.
+struct Casting {
+  flecs::entity actionEntity;
+  std::string skillId;
+  std::string label;
+  bool interruptible = true;
+};
+
+// Innate protection, in points per hit, on a character or an object.
+//
+// An object can carry this (a target dummy in mail); a character usually gets
+// its armour from equipped items instead, and ArmorOf sums both. Kept as a plain
+// value rather than a percentage because a flat reduction is the number a player
+// can verify on the HUD.
+struct Armor {
+  float value = 0.0f;
+};
+
+// A non-LLM fighter's only intelligence: keep attacking the player.
+//
+// This is deliberately the smallest controller that makes incoming damage and
+// interrupts testable -- a timer, a range and one telegraphed strike. A real
+// hostile agent will not use this component; it exists so the world has an
+// opponent before the agent combat path does.
+struct Aggressive {
+  float interval = 6.0f;    // seconds between the start of one strike and the next
+  float timer = 2.0f;       // time until the next strike may begin
+  float range = 1.0f;       // tiles
+  float castSeconds = 2.0f; // wind-up, which is the interrupt window
+  float damage = 8.0f;
+  std::string label = "Strike";
+};
+
+// A projectile in flight: the delivery, not the effect. It carries a copy of
+// everything the impact needs (skill id, label, damage, owner, target) so the
+// hit does not depend on the skill registry or the projectile registry still
+// being alive when it lands.
+//
+// `sprite`, `speed` and `size` are copied from the ProjectileRegistry at launch
+// for the same reason: a reload of the registry mid-flight must not change what
+// is already in the air.
+struct Projectile {
+  flecs::entity owner;
+  flecs::entity target;
+  std::string skillId;
+  std::string label;
+  std::string sprite;
+  float baseDamage = 0.0f;
+  // World pixels per second and drawn size, copied at launch.
+  float speed = 420.0f;
+  float size = 24.0f;
+  bool playerCast = false;
+  bool interrupts = false;
+};
+
+class ProjectileRegistry;
+struct ProjectileRegistryResource {
+  const ProjectileRegistry *registry = nullptr;
+};
+
 
 struct Workstation {
   std::vector<std::string> recipes;
@@ -1475,6 +1701,22 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<Equipped>().member<std::vector<std::string>>("slots");
   ecs.component<Requires>().member<std::vector<std::string>>("equippedTags");
   ecs.component<Durability>().member<int>("current").member<int>("max");
+
+  // Combat state. Vitals is reflected because the two numbers are primitives and
+  // a training dummy may author them in an object template. The cooldown and bar
+  // components are runtime-only: they name skills by string and a stale id is
+  // merely skipped, so there is nothing here a serializer needs.
+  ecs.component<Vitals>().member<float>("health").member<float>("maxHealth");
+  ecs.component<Portrait>().member<std::string>("id");
+  ecs.component<Armor>().member<float>("value");
+  ecs.component<Aggressive>()
+      .member<float>("interval")
+      .member<float>("timer")
+      .member<float>("range")
+      .member<float>("castSeconds")
+      .member<float>("damage")
+      .member<std::string>("label");
+  ecs.component<TrainingDummy>();
 
   // Task-list reflection (docs/task-system-design.md section 10), registered on
   // the same terms as the blocks above. The two enum types are registered

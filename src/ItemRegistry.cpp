@@ -40,6 +40,29 @@ void ItemRegistry::LoadItems(const std::string& directoryPath) {
       def.scale = j.value("scale", 1.0f);
       def.baseline = j.value("baseline", 0.0f);
 
+      // A weapon's own numbers. Damage 0 is the default and simply means "not a
+      // weapon": the basic attack then falls back to unarmed damage. Swing time
+      // is the unhasted tempo; the duration fold applies haste on top.
+      def.damage = j.value("damage", 0.0f);
+      def.swingTime = j.value("swingTime", 1.8f);
+      if (def.damage < 0.0f) {
+        warn("Warning: Item '" + def.id +
+             "' has negative damage; using 0 (not a weapon).");
+        def.damage = 0.0f;
+      }
+      if (def.swingTime <= 0.0f) {
+        warn("Warning: Item '" + def.id +
+             "' has a swingTime <= 0, which would let it swing without a "
+             "cooldown; using 1.8 instead.");
+        def.swingTime = 1.8f;
+      }
+      def.armor = j.value("armor", 0.0f);
+      if (def.armor < 0.0f) {
+        warn("Warning: Item '" + def.id +
+             "' has negative armor; using 0 (no protection).");
+        def.armor = 0.0f;
+      }
+
       // An item definition exists to be worn, so a missing slot is a content
       // error rather than a valid "carried only" item. Reported here where the
       // file name is still known; the item simply cannot be equipped.

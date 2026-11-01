@@ -25,6 +25,8 @@
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
+#include "PortraitRegistry.h"
+#include "ProjectileRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "SpriteKinds.hpp"
@@ -112,6 +114,33 @@ public:
 
   void DrawGameWindows();
   void Draw();
+
+  // --- Player combat ---------------------------------------------------------
+  //
+  // The player path is deliberately small and separate from the agent path (see
+  // airogue-direction): these three calls are the whole input surface, and every
+  // one of them goes through the same UseSkill the agent will eventually use.
+  //
+  // Locks the next living target near the player, wrapping around. Tab.
+  void CyclePlayerTarget();
+  // Locks one entity, or clears the lock when it is empty or the player itself.
+  // Called by clicking anything with Vitals. Reports the new target's health.
+  void SetPlayerTarget(flecs::entity target);
+  // Activates the skill in hotbar slot `index` (1..9 keys, 0-based here).
+  // Returns false when the slot is empty, unknown, or the use was refused.
+  bool ActivatePlayerSkill(int index);
+  // The combat HUD: health, target frame and the skill bar. Drawn in the ImGui
+  // pass after the world, and draggable; its position is persisted separately
+  // from the debug windows.
+  void DrawCombatHud();
+
+  // One real attack through the whole path, for a machine with no input device:
+  // stands the player next to the first training dummy, locks it, swings, and
+  // checks that the dummy lost health and that an immediate second swing is
+  // refused by the cooldown. Prints the combat log lines it produced.
+  //
+  // Returns 0 when the exchange behaved, 1 otherwise. Driven by --combat-check.
+  int RunCombatSelfCheck();
 
   void BeginDrawingGame();
   void EndDrawingGame();
@@ -207,6 +236,8 @@ private:
   SkillRegistry skillRegistry;
   ItemRegistry itemRegistry;
   RaceRegistry raceRegistry;
+  PortraitRegistry portraitRegistry;
+  ProjectileRegistry projectileRegistry;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;
@@ -222,6 +253,30 @@ private:
   flecs::world ecs;
   flecs::entity renderPipeline;
   flecs::entity playerEntity;
+
+  // Combat HUD anchors, in screen pixels. Read from hud_state.json on the first
+  // draw and written back on shutdown. A negative coordinate means "no saved
+  // position": the panel then uses its natural default (player top-left, target
+  // top-centre, ability bar bottom-centre). That is deliberately different from
+  // 0,0, which is a real position the player can drag a panel to.
+  float playerHudX = 24.0f;
+  float playerHudY = 24.0f;
+  float targetHudX = -1.0f;
+  float targetHudY = 24.0f;
+  float abilityBarX = -1.0f;
+  float abilityBarY = -1.0f;
+  // 0/1/2. Three procedural bar skins, cycled with F9 and persisted here.
+  int abilityBarStyle = 0;
+  bool hudStateLoaded = false;
+  // Set by F10 for one frame: every panel is repositioned unconditionally, which
+  // is the only way back if a panel was dragged somewhere unusable.
+  bool resetCombatHudPosition = false;
+  // True once a frame has drawn the HUD. Saving is skipped otherwise, so a
+  // headless check that only calls Init/Shutdown cannot overwrite the player's
+  // layout with defaults.
+  bool combatHudDrawn = false;
+  void LoadCombatHudState();
+  void SaveCombatHudState();
 
   // Which character the Vision debug window's place overlay draws. 0 means
   // "nothing chosen yet", which resolves to the player. The window writes it

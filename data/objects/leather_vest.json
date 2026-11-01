@@ -1,0 +1,21 @@
+{
+  "name": "Leather Vest",
+  "description": "Boiled leather over the chest. It will not stop a warhammer, but it turns a knife.",
+  "components": [
+    "ShowNameTag",
+    "Portable"
+  ],
+  "art": [
+    "|--|",
+    "|  |",
+    "|  |"
+  ],
+  "palette": {
+    "|": [110, 72, 42, 255],
+    "-": [140, 96, 56, 255]
+  },
+  "character": "[",
+  "characterColor": [140, 96, 56, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [140, 96, 56, 255]
+}

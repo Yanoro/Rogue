@@ -1148,6 +1148,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("player", "player.race",
             "Race the player's body slots come from. Empty means the human default.", &GameSettings::player, &PlayerSection::race))
         .Restart();
+    add(Field<ValueType::String>("player", "player.portrait",
+            "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
+        .Restart();
 
     // --- world ------------------------------------------------------------
     add(Field<ValueType::UInt64>("world", "world.seed",
@@ -1173,6 +1176,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
         .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.portraits",
+            "Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id.", &GameSettings::content, &ContentSection::portraits))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.projectiles",
+            "Projectile registry directory: one JSON per flying object, with its sprite, speed and size.", &GameSettings::content, &ContentSection::projectiles))
         .Restart();
     add(Field<ValueType::String>("content", "content.places",
             "The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule.", &GameSettings::content, &ContentSection::places))

@@ -1,0 +1,5 @@
+{
+  "sprite": "data/sprites/projectile_fireball.png",
+  "speed": 420,
+  "size": 24
+}

@@ -2,7 +2,7 @@
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
 
   "map": {
-    "file": "./maps/Map_Village_Quest.json",
+    "file": "./maps/Map_Training.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
@@ -178,7 +178,8 @@
     "name": "playerCharacter",
     "startX": 12,
     "startY": 48,
-    "race": ""
+    "race": "",
+    "portrait": "player"
   },
 
   "world": {
@@ -191,7 +192,9 @@
     "stats": "data/stats",
     "skills": "data/skills",
     "items": "data/items",
-    "races": "data/races"
+    "races": "data/races",
+    "portraits": "data/portraits",
+    "projectiles": "data/projectiles"
   },
 
   "debug": {

@@ -316,6 +316,35 @@ constexpr float DEFAULT_ACTION_BAR_MIN_WIDTH = 24.0f;
 inline const Color DEFAULT_ACTION_BAR_BACKGROUND = {30, 30, 30, 200};
 inline const Color DEFAULT_ACTION_BAR_FILL = {90, 210, 90, 255};
 
+// Combat pacing.
+//
+// The global cooldown is the player's beat between activated skills; the basic
+// attack is deliberately exempt and runs on its own weapon timer, so these two
+// numbers are what make combat feel continuous rather than turn-based.
+constexpr float DEFAULT_GLOBAL_COOLDOWN_SECONDS = 1.5f;
+// What a character with nothing in hand hits for, and how fast. Deliberately
+// weak: a weapon is meant to be the difference.
+constexpr float DEFAULT_UNARMED_DAMAGE = 2.0f;
+constexpr float DEFAULT_UNARMED_SWING_SECONDS = 1.5f;
+// Durability a single attack takes off a weapon whose definition says attacks
+// consume it.
+constexpr int DEFAULT_ATTACK_DURABILITY_COST = 1;
+
+// The combat HUD's default anchor, and the square size of one hotbar slot.
+// The position is only a first-use fallback: the player can drag the panel and
+// the position is persisted in hud_state.json.
+constexpr float DEFAULT_COMBAT_HUD_X = 40.0f;
+constexpr float DEFAULT_COMBAT_HUD_Y = 40.0f;
+constexpr float DEFAULT_SKILL_SLOT_SIZE = 58.0f;
+
+// The rectangle the low-resolution world canvas is blitted into (see Game::Draw).
+// It is NOT virtualWidth/virtualHeight: those are the 640x512 render canvas, and
+// anything drawn in window coordinates -- the combat HUD -- is bounded by this
+// instead. A window taller than this leaves black space below the world, and a
+// HUD anchored to the window's bottom would live there.
+constexpr float DEFAULT_PRESENTATION_WIDTH = 1920.0f;
+constexpr float DEFAULT_PRESENTATION_HEIGHT = 1080.0f;
+
 // Floating change numbers: the small "+N" that pops over an entity, drifts up
 // and fades (XP gains today, damage once combat exists). These are shared
 // defaults every spawn starts from; a caller can still override the per-number
@@ -339,3 +368,20 @@ constexpr float DEFAULT_FLOATING_TEXT_FONT_SIZE = 16.0f;
 // character's own progress.
 inline const Color DEFAULT_FLOATING_TEXT_XP_COLOR = {120, 230, 120, 255};
 inline const Color DEFAULT_FLOATING_TEXT_DAMAGE_COLOR = {235, 90, 90, 255};
+
+// Combat call-outs. The ability name floats over the caster on an instant use and
+// again when a cast completes; "Interrupted!" floats over whoever lost a cast.
+// Both are the same FloatingText machinery as damage numbers, so they follow the
+// entity, stack, rise and fade with no combat-specific renderer.
+inline const Color DEFAULT_ABILITY_CALL_OUT_COLOR = {225, 235, 255, 255};
+inline const Color DEFAULT_INTERRUPT_CALL_OUT_COLOR = {235, 64, 64, 255};
+
+// The world-space label next to a cast's action bar: the ability name on a small
+// dark strip. Its font is a little smaller than a floating number because it sits
+// under a 4px bar rather than over a sprite.
+constexpr float DEFAULT_CAST_LABEL_FONT_SIZE = 14.0f;
+constexpr float DEFAULT_CAST_LABEL_PAD_X = 4.0f;
+constexpr float DEFAULT_CAST_LABEL_PAD_Y = 2.0f;
+constexpr float DEFAULT_CAST_LABEL_GAP_Y = 3.0f;
+inline const Color DEFAULT_CAST_LABEL_BACKGROUND = {12, 10, 9, 175};
+inline const Color DEFAULT_CAST_LABEL_TEXT = {235, 230, 218, 255};

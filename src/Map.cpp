@@ -59,6 +59,58 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
     // here, so hand-written keys survive. See Map::BuildMapJson.
     rawMapJson = json;
 
+    // Optional authored spawn. Two spellings are accepted because a hand-written
+    // map reads better as [x, y] while an object is self-describing; both are
+    // one line in the loader. A malformed value is reported and ignored, so a
+    // typo falls back to the settings' start instead of failing the load.
+    if (json.contains("playerStart")) {
+      const auto &start = json["playerStart"];
+      bool parsed = false;
+      if (start.is_array() && start.size() == 2 && start[0].is_number_integer() &&
+          start[1].is_number_integer()) {
+        playerStart = {start[0].get<int>(), start[1].get<int>()};
+        parsed = true;
+      } else if (start.is_object() && start.contains("x") &&
+                 start.contains("y")) {
+        playerStart = {start.value("x", 0), start.value("y", 0)};
+        parsed = true;
+      }
+      if (parsed) {
+        hasPlayerStart = true;
+      } else if (debugLog) {
+        debugLog->LogWarning(
+            "Warning: map has a malformed 'playerStart'; expected [x, y] or "
+            "{x, y}. Using the settings start instead.");
+      }
+    }
+
+    if (json.contains("playerWeapon")) {
+      if (json["playerWeapon"].is_string()) {
+        playerWeapon = json["playerWeapon"].get<std::string>();
+      } else if (debugLog) {
+        debugLog->LogWarning(
+            "Warning: map 'playerWeapon' is not a string; ignoring it.");
+      }
+    }
+
+    // Starting kit, as real object templates spawned and equipped by the same
+    // rules [EQUIP] uses. A list rather than one id so a test map can start the
+    // player in armour as well as with a weapon.
+    if (json.contains("playerEquipment")) {
+      if (!json["playerEquipment"].is_array()) {
+        if (debugLog) {
+          debugLog->LogWarning(
+              "Warning: map 'playerEquipment' is not an array; ignoring it.");
+        }
+      } else {
+        for (const auto &entry : json["playerEquipment"]) {
+          if (entry.is_string() && !entry.get<std::string>().empty()) {
+            playerEquipment.push_back(entry.get<std::string>());
+          }
+        }
+      }
+    }
+
     tileMap.resize(width * height);
 
     // The map's tile palette: one entry per uniqueTiles slot, in the order
@@ -329,6 +381,18 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
           } else {
             warn("Warning: NPC '" + data.name +
                  "' has a non-string 'sprite'; ignoring it.\n");
+          }
+        }
+
+        // The portrait id, kept as written and resolved against the
+        // PortraitRegistry when the HUD draws. An unknown id is the same
+        // fallback as no id at all, so this cannot make a character unspawnable.
+        if (npcJson.contains("portrait")) {
+          if (npcJson["portrait"].is_string()) {
+            data.portrait = npcJson["portrait"].get<std::string>();
+          } else {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-string 'portrait'; ignoring it.\n");
           }
         }
 
@@ -669,6 +733,12 @@ nlohmann::json Map::BuildMapJson() const {
       }
       if (!npc.equipped.empty()) {
         npcJson["equipped"] = npc.equipped;
+      }
+      if (!npc.sprite.empty()) {
+        npcJson["sprite"] = npc.sprite;
+      }
+      if (!npc.portrait.empty()) {
+        npcJson["portrait"] = npc.portrait;
       }
       // Life goals are authored data and must round-trip (section 5), so like
       // "skills"/"race"/"equipped" they are rebuilt here when the list is

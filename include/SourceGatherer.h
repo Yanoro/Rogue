@@ -44,9 +44,28 @@ inline StatView GatherSources(flecs::entity entity,
   // A skill's magnitude is its level, exactly as a stat's is its value. Level 0
   // is a real source with a magnitude of 0, which contributes nothing -- the same
   // neutrality as an absent stat, arrived at from the other direction.
+  //
+  // The skill's TYPE is what decides whether it is a source at all:
+  //   * passive and hybrid skills are always on, so they always contribute;
+  //   * a toggle contributes only while it is switched on -- that is the whole
+  //     point of a stance, and it is why this check exists here rather than in
+  //     every resolver;
+  //   * an active skill contributes nothing passively. Its effects happen when
+  //     it is used (SkillActivation), not while it is merely known.
   if (const SkillBlock *block = entity.get<SkillBlock>()) {
+    const ActiveToggles *toggles = entity.get<ActiveToggles>();
     sources.reserve(sources.size() + block->values.size());
     for (const SkillValue &value : block->values) {
+      if (const SkillDef *def = definitions.FindSkill(value.id)) {
+        if (def->type == SkillType::Toggle) {
+          if (toggles == nullptr || !toggles->Has(value.id)) {
+            continue;
+          }
+        } else if (!SkillHasAlwaysOnEffects(def->type)) {
+          continue;
+        }
+      }
+
       ActiveSource source;
       source.id = value.id;
       source.kind = SourceKind::Skill;

@@ -165,7 +165,7 @@ void DebugConsoleWindow::Draw() {
   }
 
   bool showLog = game->debugLogWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Debug Log Window", &showLog)) {
+  if (ImGui::Checkbox("Log Window", &showLog)) {
     if (showLog) {
       game->debugLogWindowEntity.set<ActiveWindow>({std::make_shared<DebugLogWindow>(game)});
     } else {
@@ -787,7 +787,7 @@ void LogLevelCheckbox(const char* label, DebugLog::LogLevel level, bool* value) 
 void DebugLogWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(620, 440), ImGuiCond_FirstUseEver);
-  ImGui::Begin("Debug Log", &isOpen, ImGuiWindowFlags_None);
+  ImGui::Begin("Log", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     // Closing the window is the other way retention ends; the log goes back to
     // its configured cap instead of keeping the extra entries forever.
@@ -801,20 +801,30 @@ void DebugLogWindow::Draw() {
   const auto& entries = game->debugLog->GetEntries();
 
   if (game->debugLog->IsRetainingOldEntries()) {
-    ImGui::Text("Debug Log (%zu entries held)", entries.size());
+    ImGui::Text("Log (%zu entries held)", entries.size());
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip(
           "Old entries are kept while Auto-scroll is off, so new messages\n"
           "cannot shift the lines you are reading.");
     }
   } else {
-    ImGui::Text("Debug Log (Latest %zu entries)", game->debugLog->GetMaxEntries());
+    ImGui::Text("Log (Latest %zu entries)", game->debugLog->GetMaxEntries());
   }
   ImGui::Separator();
 
   // --- Filter row ----------------------------------------------------------
   // Filtering is display-only: DebugLog keeps every entry, so a level switched
   // back on shows what was written while it was hidden.
+  // Categories cut across levels: a combat line is INFO, and so is a system
+  // message, so severity alone cannot separate them. Both default on, which is
+  // the behaviour the window had before categories existed.
+  ImGui::Checkbox("Combat", &showCombat);
+  ImGui::SameLine();
+  ImGui::Checkbox("Other", &showGeneral);
+  ImGui::SameLine();
+  ImGui::TextDisabled("|");
+  ImGui::SameLine();
+
   bool showInfo = state->GetLogShowInfo();
   bool showWarning = state->GetLogShowWarning();
   bool showError = state->GetLogShowError();
@@ -874,20 +884,29 @@ void DebugLogWindow::Draw() {
   // A level checkbox and the substring both have to pass. The message text is
   // matched, not the level tag, so typing "warn" does not silently select the
   // warning level.
+  //
+  // Combat lines are the exception: they are INFO by definition, and hiding INFO
+  // to quieten the engine must not also hide the hit that just landed. So the
+  // category switch decides them, and the level filters only apply to General.
   auto matches = [&](const DebugLog::LogEntry& entry) {
-    switch (entry.level) {
-    case DebugLog::LogLevel::INFO:
-      if (!showInfo) return false;
-      break;
-    case DebugLog::LogLevel::WARNING:
-      if (!showWarning) return false;
-      break;
-    case DebugLog::LogLevel::ERROR:
-      if (!showError) return false;
-      break;
-    case DebugLog::LogLevel::DEBUG:
-      if (!showDebug) return false;
-      break;
+    if (entry.category == DebugLog::LogCategory::Combat) {
+      if (!showCombat) return false;
+    } else {
+      if (!showGeneral) return false;
+      switch (entry.level) {
+      case DebugLog::LogLevel::INFO:
+        if (!showInfo) return false;
+        break;
+      case DebugLog::LogLevel::WARNING:
+        if (!showWarning) return false;
+        break;
+      case DebugLog::LogLevel::ERROR:
+        if (!showError) return false;
+        break;
+      case DebugLog::LogLevel::DEBUG:
+        if (!showDebug) return false;
+        break;
+      }
     }
     return filterText.empty() ||
            StringUtils::ContainsIgnoreCase(entry.message, filterText);

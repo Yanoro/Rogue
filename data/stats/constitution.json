@@ -1,8 +1,12 @@
 {
   "name": "Constitution",
-  "description": "Endurance and hardiness. The tough keep working long after others would need to stop and rest.",
+  "description": "Endurance and hardiness. The tough take more punishment before they go down, and keep working long after others would need to stop and rest.",
   "baseline": 10,
   "scale": 1,
   "min": 1,
-  "max": 20
+  "max": 20,
+  "effects": [
+    { "point": "health", "activity": "*", "op": "flat", "perPoint": 4 }
+  ]
 }
+

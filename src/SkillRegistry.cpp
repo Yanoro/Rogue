@@ -37,11 +37,117 @@ void SkillRegistry::LoadSkills(const std::string& directoryPath) {
       def.id = entry.path().stem().string();
       def.name = j.value("name", def.id);
       def.description = j.value("description", "");
+      def.icon = j.value("icon", "");
       def.levelsPerStage = j.value("levelsPerStage", 9);
       // Untrained is neutral for a skill, so the baseline is 0 rather than the
       // average-human 10 a stat uses (section 3.4).
       def.baseline = j.value("baseline", 0.0f);
       def.scale = j.value("scale", 1.0f);
+
+      // The type decides whether the skill is a button. An unknown name is a
+      // content error reported once here, and the skill stays Passive so a typo
+      // cannot silently produce a skill that can never be used.
+      if (j.contains("type")) {
+        const std::string typeName = j.value("type", std::string("passive"));
+        if (!ParseSkillType(typeName, def.type)) {
+          warn("Warning: Skill '" + def.id + "' has unknown type '" + typeName +
+               "'; using passive.");
+          def.type = SkillType::Passive;
+        }
+      }
+
+      // The activation block is what a button does. Parsed leniently, then
+      // checked against the type below.
+      bool hasActivation = false;
+      if (j.contains("activation")) {
+        if (!j["activation"].is_object()) {
+          warn("Warning: Skill '" + def.id +
+               "' has a non-object 'activation'; ignoring it.");
+        } else {
+          const auto& a = j["activation"];
+          hasActivation = true;
+          def.activation.useWeapon = a.value("useWeapon", false);
+          def.activation.baseDamage = a.value("baseDamage", 0.0f);
+          def.activation.cooldownSeconds = a.value("cooldown", 1.5f);
+          def.activation.rangeTiles = a.value("range", 1.0f);
+          def.activation.gcd = a.value("gcd", true);
+          def.activation.gcdSeconds = a.value("gcdSeconds", 0.0f);
+          def.activation.autoCast = a.value("autoCast", false);
+          def.activation.xpPerUse = a.value("xpPerUse", 0);
+          def.activation.requiresTarget = a.value("requiresTarget", true);
+          def.activation.castSeconds = a.value("cast", 0.0f);
+          def.activation.interruptible = a.value("interruptible", true);
+          def.activation.interrupts = a.value("interrupts", false);
+          def.activation.projectile = a.value("projectile", std::string());
+        }
+      }
+
+      // Type and activation are two statements about the same thing, so the
+      // loader is where they are reconciled. Silent disagreement would either
+      // give a passive skill a button nobody renders or an active skill no
+      // effect at all.
+      if (SkillIsActivatable(def.type) && !hasActivation) {
+        warn("Warning: Skill '" + def.id + "' is " + SkillTypeName(def.type) +
+             " but declares no 'activation' block, so it can never be used; "
+             "treating it as passive.");
+        def.type = SkillType::Passive;
+      }
+      if (!SkillIsActivatable(def.type) && hasActivation) {
+        warn("Warning: Skill '" + def.id +
+             "' is passive but declares an 'activation' block; ignoring the "
+             "activation.");
+        def.activation = SkillActivation{};
+      }
+      if (SkillIsActivatable(def.type) && !def.activation.requiresTarget &&
+          def.activation.useWeapon) {
+        warn("Warning: Skill '" + def.id +
+             "' uses the weapon but requires no target; the weapon's damage "
+             "has nothing to hit.");
+      }
+      if (def.activation.rangeTiles <= 0.0f) {
+        warn("Warning: Skill '" + def.id +
+             "' has activation range <= 0; using 1 tile.");
+        def.activation.rangeTiles = 1.0f;
+      }
+      if (def.activation.gcdSeconds < 0.0f) {
+        warn("Warning: Skill '" + def.id +
+             "' has a negative gcdSeconds; using 0 (the default).");
+        def.activation.gcdSeconds = 0.0f;
+      }
+      if (def.activation.castSeconds < 0.0f) {
+        warn("Warning: Skill '" + def.id +
+             "' has a negative cast time; using 0 (instant).");
+        def.activation.castSeconds = 0.0f;
+      }
+      if (!def.activation.projectile.empty() &&
+          !def.activation.requiresTarget) {
+        warn("Warning: Skill '" + def.id +
+             "' launches a projectile but is not targeted; enabling targeting.");
+        def.activation.requiresTarget = true;
+      }
+      if (def.activation.interrupts && def.activation.castSeconds > 0.0f &&
+          !def.activation.interruptible) {
+        // Legal, but worth reporting: a slow, uninterruptible interrupt is a
+        // strange thing to author and usually a copy-paste mistake.
+        warn("Warning: Skill '" + def.id +
+             "' interrupts other casts but is itself uninterruptible and slow.");
+      }
+      if (SkillIsActivatable(def.type) && !def.activation.useWeapon &&
+          def.activation.baseDamage <= 0.0f) {
+        warn("Warning: Skill '" + def.id +
+             "' is activatable but has neither useWeapon nor a positive "
+             "baseDamage, so using it does nothing.");
+      }
+      if (def.type == SkillType::Toggle) {
+        // A toggle exists to switch a persistent effect on and off. With no
+        // effects there is nothing to toggle, which is almost certainly an
+        // authoring mistake.
+        if (j.contains("effects") &&
+            (!j["effects"].is_array() || j["effects"].empty())) {
+          warn("Warning: Skill '" + def.id +
+               "' is a toggle but declares no effects, so it toggles nothing.");
+        }
+      }
 
       if (j.contains("stages")) {
         for (const auto& stage : j["stages"]) {

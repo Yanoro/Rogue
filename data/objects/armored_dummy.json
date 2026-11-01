@@ -1,0 +1,31 @@
+{
+  "name": "Armoured Dummy",
+  "description": "A training post in a battered mail coat. The same blows, noticeably less of them land.",
+  "components": [
+    "ShowNameTag",
+    "Vitals",
+    "Portrait",
+    "Armor",
+    "TrainingDummy",
+    "Obstacle"
+  ],
+  "health": 500,
+  "maxHealth": 500,
+  "portrait": "training_dummy",
+  "armor": 4,
+  "art": [
+    " O ",
+    "/|\\",
+    " | "
+  ],
+  "palette": {
+    "O": [170, 176, 184, 255],
+    "/": [120, 80, 40, 255],
+    "|": [120, 80, 40, 255],
+    "\\": [120, 80, 40, 255]
+  },
+  "character": "X",
+  "characterColor": [170, 176, 184, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [170, 176, 184, 255]
+}

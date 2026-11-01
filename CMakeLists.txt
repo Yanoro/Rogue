@@ -139,6 +139,7 @@ set(SOURCES
     src/main.cpp
     src/Game.cpp
     src/GameDraw.cpp
+    src/CombatHud.cpp
     src/GameECS.cpp
     src/Map.cpp
     src/OllamaAI.cpp
@@ -179,6 +180,8 @@ set(SOURCES
     src/RaceRegistry.cpp
     src/SkillRegistry.cpp
     src/StatRegistry.cpp
+    src/PortraitRegistry.cpp
+    src/ProjectileRegistry.cpp
     src/TileRegistry.cpp
     src/MemoryDigestJob.cpp
   src/PlaceCategoryRegistry.cpp

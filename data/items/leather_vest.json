@@ -1,0 +1,7 @@
+{
+  "slot": "torso",
+  "occupies": 1,
+  "tier": 1,
+  "tags": ["armor", "leather"],
+  "armor": 3
+}

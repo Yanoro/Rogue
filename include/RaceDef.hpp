@@ -34,4 +34,8 @@ struct RaceDef {
   std::vector<SlotSpec> slots;
   AsciiArt art;
   std::string sprite;
+  // Default portrait id for this people, from "portrait". A character's own
+  // authored portrait wins; this is only the fallback, so a race can ship a
+  // shared emblem without pinning every member to it.
+  std::string portrait;
 };

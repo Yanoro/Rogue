@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <algorithm>
 #include "InteractionRegistry.h"
@@ -105,9 +106,16 @@ void Game::DrawGameWindows() {
     }
     ImGui::EndPopup();
   }
+
+  DrawCombatHud();
 }
 
-
+// The player's combat HUD: health, the locked target, and the skill bar.
+//
+// One draggable window rather than a fixed overlay, because the player is the
+// only one who knows where it is out of the way. Its position is persisted in
+// hud_state.json, separate from debug_windows_state.json: the HUD is gameplay,
+// not a debug panel, and wiping debug state must not move it.
 void Game::Draw() {
   if (cameraMode == GameCameraMode::FollowMode) {
     // The NPC Menu can retarget the follow camera at a character. A target that no
@@ -532,8 +540,8 @@ void Game::Draw() {
 
   Rectangle destRec = {0.0f,
                        0.0f,
-                       1920.0f,
-                       1080.0f};
+                       DEFAULT_PRESENTATION_WIDTH,
+                       DEFAULT_PRESENTATION_HEIGHT};
   DrawTexturePro(gameTexture.texture, sourceRec, destRec, {0, 0}, 0.0f, WHITE);
 
   // The one moment in the frame where the world is on screen and none of this

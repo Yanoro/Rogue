@@ -32,9 +32,10 @@ void DebugLog::SetRetainOldEntries(bool retain) {
   }
 }
 
-void DebugLog::Log(const std::string &message, LogLevel level) {
+void DebugLog::Log(const std::string &message, LogLevel level,
+                   LogCategory category) {
   std::string timestamp = GetCurrentTimestamp();
-  entries.emplace_back(timestamp, level, message);
+  entries.emplace_back(timestamp, level, message, category);
 
   const size_t limit = retainOldEntries ? RetentionLimit() : maxEntries;
   while (entries.size() > limit) {
@@ -56,6 +57,10 @@ void DebugLog::LogError(const std::string &message) {
 
 void DebugLog::LogDebug(const std::string &message) {
   Log(message, LogLevel::DEBUG);
+}
+
+void DebugLog::LogCombat(const std::string &message) {
+  Log(message, LogLevel::INFO, LogCategory::Combat);
 }
 
 std::string DebugLog::GetCurrentTimestamp() const {

@@ -4,3 +4,10 @@ agent_tasks.txt
 .agents/
 model.json
 settings.local.json
+
+# Runtime UI state, written on clean exit. Per-machine, like the settings
+# overrides above.
+hud_state.json
+debug_windows_state.json
+imgui.ini
+logs/

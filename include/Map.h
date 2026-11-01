@@ -48,6 +48,11 @@ struct NPCData {
   // load, the race supplies the look and then the ASCII art does (see
   // SpritePaths.hpp and GiveBody).
   std::string sprite;
+  // The character's portrait id, from "portrait": "pietro". Empty means the
+  // race's default portrait, and then the unknown sprite. Authored per character
+  // rather than derived from the name for the same reason the sprite is: a
+  // rename must not silently change someone's face.
+  std::string portrait;
   // The character's life goals, from the map's
   // "goals": {"terminal": ["be an important member of the community", ...]}.
   // Authored, not model-written, and seeded read-only into the agent's TaskList
@@ -74,6 +79,24 @@ public:
 
   int GetTileWidth() const { return tileWidth; }
   int GetTileHeight() const { return tileHeight; }
+
+  // Where the player starts on THIS map, from "playerStart": [x, y].
+  //
+  // A map may author its own start so a test map does not have to change the
+  // global player.startX/startY (which every other map shares). Absent means the
+  // settings' start is used, which is what every existing map relies on.
+  bool HasPlayerStart() const { return hasPlayerStart; }
+  GamePosition GetPlayerStart() const { return playerStart; }
+
+  // The object templates the player begins with equipped, from
+  // "playerEquipment": ["iron_sword", "leather_vest"]. Authored on the map for
+  // the same reason as playerStart: it is content for that map, not a global
+  // setting. "playerWeapon" is the older single-item spelling and is still read
+  // when the list is absent.
+  const std::vector<std::string> &GetPlayerEquipment() const {
+    return playerEquipment;
+  }
+  const std::string &GetPlayerWeapon() const { return playerWeapon; }
 
   int GetMapWidthPx() const { return GetWidth() * GetTileWidth();}
   int GetMapHeightPx() const { return GetHeight() * GetTileHeight();}
@@ -178,6 +201,12 @@ private:
   std::vector<std::unique_ptr<Tile>> uniqueTiles; 
   std::vector<PlaceSeed> placeSeeds;
   std::vector<NPCData> npcs;
+
+  // Authored player spawn, if this map has one. See HasPlayerStart.
+  bool hasPlayerStart = false;
+  GamePosition playerStart{0, 0};
+  std::string playerWeapon;
+  std::vector<std::string> playerEquipment;
 
   std::vector<Tile *> tileMap;
 

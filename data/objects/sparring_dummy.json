@@ -1,0 +1,36 @@
+{
+  "name": "Sparring Dummy",
+  "description": "A dummy on a swivel that swings back. Its strike is slow and telegraphed -- long enough to step away from, or to kick apart.",
+  "components": [
+    "ShowNameTag",
+    "Vitals",
+    "Portrait",
+    "TrainingDummy",
+    "Obstacle",
+    "Aggressive"
+  ],
+  "health": 500,
+  "maxHealth": 500,
+  "portrait": "training_dummy",
+  "interval": 7.0,
+  "firstStrikeDelay": 2.0,
+  "range": 1,
+  "castSeconds": 2.0,
+  "damage": 8,
+  "label": "Straw Strike",
+  "art": [
+    " O ",
+    "/|\\",
+    " | "
+  ],
+  "palette": {
+    "O": [200, 170, 90, 255],
+    "/": [150, 60, 50, 255],
+    "|": [120, 80, 40, 255],
+    "\\": [150, 60, 50, 255]
+  },
+  "character": "X",
+  "characterColor": [200, 170, 90, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 170, 90, 255]
+}

@@ -36,6 +36,11 @@ struct FloatingText {
 
   Color color = WHITE;
 
+  // True for ability call-outs ("Heavy Swing", "Interrupted!"), which draw on a
+  // small dark strip so the word stays readable over any tile. Numbers stay
+  // plain: a bar behind every damage tick would be its own kind of noise.
+  bool background = false;
+
   // Seconds since spawn; advanced by FloatingTextLifetimeSystem.
   float elapsed = 0.0f;
 
@@ -93,6 +98,21 @@ inline flecs::entity SpawnFloatingText(flecs::entity target, std::string text,
 
   flecs::entity carrier = world.entity();
   carrier.set<FloatingText>(std::move(floating));
+  return carrier;
+}
+
+// One ability call-out: the same drifting text as a number, but with a dark strip
+// behind it. Kept as a wrapper rather than a parameter so existing number spawns
+// cannot accidentally acquire a background.
+inline flecs::entity SpawnFloatingCallout(flecs::entity target, std::string text,
+                                          Color color, int extraStack = 0) {
+  flecs::entity carrier =
+      SpawnFloatingText(target, std::move(text), color, extraStack);
+  if (carrier.is_alive()) {
+    if (FloatingText *floating = carrier.get_mut<FloatingText>()) {
+      floating->background = true;
+    }
+  }
   return carrier;
 }
 

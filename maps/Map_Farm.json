@@ -17,6 +17,7 @@
     {
       "name": "Pietro",
       "sprite": "data/sprites/farmer.png",
+      "portrait": "pietro",
       "position": [
         13,
         9
