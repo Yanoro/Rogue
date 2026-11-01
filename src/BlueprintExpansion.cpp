@@ -365,26 +365,32 @@ Expansion Expand(const Blueprint &blueprint) {
       ExpandedCell &out = merged[cell];
       out.x = cell.first;
       out.y = cell.second;
+      // The three ops own *different parts of the cell*, not the whole cell.
+      //
+      // `place` used to clear the tile and `paint` used to clear the object, so a
+      // design that laid a floor and then put a chair on it erased the floor under the
+      // chair -- and the map's own ground showed through the furniture. The prompt's
+      // own worked example (floor, walls, carved doorway, door on the carved cell) was
+      // the clearest case of it: the door ended up standing on nothing.
+      //
+      // So: paint owns the ground, place owns the object, carve owns the object too --
+      // it removes what was built and keeps the earth under it, which is what the
+      // placement code has always done with it.
       if (part.op.kind == "carve") {
         out.carve = true;
-        out.tile.clear();
         out.object.clear();
       } else if (part.op.kind == "paint") {
         out.carve = false;
         out.tile = part.op.material;
-        out.object.clear();
       } else if (part.op.kind == "place") {
         out.carve = false;
-        out.tile.clear();
         out.object = part.op.material;
       } else if (part.op.kind == "fill") {
         out.carve = false;
         if (part.op.fillKind == "place") {
-          out.tile.clear();
           out.object = part.op.fillMaterial;
         } else {
           out.tile = part.op.fillMaterial;
-          out.object.clear();
         }
       } else {
         result.errors.push_back("part '" + part.id + "': unknown op '" +
@@ -398,6 +404,34 @@ Expansion Expand(const Blueprint &blueprint) {
     result.cells.push_back(entry.second);
   }
   return result;
+}
+
+std::string VoidReport::Summary() const {
+  std::string out;
+  for (size_t i = 0; i < messages.size(); ++i) {
+    if (i > 0) out += "; ";
+    out += messages[i];
+  }
+  if (count > messages.size()) {
+    out += " (and " + std::to_string(count - messages.size()) + " more)";
+  }
+  out +=
+      ". Every cell a part covers must be painted: `place` and `carve` do not lay "
+      "ground, so paint the whole footprint first.";
+  return out;
+}
+
+VoidReport FindVoids(const Expansion &expansion, size_t limit) {
+  VoidReport report;
+  for (const ExpandedCell &cell : expansion.cells) {
+    if (!cell.tile.empty()) continue;
+    ++report.count;
+    if (report.messages.size() < limit) {
+      report.messages.push_back("cell (" + std::to_string(cell.x) + "," +
+                                std::to_string(cell.y) + ") has no ground tile");
+    }
+  }
+  return report;
 }
 
 }  // namespace BlueprintExpansion

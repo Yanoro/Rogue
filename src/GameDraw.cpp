@@ -70,13 +70,13 @@ void Game::DrawGameWindows() {
       // InteractionRegistry entry on purpose, so it never shows up in the
       // commands the AI is offered or can issue.
       const bool hasSeeInventory = contextMenuTarget.has<Storage>() ||
-                                   contextMenuTarget.has<CharacterTag>();
+                                   contextMenuTarget.has<Actor>();
 
       // "Show Status" is the same kind of player-side shortcut, offered for any
       // character. It opens straight away rather than walking the player over
       // first, because reading a character sheet is inspection rather than an
       // action on the world.
-      const bool hasShowStatus = contextMenuTarget.has<CharacterTag>();
+      const bool hasShowStatus = contextMenuTarget.has<Actor>();
 
       if (interactions.empty() && !hasSeeInventory && !hasShowStatus) {
         ImGui::Text("No actions available");
@@ -419,10 +419,11 @@ void Game::Draw() {
             DrawRectangle(sPos.x, sPos.y, tileW, tileH, tint);
 
             if (cell.carve) {
-              // An opening is shown as one, rather than as a tile.
+              // An opening is marked with a border, but its ground is still drawn below:
+              // carve removes what was built, not the earth under it, and the preview has
+              // to show the floor the design actually lays.
               DrawRectangleLines(sPos.x, sPos.y, tileW, tileH,
                                  cell.legal ? GREEN : RED);
-              continue;
             }
 
             // Resolve the art exactly the way the renderer does, by reusing the

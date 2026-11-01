@@ -9,6 +9,7 @@
 
 #include "BlueprintExpansion.hpp"
 #include "Components.h"
+#include "ObjectFactory.h"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "TileRegistry.h"
@@ -62,10 +63,13 @@ inline void DrawZoomControl(const char *idSuffix, float &zoom) {
 
 // The design itself: every cell drawn the way the world draws it, scrolling when
 // it does not fit. `height` is the canvas height in pixels.
+// `objects` is the live factory, used only to honour a template's own `sprite`
+// override. Nullable: a caller with no factory still gets the convention lookup, which is
+// what every shipped template needs (none of the 78 sets an override).
 inline void DrawCanvas(const char *childId, const Blueprint &blueprint,
                        const BlueprintExpansion::Expansion &expansion, float zoom,
-                       const TileRegistry &tiles, ResourceManager &resources,
-                       float height) {
+                       const TileRegistry &tiles, const ObjectFactory *objects,
+                       ResourceManager &resources, float height) {
   const float cell = zoom;
   const int minX = blueprint.minX;
   const int minY = blueprint.minY;
@@ -116,64 +120,92 @@ inline void DrawCanvas(const char *childId, const Blueprint &blueprint,
         draw->AddRect(topLeft, bottomRight, IM_COL32(120, 120, 120, 255));
         continue;
       }
-      if (!c.object.empty()) {
-        // Objects are not resolved here: their art lives in a template the world
-        // applies at spawn, and this pane has no instance of it. The cell is marked
-        // and named so a fixture is still identifiable.
-        draw->AddRectFilled(topLeft, bottomRight, IM_COL32(60, 45, 30, 255));
-        draw->AddRect(topLeft, bottomRight, IM_COL32(200, 160, 90, 255));
-        draw->AddText(ImVec2(topLeft.x + 2.0f, topLeft.y + 2.0f),
-                      IM_COL32(220, 190, 140, 255), c.object.c_str());
-        continue;
-      }
-      if (c.tile.empty()) {
-        continue;
-      }
+      // Ground first, for every cell that has any: an object stands *on* the floor, so
+      // the floor has to be drawn under it. The old order tested the object first and
+      // drew only a bordered box with its name, which made a furnished room read as a
+      // list of nouns -- and disagreed with the world, which draws no text for an entity
+      // at all.
+      const TileDef *definition = c.tile.empty() ? nullptr : tiles.Get(c.tile);
+      if (!c.tile.empty()) {
 
-      const TileDef *definition = tiles.Get(c.tile);
+        // The plate, exactly as the world draws it: the tile's own background inside
+        // the cell. Drawn even when a sprite follows, because a sprite need not be
+        // full-bleed.
+        const Color plate =
+            definition != nullptr ? definition->backgroundColor : Color{40, 40, 40, 255};
+        draw->AddRectFilled(topLeft, bottomRight,
+                            ImGui::ColorConvertFloat4ToU32(
+                                ImVec4(plate.r / 255.0f, plate.g / 255.0f,
+                                       plate.b / 255.0f, plate.a / 255.0f)));
 
-      // The plate, exactly as the world draws it: the tile's own background inside
-      // the cell. Drawn even when a sprite follows, because a sprite need not be
-      // full-bleed.
-      const Color plate =
-          definition != nullptr ? definition->backgroundColor : Color{40, 40, 40, 255};
-      draw->AddRectFilled(topLeft, bottomRight,
-                          ImGui::ColorConvertFloat4ToU32(
-                              ImVec4(plate.r / 255.0f, plate.g / 255.0f,
-                                     plate.b / 255.0f, plate.a / 255.0f)));
+        // The sprite, through the world's own resolver and fitting function, so
+        // scale, snapping and centring cannot drift from what the map shows.
+        bool drewSprite = false;
+        const Texture2D *texture = ResolveSpriteTexture(
+            definition != nullptr ? definition->sprite : std::string(),
+            TileSpriteId(c.tile), resources, nullptr);
+        if (texture != nullptr) {
+          const SpriteRect fit =
+              SpriteFitRect(*texture, topLeft.x, topLeft.y, cell, cell);
+          if (fit.width > 0.0f && fit.height > 0.0f) {
+            draw->AddImage(
+                static_cast<ImTextureID>(static_cast<std::intptr_t>(texture->id)),
+                ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+            drewSprite = true;
+          }
+        }
 
-      // The sprite, through the world's own resolver and fitting function, so
-      // scale, snapping and centring cannot drift from what the map shows.
-      bool drewSprite = false;
-      const Texture2D *texture = ResolveSpriteTexture(
-          definition != nullptr ? definition->sprite : std::string(),
-          TileSpriteId(c.tile), resources, nullptr);
-      if (texture != nullptr) {
-        const SpriteRect fit =
-            SpriteFitRect(*texture, topLeft.x, topLeft.y, cell, cell);
-        if (fit.width > 0.0f && fit.height > 0.0f) {
-          draw->AddImage(
-              static_cast<ImTextureID>(static_cast<std::intptr_t>(texture->id)),
-              ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
-          drewSprite = true;
+        // The glyph, the world's fallback. Its centring is the same maths as
+        // DrawAsciiGlyphRaylib but measured with the ImGui font, because that is what
+        // the UI draws with -- the one place a preview cannot be pixel-identical to
+        // the map.
+        if (!drewSprite && definition != nullptr && definition->hasCharacter) {
+          const char glyph[2] = {definition->character, '\0'};
+          const ImVec2 size = ImGui::CalcTextSize(glyph);
+          const ImVec2 textPos(std::round(topLeft.x + (cell - size.x) * 0.5f),
+                               std::round(topLeft.y + (cell - size.y) * 0.5f));
+          const Color ink = definition->characterColor;
+          draw->AddText(textPos,
+                        ImGui::ColorConvertFloat4ToU32(
+                            ImVec4(ink.r / 255.0f, ink.g / 255.0f, ink.b / 255.0f,
+                                   ink.a / 255.0f)),
+                        glyph);
         }
       }
 
-      // The glyph, the world's fallback. Its centring is the same maths as
-      // DrawAsciiGlyphRaylib but measured with the ImGui font, because that is what
-      // the UI draws with -- the one place a preview cannot be pixel-identical to
-      // the map.
-      if (!drewSprite && definition != nullptr && definition->hasCharacter) {
-        const char glyph[2] = {definition->character, '\0'};
-        const ImVec2 size = ImGui::CalcTextSize(glyph);
-        const ImVec2 textPos(std::round(topLeft.x + (cell - size.x) * 0.5f),
-                             std::round(topLeft.y + (cell - size.y) * 0.5f));
-        const Color ink = definition->characterColor;
-        draw->AddText(textPos,
-                      ImGui::ColorConvertFloat4ToU32(
-                          ImVec4(ink.r / 255.0f, ink.g / 255.0f, ink.b / 255.0f,
-                                 ink.a / 255.0f)),
-                      glyph);
+      if (!c.object.empty()) {
+        // The object's raster sprite, resolved the way the world resolves one when it
+        // attaches a Sprite at spawn: the template's own `sprite` override first, then
+        // the convention path for the object key.
+        //
+        // There is deliberately no ASCII fallback, because the world has none any more --
+        // an entity with no art is the Unknown placeholder. Reusing the same placeholder
+        // means a design with missing art looks in the preview exactly as it will look in
+        // the map, instead of looking like a text box that the map never draws.
+        std::string overridePath;
+        if (objects != nullptr) {
+          const auto &templates = objects->GetTemplates();
+          const auto foundTemplate = templates.find(c.object);
+          if (foundTemplate != templates.end()) {
+            overridePath = foundTemplate->second.value("sprite", std::string());
+          }
+        }
+
+        const Texture2D *objectSprite =
+            ResolveSpriteTexture(overridePath, c.object, resources, nullptr);
+        if (objectSprite == nullptr) {
+          objectSprite = ResolveSpriteTexture(UnknownSpritePath(), std::string(),
+                                              resources, nullptr);
+        }
+        if (objectSprite != nullptr) {
+          const SpriteRect fit =
+              SpriteFitRect(*objectSprite, topLeft.x, topLeft.y, cell, cell);
+          if (fit.width > 0.0f && fit.height > 0.0f) {
+            draw->AddImage(
+                static_cast<ImTextureID>(static_cast<std::intptr_t>(objectSprite->id)),
+                ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+          }
+        }
       }
     }
   }

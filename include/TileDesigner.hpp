@@ -22,7 +22,7 @@ class DebugLog;
 // (src/main.cpp). A tile designer built the same way would repeat that mistake:
 // the window is the least testable part and the validation is the part that
 // matters. So the grammar, the extraction and the verdict live here, and both
-// `AIRogue --tile-design <file>` and TileDesignerWindow call this one
+// `AIRogue --tile-design <file>` and DesignerWindow call this one
 // implementation. There is exactly one validator.
 //
 // What this deliberately does NOT do: generate art. Per the owner's decision
@@ -32,12 +32,10 @@ class DebugLog;
 // reply is asked for one and nothing here produces an image.
 namespace TileDesigner {
 
-// The prose-then-one-fenced-JSON reply contract, the same shape the blueprint
-// designer uses (src/DesignerChatWindow.cpp): prose first, then exactly one
-// ```json block. Duplicated rather than shared because DesignerChatWindow keeps
-// its copies private and a shared "designer reply" utility is a bigger seam than
-// two callers justify -- but if a third appears, these two moves to a common
-// header.
+// The prose-then-one-fenced-JSON reply contract, the same shape every designer uses:
+// prose first, then exactly one ```json block. The implementation is shared with the
+// window through DesignerReply (include/DesignerSession.h); these wrappers stay because
+// this header is what the headless modes and ObjectDesigner include.
 //
 // Pulls the first fenced ```json block out of `text`. Empty when there is none.
 std::string ExtractJsonBlock(const std::string &text);
@@ -229,7 +227,7 @@ struct ApplyResult {
 // `--tile-design` wants when it is being used to test the validator.
 //
 // Not thread safe, and not meant to be: it is called on the main thread, after a
-// stream finishes, exactly like DesignerChatWindow::InspectFinishedExchange.
+// stream finishes, exactly like the window's InspectFinishedExchange.
 ApplyResult ApplyReply(const std::string &reply, TileRegistry &tiles,
                        const std::string &overlayDirectory);
 

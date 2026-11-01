@@ -457,6 +457,40 @@ size_t TileRegistry::RemoveRuntimeTiles() {
   return removed;
 }
 
+TileRegistry::AddResult TileRegistry::OverrideDefinition(
+    const nlohmann::json& json, const std::string& sourcePath) {
+  AddResult result;
+
+  TileDef def;
+  if (!ParseTileDef(json, sourcePath, def, result.error, result.warnings)) {
+    result.warnings.push_back("refused and not applied");
+    return result;
+  }
+
+  // Whatever holds this name goes, including a hand-authored entry. This is the one
+  // path allowed to do that, and it exists because the alternative -- "ask for a new
+  // tile instead" -- is what forces an override to fork the name the world already uses.
+  const auto existing = tiles.find(def.name);
+  if (existing != tiles.end()) {
+    retired.push_back(std::move(existing->second));
+    tiles.erase(existing);
+  }
+  runtimeAdded.erase(def.name);
+
+  auto owned = std::make_unique<TileDef>(std::move(def));
+  const TileDef* stored = owned.get();
+  tiles[stored->name] = std::move(owned);
+  // Not inserted into `runtimeAdded`: that set is the generated overlay's layer, and
+  // AddRuntime's contract is "the overlay may only replace its own". An override is a
+  // third layer with higher precedence, and marking it as runtime would let a later
+  // overlay reload overwrite it.
+  ++catalogRevision;
+
+  result.ok = true;
+  result.definition = stored;
+  return result;
+}
+
 bool TileRegistry::RemoveDefinition(const std::string& name) {
   const auto it = tiles.find(name);
   if (it == tiles.end()) {
@@ -466,7 +500,7 @@ bool TileRegistry::RemoveDefinition(const std::string& name) {
   // Ownership is moved into `retired`, not dropped. Get/GetAll/Count stop seeing
   // the definition from here on -- which is the point -- but the storage outlives
   // the removal, because some of this program holds a TileDef* across frames:
-  // TileDesignerWindow keeps one for the tile it is editing (`edited`), and
+  // DesignerWindow keeps one for the tile it is editing (`edited`), and
   // TileDesigner::ApplyResult hands one to a preview pane. Freeing here would let
   // a deletion in the Map Editor turn another window's next frame into a
   // use-after-free, which is not a trade worth making for the memory.

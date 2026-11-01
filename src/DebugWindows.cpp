@@ -26,8 +26,9 @@
 #include "AgentContextWindow.h"
 #include "BlueprintExpansion.hpp"
 #include "BlueprintPreview.hpp"
-#include "DesignerChatWindow.h"
-#include "TileDesignerWindow.h"
+#include "SpriteGapPanel.hpp"
+#include "ContentEditorWindow.h"
+#include "DesignerWindow.h"
 #include <algorithm>
 #include <map>
 #include <vector>
@@ -292,19 +293,16 @@ void DebugConsoleWindow::Draw() {
       game->designerWindowEntity.remove<ActiveWindow>();
     }
   }
-  // The tile designer shares the row: it shares the Designer's backend and is
-  // used with it (invent a material, then design with it), so they belong where
-  // they would be looked for together. The rows below are already at the width
-  // limit, which is why this is the one that joins rather than starts a row.
+
   ImGui::SameLine();
-  bool showTileDesigner = game->tileDesignerWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Tile Designer", &showTileDesigner)) {
-    if (showTileDesigner && game->tileDesignerWindow) {
+  bool showContentEditor = game->contentEditorWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Content Editor", &showContentEditor)) {
+    if (showContentEditor && game->contentEditorWindow) {
       // Owned by Game, not by the component, so this only shows or hides it: the
-      // conversation survives a toggle. See Game.h.
-      game->tileDesignerWindowEntity.set<ActiveWindow>({game->tileDesignerWindow});
+      // document being edited survives a toggle.
+      game->contentEditorWindowEntity.set<ActiveWindow>({game->contentEditorWindow});
     } else {
-      game->tileDesignerWindowEntity.remove<ActiveWindow>();
+      game->contentEditorWindowEntity.remove<ActiveWindow>();
     }
   }
 
@@ -399,13 +397,13 @@ void DrawTileOccupant(flecs::entity occupant, flecs::entity playerEntity) {
   std::string label = displayName != nullptr ? displayName->name : "";
   if (label.empty()) {
     label = isPlayer ? "Player"
-                     : (occupant.has<CharacterTag>() ? "Character" : "Entity");
+                     : (occupant.has<Actor>() ? "Character" : "Entity");
   }
 
   const char *kind = "Entity";
   if (isPlayer) {
     kind = "Player";
-  } else if (occupant.has<CharacterTag>()) {
+  } else if (occupant.has<Actor>()) {
     kind = "Character";
   } else if (itemType != nullptr) {
     kind = "Object";
@@ -1455,21 +1453,43 @@ static const char *ContentSortDirectionTooltip(ContentSortMetric metric,
 // The one sort row, used by both palettes. `id` keeps the combo and button ids
 // unique across the two lists; the visible direction label changes with the
 // metric, but the ## suffix keeps the button's id stable across that change.
-static void DrawContentSortControls(const char *id, ContentSortMetric &metric,
-                                    bool &descending) {
+// `allowed` restricts the combo to the metrics a caller actually implements. The Map
+// Editor offers all four because it has usage counts and a runtime overlay to ask about;
+// the Blueprints window offers name and date, because a design that has never been placed
+// has no usage, and "source" would mean the file rather than the design.
+static void DrawContentSortControls(
+    const char *id, ContentSortMetric &metric, bool &descending,
+    const std::vector<ContentSortMetric> &allowed = {}) {
   static const char *kMetricLabels[] = {"Name", "Date", "Usage on this map",
                                         "Source"};
+  static const ContentSortMetric kAllMetrics[] = {
+      ContentSortMetric::Name, ContentSortMetric::Date, ContentSortMetric::Usage,
+      ContentSortMetric::Source};
+
+  const auto labelOf = [](ContentSortMetric value) {
+    return kMetricLabels[static_cast<int>(value)];
+  };
 
   ImGui::AlignTextToFramePadding();
   ImGui::TextUnformatted("Sort");
   ImGui::SameLine();
 
-  int selected = static_cast<int>(metric);
   const std::string comboId = std::string("##sortMetric_") + id;
   ImGui::SetNextItemWidth(170.0f);
-  if (ImGui::Combo(comboId.c_str(), &selected, kMetricLabels,
-                   IM_ARRAYSIZE(kMetricLabels))) {
-    metric = static_cast<ContentSortMetric>(selected);
+  if (ImGui::BeginCombo(comboId.c_str(), labelOf(metric))) {
+    const size_t count =
+        allowed.empty() ? IM_ARRAYSIZE(kAllMetrics) : allowed.size();
+    for (size_t i = 0; i < count; ++i) {
+      const ContentSortMetric candidate =
+          allowed.empty() ? kAllMetrics[i] : allowed[i];
+      const std::string label =
+          std::string(labelOf(candidate)) + "##" + id + std::to_string(i);
+      if (ImGui::Selectable(label.c_str(), candidate == metric)) {
+        metric = candidate;
+      }
+      if (candidate == metric) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
   }
 
   ImGui::SameLine();
@@ -1533,6 +1553,41 @@ static void SortTileCatalog(
                      // alphabetical: a metric that leaves a group unordered is
                      // not a sort, it is a shuffle.
                      return ContentNameLess(a->name, b->name);
+                   });
+}
+
+// The Blueprints window's list order. Same rules as the tile catalog's: a design with no
+// recorded time sorts last whichever way the list points, and ties fall back to the name,
+// because a metric that leaves a group unordered is a shuffle rather than a sort.
+static void SortBlueprints(std::vector<const Blueprint *> &designs,
+                           ContentSortMetric metric, bool descending) {
+  std::stable_sort(designs.begin(), designs.end(),
+                   [&](const Blueprint *a, const Blueprint *b) {
+                     const std::string &nameA = a->name.empty() ? a->id : a->name;
+                     const std::string &nameB = b->name.empty() ? b->id : b->name;
+                     switch (metric) {
+                       case ContentSortMetric::Name: {
+                         const int compare = ContentNameCompare(nameA, nameB);
+                         if (compare != 0) {
+                           return descending ? compare > 0 : compare < 0;
+                         }
+                         break;
+                       }
+                       case ContentSortMetric::Date: {
+                         const bool hasA = HasContentTime(a->sourceTime);
+                         const bool hasB = HasContentTime(b->sourceTime);
+                         if (hasA != hasB) return hasA;
+                         if (a->sourceTime != b->sourceTime) {
+                           return descending ? a->sourceTime > b->sourceTime
+                                             : a->sourceTime < b->sourceTime;
+                         }
+                         break;
+                       }
+                       case ContentSortMetric::Usage:
+                       case ContentSortMetric::Source:
+                         break;
+                     }
+                     return ContentNameLess(nameA, nameB);
                    });
 }
 
@@ -3094,8 +3149,8 @@ void VisionDebugWindow::Draw() {
 
         int characterCount = 0;
         int characterWithoutFacing = 0;
-        game->ecs.filter<CharacterTag>().each(
-            [&](flecs::entity character, const CharacterTag &) {
+        game->ecs.filter<Actor>().each(
+            [&](flecs::entity character, const Actor &) {
               ++characterCount;
               if (!character.has<Facing>()) ++characterWithoutFacing;
             });
@@ -3540,7 +3595,7 @@ void BlueprintWindow::Draw() {
     layoutLoaded = true;
   }
 
-  const std::vector<const Blueprint*> all = registry->GetAll();
+  std::vector<const Blueprint*> all = registry->GetAll();
 
   ImGui::Text("Selected for placement: %s",
               game->selectedBlueprintId.empty()
@@ -3621,6 +3676,20 @@ void BlueprintWindow::Draw() {
   paneWidth = std::clamp(paneWidth, kMinListPaneWidth, maxPaneWidth);
 
   ImGui::BeginChild("blueprint_list", ImVec2(paneWidth, 0), true);
+  // The controls sit inside the pane they order, so they cannot drift away from the
+  // list they apply to. Read and written through the window state every frame like the
+  // Map Editor's, rather than held as members of a window that is rebuilt on each toggle.
+  {
+    ContentSortMetric metric = game->debugWindowState->GetBlueprintSortMetric();
+    bool descending = game->debugWindowState->GetBlueprintSortDescending();
+    DrawContentSortControls("blueprints", metric, descending,
+                            {ContentSortMetric::Name, ContentSortMetric::Date});
+    game->debugWindowState->SetBlueprintSortMetric(metric);
+    game->debugWindowState->SetBlueprintSortDescending(descending);
+    // Sorted after the controls, so a click reorders this frame rather than the next.
+    SortBlueprints(all, metric, descending);
+  }
+  ImGui::Separator();
   for (const Blueprint* blueprint : all) {
     const bool armed = blueprint->id == game->selectedBlueprintId;
     const bool shown = blueprint->id == previewedBlueprintId;
@@ -3710,7 +3779,8 @@ void BlueprintWindow::Draw() {
     const float canvasHeight = std::max(120.0f, ImGui::GetContentRegionAvail().y * 0.45f);
     BlueprintPreview::DrawCanvas("blueprint_preview_canvas", *previewed,
                                  *previewedExpansion, zoom, game->tileRegistry,
-                                 game->resourceManager, canvasHeight);
+                                 &game->objectFactory, game->resourceManager,
+                                 canvasHeight);
     BlueprintPreview::DrawLegend(*previewedExpansion, game->tileRegistry);
   }
 
@@ -3740,6 +3810,11 @@ void BlueprintWindow::Draw() {
       contents += entry.first + " x" + std::to_string(entry.second);
     }
     ImGui::TextWrapped("%s", contents.c_str());
+
+    // What this design cannot be drawn with, and a button per item. The same panel the
+    // Designer window's preview draws, so looking at a design here and looking at it
+    // there cannot give two different answers about what is missing.
+    SpriteGapPanel::Draw(game, game->tileRegistry, game->objectFactory, *previewed);
 
     ImGui::Separator();
 

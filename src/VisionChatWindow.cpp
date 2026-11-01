@@ -429,7 +429,7 @@ std::string VisionChatWindow::BuildGameStateSummary() const {
             label = entity.name().c_str() ? entity.name().c_str() : "unnamed";
           }
           nearby.push_back(
-              {label, pos.x, pos.y, distance, entity.has<CharacterTag>()});
+              {label, pos.x, pos.y, distance, entity.has<Actor>()});
         });
 
     std::sort(nearby.begin(), nearby.end(),

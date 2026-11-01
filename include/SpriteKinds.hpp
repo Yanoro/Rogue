@@ -31,6 +31,11 @@ namespace SpriteKinds {
 enum class Kind {
   Tile,
   Object,
+  // Sprites only. There is no actor *definition* turn: an actor is authored in
+  // data/actors (or the Content Editor) and this kind exists so the art pipeline can draw
+  // its sprite. That is why it has no row in the descriptor table below -- those rows
+  // carry a prompt file and a definition overlay directory, and an actor has neither.
+  Actor,
 };
 
 struct Descriptor {

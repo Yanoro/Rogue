@@ -15,11 +15,15 @@
 
 #include "raylib-cpp.hpp"
 
-#include "AI.h"
+#include "DesignerSession.h"
 #include "PixelDSL.hpp"
 #include "TileArtQueue.hpp"
+#include "Blueprint.hpp"
+#include "BlueprintExpansion.hpp"
+#include "BlueprintNeed.hpp"
 #include "TileDesigner.hpp"
 #include "ObjectDesigner.hpp"
+#include "DesignerDomains.h"
 #include "SpriteKinds.hpp"
 #include "SpriteRouter.hpp"
 #include "TileRegistry.h"
@@ -35,8 +39,8 @@ class Game;
 //
 // It exists to answer one question: can an agent extend this world's vocabulary at
 // runtime? Everything else is in service of being able to see the answer. So the
-// window is deliberately isolated, exactly like DesignerChatWindow and
-// VisionChatWindow: it owns its own provider contextId and never touches
+// window is deliberately isolated, exactly like VisionChatWindow: it owns its own
+// provider contextId and never touches
 // NPCContext, AIRequest or the agent thread pipeline. Nothing here can disturb the
 // NPC loop.
 //
@@ -61,7 +65,7 @@ class Game;
 // The one thing it does not do is generate art. A created tile is a glyph and two
 // colours; the sprite field is honoured if a model volunteers one but nothing
 // here asks for it or produces one. Art is hot-swapped in later.
-class TileDesignerWindow : public Window {
+class DesignerWindow : public Window {
 public:
   // `designerAI` is borrowed, not owned: it is the same backend the Designer Chat
   // window uses (Game owns it for the whole run), because producing a valid
@@ -76,7 +80,7 @@ public:
   // only record of a conversation and cannot be verified by reading it. A
   // constructor parameter rather than a settings key, because it is a test hook and
   // nothing that should be configurable.
-  TileDesignerWindow(Game *game, AI *designerAI, std::string modelLabel,
+  DesignerWindow(Game *game, AI *designerAI, std::string modelLabel,
                      bool selfTest = false,
                      flecs::entity owner = flecs::entity::null());
 
@@ -88,7 +92,7 @@ public:
   // which is about the transcript and should not depend on generation being set up.
   size_t RunSelfTestConversation(
       bool requestArt = false,
-      SpriteKinds::Kind kind = SpriteKinds::Kind::Tile,
+      DesignerDomains::Domain domain = DesignerDomains::Domain::Tile,
       bool setTest = false);
 
   // What one cache lookup resolved to: the GL texture it would draw and the file
@@ -124,70 +128,41 @@ public:
 
   void Draw() override;
 
+  // ---- automatic asset creation (the "Art automatically" switch) -------------------
+  //
+  // Runs the assets a design asked for one at a time, with no input: for each need the
+  // definition turn, then (through the normal acceptance path) its sprite document and
+  // compile, then the next. A refused asset is recorded and skipped rather than stopping
+  // the run, because one bad request should not cost the rest.
+  //
+  // The order is the pipeline's own requirement, not a convenience: a sprite for a
+  // template nobody can spawn is a picture of nothing, so the definition has to exist
+  // first -- which is also why this cannot simply fire the document turn.
+  //
+  // Public because the Designer window starts it when it saves a design that asked for
+  // something; it is the only caller.
+  void StartAutoArt(const Blueprint &design, const std::vector<BlueprintNeed> &needs);
+  bool AutoArtRunning() const { return autoRunning; }
+
+  // "Give me art for this asset", for a caller that is not this window -- the Content
+  // Editor's Regenerate button. It is the existing document turn with its existing rules:
+  // an existing document is compiled as-is and the pack's copy is never overwritten; only
+  // a missing one is written by the model.
+  //
+  // The document conversation is pumped by this window's Draw, so a caller must also make
+  // the window visible before asking, or the reply is never processed. That coupling is
+  // the reason this is a one-line wrapper rather than a service of its own.
+  void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind);
+
 private:
-  // One request/response attempt. A retry is a new entry, so the transcript reads
-  // as the conversation that actually happened.
-  struct Exchange {
-    std::string DisplayAnswer(bool showThoughts, bool showJson) const;
-    // What goes back to the model as its own previous turn: reasoning kept (a
-    // model revising works better with its earlier thinking in view), the JSON
-    // block dropped so a whole tile definition is not replayed as if fresh.
-    std::string HistoryAnswer() const;
-    std::string ParsedAnswer() const;
-
-    // True when this exchange belongs to the *pixel document* conversation rather
-    // than the definition one. The two are separate histories with separate system
-    // prompts, but they share the transcript and the retry machinery -- so the flag
-    // is what Inspection dispatches on, not two nearly identical vectors.
-    bool isArtDocument = false;
-
-    std::string prompt;
-    std::string answer;
-    bool done = false;
-    bool failed = false;
-    std::string error;
-    bool fromUser = false;
-
-    // Outcome of applying the answer, filled on the main thread once the stream
-    // finishes.
-    bool inspected = false;
-    bool ok = false;
-    std::string failureReason;
-    std::string tileName;
-    std::string savedPath;
-    std::string notes;
-    std::vector<std::string> warnings;
-    bool saveFailed = false;
-    // What happened about the tile's *art*, in one line, shown under the verdict.
-    //
-    // Exists because the feature's failure mode is silence: a tile is accepted, no
-    // sprite appears, and without this the transcript looks identical whether art
-    // generation is off, misconfigured, refused, or quietly working. Every value
-    // here says which, and the reasons are actionable.
-    std::string artNote;
-    // For a set: the group's name, the entries that were accepted, and one display line per
-    // entry so a partial set reads as "five of six, and here is the sixth". Kept on the
-    // exchange rather than recomputed because the transcript is the record of the attempt.
-    std::string setName;
-    std::vector<std::string> acceptedNames;
-    // One pair per entry: accepted, and the line to show. The flag is kept rather than
-    // inferred from the text -- comparing a display string's prefix to decide a verdict is
-    // the kind of coupling that breaks the first time the wording changes.
-    std::vector<std::pair<bool, std::string>> entryVerdicts;
-    // The shape this attempt asked for.
-    bool wasSet = false;
-    // The definition this attempt produced, for the preview pane. Null when the
-    // reply never got as far as a definition.
-    const TileDef *definition = nullptr;
-  };
+  // The two conversations this window runs. A definition turn answers "what is this";
+  // a pixel-document turn answers "how is it drawn". Named constants rather than bare 0
+  // and 1 because an index spelled out at its use site is an index that will eventually
+  // be spelled wrong.
+  static constexpr int kDefinitionConversation = 0;
+  static constexpr int kArtConversation = 1;
 
   void SendUserMessage(const std::string &prompt);
-  // `artConversation` selects the pixel-document history, system prompt and provider
-  // context. One function rather than two because everything else -- the streaming,
-  // the sentinel, the failure handling, the transcript -- is identical, and a second
-  // copy is a second place for the handoff to break.
-  void GenerateResponse(size_t index, std::string prompt,
-                        bool artConversation = false);
 
   // ---- the pixel document turn (art.generation.source == "dsl") -------------------
   //
@@ -200,20 +175,40 @@ private:
   // pack, or left by an earlier turn) it is used as-is and the art is queued; the
   // pack's copy is never overwritten.
   void RequestSpriteDocument(const std::string &name, SpriteKinds::Kind kind,
-                             bool replaceGenerated = false);
+                             bool replaceGenerated = false,
+                             const std::string &surroundings = std::string(),
+                             const std::string &requirement = std::string());
+  // The gap offer at the top of the window, when Game has one: the crop the vision pass
+  // read, what it read, and the Send button. Nothing is sent until it is pressed.
+  void DrawGapOffer();
+
+  // The user turn for "create this asset", shared with the manual Send path so the two
+  // cannot drift about what the model is asked. Private: only the two paths that create
+  // an asset use it.
+  std::string DefinitionPromptFor(const std::string &name, SpriteKinds::Kind kind,
+                                  const std::string &requirement) const;
+
   void SendArtTurn(const std::string &prompt);
-  void InspectFinishedArtDocument(size_t index, const Exchange &finished);
+  void InspectFinishedArtDocument(size_t index,
+                                  const DesignerSession::Exchange &finished);
   // True when settings say the generation source is "dsl".
   bool DslArtSourceActive() const;
   // Where a document written by this turn would go. Empty when no generated layer is
   // configured, in which case there is nowhere an agent may write.
   std::string ArtDocumentPath(const std::string &name, SpriteKinds::Kind kind) const;
 
-  std::string artContextId;
-  std::vector<ChatMessage> artHistory;
-  std::string artSystemPrompt;
+  // The automatic run: the queue, how far through it we are, and what could not be made.
+  // `autoStarted` is what distinguishes "this item is in flight" from "this item has not
+  // begun", because the window is idle between the two.
+  void PumpAutoArt();
+  std::vector<BlueprintNeed> autoNeeds;
+  size_t autoIndex = 0;
+  bool autoRunning = false;
+  bool autoStarted = false;
+  int autoIdleFrames = 0;
+  std::vector<std::string> autoFailures;
+
   TileDesigner::SpriteDocumentBrief artBrief;
-  int artAttempts = 0;
   // The last compile verdict, kept for the pane: "compiled" is not the interesting
   // half, "refused at line 7 because a tile cannot be transparent" is.
   std::string artVerdict;
@@ -232,7 +227,6 @@ private:
   std::string dslText;
   PixelDSL::Result dslResult;
   bool dslCompiled = false;
-  bool IsBusy();
 
   // Runs on the main thread once a stream has finished. Applies the reply through
   // TileDesigner and either accepts the tile or queues a retry.
@@ -241,6 +235,21 @@ private:
   // The left pane: the tile from the latest attempt, the live editor for it, and
   // the list of everything the runtime layer currently holds.
   void DrawPreviewPane();
+
+  // ---- the building half ---------------------------------------------------------
+  //
+  // A blueprint reply is parsed, expanded and saved by the same code the Blueprints
+  // window uses (BlueprintRegistry::ParseBlueprint / SaveBlueprint, BlueprintExpansion);
+  // what is here is the designer's own view of the attempt -- the transcript verdict, the
+  // refusal fed back to the model, and the preview of a design that was refused.
+  void InspectBlueprintReply(size_t index,
+                             const DesignerSession::Exchange &finished);
+
+  // The left pane for a building: the last attempted design drawn the way the world
+  // draws it, its designer notes, and the sprites it needs. Shared with the Blueprints
+  // window through BlueprintPreview and SpriteGapPanel so the two previews cannot
+  // disagree about what a design looks like or what it is missing.
+  void DrawBlueprintPreview();
 
   // The tile being shown in the editor, if any. Not a copy: it points at the
   // definition in the registry, which is what makes an in-place colour or glyph
@@ -251,16 +260,26 @@ private:
 
   // ---- which kind is being designed ------------------------------------------------
   //
-  // The mode the next request is built for, and the mode the last accepted design was
-  // for. `mode` is what the user or the router chose; `designMode` is what a reply was
-  // validated as, which is the same thing unless the user changes the dropdown mid-flight.
+  // The domain the next request is built for, and the domain the reply in flight was
+  // asked for. `mode` is what the user or the router chose; `designMode` is what a reply
+  // was validated as, which is the same thing unless the dropdown moves mid-flight.
   //
   // `designMode` exists because a reply is inspected on a later frame than it was
   // requested: flipping the dropdown while a request is in flight must not make the
-  // reply be validated against the wrong kind's grammar. The verdict says which kind it
-  // was asked for, and that is what is honoured.
-  SpriteKinds::Kind mode = SpriteKinds::Kind::Tile;
-  SpriteKinds::Kind designMode = SpriteKinds::Kind::Tile;
+  // reply be validated against the wrong domain's grammar -- a tile reply judged by the
+  // blueprint parser, or a building judged as an object. The verdict says which domain
+  // it was asked for, and that is what is honoured.
+  //
+  // A *domain*, not a `SpriteKinds::Kind`: one of the three is a building, which has no
+  // sprite kind. Sprite code reaches the sprite half through SpriteKindOf(), and only
+  // after asking IsSprite().
+  DesignerDomains::Domain mode = DesignerDomains::Domain::Tile;
+  DesignerDomains::Domain designMode = DesignerDomains::Domain::Tile;
+
+  // The sprite kind for a domain, for the code paths that only sprites have. A building
+  // has none, so every caller must have tested IsSprite() first; this returns Tile rather
+  // than dereferencing a null, which is `DesignerDomains::SpriteOf`'s contract.
+  static SpriteKinds::Kind SpriteKindOf(DesignerDomains::Domain domain);
 
   // Whether the next request asks for a set, and how big. Two pieces of state because they
   // come from different places: the router proposes both (`shape` and `size`), and the
@@ -270,6 +289,88 @@ private:
   // on a later frame and must be judged by the shape it was asked for.
   bool requestSet = false;
   int requestSetSize = 0;
+
+  // The last building design that was *parsed*, whether or not it passed validation,
+  // plus the expansion drawn from it.
+  //
+  // Kept even when the design was refused, which is the point: a design that fails
+  // validation is exactly the one worth looking at, and the transcript alone does not
+  // show what the model thought it was building. The expansion is stored rather than
+  // recomputed because rasterising a shape set every frame for a pane that only changes
+  // when a design arrives would be wasted work.
+  struct PreviewedDesign {
+    Blueprint blueprint;
+    BlueprintExpansion::Expansion expansion;
+    std::string notes;
+    // The assets this design asked the world for (the reply's `needs`). Not part of the
+    // saved blueprint -- stripped before saving, like the notes -- but kept here so the
+    // preview can offer each one to the sprite designer.
+    std::vector<BlueprintNeed> needs;
+    bool accepted = false;
+    std::string refusal;
+  };
+  std::optional<PreviewedDesign> lastDesign;
+
+  // ---- what the left pane is showing ------------------------------------------------
+  //
+  // The pane used to have exactly one slot per domain -- `lastDesign`, `edited`,
+  // `editedObject` -- each overwritten by the next result of that domain, and it chose
+  // which to draw from `mode`. Two consequences, both reported: creating two tiles lost
+  // the first from the pane, and looking at another domain meant changing the domain the
+  // *next request* would be built for.
+  //
+  // A result is captured here when a reply is accepted, so the history holds only things
+  // that exist. A refused attempt is kept separately and shown only while it is the newest
+  // thing that happened: the pane has always shown refused designs on purpose, and that is
+  // not the same as being part of a history you can walk.
+  struct ViewedResult {
+    DesignerDomains::Domain domain = DesignerDomains::Domain::Tile;
+    // The design's name, for the toolbar and the list. For a set, the set's name.
+    std::string label;
+    bool accepted = true;
+
+    // Blueprint: exactly what DrawBlueprintPreview draws.
+    std::optional<PreviewedDesign> design;
+
+    // Object: the copies the object pane shows, because ObjectFactory owns its templates
+    // by value and a pointer into that map is invalidated by the next runtime add.
+    nlohmann::json object;
+    std::string objectKey;
+    std::string objectOverlayPath;
+
+    // Tile: by name, because the editor writes *through* a pointer into the registry.
+    // The entry is therefore the asset's identity rather than a snapshot: re-accepting
+    // "stone floor" updates this view too, which is the right answer for a name that
+    // identifies one tile.
+    std::string tileName;
+    bool tileIsRuntime = false;
+  };
+
+  // Newest last. `viewedIndex` is what the pane draws; the arrows and the list move it.
+  std::vector<ViewedResult> viewed;
+  size_t viewedIndex = 0;
+  // The domain the pane draws. Deliberately separate from `mode`, which is what the next
+  // request is built for -- the two were the same value before, and that is precisely what
+  // made "look at the blueprint without designing a building" impossible.
+  DesignerDomains::Domain paneDomain = DesignerDomains::Domain::Tile;
+  // A refused attempt, drawn only while it is the newest thing and only for a building
+  // (the sprite panes have never shown refusals in the left pane; the transcript has them).
+  std::optional<ViewedResult> refusedAttempt;
+
+  // Appends an accepted result and selects it, dropping the oldest past the cap.
+  void CaptureViewed(ViewedResult result);
+
+  // Repopulates the drawing slots from `viewed[index]` and points `paneDomain` at it.
+  void ShowViewed(size_t index);
+
+  // The arrows and the "Showing:" list at the top of the left pane. Drawn inside the pane's
+  // child so it cannot drift away from what it controls.
+  void DrawViewedToolbar();
+
+  // The manual domain picker. Only drawn when automatic routing is off: with it on the
+  // classifier decides the domain per request, so a combo the next Send overwrites would
+  // be a control that lies about what it controls.
+  void DrawDomainPicker(const DesignerDomains::Descriptor &current);
 
   // The accepted object, as the definition rather than a pointer into the factory.
   //
@@ -290,27 +391,48 @@ private:
   bool routeInFlight = false;
   std::string routeNote;
 
-  // The kind's descriptor for the current mode, or null when there is no game.
-  const SpriteKinds::Descriptor *ModeDescriptor() const;
+  // The domain's descriptor for the current mode.
+  const DesignerDomains::Descriptor &ModeDescriptor() const;
 
-  // The mode name for prose and the log: "tile" or "object".
+  // The mode name for prose and the log: "building", "tile" or "object".
   const char *ModeName() const;
 
-  // The overlay an accepted design of the current mode is written to, resolved from the
-  // settings. Empty means "session only", which the pane reports.
+  // The overlay an accepted *sprite* design of the current mode is written to, resolved
+  // from the settings. Empty means "session only", which the pane reports, and also what a
+  // building gets: a blueprint is saved by the blueprint registry, not into an overlay.
   std::string ModeOverlayDirectory() const;
 
-  // The same for an explicitly named kind. Inspection uses this rather than
-  // ModeOverlayDirectory, because a reply is written to the overlay of the kind it was
+  // The same for an explicitly named domain. Inspection uses this rather than
+  // ModeOverlayDirectory, because a reply is written to the overlay of the domain it was
   // *asked* for, which the dropdown may have moved away from while the request was in
   // flight. Writing an object into the tile overlay would be a silent corruption of the
   // wrong directory.
-  std::string ModeOverlayDirectoryFor(SpriteKinds::Kind kind) const;
+  std::string ModeOverlayDirectoryFor(DesignerDomains::Domain domain) const;
 
-  // Asks the classifier which kind the typed request is for. No-op when there is no
+  // Asks the classifier which domain the typed request is for. No-op when there is no
   // classifier or one is already in flight. The answer is picked up by Draw.
-  void RequestRoute(const std::string &text);
+  //
+  // `automatic` only changes what is logged: when routing is on, this runs from Send
+  // rather than from a button, and a log that cannot tell the two apart cannot answer
+  // "why did it design a building when I asked for a chair".
+  void RequestRoute(const std::string &text, bool automatic = false);
   void ApplyRouteVerdict(const SpriteRouter::Verdict &verdict);
+
+  // With `designer.autoRoute` on, Send classifies first and waits: the prompt has to be
+  // built for the domain the classifier picks, so the request cannot go out until the
+  // verdict lands. The prompt is parked here for that one frame.
+  //
+  // Empty means "nothing waiting". A non-empty value is also what disables Send, so two
+  // requests cannot queue behind one classification.
+  // Returns false when the prompt was not taken (a route is already in flight), so the
+  // caller can leave the text in the box instead of eating it.
+  bool BeginAutoRoute(const std::string &prompt);
+  std::string autoSendPrompt;
+
+  // The "create a being's sprite" request: the text is a description, the reply is a
+  // sprite document, and the name typed beside the mode becomes its filename.
+  void SendActorSpriteRequest(const std::string &description);
+  char actorSpriteNameBuffer[64] = {};
 
   // Applies the rewritten brief for the current mode to the Improve button, so an
   // improved request is enriched inside the vocabulary it will actually be built with.
@@ -449,11 +571,8 @@ private:
   // session only", which is reported in the status line rather than hidden.
   std::string OverlayDirectory() const;
 
-  // Appends to the session transcript under logs/tile-designer/. Created lazily on
-  // the first message, so a run that never opens the window leaves no empty file
-  // and the name carries the time of the conversation rather than of the launch.
-  void Log(const std::string &text);
-  void LogEvent(const std::string &text);
+  // Appends to the session transcript under logs/tile-designer/. The file, Log and
+  // LogEvent are DesignerSession's; this window is what the log is *about*.
 
   // Writes the once-per-session header: backend, context, the prompt file and the
   // system prompt that was *actually sent*.
@@ -466,23 +585,17 @@ private:
   void LogSessionHeader();
 
   // The prompt file's own text, quoted into the log, with its size and line count.
-  void LogPromptFile(const std::string &path);
+  // (The generic log plumbing -- the file, Log and LogEvent -- is in DesignerSession.)
 
   Game *game = nullptr;
-  AI *ai = nullptr;
   std::string modelLabel;
 
-  // One per window instance, so this conversation cannot collide with an NPC's,
-  // the blueprint designer's or the vision window's provider-side context.
-  std::string contextId;
+  // The chat half: exchanges, the two conversations, the streaming handoff, the log,
+  // the per-conversation attempt budgets and the transcript. Shared with the blueprint
+  // window so there is one copy of the handoff that both depend on. See DesignerSession.
+  std::unique_ptr<DesignerSession> session;
 
-  mutable std::mutex transcriptMutex;
-  std::vector<Exchange> exchanges;
-  std::vector<ChatMessage> history;
-  std::string systemPrompt;
   char inputBuffer[2048] = {};
-
-  int attempts = 0;
   bool showThoughts = false;
   bool showJson = true;
   // Ask for art as soon as a tile is accepted, instead of waiting for the button.
@@ -496,14 +609,19 @@ private:
   // preference and should not survive a restart.
   bool layoutLoaded = false;
 
+  // The splitter position and the blueprint pane's cell size, both persisted.
+  //
+  // `blueprintZoom` is 64 by default -- the game's native tile size, the only value at
+  // which a design preview is pixel-for-pixel what the map draws. It is the half of the
+  // old Designer window's layout worth keeping; the splitter is the other.
+  float paneWidth = 380.0f;
+  float blueprintZoom = 64.0f;
+
   // The last status line shown under the transcript, e.g. the result of an editor
   // save. Cleared by the next action so a stale success cannot be mistaken for a
   // fresh one.
   std::string statusLine;
   bool statusIsError = false;
-
-  std::string logFilePath;
-  int requestNumber = 0;
 
   // Improving the user's own description before it is sent. Shared with the Designer
   // Chat window: PromptRewriter is the general half and RewriteInputBox is the UI,
@@ -560,9 +678,6 @@ private:
   // message, so the header goes out with that message rather than in a constructor
   // that runs whether or not the window is ever used.
   bool headerLogged = false;
-  // When the current request was handed to the backend. A monotonic clock, because
-  // this measures a duration and wall-clock time can step.
-  std::chrono::steady_clock::time_point requestStarted;
   // Test hook; see the constructor.
   bool selfTest = false;
 };

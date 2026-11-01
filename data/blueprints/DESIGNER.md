@@ -66,7 +66,9 @@ object, never a tile.** It is `place`d, not `paint`ed. "Tile" is not a synonym
 for "cell" either: a cell has a ground tile, and may also hold an object.
 
 A house is therefore not two hundred decisions. It is a filled rectangle for the
-floor, an outline for the wall objects, a carved doorway, and a door object.
+floor, an outline for the wall objects, a carved doorway, and a door object. The
+floor has to come first and cover every cell, because an object does not bring its
+own ground: **a design with a bare cell in it is refused.**
 
 ### Top-level fields
 
@@ -80,6 +82,7 @@ floor, an outline for the wall objects, a carved doorway, and a door object.
 | `levels` | no | Number of storeys. **Leave this out or set 1.** The world is single-layer today; anything on level 1+ is parsed and kept but not built. |
 | `regions` | no | Named shapes, so a shape used twice is written once. |
 | `parts` | **yes** | The build, in order. Later parts overwrite earlier ones on the same cell. |
+| `needs` | no | Assets this design needs and the world does not have. See "Assets that do not exist yet". |
 
 ### Shapes
 
@@ -125,13 +128,24 @@ directly, as a string.
 
 The four operations:
 
-- `"op": { "paint": "wooden floor" }` — writes a **ground tile** into every cell
+- `"op": { "paint": "wooden floor" }` — writes a **ground tile** into every cell.
 - `"op": { "place": "chest" }` — spawns an **object** into every cell. Walls,
-  doors and furniture use this
-- `"op": { "carve": true }` — clears the cell, making a doorway or window
+  doors and furniture use this. It does **not** lay ground.
+- `"op": { "carve": true }` — removes the **object** standing on the cell, making a
+  doorway or window. Like `place`, it does not lay ground.
 - `"op": { "fill": { "paint": "wooden floor" } }` — fills the **enclosed
   interior** of the part's shape. Use it after a wall ring to floor the room
   without repeating the rectangle.
+
+Each op owns a different part of the cell, so they compose: painting a cell that
+already has an object re-floors the cell under it, and placing on a painted cell
+keeps the floor. `carve` and `place` both keep whatever ground was already
+painted there.
+
+**No voids.** Every cell any part covers must end up with a ground tile. A `place`
+or a `carve` on a cell nothing has painted leaves a hole, and the design is
+refused with the cell named. So paint the whole footprint first, then place the
+walls, the furniture and the openings on top of it.
 
 ### The intended form of a complete example
 
@@ -155,7 +169,11 @@ The four operations:
 ```
 
 Note the order: floor first, then the wall objects, then the doorway carved out of
-the wall, then the door object on the carved cell. **Later parts win.**
+the wall, then the door object on the carved cell. **Later parts win, per field:**
+a later `paint` replaces the ground under a cell, a later `place` replaces the
+object on it, and neither removes the other. The doorway cell therefore keeps the
+floor the first part laid, loses the wall the second part stood there, and ends
+with the door on top -- which is exactly what the engine builds.
 
 ---
 
@@ -170,9 +188,51 @@ deliberately, but never substitute a tile for a wall or a door.
 
 %MATERIALS%
 
-There are **no other materials**. If a request needs something that does not
-exist here — glass, a window, a roof, metal walls — do not invent a name. Build
-what you can from this list and say in `designerNotes` what you had to leave out.
+There are **no other materials**, so do not invent a name inside a part. A part
+naming something that does not exist paints or places nothing, and the building
+will have a hole in it.
+
+What you can do instead is **ask for it**: describe the missing asset in `needs`
+(below) and build with what you have in the meantime. A separate sprite designer
+draws what you asked for, and the asset then exists for the next design.
+
+---
+
+## Assets that do not exist yet
+
+When a request genuinely needs something this world has never had — a cell, a
+furnace, a well, a gallows — say so in `needs`. That is the whole point of the
+field: you are the one who knows what the building needs.
+
+```json
+"needs": [
+  {
+    "name": "jail_cell_bars",
+    "kind": "object",
+    "description": "Iron bars filling one cell, visible through but not walkable, set between stone walls."
+  }
+]
+```
+
+| field | meaning |
+|---|---|
+| `name` | **For an object: the template key**, lowercase letters, digits and underscores (`jail_cell_bars`, not `Jail Cell Bars`). This is the exact string you then use in `place`. A name with spaces cannot be placed. **For a tile: the tile's name**, which is allowed spaces (`iron grating`). |
+| `kind` | **`object` or `tile`**, in those exact words. Furniture, walls, fixtures, containers and anything that stands on the ground are objects. Only ground surfaces — floor, grass, path, soil, water, carpet — are tiles. |
+| `description` | **One or two sentences**: what it is, what it looks like, and how it behaves (does it block movement? can it be seen through? is it carried?). This is the only thing the sprite designer is told, so vagueness here is what a wrong sprite is made of. |
+
+Rules that are enforced:
+
+- **At most 8 needs per design.** Ask for what the building cannot do without, not
+  for every nice-to-have. A design with twelve needs is a design that should be
+  simpler.
+- **Only ask for what is missing.** If the materials list already has it, use the
+  material. A need for something that exists is dropped, and the design still has
+  the hole.
+- **`needs` is not part of the building.** It is removed before the design is
+  saved, so it is a message, not content.
+- **You may design without it.** Use `place` with the need's `name` anyway: the
+  cell shows as a gap in the preview until the asset exists, and once it does the
+  same design builds it with no edits.
 
 ---
 

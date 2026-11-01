@@ -20,7 +20,7 @@ const std::vector<Descriptor> kAll = {
         "Tile",
         "tile",
         "data/tiles/TILEDESIGNER.md",
-        "content.tileDesignerPromptFile",
+        "content.tilePromptFile",
         // Deliberately a sibling of data/tiles rather than a subdirectory of it:
         // TileRegistry::LoadTiles reads every .json in one directory and is not
         // recursive, so a nested overlay would either be picked up as catalog (which
@@ -36,7 +36,7 @@ const std::vector<Descriptor> kAll = {
         "Object",
         "object",
         "data/objects/OBJECTDESIGNER.md",
-        "content.objectDesignerPromptFile",
+        "content.objectPromptFile",
         // The same sibling-of-the-catalog arrangement as tiles, for the same reason:
         // ObjectFactory::LoadTemplates reads one directory and is not recursive.
         "data/generated/objects",
@@ -75,6 +75,11 @@ std::string ConventionIdFor(Kind kind, const std::string &name) {
   // The object key is derived from a definition, so it is wrapped and unwrapped here
   // rather than duplicating the slug rule. One extra JSON object per call, on a path that
   // runs once per accepted definition -- not per frame.
+  if (kind == Kind::Actor) {
+    // The registry keys actors by the slug of their name, so the id *is* the convention
+    // id -- no wrapper, no second slug rule.
+    return name;
+  }
   if (kind == Kind::Object) {
     nlohmann::json wrapper = nlohmann::json::object();
     wrapper["name"] = name;
