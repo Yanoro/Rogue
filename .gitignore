@@ -1,8 +1,12 @@
 key
 router-key
+todo
+.cache
 agent_tasks.txt
 .agents/
 model.json
+# Untracked override layer for settings.json. Holds model.apiKey, which must
+# never be committed.
 settings.local.json
 
 # Runtime UI state, written on clean exit. Per-machine, like the settings
@@ -11,3 +15,38 @@ hud_state.json
 debug_windows_state.json
 imgui.ini
 logs/
+
+# Text-to-speech voice models, fetched with `python3 -m piper.download_voices`
+# (see SETTINGS.md). A single piper medium voice is ~63 MB and a Kokoro package
+# is ~354 MB, so these are deliberately not in the repo; a checkout without them
+# runs fine and simply cannot speak.
+models/
+
+# A locally built llama.cpp, produced by scripts/build_llama_server.sh. Needed
+# because the nixpkgs llama-cpp package predates the decision-model merge and has
+# no /v1/systemone, so the server used to test local System 1 models is built from
+# upstream master instead. ~320 MB of build tree, reproducible, and never a
+# source artifact -- see docs/systemone-local-models.md.
+.deps/
+
+# LoRA training artifacts under packs/art/<pack>/lora/. The dataset is a copy of
+# the pack's own source art (already in data/tilesets/) plus one-token captions, so
+# it is derived and reproducible with a single command:
+#   python3 tools/lora_dataset.py --min-side 192
+# Committing it would duplicate the pack for no gain. Trained adapters are a
+# different question -- see docs/asset-generation-design.md section 13.
+packs/art/*/lora/train/dataset/
+packs/art/*/lora/train/dataset_overview.png
+
+# The generated layer's raw work products: the 1024px sheets an image request
+# produced, plus the intermediate crops. They are the most expensive thing here to
+# reproduce (~$0.04 and a round trip per sheet) and the reason
+# tools/gen_tile_art.py has a --sheet mode, so they are kept on disk on purpose --
+# but 2.8MB per sheet is not something to commit. The cut 32px sprites under
+# packs/generated/<pack>/sprites/ are small and stay tracked: those are the
+# generated layer the game actually draws.
+data/generated/work/
+
+
+# PickScore / HuggingFace model cache (multi-GB, machine-local)
+sprite_preview/.hf-cache/
