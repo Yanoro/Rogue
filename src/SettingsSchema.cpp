@@ -228,6 +228,11 @@ FieldSpec &FieldSpec::ProfileSource(const char *kind) {
   return *this;
 }
 
+FieldSpec &FieldSpec::ActorSpriteSource() {
+  enumSource = "actorSprites";
+  return *this;
+}
+
 FieldSpec &FieldSpec::Default(std::string value) {
   stringDefault = std::move(value);
   return *this;
@@ -454,8 +459,8 @@ std::string TypeDescription(const FieldSpec &field) {
     break;
   case ValueType::EnumString:
     if (!field.enumSource.empty()) {
-      // Values come from the registry at draw time, not from the table.
-      text = "profile";
+      // Values come from a registry at draw time, not from the table.
+      text = field.enumSource == "actorSprites" ? "actor sprite" : "profile";
       break;
     }
     text = "string";
@@ -1182,6 +1187,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("player", "player.race",
             "Race the player's body slots come from. Empty means the human default.", &GameSettings::player, &PlayerSection::race))
         .Restart();
+    add(Field<ValueType::EnumString>("player", "player.actorSprite",
+            "Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art.", &GameSettings::player, &PlayerSection::actorSprite))
+        .ActorSpriteSource();
     add(Field<ValueType::String>("player", "player.portrait",
             "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
         .Restart();

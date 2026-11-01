@@ -3,6 +3,8 @@
 #include "Components.h"
 #include "Game.h"
 #include "Settings.h"
+#include "SpriteDraw.hpp"
+#include "SpritePaths.hpp"
 #include "imgui.h"
 #include "imgui_stdlib.h"
 
@@ -196,6 +198,7 @@ void SettingsWindow::Draw() {
     Report(ok, ok ? "Settings reloaded from disk."
                   : "Settings reloaded; some values were corrected (see stderr).");
     overrideCacheDirty = true;
+    RefreshPlayerActorSprite();
   }
   ImGui::SameLine();
   if (ImGui::Button("Write reference")) {
@@ -363,6 +366,11 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
       ImGui::SetTooltip("%s", field.doc.c_str());
     }
     ImGui::PopID();
+    return;
+  }
+
+  if (field.path == "player.actorSprite") {
+    DrawPlayerActorSpriteRow(field);
     return;
   }
 
@@ -602,6 +610,7 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     Report(ok, message);
     overrideCacheDirty = true;
     jsonBuffers.erase(field.path);
+    RefreshPlayerActorSprite();
   }
   ImGui::EndDisabled();
 
@@ -1021,6 +1030,152 @@ void SettingsWindow::DrawAIProfileField(
     break;
   }
   ImGui::EndDisabled();
+  ImGui::PopID();
+}
+
+void SettingsWindow::RefreshPlayerActorSprite() {
+  std::string message;
+  game->ApplyPlayerActorSprite(Settings().player.actorSprite, message);
+}
+
+void SettingsWindow::SelectActorSprite(
+    const SettingsSchema::FieldSpec &field, const std::string &id) {
+  // Visual first: a sprite the registry names but that has no art must not be
+  // persisted, or the next launch would warn about a look nobody can see.
+  std::string applied;
+  if (!game->ApplyPlayerActorSprite(id, applied)) {
+    Report(false, applied);
+    return;
+  }
+  std::string message;
+  const bool saved =
+      ApplySettingValue(SettingsFilePath(), field.path, id, message);
+  if (!applied.empty()) {
+    message += (message.empty() ? "" : " ") + applied;
+  }
+  Report(saved, message);
+  overrideCacheDirty = true;
+}
+
+void SettingsWindow::DrawPlayerActorSpriteRow(
+    const SettingsSchema::FieldSpec &field) {
+  GameSettings &settings = MutableSettings();
+  const std::string current =
+      *static_cast<std::string *>(field.access(settings));
+
+  ImGui::PushID(field.path.c_str());
+  ImGui::TextUnformatted(field.Label().c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
+  }
+  ImGui::SameLine(240.0f);
+  ImGui::SetNextItemWidth(190.0f);
+  ImGui::InputTextWithHint("##filter", "filter sprites", &actorSpriteFilter);
+  ImGui::SameLine();
+  ImGui::Checkbox("without art", &showActorSpritesWithoutArt);
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s", current.empty() ? "(race default)" : current.c_str());
+
+  const float cell = 52.0f;
+  const float spacing = ImGui::GetStyle().ItemSpacing.x;
+  const int columns = std::max(
+      1, static_cast<int>((ImGui::GetContentRegionAvail().x + spacing) /
+                          (cell + spacing)));
+  ImGui::BeginChild("##sprites", ImVec2(0, 3.0f * (cell + spacing) + 4.0f),
+                    ImGuiChildFlags_Borders);
+
+  int index = 0;
+  const auto drawCell = [&](const std::string &id, const std::string &label,
+                            const std::string &description) {
+    ImGui::PushID(label.c_str());
+    const ImVec2 corner = ImGui::GetCursorScreenPos();
+    ImGui::InvisibleButton("##cell", ImVec2(cell, cell));
+    const bool clicked = ImGui::IsItemClicked();
+    const bool hovered = ImGui::IsItemHovered();
+    ImDrawList *draw = ImGui::GetWindowDrawList();
+    const bool selected = (current == id);
+
+    draw->AddRectFilled(corner, ImVec2(corner.x + cell, corner.y + cell),
+                        IM_COL32(26, 26, 30, 255));
+    bool drew = false;
+    if (!id.empty()) {
+      if (const Texture2D *texture = ResolveSpriteTexture(
+              std::string(), id, game->resourceManager, nullptr)) {
+        const SpriteRect fit =
+            SpriteFitRect(*texture, corner.x, corner.y, cell, cell);
+        draw->AddImage(
+            static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)),
+            ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+        drew = true;
+      }
+    } else {
+      draw->AddText(ImVec2(corner.x + 8.0f, corner.y + 20.0f),
+                    IM_COL32(200, 200, 200, 255), "race");
+      drew = true;
+    }
+    if (!drew) {
+      draw->AddText(ImVec2(corner.x + 20.0f, corner.y + 18.0f),
+                    IM_COL32(110, 110, 110, 255), "?");
+    }
+    const ImU32 border = selected ? IM_COL32(255, 214, 90, 255)
+                           : hovered ? IM_COL32(170, 170, 170, 255)
+                                     : IM_COL32(62, 62, 68, 255);
+    draw->AddRect(corner, ImVec2(corner.x + cell, corner.y + cell), border,
+                  0.0f, 0, selected ? 2.0f : 1.0f);
+    if (hovered) {
+      ImGui::SetTooltip("%s%s%s", label.c_str(),
+                        description.empty() ? "" : "\n",
+                        description.c_str());
+    }
+    ImGui::PopID();
+    if (clicked) {
+      SelectActorSprite(field, id);
+    }
+    ++index;
+    if (index % columns != 0) {
+      ImGui::SameLine();
+    }
+  };
+
+  const std::string needle = Lower(actorSpriteFilter);
+  const auto matches = [&needle](const std::string &id, const std::string &name,
+                                 const std::string &description) {
+    if (needle.empty()) return true;
+    return Lower(id).find(needle) != std::string::npos ||
+           Lower(name).find(needle) != std::string::npos ||
+           Lower(description).find(needle) != std::string::npos;
+  };
+
+  drawCell(std::string(), "Race default",
+           "The race's own look, and then the ASCII art.");
+  int shown = 0;
+  for (const ActorSpriteDef *definition : game->actorSpriteRegistry.GetAll()) {
+    const std::string name =
+        definition->name.empty() ? definition->id : definition->name;
+    if (!matches(definition->id, name, definition->description)) continue;
+    const bool hasArt =
+        ResolveSpriteTexture(std::string(), definition->id,
+                             game->resourceManager, nullptr) != nullptr;
+    if (!hasArt && !showActorSpritesWithoutArt) continue;
+    drawCell(definition->id, name, definition->description);
+    ++shown;
+  }
+  if (shown == 0) {
+    // Distinguish "the filter hides everything" from "the catalogue has no art
+    // yet", because the second is the state a fresh checkout is in and the fix is
+    // somewhere else entirely.
+    if (game->actorSpriteRegistry.Count() == 0) {
+      ImGui::TextDisabled(
+          "No actor sprites are registered (data/actor_sprites).");
+    } else if (actorSpriteFilter.empty() && !showActorSpritesWithoutArt) {
+      ImGui::TextDisabled(
+          "No actor sprite has art yet. Generate them in the Content Editor's "
+          "actor sprites, or tick \"without art\".");
+    } else {
+      ImGui::TextDisabled("No actor sprites match.");
+    }
+  }
+  ImGui::EndChild();
   ImGui::PopID();
 }
 

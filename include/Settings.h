@@ -610,6 +610,12 @@ struct GameSettings {
     // PortraitRegistry id for the player's HUD portrait. Empty means the race's
     // default, and then the unknown sprite.
     std::string portrait;
+    // ActorSpriteRegistry id the player is drawn with, or empty for the race's
+    // own look (and then the ASCII art). An id rather than a path so the picker
+    // offers the same catalogue the Content Editor edits; the art is
+    // data/sprites/<id>.png, and an id with no art leaves the race's look in
+    // place and is reported.
+    std::string actorSprite;
   } player;
 
   struct WorldSection {

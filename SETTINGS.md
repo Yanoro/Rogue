@@ -513,6 +513,7 @@ The player entity and its starting tile.
 | `startX` | int | `48` | Starting tile. Out-of-bounds or wall positions are relocated to the nearest walkable tile. *Restart to apply.* |
 | `startY` | int | `20` | Starting tile. *Restart to apply.* |
 | `race` | string | `""` | Race the player's body slots come from. Empty means the human default. *Restart to apply.* |
+| `actorSprite` | string | `""` | Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art. |
 | `portrait` | string | `""` | PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite. *Restart to apply.* |
 
 ---

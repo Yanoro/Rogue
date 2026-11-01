@@ -301,6 +301,33 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
   }
 }
 
+bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  if (id.empty()) {
+    if (playerEntity.has<Sprite>()) {
+      playerEntity.remove<Sprite>();
+    }
+    message = "Player uses the race's look.";
+    return true;
+  }
+  if (actorSpriteRegistry.Get(id) == nullptr) {
+    message = "No actor sprite is named '" + id + "'.";
+    return false;
+  }
+  if (!AttachSprite(playerEntity, std::string(), id, resourceManager,
+                    debugLog.get())) {
+    message = "Actor sprite '" + id + "' has no art (data/sprites/" + id +
+              ".png); the player's look is unchanged.";
+    return false;
+  }
+  message = "Player now wears the '" + id + "' sprite.";
+  return true;
+}
+
 flecs::entity Game::createNPC(const NPCData &data) {
   const GamePosition &pos = data.position;
   std::string name = data.name;
@@ -5002,6 +5029,21 @@ void Game::ECSInit() {
   // the two render paths visible side by side in one scene.
   GiveBody(playerEntity, &raceRegistry, settings.player.race, {}, std::string(),
            resourceManager, debugLog.get());
+
+  // The player's own look, when the settings name an actor sprite. Applied after
+  // the race so it wins over the race convention; an id with no art leaves the
+  // race's look in place and is reported once at spawn.
+  if (!settings.player.actorSprite.empty()) {
+    if (!AttachSprite(playerEntity, std::string(), settings.player.actorSprite,
+                      resourceManager, debugLog.get())) {
+      const std::string message =
+          "Warning: player.actorSprite '" + settings.player.actorSprite +
+          "' has no sprite art (data/sprites/" + settings.player.actorSprite +
+          ".png); using the race's look.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
 
   // The player's portrait, authored in settings with the race as the default.
   // Same rule as an NPC: an id, or no component at all, which the HUD reads as
