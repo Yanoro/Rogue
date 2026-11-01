@@ -24,6 +24,8 @@
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
+#include "BrainTemplateRegistry.h"
+#include "NpcTemplateRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
 #include "PortraitRegistry.h"
@@ -161,6 +163,12 @@ public:
   // new authored field from needing a new parameter here.
   flecs::entity createNPC(const NPCData &data);
 
+  // Fills a map entry's empty fields from its NPC template and brain before
+  // createNPC runs. The map wins wherever it speaks; the template supplies the
+  // rest; the brain supplies context (background and goals), which outranks the
+  // template's because context is what motivates the agent.
+  void ResolveNpcTemplate(NPCData &data) const;
+
   bool shouldClose() const;
 
   // Asks the frame loop to end so main() can re-execute the binary with the same
@@ -264,6 +272,11 @@ private:
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
+  // Named NPC definitions and the brains that drive them. Templates are spawn
+  // seeds: createNPC copies their values onto the entity, and the instance owns
+  // them afterwards. Brains are separate because a body can have none.
+  NpcTemplateRegistry npcTemplateRegistry;
+  BrainTemplateRegistry brainTemplateRegistry;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;

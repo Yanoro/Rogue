@@ -10,6 +10,8 @@ class TileRegistry;
 class ObjectFactory;
 class DebugLog;
 class ActorSpriteRegistry;
+class NpcTemplateRegistry;
+class BrainTemplateRegistry;
 
 // The kinds of content the Content Editor can open: one row per registry.
 //
@@ -35,6 +37,8 @@ struct World {
   TileRegistry &tiles;
   ObjectFactory &objects;
   ActorSpriteRegistry &actorSprites;
+  NpcTemplateRegistry &npcs;
+  BrainTemplateRegistry &brains;
   DebugLog *log = nullptr;
 };
 

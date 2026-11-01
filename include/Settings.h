@@ -626,6 +626,14 @@ struct GameSettings {
     std::string skills = "data/skills";
     std::string items = "data/items";
     std::string races = "data/races";
+    // NPC definition templates: a named character's starting stats, skills, gear,
+    // race, body slots, look and brain. A map names one with "template" and may
+    // override any field; nothing here is enforced at runtime.
+    std::string npcs = "data/npcs";
+    // What drives an NPC: background, life goals and the model profile to talk
+    // to. Separate from the body so one brain can drive many templates and a
+    // template can be spawned with no brain at all.
+    std::string brains = "data/brains";
     std::string portraits = "data/portraits";
     std::string projectiles = "data/projectiles";
     // The place taxonomy (docs/place-derivation-design.md section 4): which

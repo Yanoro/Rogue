@@ -5,6 +5,8 @@
 #include <fstream>
 
 #include "ActorSpriteRegistry.h"
+#include "BrainTemplateRegistry.h"
+#include "NpcTemplateRegistry.h"
 #include "Game.h"
 #include "ObjectFactory.h"
 #include "SpritePaths.hpp"
@@ -126,6 +128,58 @@ std::string ActorSpriteFileName(const nlohmann::json &document) {
 
 std::string ActorSpriteSprite(const std::string &id) { return id; }
 
+// ---- NPC templates ---------------------------------------------------------
+
+// A template is the body and the starting sheet; its art comes from the actor
+// sprite it names, so this kind has no sprite of its own to edit.
+std::vector<Entry> ListNpcs(const World &world) {
+  std::vector<Entry> out;
+  for (const NpcTemplate *definition : world.npcs.GetAll()) {
+    out.push_back({definition->id, definition->name, "npc template"});
+  }
+  return out;
+}
+
+nlohmann::json ReadNpc(const World &world, const std::string &id) {
+  const NpcTemplate *definition = world.npcs.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.npcs.ToJson(*definition);
+}
+
+bool ApplyNpc(const World &world, const nlohmann::json &document,
+              std::string *error, std::vector<std::string> *warnings) {
+  return world.npcs.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string NpcFileName(const nlohmann::json &document) {
+  return NpcTemplateRegistry::IdFor(document);
+}
+
+// ---- brains ---------------------------------------------------------------
+
+std::vector<Entry> ListBrains(const World &world) {
+  std::vector<Entry> out;
+  for (const BrainTemplate *definition : world.brains.GetAll()) {
+    out.push_back({definition->id, definition->name, "brain"});
+  }
+  return out;
+}
+
+nlohmann::json ReadBrain(const World &world, const std::string &id) {
+  const BrainTemplate *definition = world.brains.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.brains.ToJson(*definition);
+}
+
+bool ApplyBrain(const World &world, const nlohmann::json &document,
+                std::string *error, std::vector<std::string> *warnings) {
+  return world.brains.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string BrainFileName(const nlohmann::json &document) {
+  return BrainTemplateRegistry::IdFor(document);
+}
+
 }  // namespace
 
 bool WriteOverrideFile(const Kind &kind, const std::string &root,
@@ -196,6 +250,26 @@ const std::vector<Kind> &All() {
           &ApplyActorSprite,
           &ActorSpriteFileName,
           &ActorSpriteSprite,
+      },
+      {
+          "npcs",
+          "NPC templates",
+          /*hasSprites=*/false,
+          &ListNpcs,
+          &ReadNpc,
+          &ApplyNpc,
+          &NpcFileName,
+          nullptr,
+      },
+      {
+          "brains",
+          "Brains",
+          /*hasSprites=*/false,
+          &ListBrains,
+          &ReadBrain,
+          &ApplyBrain,
+          &BrainFileName,
+          nullptr,
       },
   };
   return kinds;

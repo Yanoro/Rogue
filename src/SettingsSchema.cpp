@@ -1214,6 +1214,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
         .Restart();
+    add(Field<ValueType::String>("content", "content.npcs",
+            "NPC template directory: named starting configurations a map spawns by name and overrides.", &GameSettings::content, &ContentSection::npcs))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.brains",
+            "Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent.", &GameSettings::content, &ContentSection::brains))
+        .Restart();
     add(Field<ValueType::String>("content", "content.portraits",
             "Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id.", &GameSettings::content, &ContentSection::portraits))
         .Restart();

@@ -208,7 +208,8 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{game->tileRegistry, game->objectFactory,
-                             game->actorSpriteRegistry, game->debugLog.get()};
+                             game->actorSpriteRegistry, game->npcTemplateRegistry,
+                             game->brainTemplateRegistry, game->debugLog.get()};
 }
 
 const ContentKinds::Kind *ContentEditorWindow::Kind() const {
