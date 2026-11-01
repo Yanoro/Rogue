@@ -2,8 +2,11 @@
 
 **Status:** proposal, 2026-10-30. Written against the run in
 `logs/2026-10-30_20-56-42/navigator/Wren.txt` (`Map_Nav_Maze`, goal "find the far
-chamber"). Nothing here is implemented; this is the vocabulary and the argument
-for it, not the code.
+chamber"). The first slice is now implemented — `follow`, `back` and `to:` in the
+single navigator — see
+[traversal-primitives-first-slice.md](traversal-primitives-first-slice.md). The
+rest of this document remains the vocabulary and argument, not a description of
+the current code.
 
 **The short version.** The navigator does not need more one-tile moves. It needs
 *commitments*: bounded, interruptible intentions that walk further than one leg

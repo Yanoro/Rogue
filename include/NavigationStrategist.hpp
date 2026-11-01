@@ -50,6 +50,9 @@ struct Monitor {
 struct Plan {
   std::string strategy;
   std::string subtask;
+  // Optional brief for the mid-leg attention gate: what the navigator wants to
+  // be interrupted for while it is walking. It is a priority, not a filter.
+  std::string watch;
   std::vector<Monitor> monitors;
   bool giveUp = false;
   std::string giveUpReason;
@@ -296,6 +299,14 @@ inline bool ParsePlan(const std::string &raw, Plan &plan, std::string &error) {
   plan.subtask = root.value("subtask", std::string());
   if (plan.subtask.size() > 240) plan.subtask.resize(240);
   if (plan.subtask.empty()) plan.subtask = "make progress toward the goal";
+  if (root.contains("watch")) {
+    if (!root["watch"].is_string()) {
+      error = "watch is not a string";
+      return false;
+    }
+    plan.watch = root["watch"].get<std::string>();
+    if (plan.watch.size() > 400) plan.watch.resize(400);
+  }
 
   if (root.contains("monitors")) {
     if (!root["monitors"].is_array()) {
@@ -1096,14 +1107,17 @@ inline std::string PlanToJson(const Plan &plan, bool pretty = true) {
   nlohmann::json root;
   root["strategy"] = plan.strategy;
   root["subtask"] = plan.subtask;
-  root["monitors"] = nlohmann::json::array();
-  for (const Monitor &monitor : plan.monitors) {
-    nlohmann::json entry;
-    entry["id"] = monitor.id;
-    entry["question"] = monitor.question;
-    entry["handoff_when"] = monitor.handoffOnYes ? "yes" : "no";
-    entry["min_confidence"] = monitor.minConfidence;
-    root["monitors"].push_back(std::move(entry));
+  if (!plan.watch.empty()) root["watch"] = plan.watch;
+  if (!plan.monitors.empty()) {
+    root["monitors"] = nlohmann::json::array();
+    for (const Monitor &monitor : plan.monitors) {
+      nlohmann::json entry;
+      entry["id"] = monitor.id;
+      entry["question"] = monitor.question;
+      entry["handoff_when"] = monitor.handoffOnYes ? "yes" : "no";
+      entry["min_confidence"] = monitor.minConfidence;
+      root["monitors"].push_back(std::move(entry));
+    }
   }
   return pretty ? root.dump(2) : root.dump();
 }
@@ -1147,11 +1161,24 @@ Each turn the engine gives you:
   letters are semantic-place initials; the legend is on the MAP line.
 - STATE: where you are, the goal, the route and the candidate actions.
 - PLAN: your previous plan (or none).
-- JOURNEY/ROUTE, AREA and LAST RESULT: what the character has walked, the
-  current area the engine knows, and what just happened.
+- JOURNEY/ROUTE, AREA, GATE/NOTED and LAST RESULT: what the character has
+  walked, the current area the engine knows, anything the mid-walk attention
+  gate decided you should see, and what just happened.
 
 Your job is one decision: keep or update the plan, and choose the next move.
 Think about the long-term route and the local geometry, not just the next tile.
+
+Two ways to move:
+- An ACTIONS key (here:<dir>, p<id>) is one leg. A here:<dir> on a linear place
+  is a single compass run (often six tiles), not a commitment to the feature.
+- PRIMITIVES are commitments: follow / follow:<direction> follows the linear
+  place underfoot (road, river, wall) through forced turns to the next fork,
+  junction or end; back retraces the last leg to where it started; to:<n> walks
+  to MAP TARGETS number n.
+If the ACTIONS list keeps offering the same linear feature (for example
+here:east "walk an unnamed road east for 6 tiles" again and again), use
+follow:east. A follow is one decision, but it does not skip choices: it stops at
+the next fork, junction or end and hands back.
 
 Reply with a short <think>...</think> block (2-6 sentences, and never more
 than 30 words), then ONE JSON object. The JSON must be after the closing
@@ -1160,10 +1187,7 @@ than 30 words), then ONE JSON object. The JSON must be after the closing
   "plan": {
     "strategy": "a few sentences the main character could follow",
     "subtask": "a short instruction for the next few moves",
-    "monitors": [
-      {"id": "short_id", "question": "a yes/no question you could answer from
-       the observation", "handoff_when": "yes", "min_confidence": 0.6}
-    ]
+    "watch": "what you want to be interrupted for while moving; a priority, not a filter"
   },
   "move": "here:east",
   "confidence": 0.7,
@@ -1174,8 +1198,14 @@ than 30 words), then ONE JSON object. The JSON must be after the closing
 
 Rules:
 - `move` must be one of the action keys offered for this decision, one of the
-  object-target forms in STATE, or `arrived`, `none`, `unsure` or `look_around`.
-  Never invent a coordinate or a place name.
+  primitives below, one of the object-target forms in STATE, or `arrived`,
+  `none`, `unsure` or `look_around`. Never invent a coordinate or a place name.
+- Primitives (not in the action list; the engine resolves them):
+  `follow` / `follow:<direction>` follows the linear place underfoot (road,
+  river, wall) through forced turns and stops at the next fork, junction with
+  another linear feature, or end; without a direction it uses your facing.
+  `back` retraces the last leg to where it started. `to:<n>` walks to MAP
+  TARGETS number n; `to:<key>` does the same by candidate key.
 - Object targets: when STATE contains OBJECT TARGETS, `objects:all` expands the
   object groups without moving, `inspect:<group>` (where <group> is a `key=`
   value from OBJECTS SEEN) lists instance aliases,
@@ -1204,6 +1234,14 @@ Rules:
   thin to choose.
 - The plan is yours to keep or replace. If the map changed enough to invalidate
   it, update it in this response.
+- GATE means the attention gate stopped you mid-walk because something new was
+  worth your attention. React to it; you may continue the old plan.
+- NOTED means something new was seen while walking but did not stop you.
+  Consider it; it may be behind you now.
+- `watch` is your mid-walk attention brief: say what should make you stop while
+  moving. It is a priority, not a filter; the gate also stops for anything a
+  person would point out or that would change the plan, even if it is not in the
+  watch. It may be empty; an empty watch means no mid-walk gate.
 - The engine resolves the chosen key to a target cell and validates the walk.
 - Do not plan through unknown cells as if they were open.
 - Reply concisely. The JSON is authoritative; no prose outside the think block
@@ -1245,7 +1283,8 @@ inline std::string BuildSingleUserPrompt(
     const std::vector<std::string> &route, const std::string &lastResult,
     int calls, int maxCalls, bool compactJson = true,
     bool includeMap = true, const std::string &journey = "",
-    const std::string &areaCard = "") {
+    const std::string &areaCard = "", const std::string &gate = "",
+    const std::string &noted = "") {
   std::ostringstream out;
   out << "GOAL: " << goal << "\n";
   if (!taskDigest.empty()) {
@@ -1255,6 +1294,17 @@ inline std::string BuildSingleUserPrompt(
       << (compactJson ? observation.dump() : observation.dump(2)) << "\n";
   if (includeMap) out << "\n" << map << "\n";
   out << "\n" << state << "\n";
+  out << "\nPRIMITIVES (commitments; use these when an ACTIONS line repeats the "
+         "same feature):\n"
+         "  follow / follow:<direction>   follow the linear place underfoot "
+         "(road, river, wall) through forced turns to the next fork, junction "
+         "or end; follow uses your facing\n"
+         "  back                          retrace the last leg to where it "
+         "started\n"
+         "  to:<n>                        walk to MAP TARGETS number n; "
+         "to:<key> also works\n"
+         "  A here:<dir> ACTIONS line is one compass run, not the follow "
+         "primitive.\n";
   out << "\nPREVIOUS PLAN:\n";
   if (plan != nullptr) {
     out << PlanToJson(*plan, !compactJson) << "\n";
@@ -1278,15 +1328,25 @@ inline std::string BuildSingleUserPrompt(
   if (!areaCard.empty()) {
     out << "\n" << areaCard;
   }
+  if (!gate.empty()) {
+    out << "\nGATE:\n" << gate << "\n";
+  }
+  if (!noted.empty()) {
+    out << "\nNOTED:\n" << noted << "\n";
+  }
   out << "\nLAST RESULT: " << (lastResult.empty() ? "episode start" : lastResult)
       << "\n";
   out << "DECISION: " << (calls + 1) << " / " << maxCalls << "\n";
+  out << "MOVE: an ACTIONS key or a primitive (follow / follow:<direction> / "
+         "back / to:<n>).\n";
   out << "\nJSON shape: {\"plan\":{\"strategy\":\"...\","
-         "\"subtask\":\"...\"},\"move\":\"p17\","
+         "\"subtask\":\"...\",\"watch\":\"...\"},\"move\":\"p17\","
          "\"confidence\":0.5,\"done\":false,\"unsure\":false,"
          "\"reason\":\"...\"}. Only plan/move/confidence/done/unsure/reason; "
          "`move` is a string. Object moves: \"inspect:apple_tree\", "
-         "\"examine:apple_tree-1\". Place keys like p17 go directly in move.\n";
+         "\"examine:apple_tree-1\". Place keys like p17 go directly in move. "
+         "Primitives go directly in move too: \"follow:east\", \"back\", "
+         "\"to:3\".\n";
   out << "\nReturn the think block and JSON now.\n";
   return out.str();
 }
@@ -1295,6 +1355,7 @@ inline std::string BuildPlanSummary(const Plan &plan) {
   std::ostringstream out;
   out << "strategy: " << plan.strategy;
   if (!plan.subtask.empty()) out << " | subtask: " << plan.subtask;
+  if (!plan.watch.empty()) out << " | watch: " << plan.watch;
   out << " | monitors:";
   if (plan.monitors.empty()) {
     out << " none";

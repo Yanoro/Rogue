@@ -1078,6 +1078,12 @@ void NavigationDebugWindow::Draw() {
           DrawTextBlock("Leg trace (JSON, world keys)",
                         state->legTraceJson, 220.0f);
         }
+        if (!state->gate.empty()) {
+          DrawTextBlock("Attention gate (stop)", state->gate, 160.0f);
+        }
+        if (!state->noted.empty()) {
+          DrawTextBlock("Attention gate (noted)", state->noted, 160.0f);
+        }
       }
       ImGui::EndTabItem();
     }

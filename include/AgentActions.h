@@ -6,6 +6,7 @@
 #include "Map.h"
 #include "NavigationPlan.hpp"
 #include "ChunkView.hpp"
+#include "NavigationGate.hpp"
 #include "NavigatorLog.h"
 #include "NavigationStrategist.hpp"
 #include "PlaceQuery.hpp"
@@ -578,8 +579,12 @@ public:
       // No name lookup and no interaction listing -- the target is ground.
       class MoveToCellAction : public AgentAction {
       public:
-        MoveToCellAction(GamePosition target, std::string label)
-            : target(target), label(std::move(label)) {}
+        MoveToCellAction(GamePosition target, std::string label,
+                         std::vector<GamePosition> plannedPath = {},
+                         GamePosition plannedOrigin = {-1, -1})
+            : target(target), label(std::move(label)),
+              fixedPath(std::move(plannedPath)),
+              fixedOrigin(plannedOrigin) {}
 
         std::string getActionName() const override { return "MOVE_TO_CELL"; }
 
@@ -604,11 +609,54 @@ public:
           }
 
           if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
-            path = AStar(mapRes->map, *here, target);
-            if (path.empty()) {
-              entity.remove<MOVE_THROUGH_PATH_ACTION>();
-              failureReason = "there is no way to reach " + label + " from here";
-              return ActionStatus::Failed;
+            bool reused = false;
+            if (!fixedPath.empty()) {
+              if (!path.empty()) {
+                // A pause can happen before the first step. At the origin the
+                // whole path is still ahead; do not mistake the origin (which
+                // A* paths do not contain) for "off the path".
+                if (*here == fixedOrigin) {
+                  entity.set<MOVE_THROUGH_PATH_ACTION>({path});
+                  return ActionStatus::Doing;
+                }
+                // Paused and resumed without resume(): continue the fixed path
+                // from the current cell rather than walking back to its start.
+                const auto found = std::find(path.begin(), path.end(), *here);
+                if (found != path.end()) {
+                  std::vector<GamePosition> remaining(found + 1, path.end());
+                  if (!remaining.empty()) {
+                    entity.set<MOVE_THROUGH_PATH_ACTION>({remaining});
+                    return ActionStatus::Doing;
+                  }
+                }
+                fixedPath.clear();
+                path.clear();
+              } else if (*here == fixedOrigin) {
+                path = fixedPath;
+                reused = true;
+              } else {
+                const auto found =
+                    std::find(fixedPath.begin(), fixedPath.end(), *here);
+                if (found != fixedPath.end()) {
+                  path = fixedPath;
+                  std::vector<GamePosition> remaining(found + 1,
+                                                      fixedPath.end());
+                  if (!remaining.empty()) {
+                    entity.set<MOVE_THROUGH_PATH_ACTION>({remaining});
+                    return ActionStatus::Doing;
+                  }
+                }
+                fixedPath.clear();
+              }
+            }
+            if (!reused) {
+              path = AStar(mapRes->map, *here, target);
+              if (path.empty()) {
+                entity.remove<MOVE_THROUGH_PATH_ACTION>();
+                failureReason =
+                    "there is no way to reach " + label + " from here";
+                return ActionStatus::Failed;
+              }
             }
             entity.set<MOVE_THROUGH_PATH_ACTION>({path});
           }
@@ -637,13 +685,44 @@ public:
           return ActionStatus::Interrupted;
         }
 
-        void resume(flecs::entity) override {}
+        // Resume the same A* path where it was paused, instead of re-planning
+        // from the current cell. The navigation gate uses this so a mid-leg
+        // attention check does not split the leg's chunk trace. If the character
+        // is no longer on the stored path, leave it to update() to re-plan.
+        void resume(flecs::entity entity) override {
+          if (entity.has<MOVE_THROUGH_PATH_ACTION>()) return;
+          const GamePosition *here = entity.get<GamePosition>();
+          if (here == nullptr) return;
+          // A gate can pause before the first step; the origin is not one of
+          // the path cells, so restore the whole path instead of treating it
+          // as "off the path" and re-planning.
+          if (!fixedPath.empty() && *here == fixedOrigin) {
+            path = fixedPath;
+            if (!path.empty()) {
+              entity.set<MOVE_THROUGH_PATH_ACTION>({path});
+            }
+            return;
+          }
+          if (path.empty()) return;
+          const auto found = std::find(path.begin(), path.end(), *here);
+          if (found == path.end()) return;
+          std::vector<GamePosition> remaining(found + 1, path.end());
+          if (!remaining.empty()) {
+            entity.set<MOVE_THROUGH_PATH_ACTION>({remaining});
+          }
+        }
 
       private:
         GamePosition target;
         std::string label;
         std::string failureReason;
         std::vector<GamePosition> path;
+        // Set by follow/back: the exact remembered cells to walk. Empty for an
+        // ordinary candidate, which uses A* to its target.
+        std::vector<GamePosition> fixedPath;
+        // Where that fixed path began; used to tell "starting the leg" apart
+        // from "the character was moved and the leg was recreated".
+        GamePosition fixedOrigin{-1, -1};
       };
 
       // LLM strategist + System 1 pilot navigation (docs/llm-s1-navigation-design.md).
@@ -2155,6 +2234,7 @@ public:
             : goal(SanitiseGoal(std::move(goal))) {}
 
         ~SingleNavigateAction() override {
+          AbandonGate();
           AbandonCall();
           if (fallback) fallback.reset();
         }
@@ -2192,6 +2272,8 @@ public:
                                               : PollSingle(entity, nav);
             case Phase::Moving:
               return UpdateLeg(deltaTime, entity, nav);
+            case Phase::Gating:
+              return UpdateGate(entity);
             case Phase::Surveying:
               return UpdateSurvey(entity, nav);
             case Phase::Fallback:
@@ -2212,6 +2294,7 @@ public:
         }
 
         ActionStatus handleInterruption(flecs::entity entity) override {
+          AbandonGate();
           AbandonCall();
           if (leg) {
             leg->handleInterruption(entity);
@@ -2237,7 +2320,7 @@ public:
       private:
         using Clock = std::chrono::steady_clock;
 
-        enum class Phase { Deciding, Moving, Surveying, Fallback };
+        enum class Phase { Deciding, Moving, Gating, Surveying, Fallback };
 
         struct SinglePending {
           std::mutex mutex;
@@ -2246,6 +2329,16 @@ public:
           bool failed = false;
           std::string response;
           std::string error;
+        };
+
+        // The attention gate's S1 call. The callback runs on the provider's
+        // worker thread; it only fills this handoff, never touches the action.
+        struct GatePending {
+          std::mutex mutex;
+          bool ready = false;
+          bool abandoned = false;
+          std::vector<SystemOne::Answer> answers;
+          SystemOne::CallTrace trace;
         };
 
         static std::string SanitiseGoal(std::string text) {
@@ -2294,6 +2387,7 @@ public:
           switch (phase) {
             case Phase::Deciding: return "deciding";
             case Phase::Moving: return "moving";
+            case Phase::Gating: return "attention gate";
             case Phase::Surveying: return "surveying";
             case Phase::Fallback: return "two-context fallback";
           }
@@ -2404,6 +2498,8 @@ public:
           debug->legTraceJson =
               lastTrace.traversed.empty() ? std::string()
                                           : lastTrace.ToJson().dump();
+          debug->gate = gateText;
+          debug->noted = notedText;
           debug->route.clear();
           for (std::size_t i = 0; i < route.size(); ++i) {
             if (i > 0) debug->route += " -> ";
@@ -2519,14 +2615,14 @@ public:
                 *memory, *here, Settings().navigation.single.maxCandidates,
                 Settings().navigation.single.maxDirections, nav.compassRadius,
                 walkedCells, Settings().regions.modelNearCount, 0,
-                Settings().system1.navigation.examineRadius);
+                Settings().system1.navigation.examineRadius, true);
           } else {
             objectGroups.clear();
             candidates = NavigationPlan::BuildCandidates(
                 *memory, *here, Settings().navigation.single.maxCandidates,
                 Settings().navigation.single.maxDirections, nav.compassRadius,
                 walkedCells, Settings().regions.modelNearCount, -1,
-                Settings().system1.navigation.examineRadius);
+                Settings().system1.navigation.examineRadius, true);
           }
           candidates.erase(
               std::remove_if(candidates.begin(), candidates.end(),
@@ -2584,7 +2680,7 @@ public:
                   goal, taskDigest, observation, map, state,
                   strategyReady ? &strategy : nullptr, route, lastResult,
                   singleCalls, maxCalls, cfg.compactJson, cfg.includeMap,
-                  journeyText, areaCard);
+                  journeyText, areaCard, gateText, notedText);
           if (!singleSystemAdded) {
             singleMessages.push_back({"system", system});
             singleSystemAdded = true;
@@ -2827,7 +2923,7 @@ public:
             return RetrySingle(
                 entity, "the plan was invalid: " + planError,
                 "Fix the `plan` object: it needs a non-empty `strategy` string; "
-                "`subtask` and `monitors` are optional.");
+                "`subtask` and `watch` are optional.");
           }
           nextPlan.version = singleCalls;
           strategy = nextPlan;
@@ -2898,6 +2994,89 @@ public:
           if (memory == nullptr || here == nullptr) {
             return RetrySingle(entity, "you have no memory of where you are");
           }
+
+          // Primitives are not in the offered candidate list; the engine
+          // resolves them into a fixed target/path before the ordinary move
+          // validation. They still obey the same leg and gate machinery.
+          pendingFixedPath.clear();
+          NavigationPlan::PrimitiveMove primitiveMove;
+          if (!specialMove && chosen == nullptr) {
+            if (move == "follow" || move.rfind("follow:", 0) == 0) {
+              const std::string direction =
+                  move.size() > 7 ? move.substr(7) : std::string();
+              const Facing *facing = entity.get<Facing>();
+              const Facing facingValue = facing != nullptr ? *facing : Facing{};
+              std::string error;
+              if (!NavigationPlan::BuildFollowMove(*memory, *here, facingValue,
+                                                   direction, primitiveMove,
+                                                   error)) {
+                return RetrySingle(
+                    entity, "follow is not possible: " + error,
+                    "Use follow / follow:<direction> only on a linear feature "
+                    "(road, river or wall), or use here:<direction> / a place "
+                    "key.");
+              }
+              pendingFixedPath = primitiveMove.path;
+              chosen = &primitiveMove.candidate;
+            } else if (move == "back") {
+              std::string error;
+              if (!NavigationPlan::BuildBackMove(*memory, *here, legStart,
+                                                 lastLegPath, primitiveMove,
+                                                 error)) {
+                return RetrySingle(entity, "back is not possible: " + error,
+                                   "Use here:<direction> or a place key.");
+              }
+              pendingFixedPath = primitiveMove.path;
+              chosen = &primitiveMove.candidate;
+            } else if (move.rfind("to:", 0) == 0) {
+              const std::string arg = move.substr(3);
+              bool numeric = !arg.empty();
+              for (char c : arg) {
+                if (std::isdigit(static_cast<unsigned char>(c)) == 0) {
+                  numeric = false;
+                }
+              }
+              const NavigationPlan::Candidate *source = nullptr;
+              if (numeric) {
+                int index = 0;
+                try {
+                  index = std::stoi(arg);
+                } catch (...) {
+                  index = 0;
+                }
+                if (index >= 1 &&
+                    index <= static_cast<int>(candidates.size())) {
+                  source = &candidates[static_cast<std::size_t>(index - 1)];
+                }
+              } else {
+                for (const NavigationPlan::Candidate &candidate : candidates) {
+                  if (candidate.key == arg) {
+                    source = &candidate;
+                    break;
+                  }
+                }
+              }
+              if (source == nullptr) {
+                std::string available;
+                for (const NavigationPlan::Candidate &candidate : candidates) {
+                  if (!available.empty()) available += ", ";
+                  available += candidate.key;
+                }
+                return RetrySingle(
+                    entity,
+                    "to:" + arg +
+                        " is not a MAP TARGETS number or a candidate key",
+                    "Use to:<n> with the MAP TARGETS number, or to:<key> with "
+                    "one of: " + available + ".");
+              }
+              primitiveMove.candidate = *source;
+              primitiveMove.candidate.key = move;
+              primitiveMove.candidate.examine = false;
+              primitiveMove.candidate.objectId = 0;
+              chosen = &primitiveMove.candidate;
+            }
+          }
+
           if (Settings().navigation.single.objectSummary && !specialMove &&
               chosen == nullptr) {
             if (move == "objects:all") {
@@ -3148,12 +3327,15 @@ public:
           if (here == nullptr) {
             return Finish(entity, "you have no memory of where you are");
           }
+          pendingFixedPath.clear();
+          legFixedPath.clear();
+          lastLegPath.clear();
+          legStart = *here;
           chunkLegTracked = false;
           const ChunkViewSettings chunkSettings = CurrentChunkSettings();
-          if (chunkSettings.enabled) {
-            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
-              legStart = *here;
-              legStartTick = memory->lastVisionTick;
+          if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+            legStartTick = memory->lastVisionTick;
+            if (chunkSettings.enabled) {
               chunksBeforeLeg.clear();
               for (const auto &[key, cell] : memory->cells) {
                 (void)key;
@@ -3187,6 +3369,7 @@ public:
           legObjectAlias = object.alias;
           legInteraction = verb;
           legApproach = verb.empty();
+          BeginGateTracking(entity);
           leg = std::make_unique<MoveToCellAction>(object.approach, legName);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
@@ -3293,6 +3476,228 @@ public:
           chunkLegTracked = false;
         }
 
+        // ── Mid-leg attention gate ─────────────────────────────────────────
+        static constexpr int kMaxGateCalls = 24;
+        static constexpr double kGateTimeoutSeconds = 2.0;
+        static constexpr double kGateScanSeconds = 0.2;
+
+        void BeginGateTracking(flecs::entity entity) {
+          AbandonGate();
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          if (memory == nullptr) return;
+          lastGateTick = memory->lastVisionTick;
+          gateKnownGroups.clear();
+          for (const auto &[id, object] : memory->objects) {
+            (void)id;
+            if (object.vanishedTick >= 0 || object.character) continue;
+            gateKnownGroups.insert(ObjectContentKey(object));
+          }
+          gateText.clear();
+          notedText.clear();
+          lastGateScan = Clock::now();
+        }
+
+        static std::string GateSummary(const GateReport &report) {
+          std::string text = report.text;
+          for (char &c : text) {
+            if (c == '\n' || c == '\r') c = ' ';
+          }
+          while (!text.empty() && text.front() == ' ') text.erase(text.begin());
+          if (text.size() > 160) text.resize(160);
+          return text;
+        }
+
+        void AppendNote(const std::string &text) {
+          constexpr std::size_t kMaxNoted = 2000;
+          if (notedText.size() >= kMaxNoted) return;
+          const std::size_t room = kMaxNoted - notedText.size();
+          if (text.size() <= room) {
+            notedText += text;
+          } else {
+            notedText.append(text, 0, room);
+          }
+        }
+
+        ActionStatus CheckGate(flecs::entity entity) {
+          if (strategy.watch.empty()) return ActionStatus::Doing;
+          if (gatePending != nullptr) return ActionStatus::Doing;
+          if (gateCalls >= kMaxGateCalls) return ActionStatus::Doing;
+          if (SecondsSince(lastGateScan) < kGateScanSeconds) {
+            return ActionStatus::Doing;
+          }
+          lastGateScan = Clock::now();
+          const SpatialMemory *memory = entity.get<SpatialMemory>();
+          if (memory == nullptr) return ActionStatus::Doing;
+          const GateReport report =
+              BuildGateReport(*memory, gateKnownGroups, lastGateTick);
+          if (!report.hasNew) return ActionStatus::Doing;
+          return StartGate(entity, report);
+        }
+
+        ActionStatus StartGate(flecs::entity entity, const GateReport &report) {
+          ++gateCalls;
+          for (const std::string &group : report.newGroups) {
+            gateKnownGroups.insert(group);
+          }
+          const SystemOneClassifierResource *resource =
+              entity.world().get<SystemOneClassifierResource>();
+          const bool available =
+              resource != nullptr && resource->classifier != nullptr &&
+              resource->classifier->Available();
+          if (!available) {
+            // Degrade, never block: the report is shown at the next decision.
+            AppendNote("not judged (System 1 unavailable):\n" + report.text);
+            SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+            if (memory != nullptr) lastGateTick = memory->lastVisionTick;
+            lastGateScan = Clock::now();
+            return ActionStatus::Doing;
+          }
+
+          gateReportText = report.text;
+          gatePending = std::make_shared<GatePending>();
+          gateStop = std::stop_source();
+          gateStartedAt = Clock::now();
+          const std::string state = BuildGateState(
+              goal, strategy.subtask, strategy.watch, report, journeyText,
+              areaCard);
+          std::vector<SystemOne::Option> questions{BuildGateQuestion()};
+          std::shared_ptr<GatePending> shared = gatePending;
+          SystemOne::Attribution attribution;
+          attribution.scenario = "attention_gate";
+          attribution.summary =
+              AgentName(entity) + ", gate: " + GateSummary(report);
+          attribution.advisory = true;
+          resource->classifier->Ask(
+              state, questions,
+              [shared](const std::vector<SystemOne::Answer> &answers,
+                       const SystemOne::CallTrace &trace) {
+                std::lock_guard<std::mutex> lock(shared->mutex);
+                if (shared->abandoned) return;
+                shared->answers = answers;
+                shared->trace = trace;
+                shared->ready = true;
+              },
+              gateStop.get_token(), attribution);
+
+          // The character stops at the current cell while the gate looks. The
+          // leg keeps its target; on `note`/`ignore` the next leg update
+          // re-paths from here. On `stop` the main model takes over.
+          if (leg) leg->handleInterruption(entity);
+          phase = Phase::Gating;
+          PublishNavigationDebug(entity, true);
+          return ActionStatus::Doing;
+        }
+
+        ActionStatus CompleteGate(flecs::entity entity, GateVerdict verdict) {
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          if (memory != nullptr) lastGateTick = memory->lastVisionTick;
+          gatePending.reset();
+          gateStop = std::stop_source();
+          lastGateScan = Clock::now();
+          const std::string report = gateReportText;
+          gateReportText.clear();
+
+          switch (verdict) {
+            case GateVerdict::Ignore:
+              if (leg) leg->resume(entity);
+              phase = Phase::Moving;
+              PublishNavigationDebug(entity, true);
+              return ActionStatus::Doing;
+            case GateVerdict::Note:
+              AppendNote(report);
+              if (leg) leg->resume(entity);
+              phase = Phase::Moving;
+              PublishNavigationDebug(entity, true);
+              return ActionStatus::Doing;
+            case GateVerdict::Stop:
+              RecordGateStopLeg(entity);
+              gateText = "stopped by the attention gate.\n" + report;
+              if (leg) leg->handleInterruption(entity);
+              leg.reset();
+              chunkLegTracked = false;
+              phase = Phase::Deciding;
+              PublishNavigationDebug(entity, true);
+              return ActionStatus::Doing;
+          }
+          phase = Phase::Moving;
+          return ActionStatus::Doing;
+        }
+
+        // The gate stop ends the leg early. Record the walked prefix so the
+        // journey and strip describe the tiles the character actually covered,
+        // then the next leg starts from here.
+        void RecordGateStopLeg(flecs::entity entity) {
+          if (!leg || !chunkLegTracked) return;
+          const ChunkViewSettings settings = CurrentChunkSettings();
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (!settings.enabled || memory == nullptr || here == nullptr) return;
+          std::vector<GamePosition> walked;
+          for (const GamePosition &cell : leg->getPath()) {
+            walked.push_back(cell);
+            if (cell == *here) break;
+          }
+          if (walked.empty() || walked.back() != *here) return;
+          lastLegPath = walked;
+          lastTrace = BuildLegTrace(walked, legStart, *memory, chunksBeforeLeg,
+                                    legStartTick, "the stopping point",
+                                    "stopped by the attention gate", settings);
+          AppendLeg(journey, lastTrace, *memory);
+          journeyText = RenderJourney(journey, *memory, settings);
+          const ChunkKnowledge knowledge = BuildChunkKnowledge(
+              *memory, ChunkAt(*here, settings.size), settings, *here);
+          areaCard = RenderAreaCard(knowledge, *memory, settings);
+          lastResult = lastTrace.ToProse(*memory, settings);
+          if (navigatorLog) {
+            navigatorLog->ChunkTrace(lastTrace.ToJson().dump());
+          }
+          chunkLegTracked = false;
+        }
+
+        ActionStatus UpdateGate(flecs::entity entity) {
+          if (!gatePending) {
+            phase = Phase::Moving;
+            return ActionStatus::Doing;
+          }
+          if (SecondsSince(gateStartedAt) > kGateTimeoutSeconds) {
+            AbandonGate();
+            SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+            if (memory != nullptr) lastGateTick = memory->lastVisionTick;
+            AppendNote("gate timed out; surfacing at the next decision:\n" +
+                       gateReportText);
+            gateReportText.clear();
+            if (leg) leg->resume(entity);
+            phase = Phase::Moving;
+            PublishNavigationDebug(entity, true);
+            return ActionStatus::Doing;
+          }
+
+          std::vector<SystemOne::Answer> answers;
+          SystemOne::CallTrace trace;
+          {
+            std::lock_guard<std::mutex> lock(gatePending->mutex);
+            if (!gatePending->ready) return ActionStatus::Doing;
+            answers = gatePending->answers;
+            trace = gatePending->trace;
+            gatePending->ready = false;
+          }
+          GateVerdict verdict = GateVerdict::Note;
+          if (trace.Ok()) verdict = ParseGateVerdict(answers);
+          return CompleteGate(entity, verdict);
+        }
+
+        void AbandonGate() {
+          if (gatePending) {
+            {
+              std::lock_guard<std::mutex> lock(gatePending->mutex);
+              gatePending->abandoned = true;
+              gatePending->ready = false;
+            }
+            gateStop.request_stop();
+            gatePending.reset();
+          }
+        }
+
         ActionStatus StartLeg(flecs::entity entity,
                               const NavigationPlan::Candidate &chosen) {
           const GamePosition *here = entity.get<GamePosition>();
@@ -3322,12 +3727,14 @@ public:
           legApproach = false;
           legExamine = chosen.examine;
           legObjectId = chosen.objectId;
+          BeginGateTracking(entity);
+          lastLegPath.clear();
           chunkLegTracked = false;
+          legStart = *here;
           const ChunkViewSettings chunkSettings = CurrentChunkSettings();
-          if (chunkSettings.enabled) {
-            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
-              legStart = *here;
-              legStartTick = memory->lastVisionTick;
+          if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+            legStartTick = memory->lastVisionTick;
+            if (chunkSettings.enabled) {
               chunksBeforeLeg.clear();
               for (const auto &[key, cell] : memory->cells) {
                 (void)key;
@@ -3337,7 +3744,10 @@ public:
               chunkLegTracked = true;
             }
           }
-          leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label);
+          legFixedPath = std::move(pendingFixedPath);
+          pendingFixedPath.clear();
+          leg = std::make_unique<MoveToCellAction>(chosen.target, chosen.label,
+                                                   legFixedPath, *here);
           legStartedAt = Clock::now();
           phase = Phase::Moving;
           PublishNavigationDebug(entity, true);
@@ -3350,7 +3760,8 @@ public:
           const GamePosition *here = entity.get<GamePosition>();
           if (here == nullptr) return Finish(entity, "you have no memory of where you are");
           if (!leg) {
-            leg = std::make_unique<MoveToCellAction>(legTarget, legName);
+            leg = std::make_unique<MoveToCellAction>(legTarget, legName,
+                                                     legFixedPath, legStart);
             legStartedAt = Clock::now();
           }
           if (SecondsSince(legStartedAt) > nav.legTimeoutSeconds) {
@@ -3359,7 +3770,7 @@ public:
             return FallbackToTwo(entity, "a leg timed out");
           }
           const ActionStatus status = leg->update(deltaTime, entity);
-          if (status == ActionStatus::Doing) return ActionStatus::Doing;
+          if (status == ActionStatus::Doing) return CheckGate(entity);
           if (status == ActionStatus::Done) {
             const bool examined = legExamine;
             const bool approached = legApproach;
@@ -3455,6 +3866,7 @@ public:
                 RecordChunkLeg(entity, outcome);
               }
             }
+            lastLegPath = leg->getPath();
             leg.reset();
             phase = Phase::Deciding;
             PublishNavigationDebug(entity, true);
@@ -3592,6 +4004,9 @@ public:
         std::string legInteraction;
         bool legApproach = false;
         std::unique_ptr<MoveToCellAction> leg;
+        std::vector<GamePosition> pendingFixedPath;
+        std::vector<GamePosition> legFixedPath;
+        std::vector<GamePosition> lastLegPath;
         Journey journey;
         LegTrace lastTrace;
         std::string journeyText;
@@ -3600,6 +4015,17 @@ public:
         GamePosition legStart{0, 0};
         int legStartTick = 0;
         bool chunkLegTracked = false;
+        // Mid-leg attention gate (docs/agent-attention-design.md, §4).
+        std::shared_ptr<GatePending> gatePending;
+        std::stop_source gateStop;
+        Clock::time_point gateStartedAt;
+        Clock::time_point lastGateScan;
+        int gateCalls = 0;
+        std::unordered_set<std::string> gateKnownGroups;
+        int lastGateTick = 0;
+        std::string gateReportText;
+        std::string gateText;
+        std::string notedText;
         std::vector<NavigationDebugStrategistThought> singleThoughts;
         std::string debugObservation;
         std::string debugBrief;

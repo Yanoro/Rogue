@@ -908,6 +908,10 @@ struct NavigationDebugState {
   std::string areaCard;
   std::string lastResult;
   std::string legTraceJson;
+  // Mid-leg attention gate: a stop report waiting for the main model, and the
+  // notes the gate collected without stopping.
+  std::string gate;
+  std::string noted;
   // Incremented on every published snapshot. The window uses it to cache the
   // expensive union of all call graphs instead of re-parsing every graph every
   // frame (which made FPS fall with each navigator call).
