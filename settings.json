@@ -2,7 +2,7 @@
   "_readme": "AIRogue startup settings. Full field reference, including the fields that are not wired yet, is in SETTINGS.md. Put secrets (model.apiKey) in settings.local.json, which is gitignored and merged on top of this file.",
 
   "map": {
-    "file": "./maps/Map_Nav_Maze.json",
+    "file": "./maps/Map_Training.json",
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
