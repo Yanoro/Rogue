@@ -131,10 +131,17 @@ id field -- and the preview shows the numbers, the worn sprite on its own, and t
 composed on a chosen rig. The two views answer different questions: the plate is "is this
 layer right", the composition is "does it fit the body".
 
-The worn art can be regenerated from the pane: the current image is archived as a variant
-first, then the Designer recompiles the stored document (free under the DSL source) or asks
-the image model for a new one. The plate refreshes when the new PNG lands, by watching the
-file's write time rather than assuming the queue has finished. Generated items (`data/generated/items`), Designer overrides
+The equipment tab uses the **same sprite asset section as an actor sprite**: the preview,
+the document state, Regenerate, and the archive grid of every generation. Anything that has
+been generated can be seen and made active again from that grid, so regenerating never
+loses a look.
+
+Regeneration archives before it asks: the current image is copied aside as a variant, *and
+if the picture on screen is the built-in `data/sprites` file rather than a generated one,
+that file is copied into the generated layer first so the archive keeps it too*. The
+Designer then recompiles the stored document (free under the DSL source) or asks the image
+model for a new one; the new PNG is noticed through the file's write time rather than a
+guess about the queue. Generated items (`data/generated/items`), Designer overrides
 (`data/editor/items`) and the hand catalog all land in the same registry, with the catalog
 first.
 

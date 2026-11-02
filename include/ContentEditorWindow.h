@@ -1,7 +1,6 @@
 #pragma once
 
 #include <filesystem>
-#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -10,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "SpriteKinds.hpp"
 #include "Window.h"
 
 class Game;
@@ -46,6 +46,14 @@ private:
   void DrawKindAndList();
   void DrawDocumentPane();
   void DrawSpritePane();
+  // The sprite asset section, shared by the sprite kinds and the equipment tab: preview,
+  // document state, Regenerate, and the archive of every generation. `explicitSprite` is
+  // a document's own sprite override; empty for an item's worn layer.
+  // `builtInFallback` lets a kind whose art ships in data/sprites (the worn equipment
+  // layers) resolve it when a configured art pack does not contain it.
+  void DrawSpriteAsset(const std::string &convention, SpriteKinds::Kind spriteKind,
+                       const std::string &explicitSprite, bool builtInFallback);
+
   // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
   // one kind whose document is a *composition*, so the generic form alone cannot show
   // what it makes.
@@ -88,11 +96,6 @@ private:
   std::set<std::string> rigPreviewWorn;
   std::string rigPreviewEntry;
   std::string itemPreviewRig;
-  // The last write time seen per worn sprite, so regenerated art is noticed when its PNG
-  // lands (the texture memo remembers "missing" otherwise).
-  std::map<std::string, std::filesystem::file_time_type> itemArtStamps;
-  std::string itemArtMessage;
-  bool itemArtIsError = false;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

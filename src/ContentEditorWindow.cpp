@@ -411,6 +411,18 @@ void ContentEditorWindow::ArchiveActiveSprite(const std::string &conventionId) {
   if (active.empty()) return;
 
   std::error_code ec;
+  // A built-in sprite is art too. When a generated layer exists but nothing has been
+  // generated yet, the picture on screen is data/sprites/<id>.png; copying it to the
+  // active path first means the archive below keeps it as a variant, so regenerating can
+  // never be the moment the built-in look disappears.
+  if (!std::filesystem::exists(active, ec)) {
+    const std::string builtIn = std::string(SPRITE_DIRECTORY) + conventionId + ".png";
+    if (std::filesystem::exists(builtIn, ec)) {
+      std::filesystem::create_directories(std::filesystem::path(active).parent_path(),
+                                          ec);
+      std::filesystem::copy_file(builtIn, active, ec);
+    }
+  }
   if (!std::filesystem::exists(active, ec)) return;
 
   // The next free index, so regenerating twice keeps both.
@@ -572,26 +584,30 @@ void ContentEditorWindow::RefreshSelectedAsset() {
     game->RefreshObjectVisuals(entryId);
   } else if (kind->id == "actors") {
     game->ForgetActorSprite(entryId);
+  } else if (kind->id == "items") {
+    // The equipment tab's asset is the item's worn layer, not a sprite of the item id.
+    const ItemDef *item = game->itemRegistry.Get(entryId);
+    if (item != nullptr && !item->wornSprite.empty()) {
+      game->ForgetSpriteMemo(std::string(), item->wornSprite);
+    }
   } else {
     game->RefreshTileVisuals(entryId);
   }
 }
 
-void ContentEditorWindow::DrawSpritePane() {
-  const ContentKinds::Kind *kind = Kind();
-  if (kind == nullptr || game == nullptr || !kind->hasSprites) return;
-
-  const std::string convention = kind->spriteId(entryId);
-
-  // The document's own `sprite` override wins, exactly as it does in the world, so the
-  // preview cannot show an authored path the renderer would ignore.
-  const std::string explicitSprite =
-      document.contains("sprite") && document["sprite"].is_string()
-          ? document["sprite"].get<std::string>()
-          : std::string();
-
+void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
+                                          SpriteKinds::Kind spriteKind,
+                                          const std::string &explicitSprite,
+                                          bool builtInFallback) {
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
+  if (texture == nullptr && builtInFallback && explicitSprite.empty() &&
+      !convention.empty()) {
+    // A built-in layer (data/sprites) is not found by the pack-first convention lookup
+    // when a pack is configured. The rig renderer already falls back; the equipment tab
+    // must show the same picture the body will.
+    texture = RigRender::ResolveRigSprite(convention, game->resourceManager);
+  }
 
   const float size = 128.0f;
   if (texture != nullptr) {
@@ -651,13 +667,13 @@ void ContentEditorWindow::DrawSpritePane() {
       // invent them). Opening the window is not decoration: its Draw is what pumps the
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(entryId, SpriteKindOf(*kind));
+      game->designerWindow->AskForSpriteArt(entryId, spriteKind);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
     } else {
       std::string reason;
-      if (game->RecompileSpriteArt(SpriteKindOf(*kind), entryId, &reason)) {
+      if (game->RecompileSpriteArt(spriteKind, entryId, &reason)) {
         status = "sprite generation queued; it lands when the queue finishes";
         statusIsError = false;
       } else {
@@ -749,6 +765,23 @@ void ContentEditorWindow::DrawSpritePane() {
   }
 }
 
+void ContentEditorWindow::DrawSpritePane() {
+  const ContentKinds::Kind *kind = Kind();
+  if (kind == nullptr || game == nullptr || !kind->hasSprites) return;
+
+  const std::string convention = kind->spriteId(entryId);
+
+  // The document's own `sprite` override wins, exactly as it does in the world, so the
+  // preview cannot show an authored path the renderer would ignore.
+  const std::string explicitSprite =
+      document.contains("sprite") && document["sprite"].is_string()
+          ? document["sprite"].get<std::string>()
+          : std::string();
+
+  DrawSpriteAsset(convention, SpriteKindOf(*kind), explicitSprite,
+                  /*builtInFallback=*/false);
+}
+
 void ContentEditorWindow::DrawItemPreviewPane() {
   if (entryId.empty() || game == nullptr) return;
   const ItemDef *item = game->itemRegistry.Get(entryId);
@@ -788,116 +821,13 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     return;
   }
 
-  // Regeneration lands asynchronously. Forget the memo whenever the file's write time
-  // changes, or the plate keeps drawing the old image (and a remembered "missing" mark
-  // outlives the art entirely).
-  {
-    std::string resolved;
-    if (SpriteResolves(std::string(), item->wornSprite, &resolved) &&
-        !resolved.empty()) {
-      std::error_code ec;
-      const auto stamp = std::filesystem::last_write_time(resolved, ec);
-      if (!ec) {
-        const auto found = itemArtStamps.find(item->wornSprite);
-        if (found == itemArtStamps.end() || found->second != stamp) {
-          itemArtStamps[item->wornSprite] = stamp;
-          game->ForgetSpriteMemo(std::string(), item->wornSprite);
-        }
-      }
-    }
-  }
-
-  // The worn layer on its own. The rig composition below answers "does it fit the
-  // body"; this answers "is the layer itself right", which is the thing to judge before
-  // regenerating it.
+  // The same asset section an actor sprite gets: preview, document state, Regenerate and
+  // the archive of every variant, so no generated layer is ever lost and any of them can
+  // be made the active one.
   ImGui::Separator();
-  const float plateSize = 128.0f;
-  const ImVec2 plate = ImGui::GetCursorScreenPos();
-  ImGui::Dummy(ImVec2(plateSize, plateSize));
-  ImDrawList *plateDraw = ImGui::GetWindowDrawList();
-  plateDraw->AddRectFilled(plate, ImVec2(plate.x + plateSize, plate.y + plateSize),
-                           IM_COL32(26, 26, 30, 255));
-  if (const Texture2D *texture =
-          RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager)) {
-    SetTextureFilter(*texture, TEXTURE_FILTER_POINT);
-    const SpriteRect fit =
-        SpriteFitRect(*texture, plate.x, plate.y, plateSize, plateSize);
-    if (fit.width > 0.0f && fit.height > 0.0f) {
-      plateDraw->AddImage(
-          static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)),
-          ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
-    }
-  } else {
-    plateDraw->AddText(ImVec2(plate.x + 8.0f, plate.y + 8.0f),
-                       IM_COL32(200, 200, 200, 255), "no art");
-  }
-  plateDraw->AddRect(plate, ImVec2(plate.x + plateSize, plate.y + plateSize),
-                     IM_COL32(90, 90, 96, 255));
-  ImGui::SameLine();
-  ImGui::BeginGroup();
-  ImGui::TextDisabled("worn sprite: %s", item->wornSprite.c_str());
-  const SpriteDSLDocument document = FindSpriteDSLDocument(item->wornSprite);
-  if (!document.found) {
-    ImGui::TextDisabled("no .sprite document yet (Regenerate asks for one)");
-  } else if (document.inArtPack) {
-    ImGui::TextDisabled("document: %s (hand-authored, never overwritten)",
-                        document.path.c_str());
-  } else {
-    ImGui::TextDisabled("document: %s", document.path.c_str());
-  }
-  const TileArtQueue &queue = game->TileArtQueueState();
-  const std::string unavailable = queue.UnavailableReason();
-  if (unavailable.empty()) {
-    ImGui::TextDisabled("art generation on (%d/%d requests)", queue.RequestsUsed(),
-                        queue.GetConfig().maxRequestsPerSession);
-  } else {
-    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.4f, 1.0f), "art generation off");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", unavailable.c_str());
-  }
-
-  // The same path a sprite's Regenerate takes: copy the current image aside, then ask the
-  // Designer (which recompiles a stored document for free under the DSL source, or asks
-  // the image model when there is none).
-  ImGui::BeginDisabled(!unavailable.empty());
-  if (ImGui::Button("Regenerate worn art")) {
-    ArchiveActiveSprite(item->wornSprite);
-    if (game->designerWindow) {
-      game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(item->wornSprite, SpriteKinds::Kind::Actor);
-      itemArtMessage =
-          "asked the Designer for the worn art -- it writes the document if there is "
-          "none, then compiles it; the job appears in Art requests";
-      itemArtIsError = false;
-    } else {
-      std::string reason;
-      if (game->RecompileSpriteArt(SpriteKinds::Kind::Actor, item->wornSprite,
-                                   &reason)) {
-        itemArtMessage = "worn art generation queued; it lands when the queue finishes";
-        itemArtIsError = false;
-      } else {
-        itemArtMessage = "could not queue the worn art: " + reason;
-        itemArtIsError = true;
-      }
-    }
-    game->ForgetSpriteMemo(std::string(), item->wornSprite);
-  }
-  ImGui::EndDisabled();
-  if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip(
-        "Re-run this item's worn layer. With art.generation.source = \"dsl\" that "
-        "recompiles the stored .sprite document and costs nothing; otherwise it asks "
-        "the image model for a new one. The current image is kept as a variant.");
-  }
-  if (!itemArtMessage.empty()) {
-    if (itemArtIsError) {
-      ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f), "%s",
-                         itemArtMessage.c_str());
-    } else {
-      ImGui::TextDisabled("%s", itemArtMessage.c_str());
-    }
-  }
-  ImGui::EndGroup();
-  ImGui::Separator();
+  ImGui::TextDisabled("Worn sprite");
+  DrawSpriteAsset(item->wornSprite, SpriteKinds::Kind::Actor, std::string(),
+                  /*builtInFallback=*/true);
 
   const auto rigs = game->rigRegistry.GetAll();
   if (rigs.empty()) {
