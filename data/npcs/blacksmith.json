@@ -1,0 +1,27 @@
+{
+  "name": "Blacksmith",
+  "description": "Starts with the smith's strength and craft; whether the forge stays lit is up to the agent.",
+  "race": "human",
+  "sprite": "blacksmith",
+  "brain": "blacksmith",
+  "stats": {
+    "strength": 13,
+    "constitution": 12,
+    "dexterity": 10
+  },
+  "skills": {
+    "blacksmithing": {
+      "stage": "Journeyman",
+      "level": 2
+    }
+  },
+  "inventory": [
+    {
+      "item": "iron_ingot",
+      "count": 3
+    }
+  ],
+  "equipped": [
+    "leather_vest"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "Wolf",
+  "description": "A quick, lean animal. Spawned without a brain on purpose: it is a body, and the pack behaviour that drives it is a C++ system, not data.",
+  "sprite": "wolf",
+  "stats": {
+    "strength": 12,
+    "dexterity": 14,
+    "constitution": 10
+  },
+  "skills": {
+    "attack": {
+      "level": 2
+    }
+  }
+}

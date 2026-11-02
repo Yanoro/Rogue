@@ -18,6 +18,7 @@
 #include "Game.h"
 #include "Settings.h"
 #include "SpriteDraw.hpp"
+#include "SpritePicker.hpp"
 #include "SpritePaths.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
@@ -209,7 +210,8 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
-      game->skillRegistry, game->debugLog.get(),
+      game->skillRegistry, game->npcTemplateRegistry,
+      game->brainTemplateRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }
 
@@ -343,30 +345,6 @@ namespace {
 
 // A 14x14 trash can, drawn rather than typed: the window uses ImGui's default font, which
 // has no icon glyphs, so a Unicode bin would render as a missing-glyph box.
-bool SmallTrashButton(const char *id) {
-  const float size = 14.0f;
-  const ImVec2 corner = ImGui::GetCursorScreenPos();
-  const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
-  const bool hovered = ImGui::IsItemHovered();
-
-  const ImU32 colour = hovered ? IM_COL32(255, 120, 100, 255)
-                               : IM_COL32(200, 90, 80, 255);
-  ImDrawList *draw = ImGui::GetWindowDrawList();
-  draw->AddLine(ImVec2(corner.x + 1.5f, corner.y + 4.0f),
-                ImVec2(corner.x + 12.5f, corner.y + 4.0f), colour, 1.5f);
-  draw->AddLine(ImVec2(corner.x + 5.0f, corner.y + 2.0f),
-                ImVec2(corner.x + 9.0f, corner.y + 2.0f), colour, 1.5f);
-  draw->AddRect(ImVec2(corner.x + 2.5f, corner.y + 5.0f),
-                ImVec2(corner.x + 11.5f, corner.y + 13.0f), colour, 0.0f, 0, 1.5f);
-  draw->AddLine(ImVec2(corner.x + 6.0f, corner.y + 7.0f),
-                ImVec2(corner.x + 6.0f, corner.y + 11.0f), colour, 1.0f);
-  draw->AddLine(ImVec2(corner.x + 8.5f, corner.y + 7.0f),
-                ImVec2(corner.x + 8.5f, corner.y + 11.0f), colour, 1.0f);
-
-  if (hovered) ImGui::SetTooltip("Delete this sprite");
-  return pressed;
-}
-
 // Whether two image files hold the same picture. Path comparison is not enough: after a
 // variant is activated, `<id>.png` is a *different file* holding the same bytes, and
 // archiving it again would add a duplicate row every time the same sprite is chosen.
@@ -696,70 +674,77 @@ void ContentEditorWindow::DrawSpritePane() {
   }
   ImGui::EndGroup();
 
-  // The archive. Thumbnails rather than a list of numbers: "which one did I like" is a
-  // question about the picture, not about the index.
+  // The archive. One grid, shared with the settings window's actor-sprite picker:
+  // which picture is right is a question about the picture, not about the index.
   const std::vector<std::filesystem::path> variants = SpriteVariants(convention);
   ImGui::Separator();
-  if (variants.empty()) {
-    ImGui::TextDisabled(
-        "No archived sprites yet. Regenerating copies the current one here first.");
-    return;
-  }
-  // The original artwork first: every generated sprite is an alternative to it, and
-  // choosing it again is how you go back.
   const std::string markerPath = GeneratedSpriteMarkerPath(convention);
   const bool generatedChosen = PrefersGeneratedSprite(convention);
   const std::string chosen = ChosenVariantName(markerPath);
   const std::string packSprite = ArtPackSpritePath(convention);
-  std::error_code rowEc;
 
-  const auto drawRow = [&](const std::string &label, const std::string &spritePath,
-                           bool active, bool deletable, auto &&onActivate) {
-    ImGui::PushID(label.c_str());
-    const float size = 48.0f;
-    const ImVec2 corner = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(size, size));
-    if (const Texture2D *thumb = ResolveSpriteTexture(
-            spritePath, std::string(), game->resourceManager, nullptr)) {
-      const SpriteRect fit = SpriteFitRect(*thumb, corner.x, corner.y, size, size);
-      ImGui::GetWindowDrawList()->AddImage(
-          static_cast<ImTextureID>(static_cast<intptr_t>(thumb->id)),
-          ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
-    }
-    ImGui::SameLine();
-    if (active) {
-      ImGui::TextColored(ImVec4(1.0f, 0.9f, 0.5f, 1.0f), "%s (in use)", label.c_str());
-    } else {
-      ImGui::TextUnformatted(label.c_str());
-    }
-    ImGui::SameLine();
-    if (!active && ImGui::SmallButton("Use")) onActivate();
-    if (deletable) {
-      ImGui::SameLine();
-      if (SmallTrashButton("##delete")) {
-        DeleteVariant(convention, std::filesystem::path(spritePath));
-      }
-    }
-    ImGui::PopID();
+  // The original artwork first: every generated sprite is an alternative to it, and
+  // choosing it again is how you go back.
+  struct Candidate {
+    std::string label;
+    std::string path;
+    bool selected = false;
+    // The art pack's files are hand-authored and are not this editor's to delete.
+    bool deletable = false;
+    std::function<void()> activate;
   };
-
-  // The original row has no trash button: the art pack's files are hand-authored and are
-  // not this editor's to delete. Only the generated layer is.
+  std::vector<Candidate> candidates;
   if (!packSprite.empty()) {
-    drawRow("original", packSprite, !generatedChosen, /*deletable=*/false,
-            [&] { UseOriginalSprite(convention); });
+    candidates.push_back({"original", packSprite, !generatedChosen, false,
+                          [this, convention] { UseOriginalSprite(convention); }});
   }
-
-  const std::string current = GeneratedSpritePath(convention);
-  if (!current.empty() && std::filesystem::exists(current, rowEc)) {
-    drawRow("current generation", current, generatedChosen, /*deletable=*/true,
-            [&, current] { ActivateVariant(convention, current); });
-  }
-
   for (const std::filesystem::path &variant : variants) {
     const std::string name = variant.filename().string();
-    drawRow(name, variant.string(), generatedChosen && chosen == name,
-            /*deletable=*/true, [&, variant] { ActivateVariant(convention, variant); });
+    candidates.push_back({name, variant.string(), generatedChosen && chosen == name,
+                          true,
+                          [this, convention, variant] {
+                            ActivateVariant(convention, variant);
+                          }});
+  }
+
+  std::vector<SpritePicker::Item> items;
+  items.reserve(candidates.size());
+  for (const Candidate &candidate : candidates) {
+    SpritePicker::Item item;
+    item.label = candidate.label;
+    item.description = candidate.path;
+    item.texture = ResolveSpriteTexture(candidate.path, std::string(),
+                                        game->resourceManager, nullptr);
+    item.selected = candidate.selected;
+    items.push_back(std::move(item));
+  }
+
+  SpritePicker::Options options;
+  options.cell = 52.0f;
+  options.rows = 3;
+  options.childId = "##sprite-variants";
+  // A cell is click-to-use; anything destructive lives in its context menu. Only
+  // archived variants are deletable: the pack's original is hand-authored, and the
+  // picture in use is shown by the preview above rather than as a cell of its own.
+  options.contextMenu = [&](int index) {
+    const Candidate &candidate = candidates[index];
+    if (!candidate.selected && ImGui::MenuItem("Use")) {
+      candidate.activate();
+    }
+    if (candidate.deletable && ImGui::MenuItem("Delete")) {
+      DeleteVariant(convention, std::filesystem::path(candidate.path));
+    }
+    if (ImGui::MenuItem("Copy path")) {
+      ImGui::SetClipboardText(candidate.path.c_str());
+    }
+  };
+  const int clicked = SpritePicker::Draw(items, options);
+  if (clicked >= 0) {
+    candidates[clicked].activate();
+  }
+  if (variants.empty()) {
+    ImGui::TextDisabled(
+        "No archived sprites yet. Regenerating copies the current one here first.");
   }
 }
 

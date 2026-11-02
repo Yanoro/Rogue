@@ -37,6 +37,14 @@ private:
                           const std::string &profileId);
   void CommitProfileReference(const SettingsSchema::FieldSpec &field,
                               const nlohmann::json &value);
+  // The player's actor sprite: a filter and a compact thumbnail grid drawn in
+  // the row itself, so choosing a look does not open a second window.
+  void DrawPlayerActorSpriteRow(const SettingsSchema::FieldSpec &field);
+  void SelectActorSprite(const SettingsSchema::FieldSpec &field,
+                         const std::string &id);
+  // Re-applies the player settings that land in components after a reload or
+  // reset, so those rows are genuinely live rather than only when edited.
+  void RefreshPlayerSettings();
   // Points a model block at `id`; an empty id forks the current profile's values
   // into the block's inline fields first, so "no profile" keeps what worked.
   void AssignProfile(const SettingsSchema::FieldSpec &field,
@@ -58,6 +66,10 @@ private:
   std::string selectedSection;
   // The id typed into the add row of the ai.profiles section.
   std::string newProfileId;
+  // The actor-sprite picker's filter. Session state: a filter that persisted
+  // would hide sprites the next time the window opened.
+  std::string actorSpriteFilter;
+  bool showActorSpritesWithoutArt = false;
   std::string status;
   bool statusOk = true;
   bool showRestartOnly = false;

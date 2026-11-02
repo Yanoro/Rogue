@@ -208,6 +208,8 @@ set(SOURCES
     src/BlueprintExpansion.cpp
     src/GapLog.cpp
     src/ActorSpriteRegistry.cpp
+    src/NpcTemplateRegistry.cpp
+    src/BrainTemplateRegistry.cpp
     src/ArtRequestsPanel.cpp
     src/ContentKinds.cpp
     src/ContentEditorWindow.cpp

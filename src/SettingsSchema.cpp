@@ -229,6 +229,11 @@ FieldSpec &FieldSpec::ProfileSource(const char *kind) {
   return *this;
 }
 
+FieldSpec &FieldSpec::ActorSpriteSource() {
+  enumSource = "actorSprites";
+  return *this;
+}
+
 FieldSpec &FieldSpec::Default(std::string value) {
   stringDefault = std::move(value);
   return *this;
@@ -455,8 +460,8 @@ std::string TypeDescription(const FieldSpec &field) {
     break;
   case ValueType::EnumString:
     if (!field.enumSource.empty()) {
-      // Values come from the registry at draw time, not from the table.
-      text = "profile";
+      // Values come from a registry at draw time, not from the table.
+      text = field.enumSource == "actorSprites" ? "actor sprite" : "profile";
       break;
     }
     text = "string";
@@ -1184,6 +1189,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("player", "player.race",
             "Race the player's body slots come from. Empty means the human default.", &GameSettings::player, &PlayerSection::race))
         .Restart();
+    add(Field<ValueType::EnumString>("player", "player.actorSprite",
+            "Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art.", &GameSettings::player, &PlayerSection::actorSprite))
+        .ActorSpriteSource();
+    add(Field<ValueType::Float>("player", "player.maxSpeed",
+            "Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this.", &GameSettings::player, &PlayerSection::maxSpeed))
+        .Min(0.0, DEFAULT_MAXSPEED);
     add(Field<ValueType::String>("player", "player.portrait",
             "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
         .Restart();
@@ -1219,6 +1230,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
         .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.npcs",
+            "NPC template directory: named starting configurations a map spawns by name and overrides.", &GameSettings::content, &ContentSection::npcs))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.brains",
+            "Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent.", &GameSettings::content, &ContentSection::brains))
         .Restart();
     add(Field<ValueType::String>("content", "content.portraits",
             "Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id.", &GameSettings::content, &ContentSection::portraits))

@@ -24,6 +24,8 @@
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
+#include "BrainTemplateRegistry.h"
+#include "NpcTemplateRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
 #include "PortraitRegistry.h"
@@ -175,6 +177,21 @@ public:
   // new authored field from needing a new parameter here.
   flecs::entity createNPC(const NPCData &data);
 
+  // Fills a map entry's empty fields from its NPC template and brain before
+  // createNPC runs. The map wins wherever it speaks; the template supplies the
+  // rest; the brain supplies context (background and goals), which outranks the
+  // template's because context is what motivates the agent.
+  void ResolveNpcTemplate(NPCData &data) const;
+
+  // Puts an actor sprite on the player, or clears it back to the race's look.
+  // Used by the spawn path and by the Settings window's picker, which is why it
+  // reports rather than only logging. Empty id removes the sprite.
+  bool ApplyPlayerActorSprite(const std::string &id, std::string &message);
+
+  // Sets the player's MaxSpeed component. Separate from the setting because the
+  // setting is read once at spawn; the window calls this when it changes the row.
+  bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
+
   bool shouldClose() const;
 
   // Asks the frame loop to end so main() can re-execute the binary with the same
@@ -279,6 +296,11 @@ private:
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
+  // Named NPC definitions and the brains that drive them. Templates are spawn
+  // seeds: createNPC copies their values onto the entity, and the instance owns
+  // them afterwards. Brains are separate because a body can have none.
+  NpcTemplateRegistry npcTemplateRegistry;
+  BrainTemplateRegistry brainTemplateRegistry;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;

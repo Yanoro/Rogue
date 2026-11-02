@@ -124,6 +124,9 @@ struct FieldSpec {
   // --- chainable modifiers, for the table below ---------------------------
   FieldSpec &Enum(std::initializer_list<const char *> values, bool strict = true);
   FieldSpec &ProfileSource(const char *kind);
+  // Marks a reference into ActorSpriteRegistry, so the window draws the sprite
+  // picker instead of a text field.
+  FieldSpec &ActorSpriteSource();
   FieldSpec &Default(std::string value);
   FieldSpec &Alias(const char *spelling);
   FieldSpec &Lower();
