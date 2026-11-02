@@ -790,8 +790,8 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     if (on) {
       RigRender::WornLayer layer;
       layer.label = item->id;
-      layer.texture = ResolveSpriteTexture(std::string(), item->wornSprite,
-                                           game->resourceManager, nullptr);
+      layer.texture =
+          RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
       layer.z = item->wornZ;
       layer.hides = item->wornHides;
       worn.push_back(std::move(layer));
@@ -804,13 +804,22 @@ void ContentEditorWindow::DrawRigPreviewPane() {
   ImGui::BeginGroup();
   ImGui::TextDisabled("Draw order (back to front):");
   std::vector<std::string> hidden;
+  int missingArt = 0;
   for (const RigRender::Layer &layer :
        RigRender::Order(*rig, game->resourceManager, worn, &hidden)) {
-    ImGui::TextDisabled("%4d  %s%s", layer.z, layer.label.c_str(),
-                        layer.worn ? "  (worn)" : "");
+    if (layer.texture == nullptr) ++missingArt;
+    ImGui::TextDisabled("%4d  %s%s%s", layer.z, layer.label.c_str(),
+                        layer.worn ? "  (worn)" : "",
+                        layer.texture == nullptr ? "  -- MISSING ART" : "");
   }
   for (const std::string &part : hidden) {
     ImGui::TextDisabled("hidden: %s", part.c_str());
+  }
+  if (missingArt > 0) {
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f),
+                       "%d layer(s) have no sprite file.", missingArt);
+    ImGui::TextDisabled(
+        "Looked for the pack/generated file first, then data/sprites/<sprite>.png.");
   }
   ImGui::EndGroup();
   ImGui::Separator();

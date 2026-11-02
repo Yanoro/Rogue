@@ -20,6 +20,25 @@
 // other is a bug that reads as an art problem.
 namespace RigRender {
 
+// A rig layer's art: the normal convention first (so the art pack and the generated
+// layer can override it), then the built-in data/sprites file.
+//
+// The fallback is not belt-and-braces. With art.pack configured, SpriteCandidatePaths
+// looks *only* at the pack and the generated layer, and the rig art ships in
+// data/sprites -- so the first preview drew an empty canvas and the worn toggles changed
+// nothing. The pack owns the look when it has a layer; a pack that has never heard of
+// rigs must not make one invisible.
+inline const Texture2D *ResolveRigSprite(const std::string &sprite,
+                                         ResourceManager &resources) {
+  if (sprite.empty()) return nullptr;
+  if (const Texture2D *texture =
+          ResolveSpriteTexture(std::string(), sprite, resources, nullptr)) {
+    return texture;
+  }
+  return ResolveSpriteTexture(std::string(SPRITE_DIRECTORY) + sprite + ".png",
+                              std::string(), resources, nullptr);
+}
+
 // A worn item's layer: art resolved by the caller, ordering and hiding here.
 struct WornLayer {
   std::string label;                 // item id, for the layer readout
@@ -53,8 +72,7 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
     }
     Layer layer;
     layer.label = part.id;
-    layer.texture =
-        ResolveSpriteTexture(std::string(), part.sprite, resources, nullptr);
+    layer.texture = ResolveRigSprite(part.sprite, resources);
     layer.z = part.z;
     layers.push_back(std::move(layer));
   }
