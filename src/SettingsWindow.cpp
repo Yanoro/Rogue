@@ -144,6 +144,16 @@ void SettingsWindow::Commit(const SettingsSchema::FieldSpec &field,
       ApplySettingValue(SettingsFilePath(), field.path, value, message);
   Report(ok, message);
   overrideCacheDirty = true;
+  // A component the player already carries is not re-read from the setting, so
+  // the one row that drives one is applied here as well as persisted.
+  if (ok && field.path == "player.maxSpeed" && value.is_number()) {
+    std::string applied;
+    const bool live = game->ApplyPlayerMaxSpeed(value.get<float>(), applied);
+    if (!applied.empty()) {
+      message += (message.empty() ? "" : " ") + applied;
+    }
+    Report(live, message);
+  }
 }
 
 void SettingsWindow::CommitProfiles() {
@@ -199,7 +209,7 @@ void SettingsWindow::Draw() {
     Report(ok, ok ? "Settings reloaded from disk."
                   : "Settings reloaded; some values were corrected (see stderr).");
     overrideCacheDirty = true;
-    RefreshPlayerActorSprite();
+    RefreshPlayerSettings();
   }
   ImGui::SameLine();
   if (ImGui::Button("Write reference")) {
@@ -611,7 +621,7 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     Report(ok, message);
     overrideCacheDirty = true;
     jsonBuffers.erase(field.path);
-    RefreshPlayerActorSprite();
+    RefreshPlayerSettings();
   }
   ImGui::EndDisabled();
 
@@ -1034,9 +1044,10 @@ void SettingsWindow::DrawAIProfileField(
   ImGui::PopID();
 }
 
-void SettingsWindow::RefreshPlayerActorSprite() {
+void SettingsWindow::RefreshPlayerSettings() {
   std::string message;
   game->ApplyPlayerActorSprite(Settings().player.actorSprite, message);
+  game->ApplyPlayerMaxSpeed(Settings().player.maxSpeed, message);
 }
 
 void SettingsWindow::SelectActorSprite(

@@ -616,6 +616,11 @@ struct GameSettings {
     // data/sprites/<id>.png, and an id with no art leaves the race's look in
     // place and is reported.
     std::string actorSprite;
+    // Top movement speed in pixels per second. Holding a direction adds velocity
+    // each frame and the movement system clamps it to this, so this is how fast
+    // the player settles at walking, not how quickly they get there. 0 is a
+    // deliberate "cannot move"; negative is treated as a mistake.
+    float maxSpeed = DEFAULT_MAXSPEED;
   } player;
 
   struct WorldSection {

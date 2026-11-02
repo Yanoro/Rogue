@@ -174,6 +174,10 @@ public:
   // reports rather than only logging. Empty id removes the sprite.
   bool ApplyPlayerActorSprite(const std::string &id, std::string &message);
 
+  // Sets the player's MaxSpeed component. Separate from the setting because the
+  // setting is read once at spawn; the window calls this when it changes the row.
+  bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
+
   bool shouldClose() const;
 
   // Asks the frame loop to end so main() can re-execute the binary with the same

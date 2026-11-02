@@ -301,6 +301,19 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
   }
 }
 
+bool Game::ApplyPlayerMaxSpeed(float maxSpeed, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  playerEntity.set<MaxSpeed>({maxSpeed});
+  std::ostringstream text;
+  text << "Player top speed set to " << maxSpeed << ".";
+  message = text.str();
+  return true;
+}
+
 bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
   message.clear();
   if (!playerEntity.is_alive()) {
@@ -4984,7 +4997,7 @@ void Game::ECSInit() {
 
   playerEntity.set<ScreenPosition>(
       map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
-  playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
+  playerEntity.set<MaxSpeed>({settings.player.maxSpeed});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   // The facing system derives from Velocity but never adds the component, so the

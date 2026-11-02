@@ -42,9 +42,9 @@ private:
   void DrawPlayerActorSpriteRow(const SettingsSchema::FieldSpec &field);
   void SelectActorSprite(const SettingsSchema::FieldSpec &field,
                          const std::string &id);
-  // Re-applies settings.player.actorSprite after a reload or reset, so the row
-  // is genuinely live rather than only when chosen from the picker.
-  void RefreshPlayerActorSprite();
+  // Re-applies the player settings that land in components after a reload or
+  // reset, so those rows are genuinely live rather than only when edited.
+  void RefreshPlayerSettings();
   // Points a model block at `id`; an empty id forks the current profile's values
   // into the block's inline fields first, so "no profile" keeps what worked.
   void AssignProfile(const SettingsSchema::FieldSpec &field,

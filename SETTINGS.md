@@ -514,6 +514,7 @@ The player entity and its starting tile.
 | `startY` | int | `20` | Starting tile. *Restart to apply.* |
 | `race` | string | `""` | Race the player's body slots come from. Empty means the human default. *Restart to apply.* |
 | `actorSprite` | string | `""` | Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art. |
+| `maxSpeed` | number | `100.0` | Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this. Must be at least 0. A value outside the range is reported and replaced. |
 | `portrait` | string | `""` | PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite. *Restart to apply.* |
 
 ---
@@ -657,7 +658,7 @@ means adding a field to `GameSettings` and a row to `SettingsSchema.h`.
 
 | area | constants still hardcoded |
 |---|---|
-| physics / movement | `DEFAULT_MAXSPEED`, `DEFAULT_WAYPOINT_ACCEL`, `DEFAULT_PLAYER_FRICTION`, `DEFAULT_ENTITY_FRICTION`, `DEFAULT_VELOCITY`, `DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL`, `DEFAULT_WALL_REPEL_FORCE`, `DEFAULT_MINIMUM_WAYPOINT_SPEED`, `DEFAULT_MINIMUM_WAYPOINT_ACCEL`, `DEFAULT_MINIMUM_WAYPOINT_DISTANCE`, `DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS` |
+| physics / movement | `DEFAULT_WAYPOINT_ACCEL`, `DEFAULT_PLAYER_FRICTION`, `DEFAULT_ENTITY_FRICTION`, `DEFAULT_VELOCITY`, `DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL`, `DEFAULT_WALL_REPEL_FORCE`, `DEFAULT_MINIMUM_WAYPOINT_SPEED`, `DEFAULT_MINIMUM_WAYPOINT_ACCEL`, `DEFAULT_MINIMUM_WAYPOINT_DISTANCE`, `DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS` |
 | perception / interaction | `DEFAULT_OBJECT_SEARCH_RADIUS`, `DEFAULT_PLACEMENT_MAX_DISTANCE`, `DEFAULT_HARVEST_DURABILITY_COST` |
 | input | `DEFAULT_INPUT_MOVEMENT`, `DEFAULT_INPUT_ZOOM`, `DEFAULT_MINIMUM_INPUT_ZOOM`, `DEFAULT_MAXIMUM_INPUT_ZOOM`, `DEFAULT_DOUBLE_CLICK_TIME` |
 | hitboxes / visuals | `DEFAULT_PLAYER_HITBOX_*`, `DEFAULT_PLAYER_VISUAL_*`, `DEFAULT_ENTITY_HITBOX_*`, `DEFAULT_ENTITY_VISUAL_*` |

@@ -1190,6 +1190,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::EnumString>("player", "player.actorSprite",
             "Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art.", &GameSettings::player, &PlayerSection::actorSprite))
         .ActorSpriteSource();
+    add(Field<ValueType::Float>("player", "player.maxSpeed",
+            "Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this.", &GameSettings::player, &PlayerSection::maxSpeed))
+        .Min(0.0, DEFAULT_MAXSPEED);
     add(Field<ValueType::String>("player", "player.portrait",
             "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
         .Restart();
