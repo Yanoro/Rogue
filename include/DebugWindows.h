@@ -3,6 +3,8 @@
 #include "Window.h"
 #include "BlueprintExpansion.hpp"
 #include "ContentFiles.h"
+#include "MapPreview.hpp"
+#include <filesystem>
 #include <flecs.h>
 #include <optional>
 #include <string>
@@ -60,11 +62,32 @@ public:
   explicit MapReloadWindow(Game* game);
   void Draw() override;
 private:
+  // Selection is a *preview* step now: the world changes only when Switch runs,
+  // which is what lets an expansion show a map before it replaces the one on
+  // screen.
+  void SelectMap(int index);
+  void RefreshPreview();
+  void SwitchToSelected();
+
   Game* game;
   // Result of the last "Make current map default" press, shown under the button.
   // A member rather than a local so the outcome stays visible after the click
   // and survives ImGui's frame-to-frame widget state.
   std::string lastDefaultMapMessage;
+
+  int selectedIndex = -1;
+  MapPreview::Info preview;
+  std::string previewPath;
+  // Last-write time of the previewed file, so editing a map on disk and pressing
+  // "Refresh Map List" (or simply waiting) shows the new version.
+  std::filesystem::file_time_type previewModified{};
+  std::string lastSwitchMessage;
+
+  // The window is compact until a map is selected, then grows to fit the preview.
+  // `sizeApplied` tracks which of the two sizes is in effect so resizing happens
+  // once per state change and not every frame (which would fight the user).
+  bool expanded = false;
+  bool sizeApplied = false;
 };
 
 class DrawAsciiDebugWindow : public Window {
