@@ -383,10 +383,51 @@ struct GameSettings {
     int maxAttempts = 3;
   };
 
+  // Continuous navigation: the main agent's own context carries the spatial
+  // state and [GO] takes one step. There is no [NAVIGATE] episode to enter and
+  // none to end, so the prompt shapes it needs are the same facts the single
+  // navigator's STATE/ACTIONS block uses (candidate caps, compass radius,
+  // examine radius), built fresh at every wake.
+  //
+  // Named `inlineNav` because `inline` is a C++ keyword; the settings key is
+  // `navigation.inline`. The caps are duplicated from `single` on purpose:
+  // inline is the mode that is supposed to survive, so its budget should not
+  // move when the single navigator's block is eventually retired.
+  struct NavigationInlineSection {
+    // Compass moves offered in the spatial block, and total steps (compass plus
+    // distant places). Same unit and meaning as the single navigator's.
+    int maxDirections = 8;
+    int maxCandidates = 12;
+    // Include the [GO ...] step list. Off leaves the orientation line and the
+    // watch, which is the "does standing orientation alone help?" arm.
+    bool includeActions = true;
+    // Include the north-up ASCII map in the spatial block. Off by default: the
+    // block is meant to be cheap on every turn, and the map is the first thing
+    // to turn on when a run shows the model misreading the local layout.
+    bool includeMap = false;
+    int mapRadius = 6;
+    // Previous spatial blocks kept in the main context. 0 keeps only the newest.
+    // The blocks are the only messages whose content is fully replaced by the
+    // next one, and they arrive on every turn, so this is the first place a
+    // long session accumulates context it does not need. Retaining a couple
+    // still leaves the commands and their results in the transcript, which is
+    // what the agent's memory of the walk is built from.
+    int spatialHistory = 2;
+  };
+
   struct NavigationSection {
-    std::string agent = "single";  // "single" | "two"
+    // "single" -- one main-model context per navigation episode: [NAVIGATE] opens
+    //             an episode that plans, walks and returns a summary
+    //             (docs/llm-s1-navigation-design.md).
+    // "two"    -- the standard-LLM strategist above the System 1 pilot
+    //             (docs/llm-s1-navigation-design.md).
+    // "inline" -- no episode and no [NAVIGATE]: the agent's ordinary turns carry
+    //             the spatial state and [GO] takes one step. The agent keeps its
+    //             own topology; see `inlineNav` below.
+    std::string agent = "single";
     NavigationStrategistSection strategist;
     NavigationSingleSection single;
+    NavigationInlineSection inlineNav;
   };
 
   struct SystemOneSection {

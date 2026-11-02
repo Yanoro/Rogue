@@ -4154,22 +4154,37 @@ void Game::ECSInit() {
     }
   });
 
+  // [MOVE_TO] is the verb for a target the agent can already name. In inline
+  // navigation the verb for a step toward somewhere it cannot name is [GO], and
+  // [NAVIGATE] is not part of the vocabulary, so the advertised line and the
+  // help point at [GO] instead. The wording is chosen once at registration
+  // because the mode is a restart-time setting.
+  const bool inlineNavigation = Settings().navigation.agent == "inline";
+
   GlobalCommandRegistry::Register({
     .format = "[MOVE_TO $TARGET]",
-    .rule = "Go directly to one named target you already know: a character, an object, or a remembered place. Use it when that target is the destination -- it is one move, not a search. If your goal is beyond the target (a road you can see, a path), use [NAVIGATE <goal>] instead. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
+    .rule = inlineNavigation
+        ? "Go directly to one named target you already know: a character, an object, or a remembered place. Use it when that target is the destination -- it is one move, not a search. To walk toward somewhere you cannot name, use [GO] with a key from your spatial block. Examples: [MOVE_TO Pietro], [MOVE_TO Mill]."
+        : "Go directly to one named target you already know: a character, an object, or a remembered place. Use it when that target is the destination -- it is one move, not a search. If your goal is beyond the target (a road you can see, a path), use [NAVIGATE <goal>] instead. Examples: [MOVE_TO Pietro], [MOVE_TO Mill].",
     .pattern = std::regex(R"(\[MOVE_TO\s+(.+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string targetName = match[1].str();
       return [targetName](flecs::entity) { return std::make_unique<MoveToEntityAction>(targetName); };
     },
     .help = {
-      .description = "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is one move to a target you already know: use it when the target is where you want to end up, or a known waypoint you have already chosen. It is not a search -- if the goal is beyond the target, use [NAVIGATE]. Arriving at an object lists the interactions it offers; arriving at a place stands you in it.",
+      .description = inlineNavigation
+          ? "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is one move to a target you already know: use it when the target is where you want to end up, or a known waypoint you have already chosen. It is not a search -- for a step toward somewhere you cannot name, use [GO] with a key from your spatial block. Arriving at an object lists the interactions it offers; arriving at a place stands you in it."
+          : "Walk to a named character, object or place you remember, pathfinding around whatever is in the way. This is one move to a target you already know: use it when the target is where you want to end up, or a known waypoint you have already chosen. It is not a search -- if the goal is beyond the target, use [NAVIGATE]. Arriving at an object lists the interactions it offers; arriving at a place stands you in it.",
       .examples = {"[MOVE_TO Pietro]", "[MOVE_TO Mill]"},
       .usage = {"$TARGET: a name from [PLACES] or [CHARACTERS]. An unnamed remembered place must first be given a name with [NAME_PLACE #<number> <name>]; a [PLACES] number on its own is not a target. Matching ignores case."},
       .notes = {"Arriving at an object lists the interactions it offers and remembers it as your interaction target.",
                 "Directions such as \"east\" and bare coordinates are not valid targets.",
-                "If the name matches nothing, the failure names the two ways forward: [PLACES] + [NAME_PLACE] for a remembered place, or [NAVIGATE <goal>] for a goal you cannot name yet.",
-                "Use [NAVIGATE] when a target you can name or see (a road, a path) is only a step toward a goal beyond it; [MOVE_TO] stops at that target."}
+                inlineNavigation
+                    ? "If the name matches nothing, use [PLACES] + [NAME_PLACE] for a remembered place, or [GO] with a key from your spatial block for a step toward somewhere you cannot name."
+                    : "If the name matches nothing, the failure names the two ways forward: [PLACES] + [NAME_PLACE] for a remembered place, or [NAVIGATE <goal>] for a goal you cannot name yet.",
+                inlineNavigation
+                    ? "Use [GO] when the place you want is not one you can name yet; [MOVE_TO] stops at the named target."
+                    : "Use [NAVIGATE] when a target you can name or see (a road, a path) is only a step toward a goal beyond it; [MOVE_TO] stops at that target."}
     }
   });
 
@@ -4191,6 +4206,57 @@ void Game::ECSInit() {
     }
   });
 
+  // [GO] -- one step of continuous navigation (navigation.agent = "inline").
+  //
+  // Hidden, because the spatial block in the wake prompt prints the exact keys
+  // offered for the place the character is standing in. Advertising a generic
+  // [GO $STEP] in every mode's command list would hand the agent a vocabulary
+  // it cannot usefully apply there, and the block is the only place the valid
+  // keys are ever stated.
+  GlobalCommandRegistry::Register({
+    .format = "[GO $STEP]",
+    .rule = "Take one step from the spatial block: a compass run, a remembered place, follow, back or to:<n>.",
+    .pattern = std::regex(R"(\[GO\s+([^\]]+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) {
+      std::string key = match[1].str();
+      return [key](flecs::entity) -> std::unique_ptr<AgentAction> {
+        return std::make_unique<GoAction>(key);
+      };
+    },
+    .hidden = Settings().navigation.agent != "inline",
+    .help = {
+      .description = "Take one step from the spatial state at the top of your context: a compass run within the place you are standing in ([GO here:north]), a remembered place ([GO p17]), a linear feature underfoot ([GO follow] or [GO follow:east]), the step you just walked ([GO back]), or a step by its number in the map targets ([GO to:3]). The step walks one leg and hands the turn back to you; it is not a journey, and nothing continues without you. Keys are resolved against what you remember now, so use them exactly as the spatial block printed them: a key that is no longer offered fails and names the steps that are offered instead.",
+      .examples = {"[GO here:north]", "[GO p17]", "[GO follow:east]", "[GO back]", "[GO to:3]"},
+      .usage = {"$STEP: one key from the spatial block, e.g. here:north, p17, follow, follow:east, back or to:3."},
+      .notes = {"[MOVE_TO] is for a character, object or place whose name you already know -- your farm, the market, a person. [GO] is for the steps the engine offers from where you stand, including stretches of road that have no name.",
+                "A here:<direction> step is one compass run -- often several tiles -- not a single tile. follow goes further: it stays on the feature through forced turns to the next junction or end.",
+                "You do not have to move: your other commands work on the same turn."}
+    }
+  });
+
+  // [WATCH] -- the standing attention brief for continuous navigation. Hidden
+  // for the same reason as [GO]: the spatial block is where it is advertised,
+  // and the block echoes whatever is set. A bare [WATCH] clears the brief.
+  GlobalCommandRegistry::Register({
+    .format = "[WATCH $WHAT]",
+    .rule = "Set what should make you stop and look while you walk; [WATCH] alone clears it.",
+    .pattern = std::regex(R"(\[WATCH(?:\s+([^\]]*?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) {
+      std::string what;
+      if (match.size() > 1 && match[1].matched) what = match[1].str();
+      return [what](flecs::entity) -> std::unique_ptr<AgentAction> {
+        return std::make_unique<WatchAction>(what);
+      };
+    },
+    .hidden = Settings().navigation.agent != "inline",
+    .help = {
+      .description = "State what should make you stop and look while you walk: a signpost, water, a building, a person. It is your standing attention brief, echoed back to you in the spatial block each turn, and it holds until you replace it. A bare [WATCH] clears it. It is a priority, not a filter: something obviously worth your attention can still stop you even when it is not in the brief.",
+      .examples = {"[WATCH look for a village, a signpost or water]", "[WATCH]"},
+      .usage = {"$WHAT: a short phrase, e.g. look for a signpost or a village. Leave it out to clear."},
+      .notes = {"Nothing is filtered out: the brief says what is worth interrupting for, and everything you see is still remembered and listed in your spatial state."}
+    }
+  });
+
   GlobalCommandRegistry::Register({
     .format = "[NAVIGATE $GOAL]",
     .rule = "Search toward a goal you cannot pinpoint yet (find the village, follow a rumour). A strategist plans from what you have observed and a small pilot chooses each next move: a direction within the place you are standing in, or a remembered place. Use it when the goal is not a place you can name or locate -- a visible road or path is a step, not the goal. [MOVE_TO] is only for a target that is the destination. Example: [NAVIGATE find a village with a market].",
@@ -4198,12 +4264,20 @@ void Game::ECSInit() {
     .createAction = [](const std::smatch& match) -> std::function<std::unique_ptr<AgentAction>(flecs::entity)> {
       std::string goal = match[1].str();
       return [goal](flecs::entity) -> std::unique_ptr<AgentAction> {
-        if (Settings().navigation.agent == "single") {
+        const std::string mode = Settings().navigation.agent;
+        if (mode == "inline") {
+          return std::make_unique<NoticeAction>(
+              "System: Navigation is continuous in this mode: you are always "
+              "where you are, and each move is [GO <key>] from the spatial "
+              "block. There is no separate journey to start or stop.\n");
+        }
+        if (mode == "single") {
           return std::make_unique<SingleNavigateAction>(goal);
         }
         return std::make_unique<NavigateAction>(goal);
       };
     },
+    .hidden = Settings().navigation.agent == "inline",
     .help = {
       .description = "Use this for high-level travel: when you know what you are looking for but not where it is or which direction to take -- finding a village, following a signpost's rumour to a distant place, or looking for somewhere quiet to sleep when nothing you remember obviously matches. A strategist plans from your observed surroundings and may take several seconds; a small pilot then picks the most likely next move, walks one leg, and decides again on arrival. The strategist also asks the pilot a few yes/no questions (a signpost, a junction, a dead end, water) and re-plans when one of them says the situation has changed. A move is either a direction within the place you are standing in (follow the road north, cross the orchard east) or a remembered place. The compass is what lets it keep following a road or leave it deliberately, instead of only jumping between remembered places. It is not for a target you can name that is itself the destination: use [MOVE_TO] for that. Local knowledge of the next few tiles -- a road or path you can see -- does not make the goal known; if the named target is only a step toward the goal, this is the verb. It stops when it judges that it has arrived, when the strategist gives up, when the strategist call budget is exhausted, or when a resource guard (the episode's wall clock or a stuck leg) is reached; a pilot that cannot decide or has no remembered move hands back to the strategist instead of ending the navigation. It then tells you where you are, what places are nearby, and the strategy it used. Both models only see your own memory, so either can be wrong.",
       .examples = {"[NAVIGATE find a village with a market]",

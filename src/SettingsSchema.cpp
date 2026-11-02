@@ -23,6 +23,7 @@ using SystemOneProfileSection = GameSettings::SystemOneProfileSection;
 using SystemOneNavigationSection = GameSettings::SystemOneNavigationSection;
 using NavigationSection = GameSettings::NavigationSection;
 using NavigationSingleSection = GameSettings::NavigationSingleSection;
+using NavigationInlineSection = GameSettings::NavigationInlineSection;
 using NavigationStrategistSection = GameSettings::NavigationStrategistSection;
 using NavigationObservationSection = GameSettings::NavigationObservationSection;
 using PerceptionSection = GameSettings::PerceptionSection;
@@ -612,6 +613,7 @@ const std::vector<SectionSpec> &Sections() {
       {"system1.navigation", "system1.navigation", "How the System 1 navigator spends calls and time. Properties of the game's use of the model, not of the endpoint, so swapping models does not silently change them.", ""},
       {"navigation", "navigation", "Which navigator runs.", ""},
       {"navigation.single", "navigation.single", "One main-model context that returns both the plan and the next move each decision.", ""},
+      {"navigation.inline", "navigation.inline", "Continuous navigation: the main agent's ordinary turns carry the spatial state and [GO] takes one step, with no [NAVIGATE] episode.", ""},
       {"navigation.strategist", "navigation.strategist", "The standard-LLM strategist above the System 1 pilot.", ""},
       {"perception", "perception", "The acquisition field for every character's vision. Named `perception` because `vision` is already the Vision Chat backend.", ""},
       {"regions", "regions", "Observed base regions: the coarse spatial memory places are derived from.", ""},
@@ -944,9 +946,10 @@ add(Field<ValueType::String>("system1", "system1.model.model",
 
     // --- navigation -------------------------------------------------------
     add(Field<ValueType::EnumString>("navigation", "navigation.agent",
-            "Which navigator runs: the single-context plan-and-move navigator, or the strategist plus System 1 pilot.", &GameSettings::navigation, &NavigationSection::agent))
-        .Enum({"single", "two"})
-        .Lower();
+            "Which navigator runs: the single-context plan-and-move navigator, the strategist plus System 1 pilot, or continuous navigation in the main agent's own context (no [NAVIGATE]).", &GameSettings::navigation, &NavigationSection::agent))
+        .Enum({"single", "two", "inline"})
+        .Lower()
+        .Restart();
     add(Field<ValueType::Int>("navigation.single", "navigation.single.maxTokens",
             "Completion budget for one decision.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::maxTokens))
         .Between(64, 8192, 500)
@@ -1034,6 +1037,24 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Int>("navigation.single", "navigation.single.maxCandidates",
             "Total candidates offered: compass moves plus distant places.", &GameSettings::navigation, &NavigationSection::single, &NavigationSingleSection::maxCandidates))
         .Between(1, 32, 12);
+
+    // --- navigation.inline ------------------------------------------------
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.maxDirections",
+            "Compass moves offered in the spatial block on every turn.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::maxDirections))
+        .Between(1, 8, 8);
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.maxCandidates",
+            "Total steps offered in the spatial block: compass moves plus distant places.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::maxCandidates))
+        .Between(1, 32, 12);
+    add(Field<ValueType::Bool>("navigation.inline", "navigation.inline.includeActions",
+            "Include the [GO ...] step list in the wake prompt. Off leaves the orientation line and the watch, for an A/B on orientation alone.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::includeActions));
+    add(Field<ValueType::Bool>("navigation.inline", "navigation.inline.includeMap",
+            "Include the north-up ASCII map in the spatial block.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::includeMap));
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.mapRadius",
+            "Radius of that map.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::mapRadius))
+        .Between(3, 12, 6);
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.spatialHistory",
+            "Previous spatial blocks kept in the main context. 0 keeps only the newest.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::spatialHistory))
+        .Between(0, 64, 2);
 
     // --- navigation.strategist --------------------------------------------
     add(Field<ValueType::Bool>("navigation.strategist", "navigation.strategist.enabled",

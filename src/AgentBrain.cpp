@@ -11,6 +11,7 @@
 #include "Trading.h"
 #include "flecs.h"
 
+#include <algorithm>
 #include <any>
 #include <iostream>
 #include <memory>
@@ -744,23 +745,123 @@ std::string AgentBrain::buildWakePrompt(bool firstWake) {
             "your first command?\n"
           : "System: What is your next command?\n";
 
+  // Continuous navigation puts the spatial state in front of every wake
+  // question, because there is no episode to carry it. In the navigator modes
+  // this is empty and the prompt is byte-for-byte what it was before.
+  const std::string spatial = buildSpatialBlock();
+  const std::string context = spatial.empty() ? std::string() : spatial + "\n";
+
   // The digest is shown once, at spawn, so the agent starts with its life goals
   // and any authored long-term frame. Re-sending it on every wake was the token
   // cost this avoids; [TASKS] is how the agent asks for it afterwards. The
   // command list is already in the system prompt, so the digest does not need to
   // teach [SET_TASKS] here any more.
   if (!firstWake) {
-    return question;
+    return context + question;
   }
 
   const TaskList *list = entity.get<TaskList>();
   if (list == nullptr) {
     // No declared intention: byte-for-byte the prompt this agent received before
-    // the task system existed (section 2, invariant 1).
-    return question;
+    // the task system existed (section 2, invariant 1), plus the spatial block
+    // when the inline mode is on.
+    return context + question;
   }
 
-  return RenderTaskDigest(*list, "") + question;
+  return RenderTaskDigest(*list, "") + context + question;
+}
+
+std::string AgentBrain::buildSpatialBlock() {
+  if (Settings().navigation.agent != "inline") {
+    return std::string();
+  }
+  const SpatialMemory *memory = entity.get<SpatialMemory>();
+  const GamePosition *here = entity.get<GamePosition>();
+  if (memory == nullptr || here == nullptr) {
+    return std::string();
+  }
+
+  const GameSettings::NavigationInlineSection &cfg =
+      Settings().navigation.inlineNav;
+  const WalkedGround *ground = entity.get<WalkedGround>();
+
+  std::vector<NavigationPlan::Candidate> candidates;
+  if (cfg.includeActions) {
+    std::unordered_set<std::uint64_t> walked;
+    if (ground != nullptr) walked = ground->cells;
+    candidates = NavigationPlan::BuildCandidates(
+        *memory, *here, cfg.maxCandidates, cfg.maxDirections,
+        Settings().system1.navigation.compassRadius, walked,
+        Settings().regions.modelNearCount, -1,
+        Settings().system1.navigation.examineRadius, true);
+
+    // Capture what was printed, so [GO] resolves the key the agent actually
+    // read rather than re-deriving candidates after the model has taken a few
+    // seconds to answer. Place ids are re-derived as memory grows, so a rebuilt
+    // list can renumber "p17" even though the character never moved.
+    OfferedSteps offered;
+    offered.steps.reserve(candidates.size());
+    for (const NavigationPlan::Candidate &candidate : candidates) {
+      offered.steps.push_back({candidate.key, candidate.label,
+                               candidate.target, candidate.objectId,
+                               candidate.examine});
+    }
+    entity.set<OfferedSteps>(std::move(offered));
+  } else {
+    entity.remove<OfferedSteps>();
+  }
+
+  const KnownPlace *current = PlaceQuery::At(*memory, *here);
+  const bool canFollow = cfg.includeActions && current != nullptr &&
+                         PlaceQuery::IsLinearPlace(*current);
+  // `back` is only true when the last completed [GO] actually ended where the
+  // character is standing now, so a [MOVE_TO] in between offers no retrace
+  // rather than a teleport.
+  const bool canBack = cfg.includeActions && ground != nullptr &&
+                       !ground->lastPath.empty() &&
+                       ground->lastPath.back() == *here;
+
+  const NavigationWatch *watch = entity.get<NavigationWatch>();
+  const Facing *facing = entity.get<Facing>();
+  const Facing facingValue = facing != nullptr ? *facing : Facing{};
+
+  return NavigationStrategist::BuildSpatialBlock(
+      *memory, *here, facingValue, candidates, canFollow, canBack,
+      watch != nullptr ? watch->text : std::string(), cfg.includeActions,
+      cfg.includeMap, cfg.mapRadius);
+}
+
+void AgentBrain::PruneSpatialBlocks() {
+  const int keep = std::max(0, Settings().navigation.inlineNav.spatialHistory);
+  auto ctx = entity.get_mut<NPCContext>();
+  if (!ctx) return;
+
+  const std::string marker = NavigationStrategist::SPATIAL_BLOCK_MARKER;
+  std::vector<std::size_t> blocks;
+  for (std::size_t i = 0; i < ctx->history.size(); ++i) {
+    if (ctx->history[i].content.compare(0, marker.size(), marker) == 0) {
+      blocks.push_back(i);
+    }
+  }
+  // The spawn message is the task digest followed by the first block, so it does
+  // not start with the marker and is never pruned. That is deliberate: the digest
+  // is sent only once, and the agent's life goals would leave the context with
+  // it.
+  if (blocks.size() <= static_cast<std::size_t>(keep)) return;
+
+  // Erase from the end of the drop set so the earlier indices stay valid.
+  const std::size_t drop = blocks.size() - static_cast<std::size_t>(keep);
+  for (std::size_t n = drop; n > 0; --n) {
+    ctx->history.erase(ctx->history.begin() +
+                       static_cast<std::ptrdiff_t>(blocks[n - 1]));
+  }
+
+  // Pruning is the one deliberate exception to "every history write goes
+  // through recordContext": the transcript is append-only, so the blocks stay
+  // in it, and this line is what tells a reader of the transcript that the
+  // model's context no longer matches the page.
+  writeTranscript("[" + TimeUtils::GetClockTimeString() + "] pruned " +
+                  std::to_string(drop) + " old spatial block(s)\n");
 }
 
 void AgentBrain::logTaskTransitions() {
@@ -928,6 +1029,12 @@ void AgentBrain::update(float deltaTime) {
     // it again. The transitions go to the transcript; the agent itself is no
     // longer sent the digest on every wake -- it can ask with [TASKS].
     logTaskTransitions();
+    // The block this wake is about to append replaces the older ones; dropping
+    // them first is what keeps a long walk from carrying every place the
+    // character has ever stood in. A no-op outside the inline mode.
+    if (Settings().navigation.agent == "inline") {
+      PruneSpatialBlocks();
+    }
     auto ctx = entity.get<NPCContext>();
     const bool firstWake = !(ctx && ctx->history.size() > 1);
     // Before the request is set, not after: this is the moment the agent is being

@@ -104,6 +104,19 @@ private:
   // section 2).
   std::string buildWakePrompt(bool firstWake);
 
+  // The spatial block that precedes the wake question when
+  // `navigation.agent = "inline"` (NavigationStrategist::BuildSpatialBlock), or
+  // empty in every other mode. Built fresh at each wake from the character's own
+  // SpatialMemory, exactly like the navigator's state block.
+  std::string buildSpatialBlock();
+
+  // Drops all but the newest `navigation.inline.spatialHistory` spatial blocks
+  // from NPCContext. They arrive on every turn and each one is fully replaced by
+  // the next, so they are the first thing a long session accumulates that it
+  // does not need. Pruning removes only the block; the commands and their
+  // results stay, which is what the agent's account of the walk is built from.
+  void PruneSpatialBlocks();
+
   // Asks the classifier how much the current situation matters to this character's
   // goals, at most once a minute, and logs the previous answer on the main thread.
   void ProbeMemorySalience();
