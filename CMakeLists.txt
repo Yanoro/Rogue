@@ -168,6 +168,7 @@ set(SOURCES
     src/SettingsWindow.cpp
     src/DebugLog.cpp
     src/MapReloader.cpp
+    src/MapDesigner.cpp
     src/DrawAsciiDebug.cpp
     src/DebugWindows.cpp
     src/AgentBrain.cpp

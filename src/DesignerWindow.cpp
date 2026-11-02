@@ -1122,6 +1122,13 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObjectKey = entry.objectKey;
       editedObjectOverlayPath = entry.objectOverlayPath;
       break;
+    case DesignerDomains::Domain::Map:
+      mapDraft = entry.map;
+      mapPreviewValid = false;
+      mapPreviewError.clear();
+      mapPreviewZoom = 0.0f;
+      mapSaveMessage.clear();
+      break;
     case DesignerDomains::Domain::Tile: {
       // By name, not by pointer: the editor writes through a pointer into the registry, so
       // showing a tile means pointing the editor at the registry's current definition of
@@ -1403,6 +1410,28 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         applied.savedPath = entry.savedPath;
       }
     }
+  } else if (designMode == DesignerDomains::Domain::Map) {
+    if (game == nullptr) {
+      reason = "there is no world to validate a map against.";
+    } else {
+      const MapDesigner::ApplyResult result = MapDesigner::ApplyReply(
+          finished.ParsedAnswer(), game->tileRegistry, game->objectFactory);
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        mapDraft = result.draft;
+        mapPreviewValid = false;
+        mapPreviewError.clear();
+        mapPreviewZoom = 0.0f;
+        mapSaveMessage.clear();
+        mapSaveIsError = false;
+      } else {
+        mapPreviewError = result.error;
+      }
+    }
   } else if (designMode == DesignerDomains::Domain::Object) {
     ObjectFactory *objects = Objects();
     if (objects == nullptr) {
@@ -1464,34 +1493,42 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
   // writes through; for an object it is a copy, because ObjectFactory owns its templates
   // by value and a pointer into that map is invalidated by the next runtime add.
   if (applied.ok) {
-    if (designMode == DesignerDomains::Domain::Object) {
-      editedObject = applied.objectDefinition;
-      editedObjectKey = applied.objectKey;
-      editedObjectOverlayPath = applied.objectOverlayPath;
+    if (designMode == DesignerDomains::Domain::Map) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.map = mapDraft;
+      CaptureViewed(std::move(result));
     } else {
-      edited = const_cast<TileDef *>(applied.tileDefinition);
-      editedIsRuntime = true;
-      if (edited != nullptr) {
-        LoadEditorFrom(*edited);
+      if (designMode == DesignerDomains::Domain::Object) {
+        editedObject = applied.objectDefinition;
+        editedObjectKey = applied.objectKey;
+        editedObjectOverlayPath = applied.objectOverlayPath;
+      } else {
+        edited = const_cast<TileDef *>(applied.tileDefinition);
+        editedIsRuntime = true;
+        if (edited != nullptr) {
+          LoadEditorFrom(*edited);
+        }
       }
-    }
 
-    // One entry per accepted reply, not per entry of a set: the panes show one thing -- the
-    // last definition the reply produced -- and an entry per sprite would make the arrows
-    // walk a set while the pane showed the same object six times.
-    ViewedResult result;
-    result.domain = designMode;
-    result.label = applied.wasSet && !applied.setName.empty() ? applied.setName
-                                                             : applied.name;
-    result.tileIsRuntime = true;
-    if (designMode == DesignerDomains::Domain::Object) {
-      result.object = editedObject;
-      result.objectKey = editedObjectKey;
-      result.objectOverlayPath = editedObjectOverlayPath;
-    } else {
-      result.tileName = applied.name;
+      // One entry per accepted reply, not per entry of a set: the panes show one thing -- the
+      // last definition the reply produced -- and an entry per sprite would make the arrows
+      // walk a set while the pane showed the same object six times.
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.wasSet && !applied.setName.empty() ? applied.setName
+                                                               : applied.name;
+      result.tileIsRuntime = true;
+      if (designMode == DesignerDomains::Domain::Object) {
+        result.object = editedObject;
+        result.objectKey = editedObjectKey;
+        result.objectOverlayPath = editedObjectOverlayPath;
+      } else {
+        result.tileName = applied.name;
+      }
+      CaptureViewed(std::move(result));
     }
-    CaptureViewed(std::move(result));
   }
 
   // The conversation both sides saw, so a follow-up can refer to this tile. The
@@ -1556,9 +1593,13 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
     // The names to ask art for: one for a single reply, every accepted entry for a set. The
     // queue batches them and splits at `maxCellsPerRequest`, so a set of ten becomes several
     // requests without this code knowing or caring about the cap.
-    std::vector<std::string> artNames = applied.acceptedNames;
-    if (artNames.empty() && !applied.name.empty()) {
-      artNames.push_back(applied.name);
+    // A map is drawn from its tiles, so there is no sprite to ask the art queue for.
+    std::vector<std::string> artNames;
+    if (DesignerDomains::IsSprite(designMode)) {
+      artNames = applied.acceptedNames;
+      if (artNames.empty() && !applied.name.empty()) {
+        artNames.push_back(applied.name);
+      }
     }
 
     if (game != nullptr && !artNames.empty() && DslArtSourceActive()) {
@@ -2056,6 +2097,88 @@ void DesignerWindow::DrawObjectPreview() {
     ImGui::TextDisabled("written to %s", editedObjectOverlayPath.c_str());
   } else {
     ImGui::TextDisabled("not written to disk -- it exists for this session only");
+  }
+}
+
+void DesignerWindow::DrawMapPreview() {
+  if (!mapDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a map in the prompt and it appears here, drawn with the world's "
+        "own tiles and objects.");
+    ImGui::TextDisabled(
+        "For example: \"a small walled courtyard with a well and two chests\".");
+    if (!mapPreviewError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", mapPreviewError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+
+  const MapDesigner::Draft &draft = *mapDraft;
+  ImGui::TextUnformatted(draft.name.c_str());
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  ImGui::TextDisabled("%d x %d tiles (%d x %d px each) | %d object(s)", draft.width,
+                      draft.height, draft.tileWidth, draft.tileHeight,
+                      draft.objectCount);
+  ImGui::Separator();
+
+  if (!mapPreviewValid) {
+    mapPreviewValid = MapPreview::Parse(draft.document, game->tileRegistry,
+                                        mapPreviewInfo, &mapPreviewError);
+  }
+  if (mapPreviewValid) {
+    if (ImGui::SmallButton("Fit")) {
+      mapPreviewZoom = 0.0f;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("scroll to zoom, drag to pan, double-click to fit");
+    const ImVec2 available = ImGui::GetContentRegionAvail();
+    const float previewHeight = std::max(60.0f, available.y - 90.0f);
+    MapPreview::Draw(mapPreviewInfo, game->resourceManager, &game->objectFactory,
+                     &mapPreviewZoom, available.x, previewHeight);
+  } else {
+    ImGui::TextWrapped("The draft could not be previewed: %s",
+                       mapPreviewError.c_str());
+  }
+
+  ImGui::Separator();
+  // Saving is a separate step on purpose: a reply is a design, and a design that
+  // writes a file on arrival leaves one file per attempt.
+  ImGui::BeginDisabled(draft.name.empty() || game->mapReloader == nullptr);
+  if (ImGui::Button("Save to maps/")) {
+    std::string savedPath;
+    std::string error;
+    const std::string directory =
+        game->mapReloader != nullptr ? game->mapReloader->GetDirectory() : "";
+    if (MapDesigner::Save(draft, directory, &savedPath, &error)) {
+      mapSaveMessage = "Saved " + savedPath;
+      mapSaveIsError = false;
+      game->mapReloader->RefreshMapList();
+      if (game->debugLog) {
+        game->debugLog->LogInfo("Map designer: saved " + savedPath);
+      }
+    } else {
+      mapSaveMessage = error;
+      mapSaveIsError = true;
+    }
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::TextDisabled("refuses to overwrite an existing map");
+  if (!mapSaveMessage.empty()) {
+    if (mapSaveIsError) {
+      ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f), "%s",
+                         mapSaveMessage.c_str());
+    } else {
+      ImGui::TextDisabled("%s", mapSaveMessage.c_str());
+    }
+  }
+  for (const std::string &warning : draft.warnings) {
+    ImGui::TextDisabled("! %s", warning.c_str());
   }
 }
 
@@ -3651,6 +3774,8 @@ void DesignerWindow::Draw() {
     DrawBlueprintPreview();
   } else if (shown == DesignerDomains::Domain::Object) {
     DrawObjectPreview();
+  } else if (shown == DesignerDomains::Domain::Map) {
+    DrawMapPreview();
   } else {
     DrawPreviewPane();
   }

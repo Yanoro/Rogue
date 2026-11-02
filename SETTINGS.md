@@ -519,6 +519,16 @@ The player entity and its starting tile.
 
 ---
 
+## `combat`
+
+Aimed skills: indicator-first or instant at the cursor.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `instantSkillshots` | bool | `false` | Fire aimed skills at the cursor immediately instead of showing their aim indicator first. |
+
+---
+
 ## `world`
 
 World generation.
@@ -546,12 +556,14 @@ Where each content registry loads its definitions from.
 | `brains` | string | `data/brains` | Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent. *Restart to apply.* |
 | `portraits` | string | `data/portraits` | Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id. *Restart to apply.* |
 | `projectiles` | string | `data/projectiles` | Projectile registry directory: one JSON per flying object, with its sprite, speed and size. *Restart to apply.* |
+| `skillshots` | string | `data/skillshots` | Skillshot registry directory: one JSON per aimed delivery, with its sprite, path, speed, width and length. *Restart to apply.* |
 | `places` | string | `data/places.json` | The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule. *Restart to apply.* |
 | `tiles` | string | `data/tiles` | The hand-authored tile catalog directory. Agent-created tiles go to generatedTiles instead. *Restart to apply.* |
 | `generatedTiles` | string | `data/generated/tiles` | Generated overlay for agent-created tiles, loaded additively on top of the catalog. *Restart to apply.* |
 | `editor` | string | `data/editor` | Where the Content Editor saves its overrides (tiles/ and objects/ beneath it). Loaded last, so an edit wins over the catalog and the generated overlay; the hand-authored files are never rewritten. *Restart to apply.* |
 | `tilePromptFile` | string | `data/tiles/TILEDESIGNER.md` | The tile designer's instructions. Empty falls back to the generated vocabulary alone. *Restart to apply.* |
 | `objectPromptFile` | string | `data/objects/OBJECTDESIGNER.md` | The object designer's instructions. *Restart to apply.* |
+| `mapPromptFile` | string | `maps/MAPDESIGNER.md` | The map designer's instructions: the compact legend-and-rows reply format and the rules a reply is validated by. *Restart to apply.* |
 | `generatedObjects` | string | `data/generated/objects` | Generated overlay for agent-created objects. Empty means an accepted object lives for this run only. *Restart to apply.* |
 | `spriteContractFile` | string | `data/prompts/SPRITE_CONTRACT.md` | The reply contract every kind's prompt is built from: format, refusal protocol and prohibitions. *Restart to apply.* |
 | `spriteDSLPromptFile` | string | `data/style/SPRITEDESIGNER.md` | The system prompt for the turn that writes a pixel document for an accepted definition. *Restart to apply.* |

@@ -40,6 +40,17 @@ const std::vector<Descriptor> &All() {
           &SpriteKinds::For(SpriteKinds::Kind::Object),
       },
       {
+          // A map. No sprite row: a map is drawn from its tiles, which is why its
+          // design chooses them instead of competing with them.
+          Domain::Map,
+          "map",
+          "Map",
+          "a map",
+          "maps/MAPDESIGNER.md",
+          "content.mapPromptFile",
+          nullptr,
+      },
+      {
           Domain::ActorSprite,
           "actor_sprite",
           "Actor sprite",

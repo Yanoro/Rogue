@@ -25,6 +25,10 @@ enum class Domain {
   Blueprint,
   Tile,
   Object,
+  // A whole map: a legend plus ASCII rows, expanded into the map document. It has no
+  // sprite and no overlay, and its artifact is a file in maps/ rather than a
+  // definition, so it sits beside a building rather than beside a tile.
+  Map,
   // A being's sprite, with no definition turn behind it. The actor already exists (or will
   // be authored by hand); this mode exists so "draw me a baker" produces baker.png rather
   // than a JSON document. It has no sprite descriptor row and no overlay because it is not

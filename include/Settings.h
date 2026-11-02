@@ -702,6 +702,10 @@ struct GameSettings {
     // it is substituted from `spriteContractFile` below, so the two kinds cannot
     // drift about how a reply is shaped.
     std::string objectPromptFile = "data/objects/OBJECTDESIGNER.md";
+    // The map designer's instructions: the compact legend-and-rows reply format and
+    // the rules MapDesigner validates. Empty stops the domain from being useful, which
+    // its pane says rather than sending an empty prompt.
+    std::string mapPromptFile = "maps/MAPDESIGNER.md";
     // The generated overlay for agent-created objects, the object counterpart of
     // `generatedTiles` above and a sibling of data/objects for the same reason:
     // ObjectFactory::LoadTemplates reads one directory and is not recursive. Empty

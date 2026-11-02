@@ -1269,6 +1269,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "The object designer's instructions.", &GameSettings::content, &ContentSection::objectPromptFile))
         .Alias("content.objectDesignerPromptFile")
         .Restart();
+    add(Field<ValueType::String>("content", "content.mapPromptFile",
+            "The map designer's instructions: the compact legend-and-rows reply format and the rules a reply is validated by.", &GameSettings::content, &ContentSection::mapPromptFile))
+        .Restart();
     add(Field<ValueType::String>("content", "content.generatedObjects",
             "Generated overlay for agent-created objects. Empty means an accepted object lives for this run only.", &GameSettings::content, &ContentSection::generatedObjects))
         .Restart();

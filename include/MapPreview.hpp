@@ -134,27 +134,12 @@ inline TileDef ResolveEntry(const nlohmann::json &entry, const TileRegistry &til
   return definition;
 }
 
-// Reads the file. False (with a reason in `error`) for a missing file, malformed
-// JSON or missing dimensions; the caller shows the reason instead of a preview.
-inline bool Load(const std::string &path, const TileRegistry &tiles, Info &out,
-                 std::string *error) {
+// Reads an in-memory document, for a map that is not on disk yet (the Designer's
+// draft). False (with a reason in `error`) for a malformed document or missing
+// dimensions; the caller shows the reason instead of a preview.
+inline bool Parse(const nlohmann::json &json, const TileRegistry &tiles, Info &out,
+                  std::string *error) {
   out = Info{};
-  out.path = path;
-
-  std::ifstream file(path);
-  if (!file.is_open()) {
-    if (error != nullptr) *error = "Could not open " + path;
-    return false;
-  }
-  nlohmann::json json;
-  try {
-    file >> json;
-  } catch (const std::exception &parseError) {
-    if (error != nullptr) {
-      *error = std::string("Not valid JSON: ") + parseError.what();
-    }
-    return false;
-  }
   if (!json.is_object()) {
     if (error != nullptr) *error = "The file is not a JSON object";
     return false;
@@ -169,10 +154,7 @@ inline bool Load(const std::string &path, const TileRegistry &tiles, Info &out,
     return false;
   }
 
-  const std::string stem =
-      std::filesystem::path(path).stem().string();
   out.name = json.value("name", std::string());
-  if (out.name.empty()) out.name = stem;
   out.description = json.value("description", std::string());
 
   // "tilePalette" is the current spelling; "tileInfo" is the older positional one.
@@ -234,6 +216,39 @@ inline bool Load(const std::string &path, const TileRegistry &tiles, Info &out,
   }
 
   out.valid = true;
+  return true;
+}
+
+// Reads a file. The path is remembered for the info panel and the file stem is the
+// fallback name when the map authors none.
+inline bool Load(const std::string &path, const TileRegistry &tiles, Info &out,
+                 std::string *error) {
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    out = Info{};
+    out.path = path;
+    if (error != nullptr) *error = "Could not open " + path;
+    return false;
+  }
+  nlohmann::json json;
+  try {
+    file >> json;
+  } catch (const std::exception &parseError) {
+    out = Info{};
+    out.path = path;
+    if (error != nullptr) {
+      *error = std::string("Not valid JSON: ") + parseError.what();
+    }
+    return false;
+  }
+  if (!Parse(json, tiles, out, error)) {
+    out.path = path;
+    return false;
+  }
+  out.path = path;
+  if (out.name.empty()) {
+    out.name = std::filesystem::path(path).stem().string();
+  }
   return true;
 }
 

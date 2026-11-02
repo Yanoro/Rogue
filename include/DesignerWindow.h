@@ -24,6 +24,8 @@
 #include "TileDesigner.hpp"
 #include "ObjectDesigner.hpp"
 #include "DesignerDomains.h"
+#include "MapDesigner.hpp"
+#include "MapPreview.hpp"
 #include "SpriteKinds.hpp"
 #include "SpriteRouter.hpp"
 #include "TileRegistry.h"
@@ -338,6 +340,10 @@ private:
     std::string objectKey;
     std::string objectOverlayPath;
 
+    // Map: the expanded document, because a map is not a small definition and the
+    // pane draws it whole. It is the only artifact that is its own file.
+    std::optional<MapDesigner::Draft> map;
+
     // Tile: by name, because the editor writes *through* a pointer into the registry.
     // The entry is therefore the asset's identity rather than a snapshot: re-accepting
     // "stone floor" updates this view too, which is the right answer for a name that
@@ -356,6 +362,16 @@ private:
   // A refused attempt, drawn only while it is the newest thing and only for a building
   // (the sprite panes have never shown refusals in the left pane; the transcript has them).
   std::optional<ViewedResult> refusedAttempt;
+
+  // The map the pane is showing, and the parsed preview of it. Parsed from the draft
+  // rather than from a file, and cached because a map is 4096 cells.
+  std::optional<MapDesigner::Draft> mapDraft;
+  bool mapPreviewValid = false;
+  MapPreview::Info mapPreviewInfo;
+  std::string mapPreviewError;
+  float mapPreviewZoom = 0.0f;
+  std::string mapSaveMessage;
+  bool mapSaveIsError = false;
 
   // Appends an accepted result and selects it, dropping the oldest past the cap.
   void CaptureViewed(ViewedResult result);
@@ -441,6 +457,9 @@ private:
   // The object half of the preview: read-only, because an object has more shape than a
   // tile and an editor for it is a larger surface than this phase needs to claim.
   void DrawObjectPreview();
+  // The map domain's pane: the draft drawn with the map reload window's own preview
+  // (drag, zoom, objects), and the one control that turns it into a file.
+  void DrawMapPreview();
 
   // Convenience: the object factory, or null when there is no game.
   class ObjectFactory *Objects() const;
