@@ -127,6 +127,9 @@ struct FieldSpec {
   // Marks a reference into ActorSpriteRegistry, so the window draws the sprite
   // picker instead of a text field.
   FieldSpec &ActorSpriteSource();
+  // Marks a reference into RigRegistry, so the window draws a composed-rig picker
+  // instead of a text field.
+  FieldSpec &RigSource();
   FieldSpec &Default(std::string value);
   FieldSpec &Alias(const char *spelling);
   FieldSpec &Lower();

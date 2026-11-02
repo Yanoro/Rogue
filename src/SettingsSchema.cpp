@@ -234,6 +234,11 @@ FieldSpec &FieldSpec::ActorSpriteSource() {
   return *this;
 }
 
+FieldSpec &FieldSpec::RigSource() {
+  enumSource = "actorRigs";
+  return *this;
+}
+
 FieldSpec &FieldSpec::Default(std::string value) {
   stringDefault = std::move(value);
   return *this;
@@ -461,7 +466,9 @@ std::string TypeDescription(const FieldSpec &field) {
   case ValueType::EnumString:
     if (!field.enumSource.empty()) {
       // Values come from a registry at draw time, not from the table.
-      text = field.enumSource == "actorSprites" ? "actor sprite" : "profile";
+      text = field.enumSource == "actorSprites"   ? "actor sprite"
+             : field.enumSource == "actorRigs"    ? "actor rig"
+                                                  : "profile";
       break;
     }
     text = "string";
@@ -1192,9 +1199,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::EnumString>("player", "player.actorSprite",
             "Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art.", &GameSettings::player, &PlayerSection::actorSprite))
         .ActorSpriteSource();
-    add(Field<ValueType::String>("player", "player.rig",
+    add(Field<ValueType::EnumString>("player", "player.rig",
             "Actor rig the player is drawn with instead of a single sprite. Layered, so equipped items are drawn over the body and the rig's clips play as the player moves.", &GameSettings::player, &PlayerSection::rig))
-        .Restart();
+        .RigSource();
     add(Field<ValueType::Float>("player", "player.maxSpeed",
             "Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this.", &GameSettings::player, &PlayerSection::maxSpeed))
         .Min(0.0, DEFAULT_MAXSPEED);

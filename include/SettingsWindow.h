@@ -40,6 +40,9 @@ private:
   // The player's actor sprite: a filter and a compact thumbnail grid drawn in
   // the row itself, so choosing a look does not open a second window.
   void DrawPlayerActorSpriteRow(const SettingsSchema::FieldSpec &field);
+  void DrawPlayerRigRow(const SettingsSchema::FieldSpec &field);
+  void SelectPlayerRig(const SettingsSchema::FieldSpec &field,
+                       const std::string &id);
   void SelectActorSprite(const SettingsSchema::FieldSpec &field,
                          const std::string &id);
   // Re-applies the player settings that land in components after a reload or
@@ -69,6 +72,7 @@ private:
   // The actor-sprite picker's filter. Session state: a filter that persisted
   // would hide sprites the next time the window opened.
   std::string actorSpriteFilter;
+  std::string rigFilter;
   bool showActorSpritesWithoutArt = false;
   std::string status;
   bool statusOk = true;

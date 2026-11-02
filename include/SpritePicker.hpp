@@ -33,6 +33,10 @@ struct Item {
   // Shown in the cell when there is no texture. "?" reads as missing art; "race" as a
   // deliberate default.
   std::string placeholder = "?";
+  // Optional custom cell content, for a thumbnail that is a composition rather than one
+  // texture (a layered rig). When set it draws instead of `texture`/`placeholder`; the
+  // picker still owns the cell's hitbox, hover and selection border.
+  std::function<void(const ImVec2 &topLeft, float cell)> draw;
 };
 
 struct Options {
@@ -72,7 +76,9 @@ inline int Draw(const std::vector<Item> &items, const Options &options) {
     const ImVec2 bottomRight(corner.x + options.cell, corner.y + options.cell);
     draw->AddRectFilled(corner, bottomRight, IM_COL32(26, 26, 30, 255));
 
-    if (item.texture != nullptr) {
+    if (item.draw) {
+      item.draw(corner, options.cell);
+    } else if (item.texture != nullptr) {
       const SpriteRect fit =
           SpriteFitRect(*item.texture, corner.x, corner.y, options.cell, options.cell);
       draw->AddImage(

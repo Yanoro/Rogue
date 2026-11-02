@@ -153,11 +153,11 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
 // Draws the composed rig into a square at the current cursor and reserves the space.
 // `box` is the side in pixels; the 32x32 rig is scaled up with point sampling, because
 // that is what the world will do.
-inline void Draw(const ActorRig& rig, ResourceManager& resources,
-                 const std::vector<WornLayer>& worn, float box,
-                 const AnimationState* animation = nullptr) {
-  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
-  ImGui::Dummy(ImVec2(box, box));
+// Draws into an already-reserved square. The picker needs this: it owns the cell's
+// hitbox, so the rig must not reserve space of its own inside it.
+inline void DrawInto(const ActorRig& rig, ResourceManager& resources,
+                     const std::vector<WornLayer>& worn, const ImVec2 &topLeft,
+                     float box, const AnimationState* animation = nullptr) {
   const ImVec2 bottomRight(topLeft.x + box, topLeft.y + box);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(topLeft, bottomRight, IM_COL32(26, 26, 30, 255));
@@ -173,6 +173,14 @@ inline void Draw(const ActorRig& rig, ResourceManager& resources,
         ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
   }
   draw->AddRect(topLeft, bottomRight, IM_COL32(90, 90, 96, 255));
+}
+
+inline void Draw(const ActorRig& rig, ResourceManager& resources,
+                 const std::vector<WornLayer>& worn, float box,
+                 const AnimationState* animation = nullptr) {
+  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+  ImGui::Dummy(ImVec2(box, box));
+  DrawInto(rig, resources, worn, topLeft, box, animation);
 }
 
 // Draws the composed rig into a world-space rectangle, in the same order and with the same

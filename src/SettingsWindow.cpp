@@ -1,5 +1,7 @@
 #include "SettingsWindow.h"
 
+#include "RigRender.hpp"
+
 #include "Components.h"
 #include "Game.h"
 #include "Settings.h"
@@ -382,6 +384,11 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
 
   if (field.path == "player.actorSprite") {
     DrawPlayerActorSpriteRow(field);
+    return;
+  }
+
+  if (field.path == "player.rig") {
+    DrawPlayerRigRow(field);
     return;
   }
 
@@ -1047,7 +1054,102 @@ void SettingsWindow::DrawAIProfileField(
 void SettingsWindow::RefreshPlayerSettings() {
   std::string message;
   game->ApplyPlayerActorSprite(Settings().player.actorSprite, message);
+  game->ApplyPlayerRig(Settings().player.rig, message);
   game->ApplyPlayerMaxSpeed(Settings().player.maxSpeed, message);
+}
+
+void SettingsWindow::SelectPlayerRig(
+    const SettingsSchema::FieldSpec &field, const std::string &id) {
+  std::string applied;
+  if (!game->ApplyPlayerRig(id, applied)) {
+    Report(false, applied);
+    return;
+  }
+  std::string message;
+  const bool saved = ApplySettingValue(SettingsFilePath(), field.path, id, message);
+  if (!applied.empty()) {
+    message += (message.empty() ? "" : " ") + applied;
+  }
+  Report(saved, message);
+  overrideCacheDirty = true;
+}
+
+void SettingsWindow::DrawPlayerRigRow(
+    const SettingsSchema::FieldSpec &field) {
+  GameSettings &settings = MutableSettings();
+  const std::string current =
+      *static_cast<std::string *>(field.access(settings));
+
+  ImGui::PushID(field.path.c_str());
+  ImGui::TextUnformatted(field.Label().c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
+  }
+  ImGui::SameLine(240.0f);
+  ImGui::SetNextItemWidth(190.0f);
+  ImGui::InputTextWithHint("##filter", "filter rigs", &rigFilter);
+  ImGui::SameLine();
+  ImGui::TextDisabled("%s",
+                      current.empty() ? "(actor sprite / race look)" : current.c_str());
+
+  std::vector<SpritePicker::Item> items;
+  std::vector<std::string> keys;
+  const auto addCell = [&](const std::string &key, const std::string &label,
+                           const std::string &description,
+                           const std::string &placeholder,
+                           std::function<void(const ImVec2 &, float)> draw) {
+    SpritePicker::Item item;
+    item.label = label;
+    item.description = description;
+    item.placeholder = placeholder;
+    item.draw = std::move(draw);
+    item.selected = (current == key);
+    items.push_back(std::move(item));
+    keys.push_back(key);
+  };
+
+  addCell(std::string(), "Actor sprite / race look",
+          "No rig: the player is drawn with its actor sprite, or the race's look.",
+          "none", {});
+
+  const std::string needle = Lower(rigFilter);
+  const auto matches = [&needle](const std::string &id, const std::string &name,
+                                 const std::string &description) {
+    if (needle.empty()) return true;
+    return Lower(id).find(needle) != std::string::npos ||
+           Lower(name).find(needle) != std::string::npos ||
+           Lower(description).find(needle) != std::string::npos;
+  };
+
+  int shown = 0;
+  for (const ActorRig *rig : game->rigRegistry.GetAll()) {
+    const std::string name = rig->name.empty() ? rig->id : rig->name;
+    if (!matches(rig->id, name, rig->description)) continue;
+    addCell(rig->id, name,
+            rig->id + (rig->description.empty() ? "" : "\n" + rig->description),
+            "?", [this, rig](const ImVec2 &topLeft, float cell) {
+              RigRender::DrawInto(*rig, game->resourceManager, {}, topLeft, cell);
+            });
+    ++shown;
+  }
+
+  SpritePicker::Options options;
+  options.cell = 52.0f;
+  options.rows = 3;
+  options.childId = "##player-rigs";
+  const int clicked = SpritePicker::Draw(items, options);
+  if (clicked >= 0) {
+    SelectPlayerRig(field, keys[clicked]);
+  }
+
+  if (shown == 0) {
+    if (game->rigRegistry.Count() == 0) {
+      ImGui::TextDisabled("No actor rigs are registered (data/rigs).");
+    } else {
+      ImGui::TextDisabled("No actor rigs match.");
+    }
+  }
+  ImGui::PopID();
 }
 
 void SettingsWindow::SelectActorSprite(

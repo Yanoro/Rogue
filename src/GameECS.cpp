@@ -328,6 +328,28 @@ bool Game::ApplyPlayerMaxSpeed(float maxSpeed, std::string &message) {
   return true;
 }
 
+bool Game::ApplyPlayerRig(const std::string &rigId, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  if (rigId.empty()) {
+    playerEntity.remove<RigBody>();
+    playerEntity.remove<RigAnim>();
+    message = "Player uses the actor sprite or the race's look.";
+    return true;
+  }
+  if (rigRegistry.Get(rigId) == nullptr) {
+    message = "No actor rig is named '" + rigId + "'.";
+    return false;
+  }
+  playerEntity.set<RigBody>({rigId});
+  playerEntity.set<RigAnim>({});
+  message = "Player now uses the '" + rigId + "' rig.";
+  return true;
+}
+
 bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
   message.clear();
   if (!playerEntity.is_alive()) {

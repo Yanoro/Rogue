@@ -190,6 +190,10 @@ public:
   // reports rather than only logging. Empty id removes the sprite.
   bool ApplyPlayerActorSprite(const std::string &id, std::string &message);
 
+  // Puts a rig on the player, or clears it back to the actor sprite / race look. Used by
+  // the spawn path and by the Settings window's rig picker; empty id removes it.
+  bool ApplyPlayerRig(const std::string &rigId, std::string &message);
+
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
   bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
