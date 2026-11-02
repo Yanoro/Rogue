@@ -597,6 +597,7 @@ void ContentEditorWindow::RefreshSelectedAsset() {
 }
 
 void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
+                                          const std::string &requestName,
                                           SpriteKinds::Kind spriteKind,
                                           const std::string &explicitSprite,
                                           bool builtInFallback,
@@ -669,13 +670,14 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       // invent them). Opening the window is not decoration: its Draw is what pumps the
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(entryId, spriteKind);
+      game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
+                                            /*redesign=*/true);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
     } else {
       std::string reason;
-      if (game->RecompileSpriteArt(spriteKind, entryId, &reason)) {
+      if (game->RecompileSpriteArt(spriteKind, requestName, &reason)) {
         status = "sprite generation queued; it lands when the queue finishes";
         statusIsError = false;
       } else {
@@ -780,7 +782,7 @@ void ContentEditorWindow::DrawSpritePane() {
           ? document["sprite"].get<std::string>()
           : std::string();
 
-  DrawSpriteAsset(convention, SpriteKindOf(*kind), explicitSprite,
+  DrawSpriteAsset(convention, entryId, SpriteKindOf(*kind), explicitSprite,
                   /*builtInFallback=*/false, std::string());
 }
 
@@ -846,8 +848,8 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     wornRequirement += "It hides the rig part(s): " + hides + ". ";
   }
   wornRequirement += RigDesigner::FrameContract();
-  DrawSpriteAsset(item->wornSprite, SpriteKinds::Kind::Actor, std::string(),
-                  /*builtInFallback=*/true, wornRequirement);
+  DrawSpriteAsset(item->wornSprite, item->wornSprite, SpriteKinds::Kind::Actor,
+                  std::string(), /*builtInFallback=*/true, wornRequirement);
 
   const auto rigs = game->rigRegistry.GetAll();
   if (rigs.empty()) {
