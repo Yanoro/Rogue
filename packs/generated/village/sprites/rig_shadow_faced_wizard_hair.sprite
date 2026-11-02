@@ -1,0 +1,51 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #2a2d34
+  mid = #7c828d
+  light = #b9c0c7
+  bright = #e2e6ea
+}
+
+// Top hair cap covering the skull
+rect (12,2) (20,3) color=dark
+rect (11,3) (21,5) color=mid
+rect (12,3) (19,4) color=light
+line (13,3) (18,3) color=bright
+
+// Left hair strands framing the face down towards the collar
+rect (10,4) (11,8) color=mid
+pixel (10,3) color=dark
+pixel (10,4) color=dark
+pixel (10,5) color=dark
+pixel (10,6) color=dark
+pixel (10,7) color=dark
+pixel (10,8) color=dark
+pixel (11,5) color=light
+pixel (11,6) color=bright
+pixel (11,7) color=light
+pixel (10,9) color=mid
+pixel (10,10) color=dark
+
+// Right hair strands framing the face
+rect (21,4) (22,8) color=mid
+pixel (22,3) color=dark
+pixel (22,4) color=dark
+pixel (22,5) color=dark
+pixel (22,6) color=dark
+pixel (22,7) color=dark
+pixel (22,8) color=dark
+pixel (21,5) color=light
+pixel (21,6) color=light
+pixel (22,9) color=mid
+pixel (22,10) color=dark
+
+// Forehead strands/fringe dipping down over the face void
+pixel (13,6) color=dark
+pixel (14,6) color=mid
+pixel (17,6) color=light
+pixel (18,6) color=dark
+pixel (15,5) color=mid
+pixel (16,5) color=light

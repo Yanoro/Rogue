@@ -1,0 +1,73 @@
+sprite 32x32
+kind object
+material iron
+
+// --- Silhouette & Base Body ---
+// Dark outline / shadow base for body
+rect (9,4) (22,29) color=ink.base
+rect (6,11) (25,24) color=ink.base
+
+// Head & Hair/Beard
+rect (12,5) (19,12) color=sand.3
+rect (11,4) (20,7) color=soil.1
+rect (11,8) (20,13) color=soil.0
+// Face opening
+rect (13,7) (18,9) color=sand.3
+pixel (14,8) color=ink.base
+pixel (17,8) color=ink.base
+
+// Torso / Undershirt
+rect (10,12) (21,17) color=sand.1
+
+// Leather Apron
+rect (11,14) (20,25) color=soil.2
+rect (12,13) (19,14) color=soil.1
+rect (11,19) (20,20) color=soil.0
+// Apron bib and straps
+line (12,13) (14,16) color=soil.0
+line (19,13) (17,16) color=soil.0
+// Apron highlight / wear
+rect (12,16) (18,23) color=soil.3
+scatter color=soil.1,soil.4 density=0.15 seed=42 cluster=1 inside
+
+// Trousers & Heavy Boots
+rect (11,25) (14,28) color=iron.1
+rect (17,25) (20,28) color=iron.1
+rect (10,28) (14,30) color=iron.0
+rect (17,28) (21,30) color=iron.0
+
+// Bare Arms & Hands
+// Left arm (viewer's left)
+rect (7,12) (10,21) color=sand.2
+pixel (8,12) color=sand.3
+// Sparks / scarring on forearms
+pixel (8,16) color=soil.0
+pixel (9,18) color=soil.1
+pixel (8,19) color=soil.0
+rect (7,21) (10,23) color=sand.2
+
+// Right arm (viewer's right, raised holding hammer)
+rect (21,12) (24,20) color=sand.2
+pixel (23,12) color=sand.3
+pixel (22,16) color=soil.0
+pixel (23,17) color=soil.1
+pixel (22,18) color=soil.0
+rect (21,19) (24,22) color=sand.2
+
+// Smith's Hammer (Right hand)
+// Handle
+line (23,14) (23,26) color=wood.1
+line (24,14) (24,26) color=wood.0
+// Hammer head
+rect (21,10) (26,13) color=iron.2
+rect (22,11) (25,12) color=iron.3
+line (21,10) (26,10) color=iron.4
+line (21,13) (26,13) color=iron.0
+
+// Tongs hanging from apron belt (left side)
+line (10,19) (10,24) color=iron.2
+line (11,20) (11,23) color=iron.1
+
+// Outline refinement & depth
+line (12,12) (19,12) color=ink.base
+line (11,25) (20,25) color=ink.base

@@ -1,0 +1,48 @@
+sprite 32x32
+kind object
+material iron
+
+// Pommel
+rect (22,23) (24,24) color=ink.base
+pixel (23,23) color=iron.2
+pixel (23,24) color=iron.1
+
+// Wrapped grip (held in hand around y=18..22)
+rect (22,18) (24,22) color=ink.base
+line (23,18) (23,22) color=wood.1
+pixel (23,19) color=wood.3
+pixel (23,21) color=wood.2
+
+// Crossguard
+rect (20,16) (26,17) color=ink.base
+line (21,16) (25,16) color=iron.3
+line (21,17) (25,17) color=iron.1
+pixel (20,16) color=iron.2
+pixel (26,17) color=iron.0
+
+// Iron Blade (pointing upward, rows 4 to 15)
+// Blade outline
+line (22,5) (22,15) color=ink.base
+line (24,5) (24,15) color=ink.base
+pixel (23,3) color=ink.base
+pixel (22,4) color=ink.base
+pixel (24,4) color=ink.base
+
+// Blade tip & body fill
+pixel (23,4) color=iron.4
+// Left lit edge
+line (23,5) (23,15) color=iron.3
+
+// Worn edges and bevel variation
+line (22,6) (22,14) color=iron.4
+line (24,6) (24,15) color=iron.1
+pixel (23,5) color=iron.4
+pixel (23,7) color=iron.2
+pixel (23,9) color=iron.1
+pixel (23,11) color=iron.2
+pixel (23,13) color=iron.1
+
+// Weathering / notches on blade edge
+pixel (22,9) color=ink.base
+pixel (24,12) color=ink.base
+pixel (23,10) color=iron.0

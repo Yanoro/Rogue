@@ -1,0 +1,75 @@
+sprite 32x32
+kind object
+material iron
+
+// Silhouette of the skull helm
+polygon (13,1) (18,1) (22,3) (23,6) (23,10) (21,13) (18,14) (13,14) (10,13) (8,10) (8,6) (9,3) color=ink.base
+
+// Main metal dome & faceplate base
+polygon (14,2) (17,2) (21,4) (22,6) (22,9) (20,12) (18,13) (13,13) (11,12) (9,9) (9,6) (10,4) color=iron.2
+
+// Volume and shading: top and left highlight
+line (13,2) (18,2) color=iron.3
+line (12,3) (15,3) color=iron.4
+pixel (13,3) color=iron.4
+line (10,5) (10,8) color=iron.3
+line (11,4) (11,8) color=iron.3
+
+// Shadow on lower face and right side
+line (21,6) (21,10) color=iron.1
+line (20,10) (20,12) color=iron.1
+rect (12,12) (19,13) color=iron.1
+
+// Brow ridge
+line (11,6) (20,6) color=iron.3
+line (11,7) (20,7) color=iron.1
+
+// Deep sunken eye slits (narrow menacing skull sockets)
+rect (11,8) (14,8) color=ink.base
+rect (17,8) (20,8) color=ink.base
+pixel (12,7) color=ink.base
+pixel (19,7) color=ink.base
+
+// Nasal triangular hollow
+pixel (15,9) color=ink.base
+pixel (16,9) color=ink.base
+pixel (15,10) color=iron.0
+pixel (16,10) color=ink.base
+
+// Skull cheekbone contours
+pixel (10,9) color=iron.3
+pixel (21,9) color=iron.0
+pixel (10,10) color=iron.2
+pixel (21,10) color=iron.0
+
+// Teeth / chiseled jaw grating slits
+line (12,12) (19,12) color=iron.0
+pixel (13,11) color=ink.base
+pixel (15,11) color=ink.base
+pixel (16,11) color=ink.base
+pixel (18,11) color=ink.base
+pixel (14,11) color=iron.2
+pixel (17,11) color=iron.2
+pixel (13,12) color=ink.base
+pixel (15,12) color=ink.base
+pixel (16,12) color=ink.base
+pixel (18,12) color=ink.base
+
+// Weathered coronal & sagittal skull seams
+line (15,2) (15,5) color=iron.1
+pixel (16,3) color=iron.0
+line (12,4) (18,4) color=iron.1
+
+// Rust & pitting at seams and edges
+pixel (15,2) color=soil.2
+pixel (14,3) color=soil.1
+pixel (16,4) color=soil.2
+pixel (10,7) color=soil.1
+pixel (21,7) color=soil.2
+pixel (12,13) color=soil.1
+pixel (17,13) color=soil.2
+pixel (19,12) color=soil.1
+
+// Pitted metallic texture across the plate
+scatter color=iron.0,iron.1 density=0.15 seed=402 cluster=1 inside
+scatter color=soil.1 density=0.06 seed=811 cluster=1 inside

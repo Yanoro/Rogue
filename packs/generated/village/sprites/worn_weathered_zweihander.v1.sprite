@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+material iron
+
+// Pommel & Grip (held in right hand around y=19..25)
+rect (23,28) (24,29) color=ink.base
+pixel (23,28) color=iron.2
+pixel (24,29) color=iron.0
+
+rect (23,20) (24,27) color=wood.0
+line (23,21) (24,20) color=wood.1
+line (23,23) (24,22) color=wood.1
+line (23,25) (24,24) color=wood.1
+line (23,27) (24,26) color=wood.1
+line (22,20) (22,27) color=ink.base
+line (25,20) (25,27) color=ink.base
+
+// Crossguard (straight iron bar at y=18..19)
+rect (20,18) (27,19) color=iron.1
+line (19,18) (19,19) color=ink.base
+line (28,18) (28,19) color=ink.base
+line (20,17) (27,17) color=ink.base
+line (20,20) (27,20) color=ink.base
+line (20,18) (27,18) color=iron.3
+pixel (20,18) color=iron.4
+pixel (27,19) color=iron.0
+
+// Ricasso (unsharpened lower blade section y=14..17)
+rect (22,14) (25,17) color=ink.base
+rect (23,14) (24,17) color=iron.1
+
+// Flukes / parrying hooks (Parierhaken at y=13..14)
+pixel (21,14) color=iron.2
+pixel (26,14) color=iron.1
+pixel (21,13) color=ink.base
+pixel (26,13) color=ink.base
+pixel (20,14) color=ink.base
+pixel (27,14) color=ink.base
+
+// Main Blade (y=2..13, centered on x=23..24)
+// Outline
+line (22,4) (22,13) color=ink.base
+line (25,4) (25,13) color=ink.base
+pixel (23,2) color=ink.base
+pixel (24,2) color=ink.base
+pixel (22,3) color=ink.base
+pixel (25,3) color=ink.base
+
+// Blade body: lit left edge, dark center/fuller, shadowed right edge
+line (23,3) (23,13) color=iron.3
+line (24,3) (24,13) color=iron.1
+
+// Weathering, nicks, and fuller detail
+pixel (23,3) color=iron.4
+pixel (23,6) color=iron.4
+pixel (23,10) color=iron.4
+pixel (23,7) color=iron.1
+pixel (24,8) color=ink.base
+pixel (24,11) color=iron.0
+pixel (24,5) color=iron.2

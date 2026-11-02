@@ -1,0 +1,66 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  tsuba = #c89b3c
+  tsuba_dark = #835f1b
+  blood_glow = #a81c24
+  blood_bright = #de343b
+  cord = #1e1d21
+  cord_dark = #100f12
+}
+
+// Tsuka (hilt) gripped in right hand region (approx x: 23-25, y: 19-25)
+line (24,20) (25,25) color=ink.base
+line (23,20) (24,25) color=cord
+pixel (24,21) color=cord_dark
+pixel (24,23) color=cord_dark
+pixel (25,25) color=iron.1
+pixel (24,25) color=iron.2
+
+// Tsuba (guard) seated above the grip around y: 18-19
+rect (21,18) (24,19) color=tsuba_dark
+pixel (22,18) color=tsuba
+pixel (23,18) color=tsuba
+pixel (21,19) color=ink.base
+pixel (24,19) color=ink.base
+
+// Habaki (blade collar)
+pixel (22,17) color=tsuba
+pixel (23,17) color=tsuba_dark
+
+// Blade spine and core extending upward with elegant katana curve
+// Spine (darker steel/outline)
+line (22,16) (22,13) color=iron.1
+line (22,13) (23,8) color=iron.1
+line (23,8) (25,4) color=iron.1
+pixel (26,3) color=ink.base
+
+// Blade body (steel face)
+line (21,16) (21,13) color=iron.3
+line (21,13) (22,8) color=iron.3
+line (22,8) (24,4) color=iron.4
+pixel (25,3) color=iron.4
+pixel (25,2) color=iron.4
+
+// Blade highlights (light gleam along upper ridge)
+pixel (21,14) color=iron.4
+pixel (22,10) color=iron.4
+pixel (23,6) color=iron.4
+
+// Blood-tempered cutting edge (crimson hamon & sharpened edge)
+line (20,16) (20,14) color=blood_glow
+line (20,13) (21,9) color=blood_glow
+line (21,8) (23,4) color=blood_glow
+pixel (24,3) color=blood_bright
+pixel (24,2) color=blood_bright
+
+// Fine edge glimmer / blood sheen
+pixel (20,15) color=blood_bright
+pixel (21,11) color=blood_bright
+pixel (22,7) color=blood_bright
+
+// Katana tip (kissaki)
+pixel (25,2) color=iron.4
+pixel (26,2) color=ink.base

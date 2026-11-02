@@ -1,0 +1,35 @@
+sprite 32x32
+kind object
+material stone
+
+// Arm contour outline (7,12)-(10,23)
+rect (7,12) (10,22) color=ink.base
+pixel (8,23) color=ink.base
+pixel (9,23) color=ink.base
+
+// Sleeve cloth base (stone ramp for off-white cloth)
+rect (8,12) (9,20) color=stone.2
+pixel (7,13) color=stone.1
+pixel (7,14) color=stone.1
+pixel (7,15) color=stone.2
+pixel (7,16) color=stone.1
+pixel (7,17) color=stone.2
+pixel (7,18) color=stone.1
+pixel (7,19) color=stone.1
+
+// Sleeve highlights (top/left) & folds
+line (8,12) (8,17) color=stone.3
+pixel (8,13) color=stone.4
+pixel (9,12) color=stone.3
+pixel (9,16) color=stone.1
+pixel (9,19) color=stone.1
+
+// Sleeve cuff shadow
+line (8,20) (9,20) color=stone.0
+
+// Pale curled hand at (8,21)-(9,22)
+pixel (8,21) color=sand.3
+pixel (9,21) color=sand.2
+pixel (8,22) color=sand.4
+pixel (9,22) color=sand.1
+pixel (8,23) color=ink.base
