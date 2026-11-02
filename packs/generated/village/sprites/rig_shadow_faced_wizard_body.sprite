@@ -1,0 +1,55 @@
+sprite 32x32
+kind object
+material sand
+
+// Base silhouette outline for body layer (10,11) to (22,22)
+polygon (13,11) (19,11) (22,13) (22,22) (10,22) (10,13) color=ink.base
+
+// Main robe body fill (pale linen off-white)
+rect (11,12) (21,21) color=sand.3
+
+// Robe main highlights and lighting from top-left
+rect (11,13) (15,18) color=sand.4
+rect (12,12) (14,14) color=sand.4
+
+// Right-side robe shading (depth and shadow)
+rect (17,13) (21,18) color=sand.2
+line (21,12) (21,21) color=stone.2
+line (20,15) (20,21) color=sand.1
+
+// High collar framing the neck / lower head
+line (12,11) (15,11) color=sand.4
+line (17,11) (20,11) color=sand.2
+pixel (12,12) color=sand.4
+pixel (20,12) color=sand.1
+// Inner V / collar lapels folding across chest
+line (14,12) (16,16) color=ink.base
+line (18,12) (16,16) color=sand.1
+pixel (15,13) color=sand.4
+pixel (17,13) color=sand.2
+
+// Vertical robe folds below the chest
+line (14,16) (14,18) color=sand.2
+line (18,16) (18,18) color=sand.1
+
+// Narrow cord belt (around y=19)
+line (11,19) (21,19) color=soil.1
+line (11,20) (21,20) color=soil.0
+// Cord highlight and knot
+pixel (15,19) color=soil.3
+pixel (16,19) color=soil.4
+pixel (17,19) color=soil.2
+// Dangling belt tassels/cord hanging down left-center
+pixel (15,20) color=soil.3
+pixel (15,21) color=soil.2
+pixel (15,22) color=soil.1
+
+// Robe skirt below belt (y=21..22)
+rect (11,21) (14,22) color=sand.3
+rect (16,21) (21,22) color=sand.2
+line (17,21) (17,22) color=ink.base
+pixel (21,21) color=sand.1
+pixel (21,22) color=sand.0
+
+// Fine fabric texture
+scatter color=sand.4,stone.2 density=0.08 seed=42 cluster=1 inside

@@ -1,0 +1,56 @@
+sprite 32x32
+kind object
+material iron
+
+// Helmet dome outer shape & base fill
+rect (11,3) (21,8) color=iron.2
+rect (12,2) (20,3) color=iron.3
+rect (13,1) (19,1) color=iron.2
+
+// Ink outline along the top and outer edges
+line (13,0) (19,0) color=ink.base
+line (11,1) (12,1) color=ink.base
+line (20,1) (21,1) color=ink.base
+line (10,2) (10,9) color=ink.base
+line (22,2) (22,9) color=ink.base
+
+// Upper dome lighting & ridge
+rect (13,2) (16,3) color=iron.4
+pixel (14,1) color=iron.4
+pixel (15,1) color=iron.4
+line (16,1) (16,8) color=iron.3
+
+// Right-side shading of dome
+rect (19,3) (21,7) color=iron.1
+line (18,4) (18,7) color=iron.2
+
+// Brow band (rim reinforcement)
+rect (10,7) (22,9) color=iron.1
+line (10,7) (22,7) color=iron.3
+line (10,9) (22,9) color=ink.base
+
+// Rivets on brow band
+pixel (11,8) color=iron.4
+pixel (14,8) color=iron.4
+pixel (18,8) color=iron.4
+pixel (21,8) color=iron.3
+
+// Nasal / Nose guard extending down over the face
+rect (15,9) (17,13) color=iron.2
+line (15,9) (15,13) color=iron.3
+line (17,9) (17,13) color=iron.0
+pixel (16,14) color=ink.base
+pixel (15,14) color=iron.1
+line (14,9) (14,13) color=ink.base
+line (18,9) (18,13) color=ink.base
+
+// Cheeks / lateral edge guards
+rect (10,10) (11,11) color=iron.1
+rect (21,10) (22,11) color=iron.0
+line (10,12) (11,12) color=ink.base
+line (21,12) (22,12) color=ink.base
+line (9,7) (9,11) color=ink.base
+line (23,7) (23,11) color=ink.base
+
+// Metal texture and wear
+scatter color=iron.1,iron.3 density=0.18 seed=42 cluster=1 inside

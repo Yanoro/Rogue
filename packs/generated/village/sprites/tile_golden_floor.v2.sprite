@@ -1,0 +1,68 @@
+sprite 32x32
+kind tile
+material sand
+palette {
+  gold_dark = #875c19
+  gold_shadow = #b58022
+  gold_base = #e0a838
+  gold_light = #f5cd62
+  gold_bright = #ffefa3
+  grout = #59390e
+}
+fill gold_base
+
+// Outer border bevels for the 32x32 quad layout
+// 2x2 grid of 16x16 tiles: tile A (0,0)-(15,15), tile B (16,0)-(31,15),
+// tile C (0,16)-(15,31), tile D (16,16)-(31,31)
+
+// Tile A (top-left paver)
+rect (0,0) (15,1) color=gold_bright
+rect (0,0) (1,15) color=gold_light
+rect (14,1) (15,15) color=gold_shadow
+rect (1,14) (15,15) color=gold_shadow
+
+// Tile B (top-right paver)
+rect (16,0) (31,1) color=gold_bright
+rect (16,0) (17,15) color=gold_light
+rect (30,1) (31,15) color=gold_shadow
+rect (17,14) (31,15) color=gold_shadow
+
+// Tile C (bottom-left paver)
+rect (0,16) (15,17) color=gold_bright
+rect (0,16) (1,31) color=gold_light
+rect (14,17) (15,31) color=gold_shadow
+rect (1,30) (15,31) color=gold_shadow
+
+// Tile D (bottom-right paver)
+rect (16,16) (31,17) color=gold_bright
+rect (16,16) (17,31) color=gold_light
+rect (30,17) (31,31) color=gold_shadow
+rect (17,30) (31,31) color=gold_shadow
+
+// Grout / seam lines
+line (0,15) (31,15) color=gold_dark
+line (0,16) (31,16) color=grout
+line (15,0) (15,31) color=gold_dark
+line (16,0) (16,31) color=grout
+
+// Subtle cross-pattern ornamental inlay in paver centers
+rect (6,6) (9,9) color=gold_bright
+pixel (7,7) color=gold_light
+pixel (8,8) color=gold_light
+
+rect (22,6) (25,9) color=gold_bright
+pixel (23,7) color=gold_light
+pixel (24,8) color=gold_light
+
+rect (6,22) (9,25) color=gold_bright
+pixel (7,23) color=gold_light
+pixel (8,24) color=gold_light
+
+rect (22,22) (25,25) color=gold_bright
+pixel (23,23) color=gold_light
+pixel (24,24) color=gold_light
+
+// Polished metal specular grain and subtle patina
+scatter color=gold_bright density=0.08 seed=44 cluster=1 inside
+scatter color=gold_light density=0.12 seed=89 cluster=2 inside
+scatter color=gold_shadow density=0.05 seed=12 cluster=1 inside

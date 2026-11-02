@@ -1,0 +1,20 @@
+{
+  "damage": 8.0,
+  "durability": 120,
+  "name": "Weathered Zweihander",
+  "occupies": 1,
+  "slot": "hand",
+  "swingTime": 1.399999976158142,
+  "tags": [
+    "weapon",
+    "sword",
+    "iron",
+    "two-handed",
+    "heavy"
+  ],
+  "tier": 3.0,
+  "worn": {
+    "sprite": "worn_weathered_zweihander",
+    "z": 110
+  }
+}

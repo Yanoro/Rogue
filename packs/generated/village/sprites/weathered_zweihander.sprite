@@ -1,0 +1,72 @@
+sprite 32x32
+kind object
+material iron
+
+// Outline / Silhouette of the Zweihander
+// Pommel at bottom-left, blade extending to top-right
+line (3,28) (5,26) color=ink.base
+line (5,26) (10,21) color=ink.base
+line (10,21) (6,17) color=ink.base
+line (6,17) (9,14) color=ink.base
+line (10,21) (17,28) color=ink.base
+line (17,28) (14,31) color=ink.base
+line (10,21) (29,2) color=ink.base
+line (11,20) (30,1) color=ink.base
+
+// Crossguard
+line (7,18) (16,27) color=iron.0
+line (6,17) (8,15) color=iron.1
+line (15,28) (17,26) color=iron.0
+line (8,19) (13,24) color=iron.2
+pixel (10,20) color=iron.4
+
+// Pommel (heavy steel pommel)
+rect (2,29) (4,30) color=iron.1
+pixel (3,28) color=iron.3
+pixel (4,30) color=ink.base
+
+// Grip (two-handed leather wrapped hilt)
+line (4,27) (9,22) color=wood.1
+line (5,27) (10,22) color=wood.0
+pixel (6,25) color=wood.2
+pixel (8,23) color=wood.2
+
+// Ricasso (unsharpened leather-wrapped portion above guard)
+polygon (11,19) (12,20) (15,17) (14,16) color=wood.1
+line (11,19) (14,16) color=wood.2
+line (12,20) (15,17) color=wood.0
+
+// Flukes / Parierhaken (parrying hooks)
+pixel (13,14) color=iron.2
+pixel (14,13) color=iron.3
+pixel (17,18) color=iron.0
+pixel (18,17) color=iron.1
+
+// Main blade body
+polygon (14,16) (16,18) (29,5) (27,3) color=iron.1
+polygon (26,4) (28,6) (30,2) (28,2) color=iron.2
+pixel (30,1) color=iron.4
+
+// Blade bevel / Fuller and lighting
+// Upper-left cutting edge (highlighted)
+line (15,15) (28,2) color=stone.4
+line (16,14) (27,3) color=stone.3
+
+// Central fuller groove
+line (15,17) (26,6) color=iron.0
+
+// Lower-right cutting edge (shadowed)
+line (17,19) (29,7) color=iron.1
+line (18,18) (30,6) color=ink.base
+
+// Weathering, notches and battle scars on the steel
+pixel (19,11) color=soil.1
+pixel (23,7) color=ink.base
+pixel (24,8) color=iron.0
+pixel (21,9) color=soil.0
+pixel (16,14) color=ink.base
+pixel (26,4) color=stone.4
+pixel (27,5) color=soil.1
+
+// Surface pitting
+scatter color=iron.0,iron.3 density=0.08 seed=44 cluster=1 inside

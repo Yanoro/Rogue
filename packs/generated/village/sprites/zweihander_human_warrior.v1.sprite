@@ -1,0 +1,83 @@
+sprite 32x32
+kind object
+material iron
+
+// Silhouette / Underlying dark tone
+rect (10,3) (21,30) color=ink.base
+rect (4,7) (27,24) color=ink.base
+
+// Greatsword (held vertically, angled crossguard)
+// Blade point down on the right flank
+line (24,6) (24,29) color=ink.base
+line (23,6) (23,29) color=iron.3
+line (24,7) (24,28) color=stone.3
+line (23,8) (23,25) color=stone.4
+// Crossguard and quillons
+line (20,11) (28,11) color=iron.2
+pixel (20,10) color=iron.1
+pixel (28,10) color=iron.1
+pixel (24,11) color=stone.4
+// Hilt and pommel
+line (24,8) (24,10) color=wood.1
+pixel (24,7) color=iron.3
+
+// Helmet / Greathelm / Sallet
+rect (12,3) (19,9) color=iron.2
+rect (13,4) (18,8) color=iron.3
+line (13,3) (17,3) color=stone.3
+pixel (12,4) color=stone.4
+// Visor slit
+line (14,6) (18,6) color=ink.base
+line (14,7) (16,7) color=ink.base
+
+// Pauldrons (shoulders)
+// Left pauldron (viewer left, lit)
+rect (8,9) (12,14) color=iron.2
+line (8,9) (12,9) color=stone.3
+line (8,10) (8,13) color=stone.2
+pixel (9,10) color=stone.4
+// Right pauldron (viewer right, shaded behind blade)
+rect (19,10) (22,14) color=iron.1
+line (19,10) (22,10) color=iron.3
+
+// Cuirass / Breastplate
+rect (12,10) (19,18) color=iron.2
+polygon (13,10) (18,10) (16,18) color=iron.3
+// Ridge highlight on breastplate
+line (15,10) (15,16) color=stone.3
+pixel (14,11) color=stone.4
+pixel (14,12) color=stone.3
+// Dark waist/girdle
+line (13,18) (18,18) color=iron.0
+
+// Arms and Gauntlets (gripping the sword hilt/crossguard)
+// Left arm
+line (10,14) (13,16) color=iron.2
+rect (13,13) (16,15) color=iron.3
+// Hands holding near crossguard
+pixel (22,12) color=iron.2
+pixel (23,12) color=iron.3
+pixel (23,13) color=iron.1
+
+// Faulds and Tassets (armored skirt/hips)
+rect (12,19) (19,21) color=iron.1
+line (13,19) (18,19) color=iron.2
+line (15,19) (15,21) color=ink.base
+
+// Legs / Greaves
+// Left leg (viewer left)
+rect (11,22) (14,28) color=iron.2
+line (12,22) (12,27) color=stone.3
+pixel (12,24) color=stone.4
+// Right leg (viewer right)
+rect (16,22) (19,28) color=iron.1
+line (17,22) (17,27) color=iron.2
+
+// Sabatons (armored boots)
+rect (10,28) (14,30) color=iron.1
+line (10,29) (14,29) color=iron.2
+rect (16,28) (20,30) color=iron.0
+line (16,29) (19,29) color=iron.1
+
+// Weathering and scuffs across the armor
+scatter color=iron.0,stone.1 density=0.08 seed=44 cluster=1 inside

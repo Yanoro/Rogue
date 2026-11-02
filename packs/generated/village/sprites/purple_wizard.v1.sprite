@@ -1,0 +1,94 @@
+sprite 32x32
+kind object
+palette {
+  void_glow = #c850f0
+  void_deep = #3a0e5c
+  robe_shadow = #2a1240
+  robe_mid = #5c2c84
+  robe_light = #8e4ba8
+  robe_hi = #be72d6
+  crystal_hi = #f4c2ff
+  eye_glow = #da70d6
+  gold_trim = #dca032
+}
+
+// Staff wood (held in wizard's left hand / right side of sprite)
+rect (24,7) (25,29) color=wood.1
+rect (23,10) (23,28) color=wood.2
+pixel (24,6) color=wood.0
+pixel (25,6) color=wood.0
+
+// Void Crystal atop staff
+polygon (22,3) (26,1) (28,4) (27,7) (23,7) color=void_deep
+polygon (23,3) (25,2) (26,4) (24,6) color=void_glow
+pixel (24,3) color=crystal_hi
+pixel (25,4) color=crystal_hi
+// Crystal aura / prongs
+pixel (22,5) color=wood.0
+pixel (27,6) color=wood.0
+pixel (21,3) color=void_glow
+pixel (27,2) color=void_glow
+
+// Robe base & silhouette
+polygon (11,14) (19,14) (24,28) (23,29) (7,29) (6,28) color=robe_shadow
+polygon (11,14) (18,14) (21,28) (8,28) color=robe_mid
+
+// Robe folds & volume
+polygon (10,15) (15,15) (12,28) (8,28) color=robe_light
+line (9,16) (10,27) color=robe_hi
+line (17,16) (22,28) color=robe_shadow
+line (14,17) (16,28) color=robe_shadow
+
+// Robe hem trim
+line (7,28) (23,28) color=gold_trim
+line (7,29) (23,29) color=ink.base
+
+// Wizard Hand holding staff
+rect (22,17) (23,19) color=wood.4
+pixel (24,18) color=wood.3
+
+// Sleeves
+polygon (18,16) (23,17) (21,21) (17,19) color=robe_shadow
+polygon (18,16) (22,17) (20,19) (17,18) color=robe_mid
+polygon (7,17) (11,16) (12,20) (8,22) color=robe_mid
+line (7,18) (9,22) color=robe_light
+
+// Cloak mantle / collar
+polygon (9,13) (21,13) (19,17) (11,17) color=robe_shadow
+polygon (10,13) (18,13) (17,16) (11,16) color=robe_mid
+pixel (15,15) color=gold_trim
+
+// Void Face / Unnatural Shadows under hood
+rect (11,10) (19,13) color=ink.base
+rect (12,9) (18,9) color=ink.base
+pixel (10,12) color=ink.base
+pixel (20,12) color=ink.base
+
+// Glowing eyes amidst the shadow
+pixel (13,11) color=eye_glow
+pixel (17,11) color=eye_glow
+
+// Pointed Wizard Hat
+// Brim
+polygon (6,10) (24,10) (22,12) (8,12) color=robe_shadow
+polygon (7,10) (21,10) (20,11) (8,11) color=robe_mid
+line (8,10) (15,10) color=robe_light
+
+// Hat Cone (angled toward top left)
+polygon (10,9) (20,9) (16,5) (11,4) color=robe_shadow
+polygon (10,9) (18,9) (15,5) (11,4) color=robe_mid
+polygon (10,9) (15,9) (13,5) (11,4) color=robe_light
+// Hat tip curving back
+polygon (11,4) (14,4) (13,2) (9,2) color=robe_mid
+polygon (9,2) (12,2) (8,1) (7,2) color=robe_light
+pixel (8,1) color=robe_hi
+
+// Hat band
+line (10,9) (20,9) color=gold_trim
+
+// Outlines & contour shadows
+line (6,29) (24,29) color=ink.base
+pixel (6,28) color=ink.base
+pixel (24,28) color=ink.base
+line (23,11) (25,11) color=ink.base
+line (5,11) (7,11) color=ink.base

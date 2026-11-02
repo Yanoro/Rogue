@@ -1,0 +1,75 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = ink.base
+  fur_dark = iron.1
+  fur_mid = stone.1
+  fur_light = stone.3
+  fur_belly = stone.4
+  eye = #e2a628
+}
+
+// Silhouette / Outline
+// Torso & Hips
+polygon (5,16) (11,11) (22,12) (26,16) (25,22) (18,22) (12,20) (6,19) color=dark
+// Tail
+polygon (24,15) (28,17) (30,22) (28,24) (24,19) color=dark
+// Head & Snout (low head pointing left)
+polygon (2,16) (6,12) (11,10) (10,18) (4,19) color=dark
+// Ears
+polygon (8,12) (8,8) (11,10) color=dark
+polygon (11,11) (12,7) (14,10) color=dark
+// Forelegs (stalking stance)
+rect (8,19) (10,28) color=dark
+rect (12,19) (14,27) color=dark
+// Hind legs
+rect (21,20) (23,28) color=dark
+rect (24,19) (26,27) color=dark
+
+// Base Body Fill (Mid Fur)
+polygon (6,16) (11,12) (21,13) (24,16) (23,21) (17,21) (12,19) (7,18) color=fur_mid
+polygon (24,16) (27,18) (29,21) (27,23) (24,18) color=fur_mid
+polygon (3,16) (7,13) (10,12) (9,17) (5,18) color=fur_mid
+
+// Ears Interior
+polygon (9,11) (9,9) (10,10) color=fur_light
+polygon (12,11) (12,8) (13,10) color=fur_dark
+
+// Legs Interior
+rect (9,20) (10,27) color=fur_mid
+rect (13,20) (14,26) color=fur_dark
+rect (22,21) (23,27) color=fur_mid
+rect (25,20) (26,26) color=fur_dark
+
+// Dorsal Shading (Dark Spine & Rump)
+polygon (10,12) (22,13) (24,16) (21,16) (11,14) color=fur_dark
+polygon (7,13) (10,12) (10,14) (7,15) color=fur_dark
+line (24,16) (28,19) color=fur_dark
+
+// Throat, Chest & Underbelly Highlights
+polygon (4,18) (8,18) (10,20) (7,19) color=fur_belly
+polygon (11,18) (17,20) (16,21) (11,19) color=fur_light
+polygon (18,20) (22,20) (21,21) (17,21) color=fur_belly
+
+// Tail Underside Highlight
+polygon (25,18) (28,21) (27,22) (24,19) color=fur_light
+
+// Paws
+pixel (9,27) color=fur_light
+pixel (10,27) color=fur_light
+pixel (22,27) color=fur_light
+pixel (23,27) color=fur_light
+
+// Snout Details & Nose
+pixel (3,16) color=dark
+pixel (3,17) color=dark
+line (4,17) (6,17) color=fur_light
+
+// Staring Unblinking Eye
+pixel (6,14) color=eye
+pixel (7,14) color=dark
+
+// Coarse Fur Texture
+scatter color=fur_dark,fur_light density=0.18 seed=42 cluster=1 inside

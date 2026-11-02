@@ -1,0 +1,21 @@
+{
+  "damage": 18.0,
+  "durability": 250,
+  "name": "Blood-Tempered Katana",
+  "occupies": 1,
+  "slot": "hand",
+  "swingTime": 0.3499999940395355,
+  "tags": [
+    "weapon",
+    "sword",
+    "steel",
+    "magic",
+    "katana"
+  ],
+  "tier": 5.0,
+  "worn": {
+    "brief": "a slender curved steel blade with a crimson-tinted cutting edge and a black-wrapped hilt with a brass guard",
+    "sprite": "worn_blood_tempered_katana",
+    "z": 110
+  }
+}
