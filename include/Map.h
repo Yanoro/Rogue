@@ -16,6 +16,15 @@ struct NPCData {
   std::string name;
   GamePosition position;
   std::string background;
+  // The NpcTemplate this entry is built from, from "template": "blacksmith". The
+  // template fills every field the map leaves empty; the map wins where it speaks.
+  std::string npcTemplate;
+  // The BrainTemplate that drives this NPC, from "brain" or from its template.
+  // Empty means no brain: a body with no agent (the non-LLM case).
+  std::string brain;
+  // Starting stat values from "stats": {"strength": 14}. Applied over the
+  // registry baselines GiveDefaultStats stamps, before the brain exists.
+  std::vector<StatValue> startingStats;
   // Items this NPC is spawned already holding, from the map's
   // "inventory": [{"item": "wheat_seed", "count": 5}, ...]. Entries are
   // ObjectFactory template keys and each unit becomes its own entity, matching

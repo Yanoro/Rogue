@@ -110,6 +110,40 @@ static void GiveStartingSkills(flecs::entity character,
   character.set<SkillBlock>(block);
 }
 
+// Stamps authored starting stat values (a map's or a template's "stats" object)
+// over the baseline block GiveDefaultStats stamps. Unknown ids are reported and
+// skipped, the same policy authored skills follow at spawn.
+static void ApplyStartingStats(flecs::entity character,
+                               const std::vector<StatValue>& starting,
+                               const StatRegistry* registry,
+                               const std::string& name, DebugLog* debugLog) {
+  if (registry == nullptr || starting.empty()) {
+    return;
+  }
+  StatBlock* block = character.get_mut<StatBlock>();
+  if (block == nullptr) {
+    return;
+  }
+  for (const StatValue& authored : starting) {
+    bool found = false;
+    for (StatValue& value : block->values) {
+      if (value.id == authored.id) {
+        value.value = authored.value;
+        found = true;
+        break;
+      }
+    }
+    if (found) {
+      continue;
+    }
+    const std::string message = "Warning: NPC '" + name +
+                                "' has a starting value for unknown stat '" +
+                                authored.id + "'; skipping it.";
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
+  }
+}
+
 // Stamps authored starting proficiency (the map's "skills" object) onto the
 // untrained block every character is given above.
 //
@@ -212,6 +246,101 @@ static void GiveBody(flecs::entity character, const RaceRegistry *races,
 // TODO: Adding checks to see if we are not repeating values seems like a good
 // idea for instance we can't have two npcs with the same name
 
+void Game::ResolveNpcTemplate(NPCData &data) const {
+  auto warn = [this](const std::string &message) {
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
+  };
+
+  // Whether the map authored the background, captured before the template can
+  // fill it: context outranks a template, but never overrides the map, which is
+  // the one place an instance can say something different from its definition.
+  const bool mapAuthoredBackground = !data.background.empty();
+
+  if (!data.npcTemplate.empty()) {
+    const NpcTemplate *definition = npcTemplateRegistry.Get(data.npcTemplate);
+    if (definition == nullptr) {
+      warn("Warning: NPC '" + data.name + "' names unknown template '" +
+           data.npcTemplate + "'; spawning from the map entry alone");
+    } else {
+      // The map wins wherever it speaks; the template fills the rest. Field by
+      // field rather than wholesale, so a map can set a name and take a
+      // template's stats and gear without restating either.
+      if (data.name.empty()) data.name = definition->name;
+      if (data.background.empty()) data.background = definition->background;
+      if (data.race.empty()) data.race = definition->race;
+      if (data.sprite.empty()) data.sprite = definition->sprite;
+      if (data.portrait.empty()) data.portrait = definition->portrait;
+      if (data.slots.empty()) data.slots = definition->slots;
+      if (data.inventory.empty()) data.inventory = definition->inventory;
+      if (data.startingSkills.empty()) {
+        data.startingSkills = definition->startingSkills;
+      }
+      if (data.startingStats.empty()) data.startingStats = definition->startingStats;
+      if (data.equipped.empty()) data.equipped = definition->equipped;
+      if (data.brain.empty()) data.brain = definition->brain;
+    }
+  }
+
+  if (data.brain.empty()) {
+    return;
+  }
+  const BrainTemplate *brain = brainTemplateRegistry.Get(data.brain);
+  if (brain == nullptr) {
+    warn("Warning: NPC '" + data.name + "' names unknown brain '" + data.brain +
+         "'; spawning with no agent context");
+    return;
+  }
+  // A brain's background is what motivates the agent, so it outranks the
+  // template's -- but not the map's, which is the instance's own word.
+  if (!mapAuthoredBackground && !brain->background.empty()) {
+    data.background = brain->background;
+  }
+  if (data.terminalGoals.empty()) {
+    data.terminalGoals = brain->terminalGoals;
+  }
+}
+
+bool Game::ApplyPlayerMaxSpeed(float maxSpeed, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  playerEntity.set<MaxSpeed>({maxSpeed});
+  std::ostringstream text;
+  text << "Player top speed set to " << maxSpeed << ".";
+  message = text.str();
+  return true;
+}
+
+bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  if (id.empty()) {
+    if (playerEntity.has<Sprite>()) {
+      playerEntity.remove<Sprite>();
+    }
+    message = "Player uses the race's look.";
+    return true;
+  }
+  if (actorSpriteRegistry.Get(id) == nullptr) {
+    message = "No actor sprite is named '" + id + "'.";
+    return false;
+  }
+  if (!AttachSprite(playerEntity, std::string(), id, resourceManager,
+                    debugLog.get())) {
+    message = "Actor sprite '" + id + "' has no art (data/sprites/" + id +
+              ".png); the player's look is unchanged.";
+    return false;
+  }
+  message = "Player now wears the '" + id + "' sprite.";
+  return true;
+}
+
 flecs::entity Game::createNPC(const NPCData &data) {
   const GamePosition &pos = data.position;
   std::string name = data.name;
@@ -259,6 +388,8 @@ flecs::entity Game::createNPC(const NPCData &data) {
   // resolution see a complete and neutral sheet.
   if (auto registryRes = ecs.get<StatRegistryResource>()) {
     GiveDefaultStats(entity, registryRes->registry);
+    ApplyStartingStats(entity, data.startingStats, registryRes->registry, name,
+                       debugLog.get());
   }
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
     GiveStartingSkills(entity, skillRes->registry);
@@ -822,7 +953,12 @@ void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
   // to tell when an entity should be teleported out
   if (currentMap) {
     if (spawnNPCs) {
-      for (const auto& npc : currentMap->GetNPCs()) {
+      for (const auto& authored : currentMap->GetNPCs()) {
+        // The map is the instance; the template is its starting point. Resolving
+        // here rather than in createNPC keeps createNPC a single spawn path for
+        // both template-built and authored characters.
+        NPCData npc = authored;
+        ResolveNpcTemplate(npc);
         flecs::entity npcEntity = createNPC(npc);
         // Starting inventory becomes real Holds children, the same shape
         // crafting and storage use (see ObjectFactory::SpawnInventory).
@@ -3464,6 +3600,53 @@ void Game::ECSInit() {
   portraitRegistry.SetDebugLog(debugLog.get());
   portraitRegistry.LoadPortraits(settings.content.portraits);
 
+  // Named NPC definitions and the brains that drive them, loaded before the map so
+  // a map entry can name one at spawn. Brains are loaded first: a template may
+  // reference one.
+  brainTemplateRegistry.SetDebugLog(debugLog.get());
+  brainTemplateRegistry.Load(settings.content.brains);
+  npcTemplateRegistry.SetDebugLog(debugLog.get());
+  npcTemplateRegistry.Load(settings.content.npcs);
+
+  // A template naming content the game does not have would fail one character at
+  // a time at spawn. Report it once, here, where the template's id is still in
+  // hand -- the same reason the projectile check below exists.
+  {
+    auto warn = [this](const std::string& message) {
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    };
+    for (const NpcTemplate* definition : npcTemplateRegistry.GetAll()) {
+      if (!definition->race.empty() &&
+          raceRegistry.Get(definition->race) == nullptr) {
+        warn("Warning: NPC template '" + definition->id +
+             "' names unknown race '" + definition->race + "'");
+      }
+      if (!definition->sprite.empty() &&
+          actorSpriteRegistry.Get(definition->sprite) == nullptr) {
+        warn("Warning: NPC template '" + definition->id +
+             "' names unknown actor sprite '" + definition->sprite + "'");
+      }
+      if (!definition->portrait.empty() &&
+          portraitRegistry.Get(definition->portrait) == nullptr) {
+        warn("Warning: NPC template '" + definition->id +
+             "' names unknown portrait '" + definition->portrait + "'");
+      }
+      if (!definition->brain.empty() &&
+          brainTemplateRegistry.Get(definition->brain) == nullptr) {
+        warn("Warning: NPC template '" + definition->id +
+             "' names unknown brain '" + definition->brain + "'");
+      }
+    }
+    for (const BrainTemplate* brain : brainTemplateRegistry.GetAll()) {
+      if (!brain->modelProfile.empty() &&
+          Settings().ai.profiles.count(brain->modelProfile) == 0) {
+        warn("Warning: brain '" + brain->id + "' names unknown ai profile '" +
+             brain->modelProfile + "'");
+      }
+    }
+  }
+
   // Projectiles are the delivery half of a ranged skill: sprite, speed and size
   // only. The impact stays on the skill's activation.
   projectileRegistry.SetDebugLog(debugLog.get());
@@ -4814,7 +4997,7 @@ void Game::ECSInit() {
 
   playerEntity.set<ScreenPosition>(
       map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
-  playerEntity.set<MaxSpeed>({DEFAULT_MAXSPEED});
+  playerEntity.set<MaxSpeed>({settings.player.maxSpeed});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   // The facing system derives from Velocity but never adds the component, so the
@@ -4859,6 +5042,21 @@ void Game::ECSInit() {
   // the two render paths visible side by side in one scene.
   GiveBody(playerEntity, &raceRegistry, settings.player.race, {}, std::string(),
            resourceManager, debugLog.get());
+
+  // The player's own look, when the settings name an actor sprite. Applied after
+  // the race so it wins over the race convention; an id with no art leaves the
+  // race's look in place and is reported once at spawn.
+  if (!settings.player.actorSprite.empty()) {
+    if (!AttachSprite(playerEntity, std::string(), settings.player.actorSprite,
+                      resourceManager, debugLog.get())) {
+      const std::string message =
+          "Warning: player.actorSprite '" + settings.player.actorSprite +
+          "' has no sprite art (data/sprites/" + settings.player.actorSprite +
+          ".png); using the race's look.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
 
   // The player's portrait, authored in settings with the race as the default.
   // Same rule as an NPC: an id, or no component at all, which the HUD reads as

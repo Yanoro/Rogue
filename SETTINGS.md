@@ -68,7 +68,7 @@ The backend the agents talk to. Read when the ECS world builds its AI instance.
 | `profile` | string | `""` | Name of an ai.profiles entry to take this block's settings from; any inline field overrides it. Empty uses the inline fields alone. *Restart to apply.* |
 | `type` | string | `ollama` | Backend to use. Anything other than the three known names is treated as ollama. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model` | string | `llama3` | Model id passed to the backend. *Restart to apply.* |
-| `apiKey` | string | `""` | Key for the gemini and openrouter backends. Leave empty here; put it in settings.local.json. This block is the source every other hosted block inherits from when it has no key of its own. *Restart to apply.* |
+| `apiKey` | string | `""` | Key for the gemini and openrouter backends. Leave empty here; put it in settings.local.json. *Restart to apply.* |
 | `endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint. Only read by the ollama backend. *Restart to apply.* |
 | `temperature` | number | *absent* | Sampling temperature. Absent leaves the provider's own default in charge. *Restart to apply.* |
 | `maxTokens` | int | *absent* | Completion budget. Absent leaves the provider's own default in charge. *Restart to apply.* |
@@ -194,7 +194,7 @@ The blueprint designer's backend, prompt and output budget.
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the designer's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the designer's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the designer's own model block. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the designer's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the designer's own model block. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the designer's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the designer's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the designer's own model block. *Restart to apply.* |
@@ -253,7 +253,7 @@ The model behind the Improve button. A short text edit wants a fast, cheap, non-
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the rewriter's own model block; inline fields override it. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the rewriter's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
 | `model.model` | string | `llama3` | Model id for the rewriter's own model block. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the rewriter's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the rewriter's own model block. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the rewriter's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the rewriter's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the rewriter's own model block. *Restart to apply.* |
@@ -272,7 +272,7 @@ The typed-classifier layer and its selectable backends.
 | `model.profile` | string | `""` | Name of an ai.profiles entry of kind s1 for the System 1 block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id. Empty means inherit the main model's id rather than ModelSection's llama3 default. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the System 1 model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the System 1 model block. Empty uses `model.apiKey`. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the System 1 model block. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Decisions endpoint for the System 1 model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the System 1 model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the System 1 model block. *Restart to apply.* |
@@ -385,7 +385,7 @@ One main-model context that returns both the plan and the next move each decisio
 | `maxGroupDetails` | int | `8` | Instances shown by inspect:<group>. inspect:<group>:all ignores this. Must be 1..128. A value outside the range is reported and replaced. |
 | `includeGraph` | bool | `true` | Include the observation graph in the single prompt. Off for a small local model: the place graph duplicates what STATE/ACTIONS already say. |
 | `includeMap` | bool | `true` | Include the ASCII map and its target list in the single prompt. Off for a small local model; the candidate actions remain in ACTIONS. |
-| `contextTokens` | int | `8192` | Context window requested from Ollama (options.num_ctx). Too small and the model loses the start of the prompt. Must be 2048..32768. A value outside the range is reported and replaced. *Restart to apply.* |
+| `contextTokens` | int | `4096` | Context window requested from Ollama (options.num_ctx). Too small and the model loses the start of the prompt. Must be 2048..32768. A value outside the range is reported and replaced. *Restart to apply.* |
 | `timeoutSeconds` | number | `60.0` | Whole-request budget for one decision. Must be at least 1. A value outside the range is reported and replaced. |
 | `fallbackToTwo` | bool | `true` | Fall back to the strategist plus pilot when the single navigator's replies are unusable. |
 | `mapRadius` | int | `6` | Radius of the ASCII map offered with each decision. Must be 3..12. A value outside the range is reported and replaced. |
@@ -393,7 +393,7 @@ One main-model context that returns both the plan and the next move each decisio
 | `model.profile` | string | `""` | Name of an ai.profiles entry for the navigator's own model block; inline fields override it. *Restart to apply.* |
 | `model.model` | string | `""` | Model id for the navigator's own model block. Empty is not configured. *Restart to apply.* |
 | `model.type` | string | `ollama` | Backend for the navigator's own model block. One of `ollama`, `gemini` or `openrouter`. Other values are passed through unchanged. *Restart to apply.* |
-| `model.apiKey` | string | `""` | Key for the navigator's own model block. Empty uses `model.apiKey`. *Restart to apply.* |
+| `model.apiKey` | string | `""` | Key for the navigator's own model block. *Restart to apply.* |
 | `model.endpoint` | string | `http://localhost:11434/api/generate` | Ollama endpoint for the navigator's own model block. *Restart to apply.* |
 | `model.temperature` | number | *absent* | Sampling temperature for the navigator's own model block. *Restart to apply.* |
 | `model.maxTokens` | int | *absent* | Completion budget for the navigator's own model block. *Restart to apply.* |
@@ -457,21 +457,19 @@ Observed base regions: the coarse spatial memory places are derived from.
 
 ## `chunks`
 
-Fixed world chunk grid and the agent-facing area card / route strip
-(`docs/chunk-design.md`). A chunk is world structure; the card and strip summarize
-only what the character has observed.
+Fixed world chunk grid and the agent-facing area card/route strip.
 
 | field | type | default | meaning |
 |---|---|---|---|
-| `enabled` | bool | `true` | Whether the area card and last-leg route strip are built. False restores the raw `ROUTE:` line. |
-| `size` | int | `8` | Cells per chunk side. Must be 4..64. Read at map load; a change remaps the per-agent handles, so reload. |
-| `maxTraversedAreas` | int | `8` | Areas listed in one last-leg strip. Must be 1..32. |
-| `maxJourneySegments` | int | `12` | Journey stretches kept in the prompt. Must be 1..64. |
-| `maxNewAreas` | int | `6` | Off-path newly seen areas listed after a leg. Must be 1..32. |
-| `maxFeaturesPerArea` | int | `3` | Features listed per area in the last-leg strip. Must be 0..16. |
-| `cardAspects` | int | `3` | Surfaces listed in the area card. Must be 0..16. |
-| `cardObjectGroups` | int | `6` | Object groups listed in the area card. Must be 0..32. |
-| `cardPlaces` | int | `4` | Places listed in the area card. Must be 0..16. |
+| `enabled` | bool | `true` | Whether the agent-facing chunk area card and route strip are built. |
+| `size` | int | `8` | Cells per chunk side. Read at map load; a change remaps handles. Must be 4..64. A value outside the range is reported and replaced. |
+| `maxTraversedAreas` | int | `8` | Areas listed in one last-leg strip. Must be 1..32. A value outside the range is reported and replaced. |
+| `maxJourneySegments` | int | `12` | Journey stretches kept in the prompt. Must be 1..64. A value outside the range is reported and replaced. |
+| `maxNewAreas` | int | `6` | Off-path newly seen areas listed after a leg. Must be 1..32. A value outside the range is reported and replaced. |
+| `maxFeaturesPerArea` | int | `3` | Features listed per area in the last-leg strip. Must be 0..16. A value outside the range is reported and replaced. |
+| `cardAspects` | int | `3` | Surfaces listed in the area card. Must be 0..16. A value outside the range is reported and replaced. |
+| `cardObjectGroups` | int | `6` | Object groups listed in the area card. Must be 0..32. A value outside the range is reported and replaced. |
+| `cardPlaces` | int | `4` | Places listed in the area card. Must be 0..16. A value outside the range is reported and replaced. |
 | `includeCharacters` | bool | `true` | Whether the area card lists observed characters. |
 
 ---
@@ -515,6 +513,9 @@ The player entity and its starting tile.
 | `startX` | int | `48` | Starting tile. Out-of-bounds or wall positions are relocated to the nearest walkable tile. *Restart to apply.* |
 | `startY` | int | `20` | Starting tile. *Restart to apply.* |
 | `race` | string | `""` | Race the player's body slots come from. Empty means the human default. *Restart to apply.* |
+| `actorSprite` | string | `""` | Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art. |
+| `maxSpeed` | number | `100.0` | Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this. Must be at least 0. A value outside the range is reported and replaced. |
+| `portrait` | string | `""` | PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite. *Restart to apply.* |
 
 ---
 
@@ -541,10 +542,14 @@ Where each content registry loads its definitions from.
 | `items` | string | `data/items` | Item registry directory. *Restart to apply.* |
 | `actorSprites` | string | `data/actor_sprites` | Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature. *Restart to apply.* |
 | `races` | string | `data/races` | Race registry directory. *Restart to apply.* |
+| `npcs` | string | `data/npcs` | NPC template directory: named starting configurations a map spawns by name and overrides. *Restart to apply.* |
+| `brains` | string | `data/brains` | Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent. *Restart to apply.* |
+| `portraits` | string | `data/portraits` | Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id. *Restart to apply.* |
+| `projectiles` | string | `data/projectiles` | Projectile registry directory: one JSON per flying object, with its sprite, speed and size. *Restart to apply.* |
 | `places` | string | `data/places.json` | The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule. *Restart to apply.* |
 | `tiles` | string | `data/tiles` | The hand-authored tile catalog directory. Agent-created tiles go to generatedTiles instead. *Restart to apply.* |
-| `editor` | string | `data/editor` | Where the Content Editor saves its overrides (tiles/ and objects/ beneath it). Loaded last, so an edit wins over the catalog and the generated overlay; the hand-authored files are never rewritten. *Restart to apply.* |
 | `generatedTiles` | string | `data/generated/tiles` | Generated overlay for agent-created tiles, loaded additively on top of the catalog. *Restart to apply.* |
+| `editor` | string | `data/editor` | Where the Content Editor saves its overrides (tiles/ and objects/ beneath it). Loaded last, so an edit wins over the catalog and the generated overlay; the hand-authored files are never rewritten. *Restart to apply.* |
 | `tilePromptFile` | string | `data/tiles/TILEDESIGNER.md` | The tile designer's instructions. Empty falls back to the generated vocabulary alone. *Restart to apply.* |
 | `objectPromptFile` | string | `data/objects/OBJECTDESIGNER.md` | The object designer's instructions. *Restart to apply.* |
 | `generatedObjects` | string | `data/generated/objects` | Generated overlay for agent-created objects. Empty means an accepted object lives for this run only. *Restart to apply.* |
@@ -653,7 +658,7 @@ means adding a field to `GameSettings` and a row to `SettingsSchema.h`.
 
 | area | constants still hardcoded |
 |---|---|
-| physics / movement | `DEFAULT_MAXSPEED`, `DEFAULT_WAYPOINT_ACCEL`, `DEFAULT_PLAYER_FRICTION`, `DEFAULT_ENTITY_FRICTION`, `DEFAULT_VELOCITY`, `DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL`, `DEFAULT_WALL_REPEL_FORCE`, `DEFAULT_MINIMUM_WAYPOINT_SPEED`, `DEFAULT_MINIMUM_WAYPOINT_ACCEL`, `DEFAULT_MINIMUM_WAYPOINT_DISTANCE`, `DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS` |
+| physics / movement | `DEFAULT_WAYPOINT_ACCEL`, `DEFAULT_PLAYER_FRICTION`, `DEFAULT_ENTITY_FRICTION`, `DEFAULT_VELOCITY`, `DEFAULT_MINIMUM_VEL_FOR_WALL_REPEL`, `DEFAULT_WALL_REPEL_FORCE`, `DEFAULT_MINIMUM_WAYPOINT_SPEED`, `DEFAULT_MINIMUM_WAYPOINT_ACCEL`, `DEFAULT_MINIMUM_WAYPOINT_DISTANCE`, `DEFAULT_MINIMUM_SPEED_FOR_SLOWING_RADIUS` |
 | perception / interaction | `DEFAULT_OBJECT_SEARCH_RADIUS`, `DEFAULT_PLACEMENT_MAX_DISTANCE`, `DEFAULT_HARVEST_DURABILITY_COST` |
 | input | `DEFAULT_INPUT_MOVEMENT`, `DEFAULT_INPUT_ZOOM`, `DEFAULT_MINIMUM_INPUT_ZOOM`, `DEFAULT_MAXIMUM_INPUT_ZOOM`, `DEFAULT_DOUBLE_CLICK_TIME` |
 | hitboxes / visuals | `DEFAULT_PLAYER_HITBOX_*`, `DEFAULT_PLAYER_VISUAL_*`, `DEFAULT_ENTITY_HITBOX_*`, `DEFAULT_ENTITY_VISUAL_*` |

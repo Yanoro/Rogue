@@ -270,10 +270,14 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
     if (json.contains("npcs")) {
       for (const auto &npcJson : json["npcs"]) {
         NPCData data;
-        data.name = npcJson.value("name", "NPC");
+        // Left empty when the map does not name the NPC, so a template's name can
+        // apply. createNPC still names an unnamed character "NPC <id>".
+        data.name = npcJson.value("name", "");
         auto pos = npcJson["position"];
         data.position = {pos[0], pos[1]};
         data.background = npcJson.value("background", "");
+        data.npcTemplate = npcJson.value("template", "");
+        data.brain = npcJson.value("brain", "");
 
         if (npcJson.contains("inventory")) {
           for (const auto &itemJson : npcJson["inventory"]) {
@@ -300,6 +304,27 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
           if (log) log->LogWarning(message);
           else std::cerr << message;
         };
+
+
+        // Starting stats, kept as written and resolved against the StatRegistry
+        // at spawn, the same way authored skills are. A non-object is reported
+        // rather than silently ignored.
+        if (npcJson.contains("stats")) {
+          if (!npcJson["stats"].is_object()) {
+            warn("Warning: NPC '" + data.name +
+                 "' has a non-object \"stats\"; ignoring it.\n");
+          } else {
+            for (auto it = npcJson["stats"].begin(); it != npcJson["stats"].end();
+                 ++it) {
+              if (!it.value().is_number()) {
+                warn("Warning: NPC '" + data.name + "' stat '" + it.key() +
+                     "' is not a number; skipping it.\n");
+                continue;
+              }
+              data.startingStats.push_back({it.key(), it.value().get<float>()});
+            }
+          }
+        }
 
         // Authored starting proficiency. Map stays content-only: the stage name
         // is kept as written and resolved against the SkillRegistry when the NPC

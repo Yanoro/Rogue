@@ -610,6 +610,17 @@ struct GameSettings {
     // PortraitRegistry id for the player's HUD portrait. Empty means the race's
     // default, and then the unknown sprite.
     std::string portrait;
+    // ActorSpriteRegistry id the player is drawn with, or empty for the race's
+    // own look (and then the ASCII art). An id rather than a path so the picker
+    // offers the same catalogue the Content Editor edits; the art is
+    // data/sprites/<id>.png, and an id with no art leaves the race's look in
+    // place and is reported.
+    std::string actorSprite;
+    // Top movement speed in pixels per second. Holding a direction adds velocity
+    // each frame and the movement system clamps it to this, so this is how fast
+    // the player settles at walking, not how quickly they get there. 0 is a
+    // deliberate "cannot move"; negative is treated as a mistake.
+    float maxSpeed = DEFAULT_MAXSPEED;
   } player;
 
   struct WorldSection {
@@ -626,6 +637,14 @@ struct GameSettings {
     std::string skills = "data/skills";
     std::string items = "data/items";
     std::string races = "data/races";
+    // NPC definition templates: a named character's starting stats, skills, gear,
+    // race, body slots, look and brain. A map names one with "template" and may
+    // override any field; nothing here is enforced at runtime.
+    std::string npcs = "data/npcs";
+    // What drives an NPC: background, life goals and the model profile to talk
+    // to. Separate from the body so one brain can drive many templates and a
+    // template can be spawned with no brain at all.
+    std::string brains = "data/brains";
     std::string portraits = "data/portraits";
     std::string projectiles = "data/projectiles";
     // The place taxonomy (docs/place-derivation-design.md section 4): which

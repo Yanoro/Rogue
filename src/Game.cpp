@@ -1147,6 +1147,49 @@ void Game::LoadContentOverrides() {
                         " object override(s) applied");
     }
   }
+
+  // NPC templates and brains. Same door as objects: the catalog is hand-authored,
+  // the editor writes its overrides here, and applying the document to the live
+  // registry is what makes a save take effect without a restart. Both registries
+  // share AddOrReplace, so one helper covers both.
+  const auto loadRegistryOverrides = [&](const std::filesystem::path &directory,
+                                         const char *label, auto &registry) {
+    if (!std::filesystem::is_directory(directory, ec)) return;
+    size_t applied = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(directory, ec)) {
+      if (entry.path().extension() != ".json") continue;
+      nlohmann::json json;
+      std::string error;
+      if (!read(entry.path(), json, error)) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: " + entry.path().string() + " " + error);
+        }
+        continue;
+      }
+      std::string applyError;
+      std::vector<std::string> warnings;
+      if (!registry.AddOrReplace(json, entry.path().string(), &applyError,
+                                 &warnings)) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: override " + entry.path().string() +
+                             " refused: " + applyError);
+        }
+        continue;
+      }
+      ++applied;
+      if (debugLog) {
+        for (const std::string &warning : warnings) {
+          debugLog->LogWarning("Content editor: " + warning);
+        }
+      }
+    }
+    if (applied > 0 && debugLog) {
+      debugLog->LogInfo("Content editor: " + std::to_string(applied) + " " +
+                        label + " override(s) applied");
+    }
+  };
+  loadRegistryOverrides(root / "npcs", "npc template", npcTemplateRegistry);
+  loadRegistryOverrides(root / "brains", "brain", brainTemplateRegistry);
 }
 
 std::string Game::BuildDesignerSystemPrompt() const {
