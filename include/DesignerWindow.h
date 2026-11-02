@@ -199,7 +199,8 @@ private:
   std::string DefinitionPromptFor(const std::string &name, SpriteKinds::Kind kind,
                                   const std::string &requirement) const;
 
-  void SendArtTurn(const std::string &prompt);
+  void SendArtTurn(const std::string &prompt, const std::string &artName,
+                  SpriteKinds::Kind artKind);
   void InspectFinishedArtDocument(size_t index,
                                   const DesignerSession::Exchange &finished);
   // True when settings say the generation source is "dsl".
@@ -390,6 +391,11 @@ private:
   void QueueRigPartArt(const RigDesigner::Part &part);
   void QueueWornArt(const std::string &itemId);
   void PumpRigArtQueue();
+  // True while a finished reply has not yet been inspected. A new art request must not
+  // start in that window: inspection reads the request context from `artBrief`, and
+  // starting another request first would apply this reply to the wrong asset -- which is
+  // how redrawing one rig layer used to blank a different one.
+  bool HasUninspectedReply() const;
   void RefreshRigArtMemo();
   void SaveRig();
 

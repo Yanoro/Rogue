@@ -92,6 +92,15 @@ public:
   // kept apart is the *meaning* of each field, documented per group below, because the
   // failure this replaces was two structs whose common half drifted apart silently.
   struct Exchange {
+    // The sprite-document request this exchange answers, when it is one. Inspection runs
+    // after later requests may already have been sent, so the identity travels with the
+    // exchange instead of being read from the window's current-request brief -- reading
+    // the brief is how a reply for one rig layer used to be written under another's name.
+    // Kind is an int to keep this header free of the sprite-kinds enum; -1 means "not a
+    // sprite-document turn".
+    std::string artName;
+    int artKind = -1;
+
     // ---- which conversation this turn belongs to -------------------------------
     //
     // An index into the session's conversation table. Replaces the `isArtDocument`

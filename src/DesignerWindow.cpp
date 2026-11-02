@@ -586,6 +586,11 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     statusLine = "A request is already in flight; the document follows it.";
     return;
   }
+  if (HasUninspectedReply()) {
+    statusIsError = false;
+    statusLine = "The previous reply is still being applied; the next request follows it.";
+    return;
+  }
   if (game == nullptr) return;
 
   // The dropdown follows the request: a gap offered from the blueprint pane is a tile or
@@ -709,10 +714,13 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                "'. It will be compiled before anything is written.";
   session->LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + kindWord + ", " +
                     conventionId + ")");
-  SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""));
+  SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""), artBrief.name,
+              artBrief.kind);
 }
 
-void DesignerWindow::SendArtTurn(const std::string &prompt) {
+void DesignerWindow::SendArtTurn(const std::string &prompt,
+                                 const std::string &artName,
+                                 SpriteKinds::Kind artKind) {
   if (!session->HasBackend() || prompt.empty() || session->IsBusy()) return;
 
   // Logged in the same designer log as the definition turn: a document and the
@@ -723,7 +731,14 @@ void DesignerWindow::SendArtTurn(const std::string &prompt) {
   session->Log(prompt);
   session->Log("\n");
 
-  session->Send(prompt, kArtConversation, /*fromUser=*/true);
+  if (!session->Send(prompt, kArtConversation, /*fromUser=*/true)) return;
+  // The exchange is appended synchronously, so the one just added is the last one. Its
+  // identity must be set before the next Draw can pump it: inspection reads these fields
+  // rather than the window's current brief.
+  session->Update(session->Size() - 1, [&](DesignerSession::Exchange &exchange) {
+    exchange.artName = artName;
+    exchange.artKind = static_cast<int>(artKind);
+  });
 }
 
 void DesignerWindow::InspectFinishedArtDocument(
@@ -753,6 +768,13 @@ void DesignerWindow::InspectFinishedArtDocument(
   // document verbatim to revise it, and the pixel DSL is what it is revising.
   session->PushTurn(kArtConversation, finished.prompt, finished.answer);
 
+  // The request this reply answers, from the exchange itself. `artBrief` may already
+  // describe a request queued behind this one.
+  const SpriteKinds::Kind artKind = finished.artKind >= 0
+                                        ? static_cast<SpriteKinds::Kind>(finished.artKind)
+                                        : artBrief.kind;
+  const std::string artName =
+      finished.artName.empty() ? artBrief.name : finished.artName;
   const std::string document = TileDesigner::ExtractSpriteDocument(finished.answer);
   PixelDSL::Config config;
   config.palettePath.clear();  // informational only; not worth a file read here
@@ -787,11 +809,21 @@ void DesignerWindow::InspectFinishedArtDocument(
     statusLine = "Document refused; asking again (attempt " +
                  std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
                  std::to_string(budget) + ").";
-    SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, artVerdict));
+    // Rebuilt from the prompt this exchange was sent with, not from `artBrief`: a newer
+    // request may have replaced the brief, and the retry must correct *this* document.
+    std::string retryPrompt = finished.prompt;
+    const size_t replyAt = retryPrompt.rfind("Reply with prose");
+    const std::string refusal =
+        "The compiler refused the previous document:\n" + artVerdict +
+        "\nSend the corrected document in full -- not a diff, and keep everything that "
+        "was already accepted.\n\n";
+    if (replyAt != std::string::npos) retryPrompt.insert(replyAt, refusal);
+    else retryPrompt += "\n" + refusal;
+    SendArtTurn(retryPrompt, artName, artKind);
     return;
   }
 
-  const std::string destination = ArtDocumentPath(artBrief.name, artBrief.kind);
+  const std::string destination = ArtDocumentPath(artName, artKind);
   if (destination.empty()) {
     artVerdict = PixelDSL::Describe(result);
     publish(false, "no generated layer to write the document to", "", artVerdict);
@@ -837,11 +869,11 @@ void DesignerWindow::InspectFinishedArtDocument(
   // document it had just written.
   std::string reason;
   if (game != nullptr &&
-      game->RecompileSpriteArt(artBrief.kind, artBrief.name, &reason)) {
+      game->RecompileSpriteArt(artKind, artName, &reason)) {
     statusIsError = false;
     statusLine = "Document accepted and saved to " + destination +
                  "; compiling it now.";
-    session->LogEvent("SPRITE COMPILE QUEUED for " + artBrief.name);
+    session->LogEvent("SPRITE COMPILE QUEUED for " + artName);
   } else {
     statusIsError = true;
     statusLine = "Document accepted and saved, but the compile was refused: " + reason;
@@ -2350,9 +2382,17 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
                   std::to_string(rigArtQueue.size()) + " waiting).";
 }
 
+bool DesignerWindow::HasUninspectedReply() const {
+  if (session == nullptr) return false;
+  for (const DesignerSession::Exchange &exchange : session->Snapshot()) {
+    if (exchange.done && !exchange.inspected) return true;
+  }
+  return false;
+}
+
 void DesignerWindow::PumpRigArtQueue() {
   if (rigArtQueue.empty() || game == nullptr) return;
-  if (session == nullptr || session->IsBusy()) return;
+  if (session == nullptr || session->IsBusy() || HasUninspectedReply()) return;
   const RigArtRequest request = rigArtQueue.front();
   rigArtQueue.pop_front();
   // Kind Actor: a rig layer is an actor sprite with a fixed frame, and the sprite-document
@@ -4375,7 +4415,6 @@ void DesignerWindow::Draw() {
 
   // The rig's art requests are one conversation at a time, so they queue; the memo refresh
   // is what makes a layer appear the moment its compiled PNG lands.
-  PumpRigArtQueue();
   RefreshRigArtMemo();
 
   ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -footerHeight), true);
@@ -4550,6 +4589,11 @@ void DesignerWindow::Draw() {
   // on the worker would mean validating and writing content from a background
   // thread while the ECS is mid-frame.
   session->Pump([this](size_t i) { InspectFinishedExchange(i); });
+
+  // After inspection, never before it: a queued rig layer must not start until the reply
+  // in hand has been applied, because inspection reads the request it was made for from
+  // the window's current brief.
+  PumpRigArtQueue();
 
   if (!statusLine.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text,
