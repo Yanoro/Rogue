@@ -49,6 +49,9 @@ private:
   // one kind whose document is a *composition*, so the generic form alone cannot show
   // what it makes.
   void DrawRigPreviewPane();
+  // The equipment preview: the item's numbers and, when it has worn art, the layer on a
+  // chosen rig. A worn item with no body to wear it is only half an item.
+  void DrawItemPreviewPane();
 
   // Sprite variants. The convention file (`<id>.png`) is always the active one, because
   // that is what the world resolves; regenerating first copies it aside as `<id>.vN.png`,
@@ -83,6 +86,7 @@ private:
   // selected rig changes so a different rig starts from a full outfit.
   std::set<std::string> rigPreviewWorn;
   std::string rigPreviewEntry;
+  std::string itemPreviewRig;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

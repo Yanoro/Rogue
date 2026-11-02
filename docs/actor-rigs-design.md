@@ -125,6 +125,13 @@ for how it looks on a rig.
   `data/items`. An existing item with the same id is replaced in the world, and the pane
   says so.
 
+The Content Editor lists the item registry under **Equipment**. The definition is editable
+through the generic form -- the id is the selection, injected on save, so the form has no
+id field -- and the preview shows the numbers and, when the item has worn art, the layer on
+a chosen rig. Generated items (`data/generated/items`), Designer overrides
+(`data/editor/items`) and the hand catalog all land in the same registry, with the catalog
+first.
+
 What an equipment reply does **not** include is the world object template — the thing that
 makes an item spawnable in a room. That format belongs to the object designer, and until it
 exists a generated item can be worn in previews but not placed by an agent.

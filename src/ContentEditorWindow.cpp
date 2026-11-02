@@ -749,6 +749,85 @@ void ContentEditorWindow::DrawSpritePane() {
   }
 }
 
+void ContentEditorWindow::DrawItemPreviewPane() {
+  if (entryId.empty() || game == nullptr) return;
+  const ItemDef *item = game->itemRegistry.Get(entryId);
+  if (item == nullptr) {
+    ImGui::TextDisabled(
+        "This item is not in the live registry yet -- save it to see the preview.");
+    return;
+  }
+  ImGui::Separator();
+  if (item->armor > 0.0f) {
+    ImGui::Text("%s  |  slot %s  |  tier %.0f  |  armour %.0f", item->id.c_str(),
+                item->slot.c_str(), static_cast<double>(item->tier),
+                static_cast<double>(item->armor));
+  } else {
+    ImGui::Text("%s  |  slot %s  |  tier %.0f", item->id.c_str(),
+                item->slot.c_str(), static_cast<double>(item->tier));
+  }
+  if (item->damage > 0.0f) {
+    ImGui::TextDisabled("damage %.0f | swing %.2fs | durability %d",
+                        static_cast<double>(item->damage),
+                        static_cast<double>(item->swingTime), item->durability);
+  }
+  if (!item->tags.empty()) {
+    std::string tags;
+    for (const std::string &tag : item->tags) {
+      if (!tags.empty()) tags += ", ";
+      tags += tag;
+    }
+    ImGui::TextDisabled("tags: %s", tags.c_str());
+  }
+
+  if (item->wornSprite.empty()) {
+    ImGui::TextDisabled(
+        "No worn art: this item has no layer on a rig, so there is nothing to draw "
+        "over a body.");
+    ImGui::Separator();
+    return;
+  }
+
+  const auto rigs = game->rigRegistry.GetAll();
+  if (rigs.empty()) {
+    ImGui::TextDisabled("No rig is loaded, so there is no body to show the item on.");
+    ImGui::Separator();
+    return;
+  }
+  int selected = 0;
+  std::vector<const char *> names;
+  for (size_t i = 0; i < rigs.size(); ++i) {
+    names.push_back(rigs[i]->name.c_str());
+    if (rigs[i]->id == itemPreviewRig) selected = static_cast<int>(i);
+  }
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::Combo("##item_preview_rig", &selected, names.data(),
+                   static_cast<int>(names.size()))) {
+    itemPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+  }
+  const ActorRig *rig = game->rigRegistry.Get(itemPreviewRig);
+  if (rig != nullptr) {
+    std::vector<RigRender::WornLayer> worn;
+    RigRender::WornLayer layer;
+    layer.label = item->id;
+    layer.texture =
+        RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+    layer.z = item->wornZ;
+    layer.hides = item->wornHides;
+    worn.push_back(std::move(layer));
+    RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+    if (!item->wornHides.empty()) {
+      std::string hides;
+      for (const std::string &part : item->wornHides) {
+        if (!hides.empty()) hides += ", ";
+        hides += part;
+      }
+      ImGui::TextDisabled("hides: %s", hides.c_str());
+    }
+  }
+  ImGui::Separator();
+}
+
 void ContentEditorWindow::DrawRigPreviewPane() {
   if (entryId.empty() || game == nullptr) return;
   const ActorRig *rig = game->rigRegistry.Get(entryId);
@@ -847,6 +926,8 @@ void ContentEditorWindow::DrawDocumentPane() {
   DrawSpritePane();
   if (kind->id == "rigs") {
     DrawRigPreviewPane();
+  } else if (kind->id == "items") {
+    DrawItemPreviewPane();
   }
 
   // The requests this editor started, and anything else in flight. A button that queues

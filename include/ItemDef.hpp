@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "SourceScaling.hpp"
 
 // Definition of one equippable item, loaded from data/items/<id>.json.
@@ -80,6 +82,12 @@ struct ItemDef {
   std::string wornSprite;
   int wornZ = 0;
   std::vector<std::string> wornHides;
+
+  // The "effects" array exactly as authored. The typed definition does not model it --
+  // ParseEffectEntries folds it into the registry's DeclaredEffects -- so this is kept for
+  // the Content Editor, which must write back an item it did not change without silently
+  // dropping the effects it does not understand.
+  nlohmann::json effectsJson;
 
   // The same shape a StatDef and a SkillDef provide, so one contribution builder
   // serves all three.
