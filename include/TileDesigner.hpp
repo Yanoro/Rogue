@@ -149,6 +149,11 @@ struct SpriteDocumentBrief {
   // prose rather than a struct because the only consumer is the prompt, and a struct
   // here would be a second vocabulary for style that the DSL's ramps already are.
   std::string surroundings;
+
+  // True for a deliberate re-draw: the request asks for a different interpretation
+  // rather than another pass at the same brief, which is what makes Regenerate produce
+  // a new look instead of the document that is already on screen.
+  bool redesign = false;
 };
 
 // The system prompt for the document turn. `%SPRITE_DSL%` is substituted from

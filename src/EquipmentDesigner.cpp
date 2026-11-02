@@ -192,7 +192,9 @@ ApplyResult ApplyReply(const std::string &text) {
     document["swingTime"] = draft.swingTime;
     if (draft.durability > 0) document["durability"] = draft.durability;
   }
-  nlohmann::json wornDocument = {{"sprite", draft.wornSprite}, {"z", draft.wornZ}};
+  nlohmann::json wornDocument = {{"sprite", draft.wornSprite},
+                                  {"brief", draft.wornBrief},
+                                  {"z", draft.wornZ}};
   if (!draft.hides.empty()) wornDocument["hides"] = draft.hides;
   document["worn"] = std::move(wornDocument);
   draft.document = std::move(document);

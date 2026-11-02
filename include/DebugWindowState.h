@@ -161,6 +161,11 @@ public:
   // "the user turned it off" from "nobody has ever said" is the whole point: the
   // two want opposite defaults, and a bare bool cannot tell them apart.
   bool HasDesignerAutoArt() const { return designerAutoArtStored; }
+  // Whether the transcript follows new output. On by default: a designer session is a
+  // stream to read as it arrives, and the alternative is discovering you were looking at
+  // a scrollback while the model talked.
+  bool GetDesignerAutoScroll() const { return designerAutoScroll; }
+  void SetDesignerAutoScroll(bool value) { designerAutoScroll = value; }
   bool GetDesignerShowThoughts() const { return designerShowThoughts; }
   void SetDesignerShowThoughts(bool value) { designerShowThoughts = value; }
 
@@ -281,6 +286,7 @@ private:
   // key, so it also survives a state file written before the key existed -- which
   // is exactly the case that should follow the setting rather than default to off.
   bool designerAutoArtStored = false;
+  bool designerAutoScroll = true;
   ContentSortMetric blueprintSortMetric = ContentSortMetric::Name;
   bool blueprintSortDescending = false;
   float blueprintPaneWidth = 420.0f;

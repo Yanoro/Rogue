@@ -139,9 +139,21 @@ loses a look.
 Regeneration archives before it asks: the current image is copied aside as a variant, *and
 if the picture on screen is the built-in `data/sprites` file rather than a generated one,
 that file is copied into the generated layer first so the archive keeps it too*. The
-Designer then recompiles the stored document (free under the DSL source) or asks the image
-model for a new one; the new PNG is noticed through the file's write time rather than a
-guess about the queue. Generated items (`data/generated/items`), Designer overrides
+Designer then asks for a new document (a stored one is recompiled only when the source is
+the DSL and nothing was asked to change) and the new PNG is noticed through the file's
+write time rather than a guess about the queue.
+
+A worn item carries its worn brief in `worn.brief`, so a regeneration redraws from the
+intent that produced the layer instead of from a bare sprite id. Re-draws also say so in
+the request: the sprite-document prompt is told this is a re-draw and must vary the
+silhouette, materials or detail, because asked the same question a model reliably returns
+the same document -- which looked exactly like "regenerated but unchanged". Hand-authored
+items without a brief fall back to the item id plus the rig frame, and the existing helmet
+and sword now carry one too.
+
+The Designer's transcript can follow new output: the **Auto-scroll** toggle keeps the
+newest reply in view while it streams, and only moves when the transcript actually grew, so
+an idle scrollback is not yanked back. Generated items (`data/generated/items`), Designer overrides
 (`data/editor/items`) and the hand catalog all land in the same registry, with the catalog
 first.
 

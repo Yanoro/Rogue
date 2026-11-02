@@ -554,20 +554,23 @@ std::string DesignerWindow::ArtDocumentPath(const std::string &name,
 }
 
 void DesignerWindow::AskForSpriteArt(const std::string &name,
-                                     SpriteKinds::Kind kind) {
+                                     SpriteKinds::Kind kind,
+                                     const std::string &requirement, bool redesign) {
   // `true` is the point of the button. With `false` an existing document is merely
   // *compiled*, which is instant, free and produces exactly the image that is already on
   // screen -- so "regenerate" looked like a request that completed without doing anything.
   // Only a new document can produce new art; the pack's copy is never overwritten, and the
   // compile lands in the generated layer until the Content Editor's marker chooses it.
-  RequestSpriteDocument(name, kind, /*replaceGenerated=*/true);
+  RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, std::string(),
+                        requirement, redesign);
 }
 
 void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
                                                bool replaceGenerated,
                                                const std::string &surroundings,
-                                               const std::string &requirement) {
+                                               const std::string &requirement,
+                                               bool redesign) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -637,6 +640,7 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief = TileDesigner::SpriteDocumentBrief{};
   artBrief.kind = kind;
   artBrief.name = name;
+  artBrief.redesign = redesign;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;
@@ -2230,6 +2234,10 @@ void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
                         part.id + " -- " + part.brief +
                         "\nDraw only this layer; the rest of the 32x32 frame stays "
                         "transparent.";
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), part.sprite, &resolved);
+  }
   rigArtQueue.push_back(std::move(request));
   rigArtMessage = "Queued the " + part.id + " layer (" +
                   std::to_string(rigArtQueue.size()) + " waiting).";
@@ -2254,6 +2262,10 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
            ? "It hides no rig part; it is drawn in front of the body."
            : "It hides the rig part(s): " + hides + ".") +
       " Draw only the worn item, not the body underneath.";
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), item->wornSprite, &resolved);
+  }
   rigArtQueue.push_back(std::move(request));
   rigArtMessage = "Queued worn art for " + itemId + " (" +
                   std::to_string(rigArtQueue.size()) + " waiting).";
@@ -2267,7 +2279,8 @@ void DesignerWindow::PumpRigArtQueue() {
   // Kind Actor: a rig layer is an actor sprite with a fixed frame, and the sprite-document
   // prompt already knows how to talk about an actor's look.
   RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
-                        /*replaceGenerated=*/true, "", request.requirement);
+                        /*replaceGenerated=*/true, "", request.requirement,
+                        request.redesign);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 
@@ -2326,6 +2339,10 @@ void DesignerWindow::QueueEquipmentArt() {
   request.label = draft.name;
   request.sprite = draft.wornSprite;
   request.requirement = EquipmentDesigner::WornArtRequirement(draft);
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), draft.wornSprite, &resolved);
+  }
   rigArtQueue.push_back(std::move(request));
   equipmentArtMessage = "Queued worn art for " + draft.name + ".";
 }
@@ -4117,6 +4134,14 @@ void DesignerWindow::Draw() {
         "It is parsed and applied either way -- this only changes what you read.");
   }
   ImGui::SameLine();
+  ImGui::Checkbox("Auto-scroll", &autoScroll);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Follow the newest output while the designer writes. Turn it off to read "
+        "scrollback without the window jumping back.\nPersisted in "
+        "debug_windows_state.");
+  }
+  ImGui::SameLine();
   // Disabled while generation is off, because an auto-request that can only ever be
   // refused is worse than a checkbox that says why it cannot be used.
   ImGui::BeginDisabled(game == nullptr || !game->TileArtQueueState().Enabled());
@@ -4184,6 +4209,7 @@ void DesignerWindow::Draw() {
   if (!layoutLoaded && game != nullptr && game->debugWindowState) {
     showJson = game->debugWindowState->GetDesignerShowJson();
     autoRequestArt = game->debugWindowState->GetDesignerAutoArt();
+    autoScroll = game->debugWindowState->GetDesignerAutoScroll();
     paneWidth = game->debugWindowState->GetDesignerPaneWidth();
     blueprintZoom = game->debugWindowState->GetDesignerZoom();
     // A first launch has no stored preference, so it follows the setting that
@@ -4432,7 +4458,8 @@ void DesignerWindow::Draw() {
           ImGui::TextWrapped("Refused: %s", ex.failureReason.c_str());
           ImGui::PopStyleColor();
         }
-      });
+      },
+      autoScroll);
   ImGui::EndChild();
 
   // Inspection runs on the main thread, after the transcript is drawn. Doing it
@@ -4527,6 +4554,7 @@ void DesignerWindow::Draw() {
   if (layoutLoaded && game != nullptr && game->debugWindowState) {
     game->debugWindowState->SetDesignerShowJson(showJson);
     game->debugWindowState->SetDesignerAutoArt(autoRequestArt);
+    game->debugWindowState->SetDesignerAutoScroll(autoScroll);
     game->debugWindowState->SetDesignerPaneWidth(paneWidth);
     game->debugWindowState->SetDesignerZoom(blueprintZoom);
   }

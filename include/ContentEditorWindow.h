@@ -51,8 +51,11 @@ private:
   // a document's own sprite override; empty for an item's worn layer.
   // `builtInFallback` lets a kind whose art ships in data/sprites (the worn equipment
   // layers) resolve it when a configured art pack does not contain it.
+  // `artRequirement` replaces the catalog description for an asset no registry holds (a
+  // worn equipment layer), and becomes the brief a Regenerate is redrawn from.
   void DrawSpriteAsset(const std::string &convention, SpriteKinds::Kind spriteKind,
-                       const std::string &explicitSprite, bool builtInFallback);
+                       const std::string &explicitSprite, bool builtInFallback,
+                       const std::string &artRequirement);
 
   // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
   // one kind whose document is a *composition*, so the generic form alone cannot show

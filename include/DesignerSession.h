@@ -331,8 +331,12 @@ public:
   // one part that genuinely differs per domain -- "Saved 'x' to y" against a set's
   // per-entry list against a compiled document -- and a callback keeps that difference
   // visible instead of buried in flags.
+  // `autoScroll` keeps the newest output in view while a reply streams. The scroll only
+  // moves when the transcript actually grew, so an idle transcript is not yanked back
+  // from wherever the reader scrolled to.
   void DrawTranscript(bool showThoughts, bool showJson, const std::string &emptyHint,
-                      const std::function<void(Exchange &)> &drawVerdict);
+                      const std::function<void(Exchange &)> &drawVerdict,
+                      bool autoScroll);
 
   // The marker HideJsonBlock substitutes, e.g. "sprite hidden".
   const std::string &HiddenMarker() const { return hiddenMarker; }
@@ -354,6 +358,9 @@ private:
 
   Game *game = nullptr;
   AI *backend = nullptr;
+  // The transcript size last scrolled for, so auto-scroll reacts to new output rather than
+  // fighting a reader every frame.
+  size_t autoScrollSignature = 0;
   std::string modelLabel;
 
   std::string logDirectory;

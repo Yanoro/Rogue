@@ -157,7 +157,12 @@ public:
   // The document conversation is pumped by this window's Draw, so a caller must also make
   // the window visible before asking, or the reply is never processed. That coupling is
   // the reason this is a one-line wrapper rather than a service of its own.
-  void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind);
+  // `requirement` replaces the catalog description when the asset is not in a registry
+  // (a worn equipment layer), and `redesign` tells the model this is a re-draw rather
+  // than a first pass, so it varies the look instead of repeating the previous document.
+  void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
+                       const std::string &requirement = std::string(),
+                       bool redesign = true);
 
 private:
   // The two conversations this window runs. A definition turn answers "what is this";
@@ -182,7 +187,8 @@ private:
   void RequestSpriteDocument(const std::string &name, SpriteKinds::Kind kind,
                              bool replaceGenerated = false,
                              const std::string &surroundings = std::string(),
-                             const std::string &requirement = std::string());
+                             const std::string &requirement = std::string(),
+                             bool redesign = false);
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -391,6 +397,9 @@ private:
     std::string sprite;
     std::string requirement;
     std::string label;
+    // True when art already exists and this is a deliberate re-draw, so the prompt asks
+    // for a different interpretation rather than a copy of the current document.
+    bool redesign = false;
   };
   std::optional<RigDesigner::Draft> rigDraft;
 
@@ -667,6 +676,8 @@ private:
   // window that spends money without a further click, so switching it on has to be
   // deliberate, and it should not quietly reset every launch once it is.
   bool autoRequestArt = false;
+  // Follow the transcript as the designer writes it. Persisted; on by default.
+  bool autoScroll = true;
   // Whether the JSON is shown in the transcript is persisted with the layout; the
   // reasoning checkbox is not, because it is a debugging aid rather than a
   // preference and should not survive a restart.

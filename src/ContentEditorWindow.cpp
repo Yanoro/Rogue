@@ -20,6 +20,7 @@
 #include "SpriteDraw.hpp"
 #include "SpritePicker.hpp"
 #include "SpritePaths.hpp"
+#include "RigDesigner.hpp"
 #include "RigRender.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
@@ -598,7 +599,8 @@ void ContentEditorWindow::RefreshSelectedAsset() {
 void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
                                           SpriteKinds::Kind spriteKind,
                                           const std::string &explicitSprite,
-                                          bool builtInFallback) {
+                                          bool builtInFallback,
+                                          const std::string &artRequirement) {
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
   if (texture == nullptr && builtInFallback && explicitSprite.empty() &&
@@ -779,7 +781,7 @@ void ContentEditorWindow::DrawSpritePane() {
           : std::string();
 
   DrawSpriteAsset(convention, SpriteKindOf(*kind), explicitSprite,
-                  /*builtInFallback=*/false);
+                  /*builtInFallback=*/false, std::string());
 }
 
 void ContentEditorWindow::DrawItemPreviewPane() {
@@ -826,8 +828,26 @@ void ContentEditorWindow::DrawItemPreviewPane() {
   // be made the active one.
   ImGui::Separator();
   ImGui::TextDisabled("Worn sprite");
+  // The regeneration brief: the worn look that was authored, when the item carries it,
+  // plus the frame every worn layer is drawn against. A worn sprite is not in a registry,
+  // so without this the model would be asked to redraw a bare id.
+  std::string wornRequirement;
+  if (!item->wornBrief.empty()) {
+    wornRequirement = "The worn layer of " + item->id + ": " + item->wornBrief + ". ";
+  } else {
+    wornRequirement = "The worn layer of " + item->id + ". ";
+  }
+  if (!item->wornHides.empty()) {
+    std::string hides;
+    for (const std::string &part : item->wornHides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    wornRequirement += "It hides the rig part(s): " + hides + ". ";
+  }
+  wornRequirement += RigDesigner::FrameContract();
   DrawSpriteAsset(item->wornSprite, SpriteKinds::Kind::Actor, std::string(),
-                  /*builtInFallback=*/true);
+                  /*builtInFallback=*/true, wornRequirement);
 
   const auto rigs = game->rigRegistry.GetAll();
   if (rigs.empty()) {

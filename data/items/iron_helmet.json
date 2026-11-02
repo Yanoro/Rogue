@@ -2,11 +2,17 @@
   "slot": "head",
   "occupies": 1,
   "tier": 2,
-  "tags": ["armor", "iron"],
+  "tags": [
+    "armor",
+    "iron"
+  ],
   "armor": 2,
   "worn": {
     "sprite": "worn_iron_helmet",
     "z": 100,
-    "hides": ["hair"]
+    "hides": [
+      "hair"
+    ],
+    "brief": "a plain iron cap with a short nose guard and rivets along the brow band"
   }
 }

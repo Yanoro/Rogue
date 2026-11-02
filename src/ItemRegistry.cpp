@@ -64,6 +64,7 @@ bool ItemRegistry::ParseAndStore(const nlohmann::json& j, const std::string& id,
     } else {
       const nlohmann::json& worn = j["worn"];
       def.wornSprite = worn.value("sprite", std::string());
+      def.wornBrief = worn.value("brief", std::string());
       def.wornZ = worn.value("z", 0);
       if (worn.contains("hides") && worn["hides"].is_array()) {
         for (const auto& hide : worn["hides"]) {
@@ -255,6 +256,7 @@ nlohmann::json ItemRegistry::ToJson(const ItemDef& definition) const {
   if (!definition.wornSprite.empty()) {
     nlohmann::json worn = {{"sprite", definition.wornSprite},
                            {"z", definition.wornZ}};
+    if (!definition.wornBrief.empty()) worn["brief"] = definition.wornBrief;
     if (!definition.wornHides.empty()) worn["hides"] = definition.wornHides;
     document["worn"] = std::move(worn);
   }

@@ -80,6 +80,9 @@ struct ItemDef {
   // Separate from the object template's sprite on purpose: a sword lying on the
   // ground and a sword in a hand are different pictures.
   std::string wornSprite;
+  // How the item looks worn, as authored. Kept so a later regeneration has the design
+  // intent to redraw from, rather than only a name.
+  std::string wornBrief;
   int wornZ = 0;
   std::vector<std::string> wornHides;
 
