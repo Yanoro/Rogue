@@ -1,0 +1,13 @@
+{
+  "name": "Idle",
+  "category": "locomotion",
+  "description": "Standing at ease, breathing. The body rises and settles while the legs stay planted, so this movement animates the upper body only.",
+  "frames": 2,
+  "fps": 3,
+  "loop": true,
+  "parts": ["body", "arm_left", "arm_right", "head", "hair"],
+  "poses": [
+    "breath in: chest raised, shoulders back and slightly up, head level",
+    "breath out: chest lowered, shoulders settled forward, head dips a little"
+  ]
+}

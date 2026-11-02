@@ -13,6 +13,7 @@ class DebugLog;
 class ActorSpriteRegistry;
 class ItemRegistry;
 class RigRegistry;
+class MovementRegistry;
 class SkillRegistry;
 class NpcTemplateRegistry;
 class BrainTemplateRegistry;
@@ -42,6 +43,7 @@ struct World {
   ObjectFactory &objects;
   ActorSpriteRegistry &actorSprites;
   RigRegistry &rigs;
+  MovementRegistry &movements;
   // Read only for the rig preview: a worn item's art lives in its definition, so the
   // preview needs the same registry the world equips from.
   ItemRegistry &items;

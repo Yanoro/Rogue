@@ -446,6 +446,8 @@ private:
   float rigAnimTime = 0.0f;
   bool rigAnimPlaying = true;
   std::string rigAnimClip;
+  // The movement chosen in the "create a clip" picker, kept across frames.
+  std::string rigNewMovement;
   char rigClipBriefBuffer[512] = {};
   char rigClipPosesBuffer[1024] = {};
   std::string rigClipBuffersFor;

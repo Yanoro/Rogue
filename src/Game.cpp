@@ -1449,6 +1449,7 @@ void Game::LoadContentOverrides() {
   loadRegistryOverrides(root / "brains", "brain", brainTemplateRegistry);
   loadRegistryOverrides(root / "rigs", "actor rig", rigRegistry);
   loadRegistryOverrides(root / "items", "item", itemRegistry);
+  loadRegistryOverrides(root / "movements", "movement", movementRegistry);
 }
 
 std::string Game::BuildDesignerSystemPrompt() const {

@@ -6,6 +6,7 @@
 
 #include "ActorSpriteRegistry.h"
 #include "ItemRegistry.h"
+#include "MovementRegistry.h"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
@@ -216,6 +217,33 @@ std::string ItemFileName(const nlohmann::json &document) {
   return document.value("id", std::string());
 }
 
+// ---- movements -------------------------------------------------------------
+
+std::vector<Entry> ListMovements(const World &world) {
+  std::vector<Entry> out;
+  for (const MovementDef *movement : world.movements.GetAll()) {
+    out.push_back({movement->id,
+                   movement->name.empty() ? movement->id : movement->name,
+                   movement->category.empty() ? "movement" : movement->category});
+  }
+  return out;
+}
+
+nlohmann::json ReadMovement(const World &world, const std::string &id) {
+  const MovementDef *movement = world.movements.Get(id);
+  if (movement == nullptr) return nlohmann::json::object();
+  return world.movements.ToJson(*movement);
+}
+
+bool ApplyMovement(const World &world, const nlohmann::json &document,
+                   std::string *error, std::vector<std::string> *warnings) {
+  return world.movements.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string MovementFileName(const nlohmann::json &document) {
+  return document.value("id", std::string());
+}
+
 // ---- actor rigs ------------------------------------------------------------
 
 std::vector<Entry> ListRigs(const World &world) {
@@ -384,6 +412,17 @@ const std::vector<Kind> &All() {
           &ReadItem,
           &ApplyItem,
           &ItemFileName,
+          nullptr,
+          /*fixedIdKey=*/"id",
+      },
+      {
+          "movements",
+          "Movements",
+          /*hasSprites=*/false,
+          &ListMovements,
+          &ReadMovement,
+          &ApplyMovement,
+          &MovementFileName,
           nullptr,
           /*fixedIdKey=*/"id",
       },

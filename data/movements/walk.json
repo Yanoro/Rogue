@@ -1,0 +1,22 @@
+{
+  "name": "Walk",
+  "category": "locomotion",
+  "description": "A relaxed humanoid walk: a small body bob, the arms swinging opposite the legs, the head and hair following the bob.",
+  "frames": 4,
+  "fps": 8,
+  "loop": true,
+  "parts": [
+    "legs",
+    "body",
+    "arm_left",
+    "arm_right",
+    "head",
+    "hair"
+  ],
+  "poses": [
+    "contact: left leg forward, right arm forward, body at its lowest",
+    "passing: legs together, right leg lifting, body rising",
+    "contact: right leg forward, left arm forward, body at its lowest",
+    "passing: legs together, left leg lifting, body rising"
+  ]
+}

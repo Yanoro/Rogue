@@ -3,12 +3,26 @@
   "description": "A slow overhead blow with the whole body behind it. The wind-up is long enough to be interrupted, and the recovery is long enough to be punished.",
   "icon": "data/sprites/skill_heavy_swing.png",
   "type": "active",
-  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
   "levelsPerStage": 9,
-  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
   "baseline": 0,
   "scale": 9,
-  "trainedBy": ["use"],
+  "trainedBy": [
+    "use"
+  ],
   "activation": {
     "baseDamage": 18,
     "cooldown": 5.0,
@@ -18,5 +32,6 @@
     "xpPerUse": 8,
     "cast": 1.2,
     "interruptible": true
-  }
+  },
+  "animation": "sword_swing"
 }

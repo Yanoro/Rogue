@@ -81,6 +81,7 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
                                          }),
                           out.clips.end());
         }
+        clip.movement = entry.value("movement", std::string());
         clip.frames = entry.value("frames", 1);
         clip.fps = entry.value("fps", 8);
         clip.loop = entry.value("loop", true);
@@ -305,6 +306,7 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
   for (const RigClip& clip : definition.clips) {
     nlohmann::json entry = {{"id", clip.id}, {"frames", clip.frames},
                             {"fps", clip.fps}, {"loop", clip.loop}};
+    if (!clip.movement.empty()) entry["movement"] = clip.movement;
     if (!clip.brief.empty()) entry["brief"] = clip.brief;
     if (!clip.poses.empty()) entry["poses"] = clip.poses;
     clips.push_back(std::move(entry));

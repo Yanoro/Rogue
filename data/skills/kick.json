@@ -3,12 +3,26 @@
   "description": "A quick boot to the ribs. It barely hurts, but it breaks concentration, which is the point: a telegraphed cast is a chance to stop it.",
   "icon": "data/sprites/skill_kick.png",
   "type": "active",
-  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
   "levelsPerStage": 9,
-  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
   "baseline": 0,
   "scale": 9,
-  "trainedBy": ["use"],
+  "trainedBy": [
+    "use"
+  ],
   "activation": {
     "baseDamage": 2,
     "cooldown": 8.0,
@@ -17,5 +31,6 @@
     "autoCast": false,
     "xpPerUse": 6,
     "interrupts": true
-  }
+  },
+  "animation": "kick"
 }

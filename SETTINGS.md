@@ -553,6 +553,8 @@ Where each content registry loads its definitions from.
 | `actorSprites` | string | `data/actor_sprites` | Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature. *Restart to apply.* |
 | `rigs` | string | `data/rigs` | Actor-rig catalogue: layered humanoid rigs (parts plus worn equipment). The rigged counterpart of an actor sprite. *Restart to apply.* |
 | `generatedRigs` | string | `data/generated/rigs` | Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only. *Restart to apply.* |
+| `movements` | string | `data/movements` | Shared movement templates: what walking, running or a kick is, in words and timing. A rig's clips point at a movement and supply the frames. *Restart to apply.* |
+| `generatedMovements` | string | `data/generated/movements` | Generated overlay for movement definitions. Loaded after data/movements; empty means a generated movement lives for this run only. *Restart to apply.* |
 | `generatedItems` | string | `data/generated/items` | Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only. *Restart to apply.* |
 | `equipmentPromptFile` | string | `data/items/EQUIPMENTDESIGNER.md` | The equipment designer's instructions: the worn-item reply format and which slots a rig can show. *Restart to apply.* |
 | `rigPromptFile` | string | `data/rigs/RIGDESIGNER.md` | The rig designer's instructions: the humanoid frame and the per-part reply format. *Restart to apply.* |

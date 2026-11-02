@@ -42,6 +42,7 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
   def.name = j.value("name", def.id);
   def.description = j.value("description", "");
   def.icon = j.value("icon", "");
+  def.animation = j.value("animation", "");
   def.levelsPerStage = j.value("levelsPerStage", 9);
   // Untrained is neutral for a skill, so the baseline is 0 rather than the
   // average-human 10 a stat uses (section 3.4).
@@ -337,6 +338,11 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
   j["name"] = def->name;
   j["description"] = def->description;
   j["icon"] = def->icon;
+  if (!def->animation.empty()) {
+    j["animation"] = def->animation;
+  } else {
+    j.erase("animation");
+  }
   j["type"] = SkillTypeJsonName(def->type);
   j["levelsPerStage"] = def->levelsPerStage;
   j["baseline"] = def->baseline;
