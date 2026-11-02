@@ -5,12 +5,14 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "Components.h"
+#include "ObjectFactory.h"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "TileRegistry.h"
@@ -52,6 +54,15 @@ struct Info {
   // width*height, column-major (index = x*height + y) exactly as "positions"
   // stores it. -1 is the editor's spelling for an erased cell.
   std::vector<int> cells;
+
+  // Authored objects, in file order. Drawn over the terrain: an object sits on
+  // its cell, exactly as the world spawns it.
+  struct PlacedObject {
+    std::string type;
+    int x = 0;
+    int y = 0;
+  };
+  std::vector<PlacedObject> objects;
 
   int objectCount = 0;
   int npcCount = 0;
@@ -198,9 +209,17 @@ inline bool Load(const std::string &path, const TileRegistry &tiles, Info &out,
     }
   }
 
-  out.objectCount = json.contains("objects") && json["objects"].is_array()
-                        ? static_cast<int>(json["objects"].size())
-                        : 0;
+  if (json.contains("objects") && json["objects"].is_array()) {
+    for (const auto &entry : json["objects"]) {
+      Info::PlacedObject object;
+      object.type = entry.value("type", std::string());
+      object.x = entry.value("x", 0);
+      object.y = entry.value("y", 0);
+      if (object.type.empty()) continue;
+      out.objects.push_back(std::move(object));
+    }
+  }
+  out.objectCount = static_cast<int>(out.objects.size());
   out.npcCount = json.contains("npcs") && json["npcs"].is_array()
                      ? static_cast<int>(json["npcs"].size())
                      : 0;
@@ -226,8 +245,8 @@ inline std::string Count(int value, const char *singular, const char *plural) {
 // Draws the map fitted into `maxWidth` x `maxHeight`, in the current window. One
 // cell is as large as fits, so a 20x20 map and a 64x64 map both fill the pane
 // without a zoom control. Hovering a cell names it.
-inline void Draw(const Info &info, ResourceManager &resources, float maxWidth,
-                 float maxHeight) {
+inline void Draw(const Info &info, ResourceManager &resources,
+                 const ObjectFactory *objects, float maxWidth, float maxHeight) {
   if (!info.valid || info.width <= 0 || info.height <= 0) {
     ImGui::TextDisabled("%s", info.error.empty() ? "No preview available."
                                                  : info.error.c_str());
@@ -312,6 +331,48 @@ inline void Draw(const Info &info, ResourceManager &resources, float maxWidth,
       }
     }
   }
+  // Objects last, over the terrain they stand on. Resolved per type rather than per
+  // object, and through the same pair of lookups the blueprint preview uses: the
+  // template's own "sprite" override, then the convention path for the type, then
+  // the unknown placeholder the world draws for an entity with no art.
+  if (!info.objects.empty()) {
+    std::map<std::string, const Texture2D *> objectSprites;
+    for (const auto &object : info.objects) {
+      if (object.x < 0 || object.y < 0 || object.x >= info.width ||
+          object.y >= info.height) {
+        continue;
+      }
+      const auto found = objectSprites.find(object.type);
+      const Texture2D *texture = nullptr;
+      if (found != objectSprites.end()) {
+        texture = found->second;
+      } else {
+        std::string overridePath;
+        if (objects != nullptr) {
+          const auto &templates = objects->GetTemplates();
+          const auto templateIt = templates.find(object.type);
+          if (templateIt != templates.end()) {
+            overridePath = templateIt->second.value("sprite", std::string());
+          }
+        }
+        texture = ResolveSpriteTexture(overridePath, object.type, resources, nullptr);
+        if (texture == nullptr) {
+          texture = ResolveSpriteTexture(UnknownSpritePath(), std::string(),
+                                         resources, nullptr);
+        }
+        objectSprites.emplace(object.type, texture);
+      }
+      if (texture == nullptr) continue;
+
+      const ImVec2 topLeft(origin.x + object.x * cell, origin.y + object.y * cell);
+      const SpriteRect fit = SpriteFitRect(*texture, topLeft.x, topLeft.y, cell, cell);
+      if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
+      draw->AddImage(
+          static_cast<ImTextureID>(static_cast<std::intptr_t>(texture->id)),
+          ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+    }
+  }
+
   draw->AddRect(origin, bottomRight, IM_COL32(90, 90, 96, 255));
 
   // Hover: name the cell under the cursor. A map is a picture of its tiles, and
@@ -327,6 +388,12 @@ inline void Draw(const Info &info, ResourceManager &resources, float maxWidth,
       const int entry = info.cells[index];
       if (entry >= 0 && static_cast<size_t>(entry) < info.palette.size()) {
         label = info.palette[static_cast<size_t>(entry)].name;
+      }
+    }
+    for (const auto &object : info.objects) {
+      if (object.x == x && object.y == y) {
+        label += "\nobject: " + object.type;
+        break;
       }
     }
     ImGui::SetTooltip("%s\n(%d, %d)", label.c_str(), x, y);

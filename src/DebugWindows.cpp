@@ -1156,7 +1156,8 @@ void MapReloadWindow::Draw() {
     if (preview.valid) {
       const ImVec2 available = ImGui::GetContentRegionAvail();
       const float previewHeight = std::max(60.0f, available.y - 64.0f);
-      MapPreview::Draw(preview, game->resourceManager, available.x, previewHeight);
+      MapPreview::Draw(preview, game->resourceManager, &game->objectFactory,
+                       available.x, previewHeight);
     }
 
     const bool loaded =
