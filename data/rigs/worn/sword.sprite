@@ -1,0 +1,19 @@
+sprite 32x32
+kind object
+material iron
+
+// Held in the right hand, blade up. The grip sits on the hand the arm_right
+// layer draws; a clip in the animation slice will move this with that arm.
+palette {
+  blade = iron.3
+  blade_dark = iron.1
+  guard = wood.1
+  grip = wood.0
+}
+
+// Grip through the hand, guard above it, blade up past the shoulder.
+rect (23,21) (25,24) color=grip
+rect (21,20) (27,21) color=guard
+rect (23,5) (25,20) color=blade
+line (23,5) (23,19) color=blade_dark
+line (24,4) (25,4) color=blade

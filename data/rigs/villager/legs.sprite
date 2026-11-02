@@ -1,0 +1,23 @@
+sprite 32x32
+kind object
+material wood
+
+// Trousers and boots. The left and right leg are one layer: a leg cannot be
+// equipped separately in this slice, and splitting it would show a gap between
+// the thighs when the actor is still.
+palette {
+  cloth = wood.1
+  cloth_dark = wood.0
+  boot = ink.base
+  boot_lit = ink.base
+}
+
+rect (12,20) (16,30) color=cloth
+rect (18,20) (22,30) color=cloth
+// Inner seams, one pixel, so the two legs read as two.
+line (17,20) (17,30) color=cloth_dark
+// Boots.
+rect (12,29) (16,31) color=boot
+rect (18,29) (22,31) color=boot
+line (12,29) (16,29) color=boot_lit
+line (18,29) (22,29) color=boot_lit

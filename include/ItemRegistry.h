@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "EffectParsing.h"
 #include "ItemDef.hpp"
 
@@ -54,7 +56,24 @@ public:
 
   size_t Count() const { return items.size(); }
 
+  // The document the Content Editor edits, written from the typed definition. The id is
+  // deliberately not in it: the editor supplies it from the selection through its fixed-id
+  // key, so the form never grows an id field.
+  nlohmann::json ToJson(const ItemDef& definition) const;
+
+  // Validates and stores a document, replacing any item with the same id. The id comes
+  // from the document's "id" (the editor injects it) or, for a file, from the source path's
+  // stem. Shared with LoadItems so a file and an edit are validated identically.
+  bool AddOrReplace(const nlohmann::json& document, const std::string& source,
+                    std::string* error, std::vector<std::string>* warnings);
+
   void SetDebugLog(DebugLog* log) { debugLog = log; }
+
+private:
+  // One document, after parsing: fills the definition, stores it, and parses its effects.
+  // False only when the document cannot be read as an item at all.
+  bool ParseAndStore(const nlohmann::json& document, const std::string& id,
+                     std::string* error, std::vector<std::string>* warnings);
 
 private:
   std::unordered_map<std::string, ItemDef> items;

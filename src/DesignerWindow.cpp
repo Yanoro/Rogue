@@ -30,6 +30,7 @@
 #include "TileArt.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "RigRender.hpp"
 #include "TileArtQueue.hpp"
 #include "TimeUtils.hpp"
 #include "RaylibException.hpp"
@@ -553,20 +554,23 @@ std::string DesignerWindow::ArtDocumentPath(const std::string &name,
 }
 
 void DesignerWindow::AskForSpriteArt(const std::string &name,
-                                     SpriteKinds::Kind kind) {
+                                     SpriteKinds::Kind kind,
+                                     const std::string &requirement, bool redesign) {
   // `true` is the point of the button. With `false` an existing document is merely
   // *compiled*, which is instant, free and produces exactly the image that is already on
   // screen -- so "regenerate" looked like a request that completed without doing anything.
   // Only a new document can produce new art; the pack's copy is never overwritten, and the
   // compile lands in the generated layer until the Content Editor's marker chooses it.
-  RequestSpriteDocument(name, kind, /*replaceGenerated=*/true);
+  RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, std::string(),
+                        requirement, redesign);
 }
 
 void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
                                                bool replaceGenerated,
                                                const std::string &surroundings,
-                                               const std::string &requirement) {
+                                               const std::string &requirement,
+                                               bool redesign) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -636,6 +640,7 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief = TileDesigner::SpriteDocumentBrief{};
   artBrief.kind = kind;
   artBrief.name = name;
+  artBrief.redesign = redesign;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;
@@ -841,6 +846,12 @@ static const char *ArtifactNoun(DesignerDomains::Domain domain) {
       return "object";
     case DesignerDomains::Domain::Tile:
       return "tile";
+    case DesignerDomains::Domain::Map:
+      return "map";
+    case DesignerDomains::Domain::Rig:
+      return "rig";
+    case DesignerDomains::Domain::Equipment:
+      return "item";
   }
   return "definition";
 }
@@ -1121,6 +1132,39 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObject = entry.object;
       editedObjectKey = entry.objectKey;
       editedObjectOverlayPath = entry.objectOverlayPath;
+      break;
+    case DesignerDomains::Domain::Equipment:
+      equipmentDraft = entry.equipment;
+      equipmentError.clear();
+      if (equipmentDraft.has_value()) {
+        std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
+                      equipmentDraft->name.c_str());
+        if (game != nullptr && game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
+          const auto rigs = game->rigRegistry.GetAll();
+          equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
+        }
+      }
+      break;
+    case DesignerDomains::Domain::Rig:
+      rigDraft = entry.rig;
+      rigError.clear();
+      rigArtQueue.clear();
+      rigArtStamps.clear();
+      rigPreviewWorn.clear();
+      if (rigDraft.has_value()) {
+        std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
+                      rigDraft->name.c_str());
+        for (const ItemDef *item : game->itemRegistry.GetAll()) {
+          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+        }
+      }
+      break;
+    case DesignerDomains::Domain::Map:
+      mapDraft = entry.map;
+      mapPreviewValid = false;
+      mapPreviewError.clear();
+      mapPreviewZoom = 0.0f;
+      mapSaveMessage.clear();
       break;
     case DesignerDomains::Domain::Tile: {
       // By name, not by pointer: the editor writes through a pointer into the registry, so
@@ -1403,6 +1447,103 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         applied.savedPath = entry.savedPath;
       }
     }
+  } else if (designMode == DesignerDomains::Domain::Equipment) {
+    if (game == nullptr) {
+      reason = "there is no world to validate an item against.";
+    } else {
+      const EquipmentDesigner::ApplyResult result =
+          EquipmentDesigner::ApplyReply(finished.ParsedAnswer());
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        equipmentDraft = result.draft;
+        equipmentError.clear();
+        std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
+                      result.draft.name.c_str());
+        if (game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
+          const auto rigs = game->rigRegistry.GetAll();
+          equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
+        }
+        equipmentArtMessage =
+            "Item drafted. Draw its worn art, see it on a rig, then save it.";
+        if (autoRequestArt && game->TileArtQueueState().Enabled()) {
+          QueueEquipmentArt();
+        }
+      } else {
+        equipmentError = result.error;
+      }
+    }
+  } else if (designMode == DesignerDomains::Domain::Rig) {
+    if (game == nullptr) {
+      reason = "there is no world to validate a rig against.";
+    } else {
+      const RigDesigner::ApplyResult result =
+          RigDesigner::ApplyReply(finished.ParsedAnswer());
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        rigDraft = result.draft;
+        rigError.clear();
+        rigArtQueue.clear();
+        rigArtStamps.clear();
+        rigPreviewWorn.clear();
+        std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
+                      result.draft.name.c_str());
+        for (const ItemDef *item : game->itemRegistry.GetAll()) {
+          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+        }
+        rigArtMessage =
+            "Rig drafted. Draw its layers, look at it, then save it.";
+        // "Art automatically" means exactly that for a rig: its layers *are* the art, and
+        // a drafted body with none draws nothing. Missing layers are queued; layers that
+        // already have art are left alone, so redrafting a body does not silently
+        // overwrite art someone may have kept.
+        if (autoRequestArt && game->TileArtQueueState().Enabled()) {
+          int queued = 0;
+          for (const RigDesigner::Part &part : rigDraft->parts) {
+            std::string resolved;
+            if (SpriteResolves(std::string(), part.sprite, &resolved)) continue;
+            QueueRigPartArt(part);
+            ++queued;
+          }
+          rigArtMessage =
+              queued > 0
+                  ? "Rig drafted. Art automatically is on: " +
+                        std::to_string(queued) + " layer(s) queued."
+                  : "Rig drafted. Every layer already has art.";
+        }
+      } else {
+        rigError = result.error;
+      }
+    }
+  } else if (designMode == DesignerDomains::Domain::Map) {
+    if (game == nullptr) {
+      reason = "there is no world to validate a map against.";
+    } else {
+      const MapDesigner::ApplyResult result = MapDesigner::ApplyReply(
+          finished.ParsedAnswer(), game->tileRegistry, game->objectFactory);
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        mapDraft = result.draft;
+        mapPreviewValid = false;
+        mapPreviewError.clear();
+        mapPreviewZoom = 0.0f;
+        mapSaveMessage.clear();
+        mapSaveIsError = false;
+      } else {
+        mapPreviewError = result.error;
+      }
+    }
   } else if (designMode == DesignerDomains::Domain::Object) {
     ObjectFactory *objects = Objects();
     if (objects == nullptr) {
@@ -1464,34 +1605,54 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
   // writes through; for an object it is a copy, because ObjectFactory owns its templates
   // by value and a pointer into that map is invalidated by the next runtime add.
   if (applied.ok) {
-    if (designMode == DesignerDomains::Domain::Object) {
-      editedObject = applied.objectDefinition;
-      editedObjectKey = applied.objectKey;
-      editedObjectOverlayPath = applied.objectOverlayPath;
+    if (designMode == DesignerDomains::Domain::Map) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.map = mapDraft;
+      CaptureViewed(std::move(result));
+    } else if (designMode == DesignerDomains::Domain::Equipment) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.equipment = equipmentDraft;
+      CaptureViewed(std::move(result));
+    } else if (designMode == DesignerDomains::Domain::Rig) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.rig = rigDraft;
+      CaptureViewed(std::move(result));
     } else {
-      edited = const_cast<TileDef *>(applied.tileDefinition);
-      editedIsRuntime = true;
-      if (edited != nullptr) {
-        LoadEditorFrom(*edited);
+      if (designMode == DesignerDomains::Domain::Object) {
+        editedObject = applied.objectDefinition;
+        editedObjectKey = applied.objectKey;
+        editedObjectOverlayPath = applied.objectOverlayPath;
+      } else {
+        edited = const_cast<TileDef *>(applied.tileDefinition);
+        editedIsRuntime = true;
+        if (edited != nullptr) {
+          LoadEditorFrom(*edited);
+        }
       }
-    }
 
-    // One entry per accepted reply, not per entry of a set: the panes show one thing -- the
-    // last definition the reply produced -- and an entry per sprite would make the arrows
-    // walk a set while the pane showed the same object six times.
-    ViewedResult result;
-    result.domain = designMode;
-    result.label = applied.wasSet && !applied.setName.empty() ? applied.setName
-                                                             : applied.name;
-    result.tileIsRuntime = true;
-    if (designMode == DesignerDomains::Domain::Object) {
-      result.object = editedObject;
-      result.objectKey = editedObjectKey;
-      result.objectOverlayPath = editedObjectOverlayPath;
-    } else {
-      result.tileName = applied.name;
+      // One entry per accepted reply, not per entry of a set: the panes show one thing -- the
+      // last definition the reply produced -- and an entry per sprite would make the arrows
+      // walk a set while the pane showed the same object six times.
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.wasSet && !applied.setName.empty() ? applied.setName
+                                                               : applied.name;
+      result.tileIsRuntime = true;
+      if (designMode == DesignerDomains::Domain::Object) {
+        result.object = editedObject;
+        result.objectKey = editedObjectKey;
+        result.objectOverlayPath = editedObjectOverlayPath;
+      } else {
+        result.tileName = applied.name;
+      }
+      CaptureViewed(std::move(result));
     }
-    CaptureViewed(std::move(result));
   }
 
   // The conversation both sides saw, so a follow-up can refer to this tile. The
@@ -1556,9 +1717,13 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
     // The names to ask art for: one for a single reply, every accepted entry for a set. The
     // queue batches them and splits at `maxCellsPerRequest`, so a set of ten becomes several
     // requests without this code knowing or caring about the cap.
-    std::vector<std::string> artNames = applied.acceptedNames;
-    if (artNames.empty() && !applied.name.empty()) {
-      artNames.push_back(applied.name);
+    // A map is drawn from its tiles, so there is no sprite to ask the art queue for.
+    std::vector<std::string> artNames;
+    if (DesignerDomains::IsSprite(designMode)) {
+      artNames = applied.acceptedNames;
+      if (artNames.empty() && !applied.name.empty()) {
+        artNames.push_back(applied.name);
+      }
     }
 
     if (game != nullptr && !artNames.empty() && DslArtSourceActive()) {
@@ -1730,6 +1895,8 @@ void DesignerWindow::RefreshRewriteBrief() {
     rewriter.SetBrief(RewriteBriefs::Blueprint());
   } else if (mode == DesignerDomains::Domain::Object) {
     rewriter.SetBrief(RewriteBriefs::Object());
+  } else if (mode == DesignerDomains::Domain::Map) {
+    rewriter.SetBrief(RewriteBriefs::Map());
   } else {
     rewriter.SetBrief(RewriteBriefs::Tile());
   }
@@ -2056,6 +2223,469 @@ void DesignerWindow::DrawObjectPreview() {
     ImGui::TextDisabled("written to %s", editedObjectOverlayPath.c_str());
   } else {
     ImGui::TextDisabled("not written to disk -- it exists for this session only");
+  }
+}
+
+void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
+  RigArtRequest request;
+  request.label = part.id;
+  request.sprite = part.sprite;
+  request.requirement = RigDesigner::FrameContract() + "\n\nThis layer: " +
+                        part.id + " -- " + part.brief +
+                        "\nDraw only this layer; the rest of the 32x32 frame stays "
+                        "transparent.";
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), part.sprite, &resolved);
+  }
+  rigArtQueue.push_back(std::move(request));
+  rigArtMessage = "Queued the " + part.id + " layer (" +
+                  std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+void DesignerWindow::QueueWornArt(const std::string &itemId) {
+  if (game == nullptr) return;
+  const ItemDef *item = game->itemRegistry.Get(itemId);
+  if (item == nullptr || item->wornSprite.empty()) return;
+  std::string hides;
+  for (const std::string &part : item->wornHides) {
+    if (!hides.empty()) hides += ", ";
+    hides += part;
+  }
+  RigArtRequest request;
+  request.label = itemId;
+  request.sprite = item->wornSprite;
+  request.requirement =
+      RigDesigner::FrameContract() + "\n\nThis layer is worn equipment: " + itemId +
+      ". Draw it over that frame, aligned with the body it is worn on. " +
+      (hides.empty()
+           ? "It hides no rig part; it is drawn in front of the body."
+           : "It hides the rig part(s): " + hides + ".") +
+      " Draw only the worn item, not the body underneath.";
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), item->wornSprite, &resolved);
+  }
+  rigArtQueue.push_back(std::move(request));
+  rigArtMessage = "Queued worn art for " + itemId + " (" +
+                  std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+void DesignerWindow::PumpRigArtQueue() {
+  if (rigArtQueue.empty() || game == nullptr) return;
+  if (session == nullptr || session->IsBusy()) return;
+  const RigArtRequest request = rigArtQueue.front();
+  rigArtQueue.pop_front();
+  // Kind Actor: a rig layer is an actor sprite with a fixed frame, and the sprite-document
+  // prompt already knows how to talk about an actor's look.
+  RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
+                        /*replaceGenerated=*/true, "", request.requirement,
+                        request.redesign);
+  rigArtMessage = "Asked the art pipeline for " + request.label + ".";
+}
+
+void DesignerWindow::RefreshRigArtMemo() {
+  if (!rigDraft.has_value() || game == nullptr) return;
+  // A layer's compiled PNG lands asynchronously. The texture cache remembers "missing",
+  // so the first sight of a file (and every redraw, which changes its write time) has to
+  // forget that path or the preview stays empty after the art arrives.
+  const auto refresh = [this](const std::string &sprite) {
+    std::string path;
+    if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return;
+    std::error_code ec;
+    const auto stamp = std::filesystem::last_write_time(path, ec);
+    if (ec) return;
+    const auto found = rigArtStamps.find(sprite);
+    if (found != rigArtStamps.end() && found->second == stamp) return;
+    rigArtStamps[sprite] = stamp;
+    game->ForgetSpriteMemo(std::string(), sprite);
+  };
+  for (const RigDesigner::Part &part : rigDraft->parts) refresh(part.sprite);
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (!item->wornSprite.empty()) refresh(item->wornSprite);
+  }
+  if (equipmentDraft.has_value()) refresh(equipmentDraft->wornSprite);
+}
+
+void DesignerWindow::SaveRig() {
+  if (!rigDraft.has_value() || game == nullptr) return;
+  RigDesigner::Draft &draft = *rigDraft;
+  draft.name = std::string(rigNameBuffer);
+  draft.slug = RigDesigner::SlugFor(draft.name);
+  if (draft.slug.empty()) {
+    rigArtMessage = "Give the rig a name before saving.";
+    return;
+  }
+  const bool existed = game->rigRegistry.Get(draft.slug) != nullptr;
+  std::string savedPath;
+  std::string error;
+  if (!RigDesigner::Save(draft, Settings().content.generatedRigs, &savedPath, &error)) {
+    rigArtMessage = error;
+    return;
+  }
+  game->rigRegistry.Load(Settings().content.generatedRigs);
+  rigArtMessage = "Saved " + savedPath +
+                  (existed ? " (the existing rig with that id is replaced)" : "") +
+                  ". It is now in the Content Editor under Actor rigs.";
+  if (game->debugLog) {
+    game->debugLog->LogInfo("Rig designer: saved " + savedPath);
+  }
+}
+
+void DesignerWindow::QueueEquipmentArt() {
+  if (!equipmentDraft.has_value() || game == nullptr) return;
+  const EquipmentDesigner::Draft &draft = *equipmentDraft;
+  RigArtRequest request;
+  request.label = draft.name;
+  request.sprite = draft.wornSprite;
+  request.requirement = EquipmentDesigner::WornArtRequirement(draft);
+  {
+    std::string resolved;
+    request.redesign = SpriteResolves(std::string(), draft.wornSprite, &resolved);
+  }
+  rigArtQueue.push_back(std::move(request));
+  equipmentArtMessage = "Queued worn art for " + draft.name + ".";
+}
+
+void DesignerWindow::SaveEquipment() {
+  if (!equipmentDraft.has_value() || game == nullptr) return;
+  EquipmentDesigner::Draft &draft = *equipmentDraft;
+  draft.name = std::string(equipmentNameBuffer);
+  draft.slug = EquipmentDesigner::SlugFor(draft.name);
+  if (draft.slug.empty()) {
+    equipmentArtMessage = "Give the item a name before saving.";
+    return;
+  }
+  const bool existed = game->itemRegistry.Get(draft.slug) != nullptr;
+  std::string savedPath;
+  std::string error;
+  if (!EquipmentDesigner::Save(draft, Settings().content.generatedItems, &savedPath,
+                               &error)) {
+    equipmentArtMessage = error;
+    return;
+  }
+  game->itemRegistry.LoadItems(Settings().content.generatedItems);
+  equipmentArtMessage =
+      "Saved " + savedPath +
+      (existed ? " (the existing item with that id is replaced)" : "") +
+      ". It is now worn by the rig preview in the Content Editor too.";
+  if (game->debugLog) {
+    game->debugLog->LogInfo("Equipment designer: saved " + savedPath);
+  }
+}
+
+void DesignerWindow::DrawEquipmentPreview() {
+  if (!equipmentDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a piece of worn equipment and its definition and worn-art brief appear "
+        "here. Draw the layer, see it on a rig, then save the item.");
+    ImGui::TextDisabled("For example: \"an iron kettle helm\", \"a patched leather "
+                        "cuirass\".");
+    if (!equipmentError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", equipmentError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+  EquipmentDesigner::Draft &draft = *equipmentDraft;
+
+  ImGui::TextDisabled("Item");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputText("##equipment_name", equipmentNameBuffer,
+                       sizeof(equipmentNameBuffer))) {
+    draft.name = std::string(equipmentNameBuffer);
+    draft.slug = EquipmentDesigner::SlugFor(draft.name);
+  }
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  ImGui::TextDisabled("slot %s | tier %.0f | armor %.0f", draft.slot.c_str(),
+                      static_cast<double>(draft.tier),
+                      static_cast<double>(draft.armor));
+  if (draft.slot == "hand" && draft.damage > 0.0f) {
+    ImGui::TextDisabled("damage %.0f | swing %.2fs | durability %d",
+                        static_cast<double>(draft.damage),
+                        static_cast<double>(draft.swingTime), draft.durability);
+  }
+  if (!draft.tags.empty()) {
+    std::string tags;
+    for (const std::string &tag : draft.tags) {
+      if (!tags.empty()) tags += ", ";
+      tags += tag;
+    }
+    ImGui::TextDisabled("tags: %s", tags.c_str());
+  }
+  if (!draft.hides.empty()) {
+    std::string hides;
+    for (const std::string &part : draft.hides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    ImGui::TextDisabled("hides: %s", hides.c_str());
+  }
+  if (!draft.warnings.empty()) {
+    for (const std::string &warning : draft.warnings) {
+      ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.5f, 1.0f), "! %s", warning.c_str());
+    }
+  }
+
+  ImGui::Separator();
+  std::string resolved;
+  const bool drawn = SpriteResolves(std::string(), draft.wornSprite, &resolved);
+  ImGui::Text("%s%s", draft.wornSprite.c_str(), drawn ? "" : "   (no art yet)");
+  ImGui::SameLine();
+  if (ImGui::SmallButton(drawn ? "Redraw worn art" : "Draw worn art")) {
+    QueueEquipmentArt();
+  }
+  ImGui::TextDisabled("%s", draft.wornBrief.c_str());
+
+  // See it on a body: a worn layer with nothing to wear it is not a look yet.
+  ImGui::Separator();
+  const auto rigs = game->rigRegistry.GetAll();
+  if (rigs.empty()) {
+    ImGui::TextDisabled(
+        "No rig is loaded, so there is no body to show the item on. Save a rig first.");
+  } else {
+    int selected = 0;
+    std::vector<const char *> names;
+    for (size_t i = 0; i < rigs.size(); ++i) {
+      names.push_back(rigs[i]->name.c_str());
+      if (rigs[i]->id == equipmentPreviewRig) selected = static_cast<int>(i);
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##equipment_rig", &selected, names.data(),
+                     static_cast<int>(names.size()))) {
+      equipmentPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+    }
+    const ActorRig *rig = game->rigRegistry.Get(equipmentPreviewRig);
+    if (rig != nullptr) {
+      std::vector<RigRender::WornLayer> worn;
+      RigRender::WornLayer layer;
+      layer.label = draft.slug;
+      layer.texture =
+          RigRender::ResolveRigSprite(draft.wornSprite, game->resourceManager);
+      layer.z = draft.wornZ;
+      layer.hides = draft.hides;
+      worn.push_back(std::move(layer));
+      RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+    }
+  }
+
+  ImGui::Separator();
+  const bool exists = game->itemRegistry.Get(draft.slug) != nullptr;
+  if (exists) {
+    ImGui::TextDisabled(
+        "An item with id '%s' already exists; saving replaces it in the world.",
+        draft.slug.c_str());
+  }
+  if (ImGui::Button("Save item")) {
+    SaveEquipment();
+  }
+  if (!equipmentArtMessage.empty()) {
+    ImGui::TextWrapped("%s", equipmentArtMessage.c_str());
+  }
+}
+
+void DesignerWindow::DrawRigPreview() {
+  if (!rigDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a character body and its layer briefs appear here. Draw a layer, look "
+        "at the composed body, then save the rig.");
+    ImGui::TextDisabled(
+        "For example: \"a broad, soot-marked village blacksmith\".");
+    if (!rigError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", rigError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+  RigDesigner::Draft &draft = *rigDraft;
+
+  ImGui::TextDisabled("Rig");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputText("##rig_name", rigNameBuffer, sizeof(rigNameBuffer))) {
+    draft.name = std::string(rigNameBuffer);
+    draft.slug = RigDesigner::SlugFor(draft.name);
+  }
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  if (!draft.designerNotes.empty()) {
+    ImGui::TextDisabled("%s", draft.designerNotes.c_str());
+  }
+
+  // The composed body first: the look is what this slice is for.
+  ActorRig renderRig;
+  renderRig.id = draft.slug;
+  renderRig.name = draft.name;
+  renderRig.width = draft.width;
+  renderRig.height = draft.height;
+  for (const RigDesigner::Part &part : draft.parts) {
+    renderRig.parts.push_back({part.id, part.sprite, part.z});
+  }
+  std::vector<RigRender::WornLayer> worn;
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty() || rigPreviewWorn.count(item->id) == 0) continue;
+    RigRender::WornLayer layer;
+    layer.label = item->id;
+    layer.texture =
+        RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+    layer.z = item->wornZ;
+    layer.hides = item->wornHides;
+    worn.push_back(std::move(layer));
+  }
+  ImGui::Separator();
+  RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f);
+  ImGui::Separator();
+
+  // The layers, each with its own draw button: a layer the model got wrong can be redrawn
+  // without touching the five that are right.
+  ImGui::TextDisabled("Layers");
+  for (const RigDesigner::Part &part : draft.parts) {
+    ImGui::PushID(part.id.c_str());
+    std::string resolved;
+    const bool drawn = SpriteResolves(std::string(), part.sprite, &resolved);
+    ImGui::Text("%s%s", part.id.c_str(), drawn ? "" : "   (no art yet)");
+    ImGui::SameLine();
+    if (ImGui::SmallButton(drawn ? "Redraw" : "Draw")) {
+      QueueRigPartArt(part);
+    }
+    ImGui::TextDisabled("%s", part.brief.c_str());
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled("Worn equipment (preview)");
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty()) continue;
+    ImGui::PushID(item->id.c_str());
+    bool on = rigPreviewWorn.count(item->id) > 0;
+    if (ImGui::Checkbox(item->id.c_str(), &on)) {
+      if (on) {
+        rigPreviewWorn.insert(item->id);
+      } else {
+        rigPreviewWorn.erase(item->id);
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Redraw art")) {
+      QueueWornArt(item->id);
+    }
+    std::string hides;
+    for (const std::string &part : item->wornHides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    if (!hides.empty()) {
+      ImGui::TextDisabled("hides: %s", hides.c_str());
+    }
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  const bool exists = game->rigRegistry.Get(draft.slug) != nullptr;
+  if (exists) {
+    ImGui::TextDisabled(
+        "A rig with id '%s' already exists; saving replaces it in the world.",
+        draft.slug.c_str());
+  }
+  if (ImGui::Button("Save rig")) {
+    SaveRig();
+  }
+  if (!rigArtQueue.empty()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu art request(s) queued", rigArtQueue.size());
+  }
+  if (!rigArtMessage.empty()) {
+    ImGui::TextWrapped("%s", rigArtMessage.c_str());
+  }
+}
+
+void DesignerWindow::DrawMapPreview() {
+  if (!mapDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a map in the prompt and it appears here, drawn with the world's "
+        "own tiles and objects.");
+    ImGui::TextDisabled(
+        "For example: \"a small walled courtyard with a well and two chests\".");
+    if (!mapPreviewError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", mapPreviewError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+
+  const MapDesigner::Draft &draft = *mapDraft;
+  ImGui::TextUnformatted(draft.name.c_str());
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  ImGui::TextDisabled("%d x %d tiles (%d x %d px each) | %d object(s)", draft.width,
+                      draft.height, draft.tileWidth, draft.tileHeight,
+                      draft.objectCount);
+  ImGui::Separator();
+
+  if (!mapPreviewValid) {
+    mapPreviewValid = MapPreview::Parse(draft.document, game->tileRegistry,
+                                        mapPreviewInfo, &mapPreviewError);
+  }
+  if (mapPreviewValid) {
+    if (ImGui::SmallButton("Fit")) {
+      mapPreviewZoom = 0.0f;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("scroll to zoom, drag to pan, double-click to fit");
+    const ImVec2 available = ImGui::GetContentRegionAvail();
+    const float previewHeight = std::max(60.0f, available.y - 90.0f);
+    MapPreview::Draw(mapPreviewInfo, game->resourceManager, &game->objectFactory,
+                     &mapPreviewZoom, available.x, previewHeight);
+  } else {
+    ImGui::TextWrapped("The draft could not be previewed: %s",
+                       mapPreviewError.c_str());
+  }
+
+  ImGui::Separator();
+  // Saving is a separate step on purpose: a reply is a design, and a design that
+  // writes a file on arrival leaves one file per attempt.
+  ImGui::BeginDisabled(draft.name.empty() || game->mapReloader == nullptr);
+  if (ImGui::Button("Save to maps/")) {
+    std::string savedPath;
+    std::string error;
+    const std::string directory =
+        game->mapReloader != nullptr ? game->mapReloader->GetDirectory() : "";
+    if (MapDesigner::Save(draft, directory, &savedPath, &error)) {
+      mapSaveMessage = "Saved " + savedPath;
+      mapSaveIsError = false;
+      game->mapReloader->RefreshMapList();
+      if (game->debugLog) {
+        game->debugLog->LogInfo("Map designer: saved " + savedPath);
+      }
+    } else {
+      mapSaveMessage = error;
+      mapSaveIsError = true;
+    }
+  }
+  ImGui::EndDisabled();
+  ImGui::SameLine();
+  ImGui::TextDisabled("refuses to overwrite an existing map");
+  if (!mapSaveMessage.empty()) {
+    if (mapSaveIsError) {
+      ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f), "%s",
+                         mapSaveMessage.c_str());
+    } else {
+      ImGui::TextDisabled("%s", mapSaveMessage.c_str());
+    }
+  }
+  for (const std::string &warning : draft.warnings) {
+    ImGui::TextDisabled("! %s", warning.c_str());
   }
 }
 
@@ -3504,6 +4134,14 @@ void DesignerWindow::Draw() {
         "It is parsed and applied either way -- this only changes what you read.");
   }
   ImGui::SameLine();
+  ImGui::Checkbox("Auto-scroll", &autoScroll);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Follow the newest output while the designer writes. Turn it off to read "
+        "scrollback without the window jumping back.\nPersisted in "
+        "debug_windows_state.");
+  }
+  ImGui::SameLine();
   // Disabled while generation is off, because an auto-request that can only ever be
   // refused is worse than a checkbox that says why it cannot be used.
   ImGui::BeginDisabled(game == nullptr || !game->TileArtQueueState().Enabled());
@@ -3518,6 +4156,8 @@ void DesignerWindow::Draw() {
               "For a building: after a design is saved, create every asset it asked "
               "for -- definition first, then its sprite -- one at a time, with no "
               "further input.\n"
+              "For a rig: draw every body layer that has no art yet, one at a time, as "
+              "soon as the body is drafted.\n"
               "Requests are batched where they can be, and the run names what it could "
               "not make.\nPersisted in debug_windows_state."
             : "Art generation is off (art.generation.enabled in settings.json), so "
@@ -3569,6 +4209,7 @@ void DesignerWindow::Draw() {
   if (!layoutLoaded && game != nullptr && game->debugWindowState) {
     showJson = game->debugWindowState->GetDesignerShowJson();
     autoRequestArt = game->debugWindowState->GetDesignerAutoArt();
+    autoScroll = game->debugWindowState->GetDesignerAutoScroll();
     paneWidth = game->debugWindowState->GetDesignerPaneWidth();
     blueprintZoom = game->debugWindowState->GetDesignerZoom();
     // A first launch has no stored preference, so it follows the setting that
@@ -3591,6 +4232,14 @@ void DesignerWindow::Draw() {
   // with an ungrabbable pane. The splitter is the one piece of the old Designer window's
   // layout worth keeping now that it is one window: a fixed fraction was always too wide
   // for a sprite and too narrow for a building.
+  // What the footer under the transcript needs: the Send row, up to two wrapped
+  // status lines, and the input. Reserved from the layout rather than left to the
+  // window's height, because the input used to hang below the visible area.
+  constexpr float kInputHeight = 64.0f;
+  const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.0f +
+                             kInputHeight +
+                             ImGui::GetTextLineHeightWithSpacing() * 2.0f;
+
   const float available = ImGui::GetContentRegionAvail().x;
   const float maxPaneWidth =
       std::max(kMinPaneWidth, available - kMinTranscriptWidth - 8.0f);
@@ -3640,7 +4289,12 @@ void DesignerWindow::Draw() {
     }
   }
 
-  ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -70), true);
+  // The rig's art requests are one conversation at a time, so they queue; the memo refresh
+  // is what makes a layer appear the moment its compiled PNG lands.
+  PumpRigArtQueue();
+  RefreshRigArtMemo();
+
+  ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -footerHeight), true);
   DrawViewedToolbar();
   // What is *shown* and what is *being designed for* are deliberately two values now.
   // Before the history existed they were one, which is why looking at a building meant
@@ -3651,6 +4305,12 @@ void DesignerWindow::Draw() {
     DrawBlueprintPreview();
   } else if (shown == DesignerDomains::Domain::Object) {
     DrawObjectPreview();
+  } else if (shown == DesignerDomains::Domain::Map) {
+    DrawMapPreview();
+  } else if (shown == DesignerDomains::Domain::Rig) {
+    DrawRigPreview();
+  } else if (shown == DesignerDomains::Domain::Equipment) {
+    DrawEquipmentPreview();
   } else {
     DrawPreviewPane();
   }
@@ -3661,7 +4321,7 @@ void DesignerWindow::Draw() {
   // is the idiomatic way to make one.
   ImGui::SameLine(0.0f, 0.0f);
   const float paneLeft = ImGui::GetCursorScreenPos().x;
-  ImGui::InvisibleButton("designer_splitter", ImVec2(8.0f, -70));
+  ImGui::InvisibleButton("designer_splitter", ImVec2(8.0f, -footerHeight));
   const bool splitterHovered = ImGui::IsItemHovered();
   const bool splitterActive = ImGui::IsItemActive();
   if (splitterHovered || splitterActive) {
@@ -3687,7 +4347,7 @@ void DesignerWindow::Draw() {
 
   ImGui::SameLine(0.0f, 0.0f);
 
-  ImGui::BeginChild("designer_transcript", ImVec2(0, -70), true);
+  ImGui::BeginChild("designer_transcript", ImVec2(0, -footerHeight), true);
   // The transcript itself -- prompts, replies, the thinking tint, the streaming ellipsis,
   // the error line, the speech bar and the separator -- is DesignerSession's. What stays
   // here is the verdict: "Added", a per-entry set list and the art note are sprite facts,
@@ -3713,6 +4373,21 @@ void DesignerWindow::Draw() {
                               "with one object definition and its own notes; an accepted "
                               "object is written to the generated overlay and is available "
                               "to blueprints and spawns on the next load."
+                      : mode == DesignerDomains::Domain::Equipment
+                            ? "Ask for a piece of equipment -- \"an iron kettle helm\", "
+                              "\"a patched leather cuirass\". The designer replies with "
+                              "its slot, numbers and a brief for how it looks worn; draw "
+                              "that layer and see it on a rig."
+                      : mode == DesignerDomains::Domain::Rig
+                            ? "Ask for a body -- \"a soot-stained blacksmith\", \"a "
+                              "soldier in a patched coat\". The designer replies with a "
+                              "brief per body layer; press Draw on the ones you want, and "
+                              "the rig composes on the left as the art arrives."
+                      : mode == DesignerDomains::Domain::Map
+                            ? "Ask for a map -- \"a walled orchard with a well and a "
+                              "road to a mill\". The designer replies with a legend and "
+                              "rows of terrain plus the objects on it; the draft appears "
+                              "on the left, and \"Save to maps/\" writes it."
                             : "Ask for a tile -- \"a stone hearth\", \"mossy "
                               "flagstones\", \"a puddle\". The designer replies with one "
                               "tile definition and its own notes; an accepted tile is "
@@ -3783,7 +4458,8 @@ void DesignerWindow::Draw() {
           ImGui::TextWrapped("Refused: %s", ex.failureReason.c_str());
           ImGui::PopStyleColor();
         }
-      });
+      },
+      autoScroll);
   ImGui::EndChild();
 
   // Inspection runs on the main thread, after the transcript is drawn. Doing it
@@ -3844,9 +4520,13 @@ void DesignerWindow::Draw() {
   ImGui::SetNextItemWidth(-1.0f);
   const bool submitted = ImGui::InputTextMultiline(
       "##tile_designer_input", inputBuffer, sizeof(inputBuffer),
-      ImVec2(-1.0f, 54.0f),
+      ImVec2(-1.0f, kInputHeight),
       ImGuiInputTextFlags_EnterReturnsTrue |
-          ImGuiInputTextFlags_CtrlEnterForNewLine);
+          ImGuiInputTextFlags_CtrlEnterForNewLine |
+          // Wrapped rather than scrolled sideways: a long request is normal, and a
+          // field that hides its own beginning is the reason the window used to be
+          // widened to read it.
+          ImGuiInputTextFlags_WordWrap);
 
   if ((send || submitted) && !busy) {
     std::string prompt(inputBuffer);
@@ -3874,6 +4554,7 @@ void DesignerWindow::Draw() {
   if (layoutLoaded && game != nullptr && game->debugWindowState) {
     game->debugWindowState->SetDesignerShowJson(showJson);
     game->debugWindowState->SetDesignerAutoArt(autoRequestArt);
+    game->debugWindowState->SetDesignerAutoScroll(autoScroll);
     game->debugWindowState->SetDesignerPaneWidth(paneWidth);
     game->debugWindowState->SetDesignerZoom(blueprintZoom);
   }

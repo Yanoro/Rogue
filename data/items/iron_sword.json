@@ -2,9 +2,19 @@
   "slot": "hand",
   "occupies": 1,
   "tier": 1,
-  "tags": ["sword", "edge"],
+  "tags": [
+    "sword",
+    "edge"
+  ],
   "damage": 6,
   "swingTime": 1.8,
   "durability": 100,
-  "consumedBy": ["attack"]
+  "consumedBy": [
+    "attack"
+  ],
+  "worn": {
+    "sprite": "worn_iron_sword",
+    "z": 110,
+    "brief": "a short iron blade held point up in the right hand, plain guard and wrapped grip"
+  }
 }

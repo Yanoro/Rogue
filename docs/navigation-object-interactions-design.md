@@ -475,7 +475,7 @@ The navigation layer never compares `name` to `"Examine"`/`"Harvest"`; it looks 
 | `include/AgentActions.h` | **Stage 2 implemented:** parse `objects:all`, `inspect:<group>[:all]`, `approach:<alias>`, `<verb>:<alias>`; generic `legInteraction`/`legObjectAlias`/`legApproach`; timed verbs finish and hand control back. Empty/truncated replies retry rather than stopping immediately. |
 | `include/NavigationStrategist.hpp` | **Stage 2 implemented:** `StripObjectGraph` removes the duplicate per-object graph nodes/edges when grouped objects are active; the single prompt has a concrete JSON shape, forbids `action`/`verb`/`alias`/`think` top-level fields and caps the think block. |
 | `include/Settings.h`, `src/Settings.cpp` | **Stage 2 implemented:** `objectSummary` (default true), `maxObjectGroups` (6), `maxGroupDetails` (8), validation. |
-| `src/GameECS.cpp` | mark `requiresArgs` at registration; no navigation-specific verb list. **Done in Stage 1.** |
+| `src/GameECSInit.cpp` | mark `requiresArgs` at registration; no navigation-specific verb list. **Done in Stage 1.** |
 | Navigation window | Stage 1 debug “Object groups” table; it reflects the active no-arg profile in Stage 2. |
 
 `BuildCandidates` currently owns both movement and examine candidates. The group builder should be

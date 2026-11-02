@@ -1,0 +1,18 @@
+sprite 32x32
+kind object
+material soil
+
+// Drawn over the head and hidden by a helmet, which is the hide rule this slice
+// exists to prove.
+palette {
+  hair = soil.1
+  hair_dark = soil.0
+  hair_lit = soil.2
+}
+
+rect (10,2) (22,5) color=hair
+rect (10,5) (11,9) color=hair
+rect (21,5) (22,9) color=hair
+line (10,3) (22,3) color=hair_lit
+line (11,5) (11,9) color=hair_dark
+line (21,5) (21,9) color=hair_dark

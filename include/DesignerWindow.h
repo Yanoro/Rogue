@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -24,6 +25,10 @@
 #include "TileDesigner.hpp"
 #include "ObjectDesigner.hpp"
 #include "DesignerDomains.h"
+#include "MapDesigner.hpp"
+#include "MapPreview.hpp"
+#include "RigDesigner.hpp"
+#include "EquipmentDesigner.hpp"
 #include "SpriteKinds.hpp"
 #include "SpriteRouter.hpp"
 #include "TileRegistry.h"
@@ -152,7 +157,12 @@ public:
   // The document conversation is pumped by this window's Draw, so a caller must also make
   // the window visible before asking, or the reply is never processed. That coupling is
   // the reason this is a one-line wrapper rather than a service of its own.
-  void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind);
+  // `requirement` replaces the catalog description when the asset is not in a registry
+  // (a worn equipment layer), and `redesign` tells the model this is a re-draw rather
+  // than a first pass, so it varies the look instead of repeating the previous document.
+  void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
+                       const std::string &requirement = std::string(),
+                       bool redesign = true);
 
 private:
   // The two conversations this window runs. A definition turn answers "what is this";
@@ -177,7 +187,8 @@ private:
   void RequestSpriteDocument(const std::string &name, SpriteKinds::Kind kind,
                              bool replaceGenerated = false,
                              const std::string &surroundings = std::string(),
-                             const std::string &requirement = std::string());
+                             const std::string &requirement = std::string(),
+                             bool redesign = false);
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -338,6 +349,18 @@ private:
     std::string objectKey;
     std::string objectOverlayPath;
 
+    // Map: the expanded document, because a map is not a small definition and the
+    // pane draws it whole. It is the only artifact that is its own file.
+    std::optional<MapDesigner::Draft> map;
+
+    // Rig: the definition plus its per-part briefs. The art is requested separately, so
+    // the draft is the thing worth keeping in the history.
+    std::optional<RigDesigner::Draft> rig;
+
+    // Equipment: an item definition and its worn-art brief. The world object it would
+    // spawn from is not part of this domain.
+    std::optional<EquipmentDesigner::Draft> equipment;
+
     // Tile: by name, because the editor writes *through* a pointer into the registry.
     // The entry is therefore the asset's identity rather than a snapshot: re-accepting
     // "stone floor" updates this view too, which is the right answer for a name that
@@ -356,6 +379,52 @@ private:
   // A refused attempt, drawn only while it is the newest thing and only for a building
   // (the sprite panes have never shown refusals in the left pane; the transcript has them).
   std::optional<ViewedResult> refusedAttempt;
+
+  // The map the pane is showing, and the parsed preview of it. Parsed from the draft
+  // rather than from a file, and cached because a map is 4096 cells.
+  std::optional<MapDesigner::Draft> mapDraft;
+
+  // The rig draft, the queue of art requests it still owes, and the last file time seen
+  // per layer (a redraw changes the file, and the texture memo has to be told).
+  void DrawRigPreview();
+  void QueueRigPartArt(const RigDesigner::Part &part);
+  void QueueWornArt(const std::string &itemId);
+  void PumpRigArtQueue();
+  void RefreshRigArtMemo();
+  void SaveRig();
+
+  struct RigArtRequest {
+    std::string sprite;
+    std::string requirement;
+    std::string label;
+    // True when art already exists and this is a deliberate re-draw, so the prompt asks
+    // for a different interpretation rather than a copy of the current document.
+    bool redesign = false;
+  };
+  std::optional<RigDesigner::Draft> rigDraft;
+
+  // The equipment draft and its worn-art request. The preview composes it on one of the
+  // rigs in the registry, because a worn item with no body is just a number.
+  void DrawEquipmentPreview();
+  void QueueEquipmentArt();
+  void SaveEquipment();
+  std::optional<EquipmentDesigner::Draft> equipmentDraft;
+  std::string equipmentError;
+  std::string equipmentArtMessage;
+  std::string equipmentPreviewRig;
+  char equipmentNameBuffer[96] = {};
+  std::string rigError;
+  std::string rigArtMessage;
+  std::deque<RigArtRequest> rigArtQueue;
+  std::map<std::string, std::filesystem::file_time_type> rigArtStamps;
+  std::set<std::string> rigPreviewWorn;
+  char rigNameBuffer[96] = {};
+  bool mapPreviewValid = false;
+  MapPreview::Info mapPreviewInfo;
+  std::string mapPreviewError;
+  float mapPreviewZoom = 0.0f;
+  std::string mapSaveMessage;
+  bool mapSaveIsError = false;
 
   // Appends an accepted result and selects it, dropping the oldest past the cap.
   void CaptureViewed(ViewedResult result);
@@ -441,6 +510,9 @@ private:
   // The object half of the preview: read-only, because an object has more shape than a
   // tile and an editor for it is a larger surface than this phase needs to claim.
   void DrawObjectPreview();
+  // The map domain's pane: the draft drawn with the map reload window's own preview
+  // (drag, zoom, objects), and the one control that turns it into a file.
+  void DrawMapPreview();
 
   // Convenience: the object factory, or null when there is no game.
   class ObjectFactory *Objects() const;
@@ -604,6 +676,8 @@ private:
   // window that spends money without a further click, so switching it on has to be
   // deliberate, and it should not quietly reset every launch once it is.
   bool autoRequestArt = false;
+  // Follow the transcript as the designer writes it. Persisted; on by default.
+  bool autoScroll = true;
   // Whether the JSON is shown in the transcript is persisted with the layout; the
   // reasoning checkbox is not, because it is a debugging aid rather than a
   // preference and should not survive a restart.

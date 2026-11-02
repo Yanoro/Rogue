@@ -91,6 +91,39 @@ PromptRewriter::Brief Object() {
   return brief;
 }
 
+PromptRewriter::Brief Map() {
+  PromptRewriter::Brief brief;
+  brief.kind = "map";
+
+  std::string context =
+      "The text describes a whole place for a top-down 2D world: its terrain, the "
+      "buildings on it and the roads between them, the objects that belong to those "
+      "places, and where a person would arrive. It is designed as a legend of "
+      "characters plus rows of characters -- one character per square -- so the text "
+      "should talk about layout and composition rather than about a single sprite: "
+      "where things are, how they connect, what encloses what, which way a path runs, "
+      "where the edge of the place is.\n"
+      "\nA good description of a place answers: what is this place for, what are its "
+      "parts, and how does someone move through it? Buildings are drawn as their "
+      "ground-level footprint -- walls, floors and a door opening -- never as a "
+      "picture of a facade; a yard, field, street or shore is a stretch of ground; "
+      "objects belong to a spot (a forge inside a smithy, a chest against a wall, a "
+      "signpost at a crossroads) rather than scattered on open ground.\n"
+      "\nDo not describe it as one tile, one sprite, a single square or a texture: "
+      "those are the wrong scale, and the map designer cannot honour them. Do not ask "
+      "for side views, perspective, weather effects or anything animated. Do not name "
+      "engine fields, coordinates or the reply's JSON.";
+
+  const TileArt::PackStyle style = TileArt::CurrentPackStyle();
+  if (!style.description.empty()) {
+    context += "\n\nThe art this sits among is described as: " + style.description +
+               "\nKeep the materials and palette consistent with it.";
+  }
+
+  brief.context = std::move(context);
+  return brief;
+}
+
 PromptRewriter::Brief Blueprint() {
   // The building equivalent: what a design can express, so the rewrite does not ask
   // for something the design language has no way to build.

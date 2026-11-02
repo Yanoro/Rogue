@@ -198,7 +198,7 @@ Never block a frame.
 
 The engine already has the shape to copy: the AI path pushes work to a background
 thread, which takes a mutex and pushes a lambda onto a main-thread queue
-(`g_AIResponseMutex` / `g_AIResponseQueue` in `src/GameECS.cpp`). Mirror it — and note
+(`g_AIResponseMutex` / `g_AIResponseQueue` in `src/GameECSInitSystems.cpp:75`). Mirror it — and note
 `.agents/known-issues.md` #13 already flags those globals as process-global rather than
 per-world, which matters if a second world is ever created.
 

@@ -1,0 +1,14 @@
+{
+  "name": "Villager",
+  "description": "The reference humanoid rig. Legs, body, two arms, head and hair as separate 32x32 layers; a helmet worn on it hides the hair and leaves the face underneath.",
+  "width": 32,
+  "height": 32,
+  "parts": [
+    { "id": "legs", "sprite": "rig_villager_legs", "z": 10 },
+    { "id": "body", "sprite": "rig_villager_body", "z": 20 },
+    { "id": "arm_left", "sprite": "rig_villager_arm_left", "z": 25 },
+    { "id": "arm_right", "sprite": "rig_villager_arm_right", "z": 25 },
+    { "id": "head", "sprite": "rig_villager_head", "z": 30 },
+    { "id": "hair", "sprite": "rig_villager_hair", "z": 40 }
+  ]
+}

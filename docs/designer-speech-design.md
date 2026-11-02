@@ -10,7 +10,7 @@ it, with the places the implementation diverged marked inline.
 | piper as a subprocess | `include/PiperSpeech.h`, `src/PiperSpeech.cpp` |
 | worker thread, per-reply audio, transport | `include/SpeechQueue.h`, `src/SpeechQueue.cpp` |
 | audio device, per-frame pump | `Game::Init` / `Game::Shutdown` / `Game::Update` (`src/Game.cpp`) |
-| backend construction | `Game::ECSInit` (`src/GameECS.cpp`) |
+| backend construction | `Game::ECSInit` (`src/GameECSInit.cpp:359`) |
 | speech on a finished reply, bars, mute | `DesignerSession::SpeakFor` / `DrawSpeechBar` / `DrawTranscript` (the shell the designer window uses) |
 | settings | `designer.tts` (`include/Settings.h`, `src/Settings.cpp`, `SETTINGS.md`) |
 | voice model | `models/tts/en_GB-alba-medium.onnx` + `.onnx.json`, gitignored, fetched per SETTINGS.md |

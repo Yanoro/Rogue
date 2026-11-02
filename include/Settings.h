@@ -719,11 +719,23 @@ struct GameSettings {
     // the two layers separately deletable: removing this directory reverts the
     // world to hand-authored vocabulary exactly.
     std::string generatedTiles = "data/generated/tiles";
-    // Actor assets: the beings a spawn can produce (data/actors/*.json). Sibling of the
-    // other content registries, and read by ActorSpriteRegistry.
-    // The actor-sprite catalogue: art for beings, keyed by sprite id (data/actor_sprites).
-    // Not a definition of a creature -- `Actor` is the tag that says something is alive.
+    // The actor-sprite catalogue: one image per being (data/actor_sprites). Not a
+    // definition of a creature -- `Actor` is the tag that says something is alive. This
+    // is the simple kind, and it stays the right answer for a wolf or a slime.
     std::string actorSprites = "data/actor_sprites";
+    // The actor-rig catalogue (data/rigs): layered humanoid rigs made of parts, which is
+    // what lets equipment be drawn over a body and hide one part without redrawing
+    // another. A rig and an actor sprite are alternatives, not variants of one thing.
+    std::string rigs = "data/rigs";
+    // Rig definitions the Designer produced, loaded after the catalog so a generated rig
+    // can be deleted back to the hand-authored one without touching it.
+    std::string generatedRigs = "data/generated/rigs";
+    // The rig designer's instructions: the humanoid frame and the per-part reply format.
+    std::string rigPromptFile = "data/rigs/RIGDESIGNER.md";
+    // Item definitions the Designer produced, loaded after data/items.
+    std::string generatedItems = "data/generated/items";
+    // The equipment designer's instructions: the worn-item reply format and slot rules.
+    std::string equipmentPromptFile = "data/items/EQUIPMENTDESIGNER.md";
     // Where the Content Editor writes its overrides, one directory per kind beneath
     // it (tiles/, objects/). Loaded last, so a human edit wins over both the catalog
     // and the generated overlay -- and the hand-authored files stay untouched, which
@@ -743,6 +755,10 @@ struct GameSettings {
     // it is substituted from `spriteContractFile` below, so the two kinds cannot
     // drift about how a reply is shaped.
     std::string objectPromptFile = "data/objects/OBJECTDESIGNER.md";
+    // The map designer's instructions: the compact legend-and-rows reply format and
+    // the rules MapDesigner validates. Empty stops the domain from being useful, which
+    // its pane says rather than sending an empty prompt.
+    std::string mapPromptFile = "maps/MAPDESIGNER.md";
     // The generated overlay for agent-created objects, the object counterpart of
     // `generatedTiles` above and a sibling of data/objects for the same reason:
     // ObjectFactory::LoadTemplates reads one directory and is not recursive. Empty

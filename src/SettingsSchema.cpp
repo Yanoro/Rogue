@@ -1249,6 +1249,21 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.actorSprites",
             "Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature.", &GameSettings::content, &ContentSection::actorSprites))
         .Restart();
+    add(Field<ValueType::String>("content", "content.rigs",
+            "Actor-rig catalogue: layered humanoid rigs (parts plus worn equipment). The rigged counterpart of an actor sprite.", &GameSettings::content, &ContentSection::rigs))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.generatedRigs",
+            "Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only.", &GameSettings::content, &ContentSection::generatedRigs))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.generatedItems",
+            "Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only.", &GameSettings::content, &ContentSection::generatedItems))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.equipmentPromptFile",
+            "The equipment designer's instructions: the worn-item reply format and which slots a rig can show.", &GameSettings::content, &ContentSection::equipmentPromptFile))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.rigPromptFile",
+            "The rig designer's instructions: the humanoid frame and the per-part reply format.", &GameSettings::content, &ContentSection::rigPromptFile))
+        .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
         .Restart();
@@ -1289,6 +1304,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.objectPromptFile",
             "The object designer's instructions.", &GameSettings::content, &ContentSection::objectPromptFile))
         .Alias("content.objectDesignerPromptFile")
+        .Restart();
+    add(Field<ValueType::String>("content", "content.mapPromptFile",
+            "The map designer's instructions: the compact legend-and-rows reply format and the rules a reply is validated by.", &GameSettings::content, &ContentSection::mapPromptFile))
         .Restart();
     add(Field<ValueType::String>("content", "content.generatedObjects",
             "Generated overlay for agent-created objects. Empty means an accepted object lives for this run only.", &GameSettings::content, &ContentSection::generatedObjects))

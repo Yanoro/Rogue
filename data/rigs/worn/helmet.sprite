@@ -1,0 +1,23 @@
+sprite 32x32
+kind object
+material iron
+
+// Worn over the head layer, hiding the hair layer. Not a world object: this is
+// how the helmet looks on a person, drawn against the rig's 32x32 frame.
+palette {
+  iron = iron.2
+  iron_lit = iron.3
+  iron_dark = iron.1
+  rivet = ink.base
+}
+
+rect (10,1) (22,5) color=iron
+rect (9,5) (23,7) color=iron_dark
+line (10,2) (21,2) color=iron_lit
+line (9,5) (22,5) color=iron_lit
+// Nose guard.
+rect (15,6) (17,10) color=iron_dark
+line (16,6) (16,10) color=iron
+// Rivets on the band.
+line (11,6) (11,6) color=rivet
+line (21,6) (21,6) color=rivet

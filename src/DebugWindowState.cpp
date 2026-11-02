@@ -69,6 +69,7 @@ void DebugWindowState::SaveState(const std::string &filePath) const {
   state["designerShowJson"] = designerShowJson;
   state["designerShowThoughts"] = designerShowThoughts;
   state["designerAutoArt"] = designerAutoArt;
+  state["designerAutoScroll"] = designerAutoScroll;
   state["blueprintPaneWidth"] = blueprintPaneWidth;
   state["blueprintZoom"] = blueprintZoom;
   state["aiMenu"] = showAIMenuWindow;
@@ -151,6 +152,7 @@ void DebugWindowState::LoadState(const std::string &filePath) {
           state.value("designerShowThoughts", designerShowThoughts);
       designerAutoArt = state.value(
           "designerAutoArt", state.value("tileDesignerAutoArt", designerAutoArt));
+      designerAutoScroll = state.value("designerAutoScroll", designerAutoScroll);
       // Recorded separately from the value: a file written before this key existed
       // must leave the preference *unstated*, so the window can follow
       // art.generation.enabled instead of defaulting to off.

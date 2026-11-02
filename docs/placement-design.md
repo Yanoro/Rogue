@@ -1,7 +1,7 @@
 # Placement and ground awareness
 
 **Status: design note, nothing implemented here.** The AI action layer in `AgentActions.h` and the
-command table in `GameECS.cpp` both reference `docs/placement-design.md`; this file is that
+command table in `GameECSInit.cpp` both reference `docs/placement-design.md`; this file is that
 document. It analyses why an agent cannot find a tile to place on and lays out the candidate fixes
 with their trade-offs. It does not pick one unilaterally — the recommendation at the end is staged,
 and the open questions are real.
@@ -66,12 +66,12 @@ with". That is exactly the problem: **placement targets ground, not a thing you 
 
 `GetSurroundingsRadar` (`include/AgentActions.h:397`) renders a real glyph grid with a
 glyph→tile-name legend. Its only caller is the hidden `Placeable` item-interaction hint
-(`src/GameECS.cpp:2140-2165`), which is reachable only like this:
+(`src/GameECSInit.cpp:1214`), which is reachable only like this:
 
 1. the model must run `[EXAMINE_ITEM Wheat Seeds]` to see `- [PLACE]: ...` (the interaction name is
    uppercased by `FormatInteractionForAI`, `include/InteractionRegistry.h:25`);
 2. then issue `[PLACE Wheat Seeds]` **with no coordinates**, so it falls past the `[PLACE]` regex
-   and into the `[GENERIC_INTERACT]` catch-all (`src/GameECS.cpp:2077`);
+   and into the `[GENERIC_INTERACT]` catch-all (`src/GameECSInit.cpp:702`);
 3. `GenericInteractAction` matches the held item name and the `Place` handler, and only then
    returns the radar (`include/AgentActions.h:822-829`).
 
@@ -79,9 +79,9 @@ Nothing in the prompt teaches steps 1–3.
 
 ### 3. `[PLACE]` is hidden, so the model cannot discover it
 
-`[PLACE $ITEM AT X,Y ...]` is registered with `hidden = true` (`src/GameECS.cpp:2028`). The
+`[PLACE $ITEM AT X,Y ...]` is registered with `hidden = true` (`src/GameECSInit.cpp:1045`). The
 `hidden` flag is honoured in both places a model learns verbs — the spawn prompt's `%COMMANDS_LIST%`
-(`src/GameECS.cpp:275`) and `InvalidAction`'s recovery list (`include/AgentActions.h:67`). The
+(`src/GameECS.cpp:483`) and `InvalidAction`'s recovery list (`include/AgentActions.h:67`). The
 recovery list Pietro actually received names ten verbs and not `[PLACE]`. The farmer is saved only
 because his authored background spells `[PLACE Wheat Seeds AT X,Y]` out by hand
 (`maps/Map_Farm.json`); a generic NPC gets no such help.
@@ -199,7 +199,7 @@ and the probe call it.
   mode survives).
 - Making the *existing* hint honest means deciding what `[PLACE $ITEM]` with no coordinates should
   do — today it only describes. Every example in the hint currently shows coordinates
-  (`src/GameECS.cpp:2142`), so a model copying the example performs a blind placement instead of
+  (`src/GameECSInit.cpp:1214`), so a model copying the example performs a blind placement instead of
   requesting the radar. That inconsistency has to be resolved either way.
 
 ### S3 — Take coordinates out of the model's hands: `[PLACE $ITEM]` picks the tile
@@ -388,9 +388,9 @@ targeting is also added to `[MOVE_TO]`, so the DSL has one convention.
 - `include/AgentActions.h` — historical: `GetSurroundingsList` and `SurroundingsAction` (both
   removed); `GetSurroundingsRadar`, `PlaceAtAction`, validation `:1043-1101`, rejection text
   `:1074-1097`
-- `src/GameECS.cpp` — command registration `:1953-2087`, `[PLACE]` hidden `:2019-2029`,
-  `Placeable` hint `:2140-2165`
-- `include/GlobalCommandRegistry.h:17`, `src/GameECS.cpp:275`, `include/AgentActions.h:67` —
+- `src/GameECSInit.cpp` — command registration `:702-1170`, `[PLACE]` hidden `:1045`,
+  `Placeable` hint `:1214`
+- `include/GlobalCommandRegistry.h:17`, `src/GameECS.cpp:483`, `include/AgentActions.h:67` —
   `hidden` semantics
 - `include/Components.h:127` (`Tile`), `:363` (`Placeable`), `include/Defaults.h:41,45`
 - `src/Map.cpp:56-66` (tile creation), `:199-203` (per-tile entity, no `DisplayName`)
