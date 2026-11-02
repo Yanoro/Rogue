@@ -1,5 +1,6 @@
 #include "MapDesigner.hpp"
 
+#include "DesignerSession.h"
 #include "ObjectFactory.h"
 #include "TileRegistry.h"
 
@@ -39,7 +40,7 @@ bool SingleCharacter(const std::string &key) {
 
 namespace MapDesigner {
 
-ApplyResult ApplyReply(const nlohmann::json &reply, const TileRegistry &tiles,
+ApplyResult ApplyReply(const std::string &text, const TileRegistry &tiles,
                        const ObjectFactory &objects) {
   ApplyResult result;
   auto fail = [&result](const std::string &reason) {
@@ -48,8 +49,42 @@ ApplyResult ApplyReply(const nlohmann::json &reply, const TileRegistry &tiles,
     return result;
   };
 
+  // The same two-step the other designers use: reasoning out, fenced block or the
+  // whole text, then parse. The window hands over the session's raw answer, so this
+  // is the only place that knows a reply is text rather than a document.
+  const std::string cleaned = DesignerReply::StripReasoning(text);
+  std::string block = DesignerReply::ExtractJsonBlock(cleaned);
+  const bool fromBlock = !block.empty();
+  if (!fromBlock) {
+    // A model that answered with nothing but the object is accepted: the contract
+    // asks for a fence, but the object is what matters.
+    block = cleaned;
+  }
+  if (block.find_first_not_of(" \t\r\n") == std::string::npos) {
+    return fail("The reply was empty. Send the map as one ```json block, as "
+                "maps/MAPDESIGNER.md requires.");
+  }
+
+  nlohmann::json reply;
+  try {
+    reply = nlohmann::json::parse(block);
+  } catch (const std::exception &parseError) {
+    // A reply that stopped mid-object is a budget problem, not a syntax one, and
+    // saying so is what stops the model from retrying at the same size: the two
+    // things it can change are the map's size and its own reasoning.
+    const size_t fence = cleaned.find("```json");
+    const bool closed =
+        fence != std::string::npos &&
+        cleaned.find("```", fence + 7) != std::string::npos;
+    if (fromBlock && !closed) {
+      return fail("The reply looks truncated -- the JSON block was never closed. "
+                  "Send a smaller map (prefer at most 32x24) with no more than "
+                  "about 40 objects.");
+    }
+    return fail(std::string("The map is not valid JSON: ") + parseError.what());
+  }
   if (!reply.is_object()) {
-    return fail("The reply is not a JSON object.");
+    return fail("The json block must be a JSON object describing one map.");
   }
 
   Draft draft;

@@ -49,8 +49,12 @@ struct ApplyResult {
   std::string notes;
 };
 
-// Validates the reply and expands it. Never writes anything.
-ApplyResult ApplyReply(const nlohmann::json &reply, const TileRegistry &tiles,
+// Validates a raw reply -- prose, reasoning and one fenced JSON block -- and
+// expands it. Never writes anything. The text, not a parsed document, because the
+// session stores the reply as text and the designer window passes it straight
+// through; a caller that parsed it itself would have to repeat the fence scan the
+// other designers share.
+ApplyResult ApplyReply(const std::string &reply, const TileRegistry &tiles,
                        const ObjectFactory &objects);
 
 // The system prompt: the instruction file with %TILES% and %OBJECTS% replaced by

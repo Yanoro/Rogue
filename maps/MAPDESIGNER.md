@@ -13,6 +13,12 @@ place with a clear purpose and a few points of interest to a large empty field.
 Irregular shapes read better than rectangles; one entrance that can be seen from
 the middle is better than four.
 
+Size is a budget. Prefer 24x18 to 32x24; a first draft larger than 32x24 is
+rarely worth the tokens, and every row is a line you must get exactly right.
+Keep the object list to roughly 40 entries and `designerNotes` to one or two
+sentences. If your model produces reasoning, keep it short: the reply is cut off
+when the output budget runs out, and a cut-off map is a refused map.
+
 ## Your reply
 
 Answer with a short paragraph of prose, then exactly one fenced `json` block.
@@ -65,7 +71,7 @@ OBJECTS: %OBJECTS%
   that does not block movement.
 - `tileWidth` and `tileHeight` are optional and default to 32.
 - `designerNotes` is required. It is your own judgement of the map, not a
-  summary of the JSON.
+  summary of the JSON. One or two sentences.
 - Use a legend whose characters are easy to read: `.` ground, `,` path, `#`
   walls, `~` water, `s` stone floor. Keep it small.
 
