@@ -197,6 +197,9 @@
     "race": "",
     "portrait": "player"
   },
+  "combat": {
+    "instantSkillshots": false
+  },
   "world": {
     "seed": 0
   },
@@ -208,7 +211,8 @@
     "items": "data/items",
     "races": "data/races",
     "portraits": "data/portraits",
-    "projectiles": "data/projectiles"
+    "projectiles": "data/projectiles",
+    "skillshots": "data/skillshots"
   },
   "debug": {
     "windowStateFile": "./debug_windows_state.json",

@@ -7,6 +7,7 @@
 #include "ActorSpriteRegistry.h"
 #include "Game.h"
 #include "ObjectFactory.h"
+#include "SkillRegistry.h"
 #include "SpritePaths.hpp"
 #include "TileDesigner.hpp"
 #include "TileRegistry.h"
@@ -96,6 +97,65 @@ std::string ObjectFileName(const nlohmann::json &document) {
 }
 
 std::string ObjectSprite(const std::string &id) { return id; }
+
+// ---- skills ----------------------------------------------------------------
+
+std::vector<Entry> ListSkills(const World &world) {
+  std::vector<Entry> out;
+  for (const SkillDef *definition : world.skills.GetAll()) {
+    out.push_back({definition->id, definition->name, "skill catalog"});
+  }
+  std::sort(out.begin(), out.end(),
+            [](const Entry &a, const Entry &b) { return a.label < b.label; });
+  return out;
+}
+
+nlohmann::json ReadSkill(const World &world, const std::string &id) {
+  return world.skills.ToJson(id);
+}
+
+bool ApplySkill(const World &world, const nlohmann::json &document, std::string *error,
+                std::vector<std::string> *warnings) {
+  const SkillRegistry::AddResult result =
+      world.skills.OverrideDefinition(document, "(content editor)");
+  if (!result.ok) {
+    if (error != nullptr) *error = result.error;
+    return false;
+  }
+  if (warnings != nullptr) *warnings = result.warnings;
+  if (world.onApplied) {
+    world.onApplied();
+  }
+  return true;
+}
+
+std::string SkillFileName(const nlohmann::json &document) {
+  return (document.contains("id") && document["id"].is_string())
+             ? document["id"].get<std::string>()
+             : std::string();
+}
+
+nlohmann::json PrepareSkillDocument(nlohmann::json document) {
+  SkillType type = SkillType::Passive;
+  const std::string typeName =
+      (document.contains("type") && document["type"].is_string())
+          ? document["type"].get<std::string>()
+          : std::string("passive");
+  if (!ParseSkillType(typeName, type)) {
+    return document;  // let the loader report the typo
+  }
+  if (SkillIsActivatable(type)) {
+    // The generic form cannot add an object key, so switching a passive skill to
+    // active would otherwise leave it with no activation block. An empty object
+    // is enough: the loader fills every field from its defaults.
+    if (!document.contains("activation") || !document["activation"].is_object()) {
+      document["activation"] = nlohmann::json::object();
+    }
+  } else {
+    document.erase("activation");
+  }
+  return document;
+}
 
 // ---- actor sprites ---------------------------------------------------------
 
@@ -196,6 +256,18 @@ const std::vector<Kind> &All() {
           &ApplyActorSprite,
           &ActorSpriteFileName,
           &ActorSpriteSprite,
+      },
+      {
+          "skills",
+          "Skills",
+          /*hasSprites=*/false,
+          &ListSkills,
+          &ReadSkill,
+          &ApplySkill,
+          &SkillFileName,
+          nullptr,
+          "id",
+          &PrepareSkillDocument,
       },
   };
   return kinds;

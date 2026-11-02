@@ -397,3 +397,10 @@ constexpr float DEFAULT_CAST_LABEL_PAD_Y = 2.0f;
 constexpr float DEFAULT_CAST_LABEL_GAP_Y = 3.0f;
 inline const Color DEFAULT_CAST_LABEL_BACKGROUND = {12, 10, 9, 175};
 inline const Color DEFAULT_CAST_LABEL_TEXT = {235, 230, 218, 255};
+
+// The aimed-skill indicator: a wide translucent band so the player can read the
+// lane, a bright centre line, and a solid tip at maximum range. The band is the
+// same width the collision uses, so what is drawn is what can hit.
+inline const Color DEFAULT_SKILLSHOT_AIM_FILL = {90, 170, 240, 38};
+inline const Color DEFAULT_SKILLSHOT_AIM_EDGE = {175, 228, 255, 190};
+inline const Color DEFAULT_SKILLSHOT_AIM_TIP = {215, 242, 255, 235};

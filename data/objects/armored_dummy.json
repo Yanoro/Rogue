@@ -7,6 +7,7 @@
     "Portrait",
     "Armor",
     "TrainingDummy",
+    "Actor",
     "Obstacle"
   ],
   "health": 500,

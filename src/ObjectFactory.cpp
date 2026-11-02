@@ -178,6 +178,8 @@ void ObjectFactory::RegisterDefaultComponents() {
                       "it has a portrait in the HUD");
   RecordComponentInfo("TrainingDummy", {},
                       "it is a target that never dies or fights back");
+  RecordComponentInfo("Actor", {},
+                      "it is a living actor a skillshot can hit");
   RecordComponentInfo("Armor", {"armor"},
                       "it reduces incoming damage");
   RecordComponentInfo("Aggressive",
@@ -206,6 +208,7 @@ void ObjectFactory::RegisterDefaultComponents() {
     }
     obj.set<Vitals>(vitals);
   });
+  RegisterComponent<Actor>("Actor", [](flecs::entity obj, const nlohmann::json&) { obj.add<Actor>(); });
   RegisterComponent<TrainingDummy>("TrainingDummy", [](flecs::entity obj, const nlohmann::json&) {
     obj.add<TrainingDummy>();
   });

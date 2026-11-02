@@ -6,6 +6,7 @@
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "SkillshotPath.hpp"
 #include "GapLog.h"
 #include "LogPaths.h"
 #include "Components.h"
@@ -581,6 +582,52 @@ void Game::ECSInitOverlaySystems() {
         DrawSpriteFitted(*texture, position.x - projectile.size / 2.0f,
                          position.y - projectile.size / 2.0f,
                          projectile.size, projectile.size);
+      });
+
+  // The aimed lance itself: a rotated sprite following its path. The sprite art
+  // points right; the rotation is the segment heading at the current distance.
+  ecs.system<Skillshot>("SkillshotRenderSystem")
+      .kind<Render>()
+      .each([this](const Skillshot& skillshot) {
+        if (skillshot.path.size() < 2) {
+          return;
+        }
+        const Texture2D* texture = ResolveSpriteReference(
+            skillshot.sprite, resourceManager, debugLog.get());
+        if (texture == nullptr) {
+          return;
+        }
+        const Vector2 position = SkillshotPointAt(
+            skillshot.path, skillshot.distanceTraveled);
+        const Vector2 direction = SkillshotDirectionAt(
+            skillshot.path, skillshot.distanceTraveled);
+        const Rectangle source = {0.0f, 0.0f,
+                                  static_cast<float>(texture->width),
+                                  static_cast<float>(texture->height)};
+        const Rectangle destination = {
+            position.x, position.y, skillshot.length, skillshot.width};
+        const Vector2 origin = {skillshot.length * 0.5f,
+                                skillshot.width * 0.5f};
+        const float rotation =
+            atan2f(direction.y, direction.x) * RAD2DEG;
+        DrawTexturePro(*texture, source, destination, origin, rotation, WHITE);
+      });
+
+  // The aim preview. It draws the same polyline the launch will sample, so the
+  // player is looking at the real path, not an approximation of it.
+  ecs.system<SkillshotAim>("SkillshotAimRenderSystem")
+      .kind<Render>()
+      .each([](const SkillshotAim& aim) {
+        if (aim.path.size() < 2) {
+          return;
+        }
+        for (size_t i = 1; i < aim.path.size(); ++i) {
+          const Vector2 a = aim.path[i - 1];
+          const Vector2 b = aim.path[i];
+          DrawLineEx(a, b, aim.width, DEFAULT_SKILLSHOT_AIM_FILL);
+          DrawLineEx(a, b, 2.0f, DEFAULT_SKILLSHOT_AIM_EDGE);
+        }
+        DrawCircleV(aim.path.back(), 5.0f, DEFAULT_SKILLSHOT_AIM_TIP);
       });
 
   // Floating change numbers (XP today, damage later). Registered last so they
@@ -1935,14 +1982,25 @@ Vector2 ScreenCenterOf(flecs::entity entity) {
   }
   float width = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
   float height = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
-  if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
+  if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+    width = static_cast<float>(hitbox->width);
+    height = static_cast<float>(hitbox->height);
+  } else if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
     width = static_cast<float>(ascii->width);
     height = static_cast<float>(ascii->height);
-  } else if (const Hitbox *hitbox = entity.get<Hitbox>()) {
-    width = hitbox->width;
-    height = hitbox->height;
   }
   return {position->x + width * 0.5f, position->y + height * 0.5f};
+}
+
+// The radius the swept collision tests against. Hitbox is the body; DrawAscii is
+// only a fallback because a glyph can be smaller than the creature it draws.
+float EntityHitRadius(flecs::entity entity) {
+  if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+    return std::max(static_cast<float>(hitbox->width),
+                    static_cast<float>(hitbox->height)) *
+           0.5f;
+  }
+  return static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH) * 0.5f;
 }
 
 // Launches the skill's projectile, if it has one. Returns false when the skill
@@ -1988,6 +2046,53 @@ bool SpawnSkillProjectile(flecs::entity actor, flecs::entity target,
   return entity.is_alive();
 }
 
+// Launches an aimed skillshot along `direction`. The path builder, not this
+// function, decides whether the result is a line, an arc or a spread; this only
+// copies the launch-time facts and the sampled path onto the entity.
+bool SpawnSkillshot(flecs::entity actor, const SkillDef &def, float damage,
+                    Vector2 direction, bool playerCast) {
+  if (def.activation.skillshot.empty() || !actor.has<ScreenPosition>()) {
+    return false;
+  }
+  auto registryRes = actor.world().get<SkillshotRegistryResource>();
+  if (!registryRes || registryRes->registry == nullptr) {
+    return false;
+  }
+  const SkillshotDef *skillshotDef =
+      registryRes->registry->Get(def.activation.skillshot);
+  if (skillshotDef == nullptr) {
+    return false;
+  }
+
+  float tileWidth = 32.0f;
+  if (const TileSizeResource *tileSize = actor.world().get<TileSizeResource>()) {
+    tileWidth = tileSize->width;
+  }
+  const float rangePixels = def.activation.rangeTiles * tileWidth;
+  std::vector<Vector2> path = BuildSkillshotPath(
+      *skillshotDef, ScreenCenterOf(actor), direction, rangePixels);
+  if (path.size() < 2) {
+    return false;
+  }
+
+  Skillshot skillshot;
+  skillshot.owner = actor;
+  skillshot.skillId = def.id;
+  skillshot.label = def.name;
+  skillshot.sprite = skillshotDef->sprite;
+  skillshot.path = std::move(path);
+  skillshot.speed = skillshotDef->speed;
+  skillshot.width = skillshotDef->width;
+  skillshot.length = skillshotDef->length;
+  skillshot.damage = damage;
+  skillshot.playerCast = playerCast;
+  skillshot.interrupts = def.activation.interrupts;
+
+  flecs::entity entity = actor.world().entity();
+  entity.set<Skillshot>(std::move(skillshot));
+  return entity.is_alive();
+}
+
 // Starts one use of one skill.
 //
 // Instant skills resolve here. Cast-time skills commit the cast here: the
@@ -1996,7 +2101,7 @@ bool SpawnSkillProjectile(flecs::entity actor, flecs::entity target,
 // the timer completes.
 SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                          flecs::entity target, bool secondPerson,
-                         bool announce) {
+                         bool announce, Vector2 direction = {}) {
   SkillUseOutcome outcome;
   if (!actor.is_alive() || !actor.has<Vitals>()) {
     return outcome;
@@ -2034,7 +2139,8 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     return outcome;
   }
 
-  if (def->activation.requiresTarget) {
+  if (def->activation.requiresTarget &&
+      def->activation.skillshot.empty()) {
     if (!target.is_alive()) {
       outcome.message = "You have no target. Click a creature or press Tab.";
       return outcome;
@@ -2092,6 +2198,20 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                                     : DEFAULT_GLOBAL_COOLDOWN_SECONDS;
   }
 
+  // An aimed skill needs a heading, not a target. A caller with no mouse (the
+  // self-check, auto-cast) still gets a sensible one: toward the locked target,
+  // then east as the last resort.
+  Vector2 aim = direction;
+  if (aim.x == 0.0f && aim.y == 0.0f && target.is_alive()) {
+    const Vector2 from = ScreenCenterOf(actor);
+    const Vector2 to = ScreenCenterOf(target);
+    aim = {to.x - from.x, to.y - from.y};
+  }
+  if (aim.x == 0.0f && aim.y == 0.0f) {
+    aim = {1.0f, 0.0f};
+  }
+  aim = SkillshotNormalize(aim);
+
   const std::string actorLabel =
       secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
 
@@ -2102,7 +2222,8 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
             .set<ActionTimer>({def->activation.castSeconds})
             .set<ActionActor>({actor})
             .set<CastAction>({skillId, def->name, baseDamage,
-                              def->activation.interruptible, secondPerson});
+                              def->activation.interruptible, secondPerson,
+                              aim});
     if (def->activation.requiresTarget) {
       action.set<ActionTarget>({target});
     }
@@ -2114,6 +2235,24 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     outcome.message = actorLabel +
                       (secondPerson ? " begin casting " : " begins casting ") +
                       def->name + ".";
+    return outcome;
+  }
+
+  // An aimed skillshot is a path, not a target. It travels out to the skill's
+  // range and hits the first Actor it sweeps; the path builder owns the shape.
+  if (!def->activation.skillshot.empty()) {
+    if (SpawnSkillshot(actor, *def, baseDamage, aim, secondPerson)) {
+      outcome.message = actorLabel + (secondPerson ? " hurl " : " hurls ") +
+                        def->name + ".";
+      outcome.message += FinalizeSkillUse(actor, *def);
+      if (announce) {
+        SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
+      }
+    } else {
+      outcome.message =
+          "The " + def->name + " fizzles: its skillshot is not loaded.";
+    }
+    outcome.used = true;
     return outcome;
   }
 
@@ -2281,7 +2420,33 @@ void Game::CyclePlayerTarget() {
   SetPlayerTarget(candidates[next].second);
 }
 
-bool Game::ActivatePlayerSkill(int index) {
+void Game::RefreshPlayerSkillBar() {
+  if (!playerEntity.is_alive()) {
+    return;
+  }
+
+  SkillBar bar;
+  AutoCastSkills autoCast;
+  const AutoCastSkills *previous = playerEntity.get<AutoCastSkills>();
+  for (const SkillDef *def : skillRegistry.GetAll()) {
+    if (!SkillIsActivatable(def->type)) {
+      continue;
+    }
+    bar.ids.push_back(def->id);
+    // Preserve the human's "Always casts" choices exactly. The component only
+    // records ON skills, so re-seeding from the authored autoCast default here
+    // would turn the basic attack back on after the player deliberately turned
+    // it off, every time any skill was saved.
+    if (previous != nullptr && previous->Has(def->id)) {
+      autoCast.ids.push_back(def->id);
+    }
+  }
+
+  playerEntity.set<SkillBar>(std::move(bar));
+  playerEntity.set<AutoCastSkills>(std::move(autoCast));
+}
+
+bool Game::ActivatePlayerSkill(int index, Vector2 direction) {
   if (!playerEntity.is_alive() || index < 0) {
     return false;
   }
@@ -2295,9 +2460,9 @@ bool Game::ActivatePlayerSkill(int index) {
     target = lock->target;
   }
 
-  const SkillUseOutcome outcome =
-      UseSkill(playerEntity, bar->ids[static_cast<size_t>(index)], target, true,
-               true);
+  const SkillUseOutcome outcome = UseSkill(
+      playerEntity, bar->ids[static_cast<size_t>(index)], target, true, true,
+      direction);
   if (debugLog && !outcome.message.empty()) {
     debugLog->LogCombat(outcome.message);
   }
@@ -2362,6 +2527,7 @@ int Game::RunCombatSelfCheck() {
   const int heavySlot = slotOf("heavy_swing");
   const int kickSlot = slotOf("kick");
   const int fireballSlot = slotOf("fireball");
+  const int iceSlot = slotOf("ice_lance");
   if (attackSlot < 0) {
     std::cout << "combat-check: the bar has no attack skill\n";
     return 1;
@@ -2454,6 +2620,34 @@ int Game::RunCombatSelfCheck() {
     }
   }
 
+  // Skillshot: launch Ice Lance at the locked dummy, then put its travel distance
+  // at the dummy so the swept collision runs without relying on a frame clock.
+  clearCooldowns();
+  bool iceUsed = false;
+  bool iceHit = false;
+  if (iceSlot >= 0) {
+    const float beforeIce = dummy.get<Vitals>()->health;
+    iceUsed = ActivatePlayerSkill(iceSlot);
+
+    flecs::entity skillshot = flecs::entity::null();
+    ecs.filter<Skillshot>().each([&](flecs::entity entity, Skillshot &) {
+      if (!skillshot.is_alive()) {
+        skillshot = entity;
+      }
+    });
+    if (skillshot.is_alive()) {
+      if (Skillshot *shot = skillshot.get_mut<Skillshot>()) {
+        const Vector2 origin = ScreenCenterOf(playerEntity);
+        const Vector2 target = ScreenCenterOf(dummy);
+        const float dx = target.x - origin.x;
+        const float dy = target.y - origin.y;
+        shot->distanceTraveled = std::sqrt(dx * dx + dy * dy);
+      }
+      ecs.progress();
+      iceHit = dummy.get<Vitals>()->health < beforeIce;
+    }
+  }
+
   // Print the combat lines the two calls produced, so the output shows the same
   // text a player would read in the Log window.
   if (debugLog) {
@@ -2478,6 +2672,10 @@ int Game::RunCombatSelfCheck() {
     std::cout << "combat-check: fireball slot = " << fireballSlot << " ("
               << bar->ids[static_cast<size_t>(fireballSlot)] << ")\n";
   }
+  if (iceSlot >= 0) {
+    std::cout << "combat-check: ice lance slot = " << iceSlot << " ("
+              << bar->ids[static_cast<size_t>(iceSlot)] << ")\n";
+  }
   std::cout << "combat-check: first swing used=" << first
             << " damage=" << (healthBefore - healthAfter)
             << " dummy=" << healthAfter << "/" << dummy.get<Vitals>()->maxHealth
@@ -2490,10 +2688,13 @@ int Game::RunCombatSelfCheck() {
             << " interrupted=" << interrupted << "\n";
   std::cout << "combat-check: fireball used=" << fireballUsed
             << " impact=" << fireballHit << "\n";
+  std::cout << "combat-check: ice lance used=" << iceUsed
+            << " impact=" << iceHit << "\n";
 
   const bool ok = first && !second && healthAfter < healthBefore &&
                   castStarted && castResolved && !playerEntity.has<Casting>() &&
-                  kickUsed && interrupted && fireballUsed && fireballHit;
+                  kickUsed && interrupted && fireballUsed && fireballHit &&
+                  iceUsed && iceHit;
   std::cout << (ok ? "combat-check: OK\n" : "combat-check: FAILED\n");
   return ok ? 0 : 1;
 }
@@ -2837,6 +3038,19 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                                                def->activation.rangeTiles))) {
               message = "The " + def->name +
                         " fizzles: the target is out of reach.";
+            } else if (!def->activation.skillshot.empty()) {
+              // An aimed cast launches its path here. The direction was locked
+              // when the cast began, so moving the cursor during the wind-up
+              // cannot steer a committed lance.
+              if (SpawnSkillshot(actor, *def, cast.baseDamage, cast.direction,
+                                 cast.playerCast)) {
+                message = (cast.playerCast ? std::string("You")
+                                           : EntityLabel(actor, "Someone")) +
+                          " finish casting " + def->name + ".";
+                message += FinalizeSkillUse(actor, *def);
+              } else {
+                message = "The " + def->name + " fizzles: its skillshot is not loaded.";
+              }
             } else if (def->activation.requiresTarget) {
               // A cast that launches a projectile finishes here but lands later:
               // the flight is the delivery, and ProjectileUpdateSystem applies
@@ -2941,6 +3155,75 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           if (step > 0.0f && distance > 0.0f) {
             positions[i].x += delta.x / distance * step;
             positions[i].y += delta.y / distance * step;
+          }
+        }
+      });
+
+  // Sweeps every skillshot along its sampled path and hits the first Actor whose
+  // body the segment crosses. Path-agnostic: an arc or a spread from a future
+  // generator goes through the same loop because both are just polylines.
+  ecs.system<Skillshot>("SkillshotUpdateSystem").iter(
+      [this](flecs::iter& it, Skillshot* skillshots) {
+        const float dt = it.delta_time();
+
+        std::vector<flecs::entity> targets;
+        ecs.filter<Actor, Vitals, ScreenPosition>().each(
+            [&](flecs::entity target, const Actor&, Vitals&,
+                const ScreenPosition&) { targets.push_back(target); });
+
+        for (auto i : it) {
+          flecs::entity entity = it.entity(i);
+          Skillshot& skillshot = skillshots[i];
+
+          const float totalLength = SkillshotPathLength(skillshot.path);
+          if (totalLength <= 0.001f) {
+            entity.destruct();
+            continue;
+          }
+
+          const float oldDistance =
+              std::clamp(skillshot.distanceTraveled, 0.0f, totalLength);
+          const float step = std::max(0.0f, skillshot.speed * dt);
+          const float newDistance =
+              std::min(totalLength, oldDistance + step);
+          const Vector2 start = SkillshotPointAt(skillshot.path, oldDistance);
+          const Vector2 end = SkillshotPointAt(skillshot.path, newDistance);
+
+          flecs::entity hit = flecs::entity::null();
+          float bestT = 2.0f;
+          for (flecs::entity target : targets) {
+            if (target == skillshot.owner || !target.is_alive()) {
+              continue;
+            }
+            const Vitals *vitals = target.get<Vitals>();
+            if (vitals == nullptr || vitals->health <= 0.0f) {
+              continue;
+            }
+            float t = 0.0f;
+            const float distance = SkillshotPointSegmentDistance(
+                ScreenCenterOf(target), start, end, &t);
+            const float radius =
+                EntityHitRadius(target) + skillshot.width * 0.5f;
+            if (distance <= radius && t < bestT) {
+              bestT = t;
+              hit = target;
+            }
+          }
+
+          if (hit.is_alive()) {
+            const std::string message = ApplyHit(
+                skillshot.owner, hit, skillshot.damage, skillshot.skillId,
+                skillshot.label, skillshot.playerCast, skillshot.interrupts);
+            if (debugLog) {
+              debugLog->LogCombat(message);
+            }
+            entity.destruct();
+            continue;
+          }
+
+          skillshot.distanceTraveled = newDistance;
+          if (skillshot.distanceTraveled >= totalLength) {
+            entity.destruct();
           }
         }
       });
@@ -3482,6 +3765,28 @@ void Game::ECSInit() {
           def->activation.projectile +
           "', which the projectile registry does not define; the skill will "
           "strike instantly instead.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
+
+  // Skillshots are the aimed delivery half: a sampled path plus the visual. The
+  // skill owns range and impact; the registry owns only how the path looks and
+  // moves.
+  skillshotRegistry.SetDebugLog(debugLog.get());
+  skillshotRegistry.LoadSkillshots(settings.content.skillshots);
+  ecs.set<SkillshotRegistryResource>({&skillshotRegistry});
+
+  for (const SkillDef *def : skillRegistry.GetAll()) {
+    if (def->activation.skillshot.empty()) {
+      continue;
+    }
+    if (skillshotRegistry.Get(def->activation.skillshot) == nullptr) {
+      const std::string message =
+          "Warning: skill '" + def->id + "' names skillshot '" +
+          def->activation.skillshot +
+          "', which the skillshot registry does not define; the skill will "
+          "fizzle when used.";
       if (debugLog) debugLog->LogWarning(message);
       else std::cerr << message << std::endl;
     }
@@ -4126,6 +4431,10 @@ void Game::ECSInit() {
   }
 
   LoadMap(settings.map.file, settings.map.spawnNPCs);
+  if (map != nullptr) {
+    ecs.set<TileSizeResource>({static_cast<float>(map->GetTileWidth()),
+                               static_cast<float>(map->GetTileHeight())});
+  }
 
   InteractionRegistry::Clear();
   

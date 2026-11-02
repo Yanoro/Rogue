@@ -207,8 +207,10 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 }
 
 ContentKinds::World ContentEditorWindow::World_() {
-  return ContentKinds::World{game->tileRegistry, game->objectFactory,
-                             game->actorSpriteRegistry, game->debugLog.get()};
+  return ContentKinds::World{
+      game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
+      game->skillRegistry, game->debugLog.get(),
+      [this]() { game->RefreshPlayerSkillBar(); }};
 }
 
 const ContentKinds::Kind *ContentEditorWindow::Kind() const {
@@ -237,7 +239,18 @@ void ContentEditorWindow::Save() {
     return;
   }
 
-  const std::string stem = kind->fileName(document);
+  // A fixed identity is supplied here rather than shown in the form. The working
+  // copy stays clean (so the form never grows an id field); the copy that is
+  // validated and written carries the selected entry's id.
+  nlohmann::json saveDocument = document;
+  if (kind->fixedIdKey != nullptr) {
+    saveDocument[kind->fixedIdKey] = entryId;
+  }
+  if (kind->prepare != nullptr) {
+    saveDocument = kind->prepare(std::move(saveDocument));
+  }
+
+  const std::string stem = kind->fileName(saveDocument);
   if (stem.empty()) {
     status = "the document has no name, so there is no file to save it under";
     statusIsError = true;
@@ -246,7 +259,7 @@ void ContentEditorWindow::Save() {
 
   std::vector<std::string> warnings;
   std::string error;
-  if (!kind->apply(World_(), document, &error, &warnings)) {
+  if (!kind->apply(World_(), saveDocument, &error, &warnings)) {
     // Refused before the file is written: a document the registry rejects must not be
     // left on disk looking authoritative, or the next launch loads it and fails the same
     // way with no one to explain it.
@@ -256,8 +269,8 @@ void ContentEditorWindow::Save() {
   }
 
   std::string written;
-  if (!ContentKinds::WriteOverrideFile(*kind, Settings().content.editor, document,
-                                       &written, &error)) {
+  if (!ContentKinds::WriteOverrideFile(*kind, Settings().content.editor,
+                                       saveDocument, &written, &error)) {
     status = error;
     statusIsError = true;
     return;
@@ -265,6 +278,12 @@ void ContentEditorWindow::Save() {
   const std::filesystem::path path(written);
 
   dirty = false;
+  // Skills may have been normalized by the apply (a type default filled in, an
+  // activation added), so show the live document. Other kinds keep the form on
+  // the authored copy, as before.
+  if (kind->id == "skills") {
+    ReloadDocument();
+  }
   status = "saved " + path.string() +
            (warnings.empty() ? "" : " (" + std::to_string(warnings.size()) +
                                      " warning(s) in the debug log)");

@@ -1294,6 +1294,9 @@ struct CastAction {
   float baseDamage = 0.0f;
   bool interruptible = true;
   bool playerCast = false;
+  // Locked at cast start for aimed skills: the player can move the mouse after
+  // committing, but the lance must go where the indicator pointed when it began.
+  Vector2 direction = {1.0f, 0.0f};
 };
 
 // The cast the character is currently committed to, on the CASTER.
@@ -1360,6 +1363,55 @@ struct ProjectileRegistryResource {
   const ProjectileRegistry *registry = nullptr;
 };
 
+// An aimed projectile in flight. Unlike Projectile (which homes on an entity),
+// this one follows a sampled path and collides with the first valid Actor it
+// sweeps. The path, not this component, decides whether it is a line, a
+// crescent, or a spread -- travel and collision are shared.
+//
+// Every launch-time number is copied in, for the same reason Projectile copies
+// its registry values: reloading content mid-flight must not change a shot.
+struct Skillshot {
+  flecs::entity owner;
+  std::string skillId;
+  std::string label;
+  std::string sprite;
+  std::vector<Vector2> path;
+  float distanceTraveled = 0.0f;
+  float speed = 950.0f;
+  float width = 12.0f;
+  float length = 34.0f;
+  float damage = 0.0f;
+  bool playerCast = false;
+  bool interrupts = false;
+};
+
+// The player's live aim. Kept on the player so a render system can draw it
+// without reaching into Game, and so any future actor that aims gets the same
+// preview for free.
+struct SkillshotAim {
+  std::string skillId;
+  int slot = -1;
+  std::vector<Vector2> path;
+  float width = 12.0f;
+  float rangePixels = 0.0f;
+  // The heading at the mouse, stored separately from the path. A curved path's
+  // final tangent is not its launch heading, so the cast must not read the last
+  // segment of a crescent and fire along the tangent.
+  Vector2 direction = {1.0f, 0.0f};
+};
+
+class SkillshotRegistry;
+struct SkillshotRegistryResource {
+  const SkillshotRegistry *registry = nullptr;
+};
+
+// The map's tile size, published into the ECS so a free function that launches a
+// skillshot can turn the skill's tile range into world pixels without holding a
+// Game pointer.
+struct TileSizeResource {
+  float width = 32.0f;
+  float height = 32.0f;
+};
 
 struct Workstation {
   std::vector<std::string> recipes;

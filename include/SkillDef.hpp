@@ -144,6 +144,16 @@ struct SkillActivation {
   // arrow visual carry a poisoned arrow later, and the same fireball visual carry
   // an area blast, without either record growing the other's fields.
   std::string projectile;
+
+  // SkillshotRegistry id this skill launches at an aimed direction. A skillshot
+  // is aimed, so it needs no target entity; the skill's range is the length of
+  // the path.
+  //
+  // Mutually exclusive with `projectile`: a homing projectile follows a target,
+  // an aimed one follows a direction. Keeping them separate mirrors the two
+  // different satisfactions (hit the thing vs. hit the place) instead of one
+  // union field with a "does this need a target" flag.
+  std::string skillshot;
 };
 
 // Definition of one improvable skill, loaded from data/skills/<id>.json.

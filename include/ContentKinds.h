@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -10,6 +11,7 @@ class TileRegistry;
 class ObjectFactory;
 class DebugLog;
 class ActorSpriteRegistry;
+class SkillRegistry;
 
 // The kinds of content the Content Editor can open: one row per registry.
 //
@@ -35,7 +37,12 @@ struct World {
   TileRegistry &tiles;
   ObjectFactory &objects;
   ActorSpriteRegistry &actorSprites;
+  SkillRegistry &skills;
   DebugLog *log = nullptr;
+  // Called after a kind has successfully replaced its live definition. The
+  // skills kind uses it to rebuild the player's ability bar immediately; kinds
+  // that do not touch per-character state leave it empty.
+  std::function<void()> onApplied;
 };
 
 // One entry in a kind's list.
@@ -81,6 +88,17 @@ struct Kind {
   // The sprite convention id for the preview: `tile_<slug>` for a tile, the template key
   // for an object. Empty when the kind has no sprite.
   std::string (*spriteId)(const std::string &id) = nullptr;
+
+  // When set, the editor supplies this document key from the selected entry id
+  // immediately before applying/saving, rather than exposing it in the generic
+  // form. A skill's id is its identity (the file stem and every reference), so it
+  // must not be an editable text field that silently renames the content.
+  const char *fixedIdKey = nullptr;
+
+  // Optional last-mile normalization before validate/save. Skills use it to add
+  // a default activation when a passive definition is switched to an active type,
+  // and to drop an activation that a passive type cannot use.
+  nlohmann::json (*prepare)(nlohmann::json document) = nullptr;
 };
 
 // Writes `document` as this kind's override under `root/<kind>/<file>.json`, without

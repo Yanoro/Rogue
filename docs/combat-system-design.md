@@ -660,3 +660,96 @@ applies its impacts to several targets. None of those want to be one record.
 Known limits: the projectile ignores walls (no line-of-sight collision yet), homes rather than
 following a ballistic arc, and the impact folds the shooter's current stats rather than a launch-time
 snapshot. AOE and healing are deliberately not built yet.
+
+---
+
+## 15. Aimed skillshots: Ice Lance
+
+### 15.1 Shape of the system
+
+The runtime is a **sampled polyline**, not a line. `Skillshot` stores `path` as a list of world points,
+and travel, swept collision and rendering walk that list. `BuildSkillshotPath` is the only place a
+shape exists:
+
+- `"line"` today: two points from the caster toward the cursor, out to the skill's range.
+- A future crescent (Diana Q) is a new branch that samples the curve into the same list.
+- A future spread (Ashe W) is a new branch that produces several paths; because each path is already
+  independent, that needs a spawn/preview loop over paths, not a new collision routine.
+
+The aiming indicator calls the same builder, so the preview is the path that will actually be
+launched. `SkillshotAim.direction` stores the launch heading separately from the path, because a
+curved path's final tangent is not its initial aiming direction.
+
+### 15.2 Input and settings
+
+- Pressing an aimed skill's key or bar slot **starts the indicator**; cooldown and GCD are checked
+  before entering the aim, but are not spent until the cast.
+- **Left-click** casts along the current mouse heading. **Right-click** or **Esc** cancels. Esc closes
+  the game when no aim is active (raylib's exit key is disabled so the aim can consume the press).
+- `combat.instantSkillshots` (default `false`) skips the indicator and fires at the cursor on the
+  key/bar press. It is a live settings field, shown in the new Combat section.
+- Aiming does not stop movement; the path origin follows the player, and the cast starts from wherever
+  they are when the click lands.
+
+### 15.3 Target rule and range
+
+- The swept segment hits the **first `Actor` with `Vitals`** other than the caster, then stops. Any
+  actor is a valid target; there are no factions yet (so friendly fire is possible).
+- Training dummies now carry the `Actor` tag (and an ObjectFactory setter exists for content), which
+  makes them valid skillshot targets without changing the rule to "anything with health".
+- Range is per skill (`activation.range`, in tiles). The skill converts it with the published
+  `TileSizeResource`, and the aim preview uses the same factor. Ice Lance is 12 tiles.
+- Obstacles do not block yet: the lance passes over terrain and buildings. A line-of-sight check is
+  future work.
+
+### 15.4 Ice Lance
+
+- `data/skills/ice_lance.json`: 20 damage, 8s cooldown, 12-tile range, 10 XP per use.
+- `data/skillshots/ice_lance.json`: line path, 950 px/s, 12px collision width, 34px drawn length.
+- Art: `data/sprites/projectile_ice_lance.png` (horizontal lance, rotated along the path) and
+  `data/sprites/skill_ice_lance.png`.
+- Bar order is now Attack, Fireball, Heavy Swing, Ice Lance, Kick, Power Strike.
+
+### 15.5 Verification
+
+`--combat-check` now launches Ice Lance at the dummy and resolves its swept hit: the log shows
+`You hurl Ice Lance.` followed by `You hit Training Dummy with Ice Lance for 20.`, and the check
+reports `ice lance used=1 impact=1`. The build is clean at `-j2`, and a HUD smoke run loads the new
+skill icon without ASan errors. The key/mouse aiming path itself is not exercised headlessly; the
+self-check drives the same launch and collision path directly.
+
+---
+
+## 16. Skills in the Content Editor
+
+Skills are a new row in `ContentKinds` (`"skills"`), using the same recursive JSON form as tiles,
+objects and actor sprites. There is no skill-specific editor window.
+
+- **Fixed id.** The selected entry's id is its identity and is not shown in the form. On save the
+  editor injects it into a copy of the document, so the working copy never grows an editable id field.
+  The override is written to `content.editor/skills/<id>.json`.
+- **Normalized read.** `SkillRegistry::ToJson` starts from the authored source (so unknown fields and
+  the `effects` array survive), then writes every known live field: name, description, icon, type,
+  stages, levelsPerStage, xpPerStage, trainedBy, baseline, scale, and the complete activation block.
+  A passive skill's ignored activation is omitted; `effects` is always present as an array.
+- **One validator.** The file loader and the editor's save both go through `ParseSkillDocument`, so
+  the editor enforces exactly the authoring rules a hand-written file does. `OverrideDefinition`
+  replaces the definition and its declared effects atomically; deleting an effect in the form removes
+  it live.
+- **Identity and type normalization.** `fixedIdKey = "id"` keeps ids fixed. `PrepareSkillDocument`
+  adds an empty activation when a passive definition is switched to an active type (the loader fills
+  the defaults) and drops an activation a passive type cannot use.
+- **Live apply.** Saving applies the document, refreshes the player's ability bar from the live
+  registry, and keeps the player's existing "Always casts" choices exactly. The form reloads the live
+  definition after a successful save, so normalized fields are visible immediately.
+- **Persistence.** `Game::LoadContentOverrides` now applies `content.editor/skills/*.json` after the
+  catalog and before the player is spawned, so an override is already what the bar and cast path see.
+- **No creation in this slice.** The list edits existing skills. New skills are still added by putting
+  a definition file in the skills directory; a New/Duplicate action can be layered on later.
+- **No icon picker.** The icon is an ordinary string field; it resolves through the normal icon path
+  and is picked up by the ability bar. There is no sprite pane or regeneration for skills.
+
+Verification: an ad-hoc registry round-trip (`ToJson` -> edit -> `OverrideDefinition` -> `ToJson`)
+passes, and a temporary `data/editor/skills/heavy_swing.json` changed the live Heavy Swing damage from
+18 to 99 in `--combat-check`, proving the startup override layer. The full game still builds at `-j2`
+and the combat check and HUD smoke run pass.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <nlohmann/json.hpp>
 #include <unordered_map>
 #include <vector>
 
@@ -19,9 +20,30 @@ class DebugLog;
 // the same DeclaredEffects and share one parser.
 class SkillRegistry {
 public:
+  // The outcome of replacing one definition from the Content Editor or a
+  // content.editor/skills override. Warnings are the same authoring warnings the
+  // file loader reports; `error` means the document was rejected outright.
+  struct AddResult {
+    bool ok = false;
+    std::string error;
+    std::vector<std::string> warnings;
+  };
+
   // Reads every .json in `directoryPath`. Malformed files are reported through
   // the injected DebugLog (or stderr) rather than aborting the load.
   void LoadSkills(const std::string& directoryPath);
+
+  // Replaces one skill from a full document (the Content Editor's save path and
+  // the content.editor/skills startup layer). The document's "id" is the key;
+  // when absent, the source file's stem is used. Effects are replaced with the
+  // document's, not merged, so deleting an effect in the editor deletes it live.
+  AddResult OverrideDefinition(const nlohmann::json& document,
+                               const std::string& sourcePath = std::string());
+
+  // The complete normalized document for one skill, ready for the generic form:
+  // every known key is present with its live value, and the fixed "id" is
+  // omitted because the editor supplies it from the selected entry.
+  nlohmann::json ToJson(const std::string& id) const;
 
   // nullptr for an unknown id. The pointer is stable for the registry's lifetime.
   const SkillDef* Get(const std::string& id) const;
@@ -50,6 +72,9 @@ public:
 
 private:
   std::unordered_map<std::string, SkillDef> skills;
+  // The authored document, kept so the Content Editor can round-trip unknown
+  // fields and the effects array instead of reconstructing a lossy subset.
+  std::unordered_map<std::string, nlohmann::json> sources;
   DeclaredEffects declared;
   DebugLog* debugLog = nullptr;
 };

@@ -612,6 +612,13 @@ struct GameSettings {
     std::string portrait;
   } player;
 
+  struct CombatSection {
+    // False: pressing an aimed skill shows the indicator and waits for a click.
+    // True: the same press fires immediately at the cursor, with no preview.
+    // Read on every input, so toggling it in Settings takes effect next press.
+    bool instantSkillshots = false;
+  } combat;
+
   struct WorldSection {
     // 0 seeds from the clock, so every run differs. Any other value makes the run
     // reproducible, which is what the Debug Log's printed seed is for.
@@ -628,6 +635,7 @@ struct GameSettings {
     std::string races = "data/races";
     std::string portraits = "data/portraits";
     std::string projectiles = "data/projectiles";
+    std::string skillshots = "data/skillshots";
     // The place taxonomy (docs/place-derivation-design.md section 4): which
     // categories form places, their seed thresholds, link radii and split rule.
     // A file rather than a directory, because it is one vocabulary, not a catalog.

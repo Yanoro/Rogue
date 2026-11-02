@@ -532,7 +532,7 @@ void Game::DrawCombatHud() {
         }
 
         if (def != nullptr && clicked) {
-          ActivatePlayerSkill(i);
+          TryActivatePlayerSkill(i);
         }
         if (def != nullptr && rightClicked) {
           ImGui::OpenPopup("slot-menu");
@@ -567,6 +567,9 @@ void Game::DrawCombatHud() {
           if (!def->activation.projectile.empty()) {
             ImGui::TextDisabled("Projectile: %s",
                                 def->activation.projectile.c_str());
+          }
+          if (!def->activation.skillshot.empty()) {
+            ImGui::TextDisabled("Skillshot: aimed");
           }
           ImGui::TextDisabled("Right-click: Always casts");
           ImGui::EndTooltip();

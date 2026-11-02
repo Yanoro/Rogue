@@ -1,0 +1,21 @@
+{
+  "name": "Ice Lance",
+  "description": "A spear of ice thrown along a line. It hits the first living thing it crosses and stops there.",
+  "icon": "data/sprites/skill_ice_lance.png",
+  "type": "active",
+  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "levelsPerStage": 9,
+  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": ["use"],
+  "activation": {
+    "baseDamage": 20,
+    "cooldown": 8.0,
+    "range": 12,
+    "gcd": true,
+    "autoCast": false,
+    "xpPerUse": 10,
+    "skillshot": "ice_lance"
+  }
+}

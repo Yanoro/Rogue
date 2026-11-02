@@ -1,0 +1,7 @@
+{
+  "sprite": "data/sprites/projectile_ice_lance.png",
+  "path": "line",
+  "speed": 950,
+  "width": 12,
+  "length": 34
+}

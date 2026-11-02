@@ -6,6 +6,7 @@
     "Vitals",
     "Portrait",
     "TrainingDummy",
+    "Actor",
     "Obstacle"
   ],
   "health": 500,

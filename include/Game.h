@@ -28,6 +28,7 @@
 #include "RecipeRegistry.h"
 #include "PortraitRegistry.h"
 #include "ProjectileRegistry.h"
+#include "SkillshotRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "SpriteGapOffer.hpp"
@@ -131,7 +132,20 @@ public:
   void SetPlayerTarget(flecs::entity target);
   // Activates the skill in hotbar slot `index` (1..9 keys, 0-based here).
   // Returns false when the slot is empty, unknown, or the use was refused.
-  bool ActivatePlayerSkill(int index);
+  // `direction` aims a skillshot; other skills ignore it.
+  bool ActivatePlayerSkill(int index, Vector2 direction = {});
+
+  // The input-facing entry point: an aimed skill starts its indicator here
+  // unless combat.instantSkillshots is on, in which case it fires at the cursor
+  // immediately. Every other skill falls through to ActivatePlayerSkill.
+  bool TryActivatePlayerSkill(int index);
+
+  // Indicator lifecycle. Begin checks cooldown/GCD; Update follows the mouse and
+  // rebuilds the preview path; Cast launches along it; Cancel drops it.
+  bool BeginSkillshotAim(int index);
+  void UpdateSkillshotAim();
+  void CancelSkillshotAim();
+  bool CastSkillshotAim();
   // The combat HUD: health, target frame and the skill bar. Drawn in the ImGui
   // pass after the world, and draggable; its position is persisted separately
   // from the debug windows.
@@ -261,6 +275,7 @@ private:
   RaceRegistry raceRegistry;
   PortraitRegistry portraitRegistry;
   ProjectileRegistry projectileRegistry;
+  SkillshotRegistry skillshotRegistry;
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
@@ -404,6 +419,9 @@ private:
   // Session-only, like the other flags here: a restart does not start with one
   // already requested.
   bool restartRequestedFlag = false;
+  // Set when Esc is pressed with no aim active. Esc is handled explicitly so it
+  // can cancel a skillshot instead of closing the window (see SetExitKey in Init).
+  bool quitRequestedFlag = false;
   Acceleration lastAccel = {};
   Velocity lastVel = {};
 
@@ -690,6 +708,11 @@ private:
   // `content.editor`, after the catalog and the generated overlay have loaded. The last
   // word, because a human edit outranks both.
   void LoadContentOverrides();
+
+  // Rebuilds the player's bar from the live skill registry. The editor calls this
+  // after a skill save so a type/activation change appears immediately; it keeps
+  // existing "Always casts" choices and adds new auto-cast defaults.
+  void RefreshPlayerSkillBar();
   void ECSInitRenderSystems();
 
   // The render systems that draw over the tile and entity layers (name tags and

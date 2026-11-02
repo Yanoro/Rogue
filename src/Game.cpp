@@ -18,6 +18,7 @@
 #include "Settings.h"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "SkillshotPath.hpp"
 #include "SpriteRouter.hpp"
 #include "TileArt.hpp"
 #include "TileDesigner.hpp"
@@ -33,6 +34,7 @@
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -69,6 +71,10 @@ void Game::Init() {
 
   window.Init(settings.window.width, settings.window.height,
               settings.window.title.c_str());
+  // Esc is handled by hand: while aiming it cancels the indicator, otherwise it
+  // asks the frame loop to end. Raylib's built-in exit key would close the window
+  // before the aim state ever sees the press.
+  SetExitKey(KEY_NULL);
 
   // Initialize debug systems early to read state
   debugLog = std::make_unique<DebugLog>(
@@ -327,7 +333,203 @@ void Game::Init() {
   // caveat recorded in AsciiArtDraw.hpp.
 }
 
+namespace {
+// The visual centre of an actor in world pixels. Hitbox wins over DrawAscii
+// because a sprite can be larger than its glyph; both are tile-sized today, but
+// the difference matters the day a boss is bigger than one cell.
+Vector2 CombatEntityCenter(flecs::entity entity) {
+  const ScreenPosition *position = entity.get<ScreenPosition>();
+  if (position == nullptr) {
+    return {0.0f, 0.0f};
+  }
+  float width = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+  float height = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
+  if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+    width = static_cast<float>(hitbox->width);
+    height = static_cast<float>(hitbox->height);
+  } else if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
+    width = static_cast<float>(ascii->width);
+    height = static_cast<float>(ascii->height);
+  }
+  return {position->x + width * 0.5f, position->y + height * 0.5f};
+}
+} // namespace
+
+bool Game::TryActivatePlayerSkill(int index) {
+  if (!playerEntity.is_alive() || index < 0) {
+    return false;
+  }
+  const SkillBar *bar = playerEntity.get<SkillBar>();
+  if (bar == nullptr || index >= static_cast<int>(bar->ids.size())) {
+    return false;
+  }
+  const SkillDef *def = skillRegistry.Get(bar->ids[static_cast<size_t>(index)]);
+  if (def == nullptr || !SkillIsActivatable(def->type)) {
+    return false;
+  }
+
+  if (def->activation.skillshot.empty()) {
+    // A normal skill replaces any aim in progress; the player pressed a button
+    // that does not want the mouse.
+    CancelSkillshotAim();
+    return ActivatePlayerSkill(index);
+  }
+
+  if (Settings().combat.instantSkillshots) {
+    CancelSkillshotAim();
+    const Vector2 origin = CombatEntityCenter(playerEntity);
+    const Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+    const Vector2 direction =
+        SkillshotNormalize({mouse.x - origin.x, mouse.y - origin.y});
+    return ActivatePlayerSkill(index, direction);
+  }
+
+  return BeginSkillshotAim(index);
+}
+
+bool Game::BeginSkillshotAim(int index) {
+  if (!playerEntity.is_alive() || index < 0) {
+    return false;
+  }
+  const SkillBar *bar = playerEntity.get<SkillBar>();
+  if (bar == nullptr || index >= static_cast<int>(bar->ids.size())) {
+    return false;
+  }
+  const std::string skillId = bar->ids[static_cast<size_t>(index)];
+  const SkillDef *def = skillRegistry.Get(skillId);
+  if (def == nullptr || def->activation.skillshot.empty()) {
+    return false;
+  }
+  const SkillshotDef *skillshotDef =
+      skillshotRegistry.Get(def->activation.skillshot);
+  if (skillshotDef == nullptr) {
+    if (debugLog) {
+      debugLog->LogError("Skillshot '" + def->activation.skillshot +
+                         "' is not loaded; " + def->name + " cannot be aimed.");
+    }
+    return false;
+  }
+
+  const SkillCooldowns *cooldowns = playerEntity.get<SkillCooldowns>();
+  if (cooldowns == nullptr) {
+    return false;
+  }
+  const float readyIn = cooldowns->RemainingFor(skillId);
+  if (readyIn > 0.0f) {
+    if (debugLog) {
+      debugLog->LogCombat(def->name + " is not ready yet (" +
+                          std::to_string(static_cast<int>(std::ceil(readyIn))) +
+                          "s).");
+    }
+    return false;
+  }
+  const GlobalCooldown *gcd = playerEntity.get<GlobalCooldown>();
+  if (def->activation.gcd && gcd != nullptr && gcd->remaining > 0.0f) {
+    if (debugLog) {
+      debugLog->LogCombat("You are still recovering (" +
+                          std::to_string(
+                              static_cast<int>(std::ceil(gcd->remaining))) +
+                          "s).");
+    }
+    return false;
+  }
+
+  SkillshotAim aim;
+  aim.skillId = skillId;
+  aim.slot = index;
+  aim.width = skillshotDef->width;
+  playerEntity.set<SkillshotAim>(std::move(aim));
+  UpdateSkillshotAim();
+
+  if (debugLog) {
+    debugLog->LogCombat("Aiming " + def->name +
+                        ". Left-click to cast, right-click or Esc to cancel.");
+  }
+  return true;
+}
+
+void Game::UpdateSkillshotAim() {
+  SkillshotAim *aim = playerEntity.get_mut<SkillshotAim>();
+  if (aim == nullptr || !playerEntity.is_alive()) {
+    return;
+  }
+
+  const SkillDef *def = skillRegistry.Get(aim->skillId);
+  const SkillshotDef *skillshotDef =
+      def != nullptr ? skillshotRegistry.Get(def->activation.skillshot) : nullptr;
+  if (def == nullptr || skillshotDef == nullptr ||
+      !playerEntity.has<ScreenPosition>()) {
+    CancelSkillshotAim();
+    return;
+  }
+
+  // Keep the last heading when the cursor sits exactly on the caster: a zero
+  // vector would make the lance fire due east for no reason the player can see.
+  Vector2 fallback = {1.0f, 0.0f};
+  if (aim->path.size() >= 2) {
+    fallback = SkillshotNormalize(
+        {aim->path.back().x - aim->path[aim->path.size() - 2].x,
+         aim->path.back().y - aim->path[aim->path.size() - 2].y});
+  }
+
+  const Vector2 origin = CombatEntityCenter(playerEntity);
+  const Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), camera);
+  Vector2 delta = {mouse.x - origin.x, mouse.y - origin.y};
+  if (delta.x * delta.x + delta.y * delta.y < 1.0f) {
+    delta = fallback;
+  }
+
+  const float tileWidth = map != nullptr ? map->GetTileWidth() : 32.0f;
+  const float rangePixels = def->activation.rangeTiles * tileWidth;
+  aim->width = skillshotDef->width;
+  aim->rangePixels = rangePixels;
+  aim->direction = SkillshotNormalize(delta);
+  aim->path = BuildSkillshotPath(*skillshotDef, origin, aim->direction,
+                                 rangePixels);
+}
+
+void Game::CancelSkillshotAim() {
+  if (playerEntity.has<SkillshotAim>()) {
+    playerEntity.remove<SkillshotAim>();
+    if (debugLog) {
+      debugLog->LogCombat("Aim canceled.");
+    }
+  }
+}
+
+bool Game::CastSkillshotAim() {
+  SkillshotAim *aim = playerEntity.get_mut<SkillshotAim>();
+  if (aim == nullptr) {
+    return false;
+  }
+
+  // The stored launch heading, not the path's final tangent: a curved preview
+  // ends along the tangent, but the launch direction is where the mouse was.
+  const Vector2 direction = aim->direction;
+  const int slot = aim->slot;
+  const bool used = ActivatePlayerSkill(slot, direction);
+  playerEntity.remove<SkillshotAim>();
+  return used;
+}
+
 void Game::UpdateGUI() {
+  // Aim is resolved before targeting: a left-click that confirms a skillshot must
+  // not also lock a target or commit a blueprint. Right-click and Esc cancel; the
+  // early return keeps the world interaction from also firing on the same click.
+  if (playerEntity.has<SkillshotAim>()) {
+    UpdateSkillshotAim();
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      CastSkillshotAim();
+      return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      CancelSkillshotAim();
+      return;
+    }
+  }
+
   // The blueprint ghost follows the mouse continuously, not only on click, so the
   // preview has to be re-anchored every frame. Deliberately outside the
   // button-pressed branch below: a ghost that only moved when you clicked would
@@ -791,6 +993,17 @@ void Game::UpdateMemoryDigest() {
 }
 
 void Game::handleInput() {
+  // Esc has two meanings: cancel an aim, otherwise close the game. Raylib's exit
+  // key is disabled in Init so the aim state gets the press first.
+  if (IsKeyPressed(KEY_ESCAPE)) {
+    if (playerEntity.has<SkillshotAim>()) {
+      CancelSkillshotAim();
+    } else {
+      quitRequestedFlag = true;
+    }
+    return;
+  }
+
   std::vector<Command *> commands = inputHandler->handleInput();
   for (Command *cmd : commands) {
     if (cmd) {
@@ -821,7 +1034,7 @@ void Game::handleInput() {
                                     KEY_ZERO};
   for (int i = 0; i < 10; ++i) {
     if (IsKeyPressed(skillKeys[i])) {
-      ActivatePlayerSkill(i);
+      TryActivatePlayerSkill(i);
       break; // one skill per frame, so two keys cannot fire in one tick
     }
   }
@@ -1034,7 +1247,9 @@ void Game::Shutdown() {
   window.Close();
 }
 
-bool Game::shouldClose() const { return window.ShouldClose(); }
+bool Game::shouldClose() const {
+  return quitRequestedFlag || window.ShouldClose();
+}
 
 int Game::maxDesignAttempts() const { return Settings().designer.maxDesignAttempts; }
 
@@ -1145,6 +1360,45 @@ void Game::LoadContentOverrides() {
     if (applied > 0 && debugLog) {
       debugLog->LogInfo("Content editor: " + std::to_string(applied) +
                         " object override(s) applied");
+    }
+  }
+
+  // Skills. The same last-word rule as tiles and objects; the player's bar is
+  // built after this pass, so an override is already in the registry when the
+  // bar is seeded.
+  const std::filesystem::path skillDir = root / "skills";
+  if (std::filesystem::is_directory(skillDir, ec)) {
+    size_t applied = 0;
+    for (const auto &entry : std::filesystem::directory_iterator(skillDir, ec)) {
+      if (entry.path().extension() != ".json") continue;
+      nlohmann::json json;
+      std::string error;
+      if (!read(entry.path(), json, error)) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: " + entry.path().string() + " " + error);
+        }
+        continue;
+      }
+      const SkillRegistry::AddResult result =
+          skillRegistry.OverrideDefinition(json, entry.path().string());
+      if (!result.ok) {
+        if (debugLog) {
+          debugLog->LogError("Content editor: override " + entry.path().string() +
+                             " refused: " + result.error);
+        }
+        continue;
+      }
+      if (debugLog) {
+        for (const std::string &warning : result.warnings) {
+          debugLog->LogWarning("Content editor: " + entry.path().string() + ": " +
+                               warning);
+        }
+      }
+      ++applied;
+    }
+    if (applied > 0 && debugLog) {
+      debugLog->LogInfo("Content editor: " + std::to_string(applied) +
+                        " skill override(s) applied");
     }
   }
 }

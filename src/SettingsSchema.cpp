@@ -31,6 +31,7 @@ using ChunksSection = GameSettings::ChunksSection;
 using WindowSection = GameSettings::WindowSection;
 using RenderSection = GameSettings::RenderSection;
 using PlayerSection = GameSettings::PlayerSection;
+using CombatSection = GameSettings::CombatSection;
 using WorldSection = GameSettings::WorldSection;
 using ContentSection = GameSettings::ContentSection;
 using ArtSection = GameSettings::ArtSection;
@@ -613,6 +614,7 @@ const std::vector<SectionSpec> &Sections() {
       {"window", "window", "Window creation.", ""},
       {"render", "render", "Font and starting camera.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
+      {"combat", "combat", "Aimed skills: indicator-first or instant at the cursor.", ""},
       {"world", "world", "World generation.", ""},
       {"content", "content", "Where each content registry loads its definitions from.", ""},
       {"art", "art", "The art pack and its generated overlay. Convention sprites resolve from `<pack>/sprites/` first, then the generated layer.", ""},
@@ -1186,6 +1188,10 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
         .Restart();
 
+    // --- combat -----------------------------------------------------------
+    add(Field<ValueType::Bool>("combat", "combat.instantSkillshots",
+            "Fire aimed skills at the cursor immediately instead of showing their aim indicator first.", &GameSettings::combat, &CombatSection::instantSkillshots));
+
     // --- world ------------------------------------------------------------
     add(Field<ValueType::UInt64>("world", "world.seed",
             "0 seeds from the clock, so every run differs. Any other value makes the run reproducible.", &GameSettings::world, &WorldSection::seed))
@@ -1219,6 +1225,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
         .Restart();
     add(Field<ValueType::String>("content", "content.projectiles",
             "Projectile registry directory: one JSON per flying object, with its sprite, speed and size.", &GameSettings::content, &ContentSection::projectiles))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.skillshots",
+            "Skillshot registry directory: one JSON per aimed delivery, with its sprite, path, speed, width and length.", &GameSettings::content, &ContentSection::skillshots))
         .Restart();
     add(Field<ValueType::String>("content", "content.places",
             "The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule.", &GameSettings::content, &ContentSection::places))
