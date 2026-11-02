@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "SpriteKinds.hpp"
 #include "Window.h"
 
 class Game;
@@ -48,6 +50,29 @@ private:
   void DrawKindAndList();
   void DrawDocumentPane();
   void DrawSpritePane();
+  // The sprite asset section, shared by the sprite kinds and the equipment tab: preview,
+  // document state, Regenerate, and the archive of every generation. `explicitSprite` is
+  // a document's own sprite override; empty for an item's worn layer.
+  // `builtInFallback` lets a kind whose art ships in data/sprites (the worn equipment
+  // layers) resolve it when a configured art pack does not contain it.
+  // `convention` names the files (variants, marker, document); `requestName` is the name
+  // the sprite pipeline knows the asset by (a tile's name, an actor's id, an item's worn
+  // sprite id). They differ: an item's id is not its worn sprite's id, and passing the id
+  // made Regenerate write a different asset entirely.
+  //
+  // `artRequirement` replaces the catalog description for an asset no registry holds (a
+  // worn equipment layer), and becomes the brief a Regenerate is redrawn from.
+  void DrawSpriteAsset(const std::string &convention, const std::string &requestName,
+                       SpriteKinds::Kind spriteKind, const std::string &explicitSprite,
+                       bool builtInFallback, const std::string &artRequirement);
+
+  // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
+  // one kind whose document is a *composition*, so the generic form alone cannot show
+  // what it makes.
+  void DrawRigPreviewPane();
+  // The equipment preview: the item's numbers and, when it has worn art, the layer on a
+  // chosen rig. A worn item with no body to wear it is only half an item.
+  void DrawItemPreviewPane();
 
   // Sprite variants. The convention file (`<id>.png`) is always the active one, because
   // that is what the world resolves; regenerating first copies it aside as `<id>.vN.png`,
@@ -77,6 +102,12 @@ private:
   // definition the selection came from, and an id is what the next read takes.
   std::string kindId = "tiles";
   std::string entryId;
+
+  // Which worn items the rig preview is showing, keyed by item id. Reset when the
+  // selected rig changes so a different rig starts from a full outfit.
+  std::set<std::string> rigPreviewWorn;
+  std::string rigPreviewEntry;
+  std::string itemPreviewRig;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

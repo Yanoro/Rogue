@@ -1351,6 +1351,69 @@ inline std::string BuildSingleUserPrompt(
   return out.str();
 }
 
+// ── Continuous navigation's wake block (navigation.agent = "inline") ────────
+//
+// The no-episode experiment: the main agent's ordinary turn carries the same
+// facts the single navigator's STATE/ACTIONS block carries, but the choice
+// belongs to the ordinary command loop rather than to a delegated decision.
+// There is no goal to state, so the block answers only "where am I and what
+// steps are offered"; the character's intention stays in its task list and its
+// conversation, which is the point of putting the spatial state here at all --
+// the agent that walks is the agent that remembers the walk.
+//
+// The first line is a marker. AgentBrain prunes old copies of the block by
+// prefix (`navigation.inline.spatialHistory`), so the two spellings must not
+// drift; they share this constant.
+inline constexpr const char *SPATIAL_BLOCK_MARKER = "SPATIAL: where you are";
+
+inline std::string BuildSpatialBlock(
+    const SpatialMemory &memory, GamePosition here, const Facing &facing,
+    const std::vector<NavigationPlan::Candidate> &candidates, bool canFollow,
+    bool canBack, const std::string &watch, bool includeActions,
+    bool includeMap, int mapRadius) {
+  std::ostringstream out;
+  out << SPATIAL_BLOCK_MARKER << "\n";
+  out << "YOU ARE: " << NavigationPlan::DescribeWhere(memory, here, facing)
+      << ".\n";
+
+  if (includeActions) {
+    out << "STEPS (one leg each; your other commands still work, and you do "
+           "not have to move -- type the whole [GO ...] form):\n";
+    bool any = false;
+    for (const NavigationPlan::Candidate &candidate : candidates) {
+      if (candidate.examine) continue;
+      out << "  [GO " << candidate.key << "]  " << candidate.description
+          << "\n";
+      any = true;
+    }
+    if (canFollow) {
+      out << "  [GO follow]  follow the linear feature underfoot to the next "
+             "junction or end; add :<direction> to choose the way\n";
+    }
+    if (canBack) {
+      out << "  [GO back]  retrace the step you just walked\n";
+    }
+    if (!any && !canFollow && !canBack) {
+      out << "  (no step is offered from here; [MOVE_TO] still works for a "
+             "place or person you can name)\n";
+    }
+  }
+
+  out << "WATCH: ";
+  if (watch.empty()) {
+    out << "none. Set one with [WATCH <what should make you stop and look "
+           "while you walk>].\n";
+  } else {
+    out << watch << "\n";
+  }
+
+  if (includeMap) {
+    out << "\n" << BuildPilotMap(memory, here, facing, candidates, mapRadius)
+        << "\n";
+  }
+  return out.str();
+}
+
 inline std::string BuildPlanSummary(const Plan &plan) {
   std::ostringstream out;
   out << "strategy: " << plan.strategy;

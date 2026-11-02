@@ -89,7 +89,7 @@ when it is standing there:
 
 The ancestry of an item is invisible until the agent has visited every intermediate station.
 `MOVE_TO` arrival prints the station's own recipes (`FormatStationRecipes`, on the arrival path
-in `src/GameECS.cpp`), which is one hop, at one place, right now.
+in `src/GameECSInit.cpp`), which is one hop, at one place, right now.
 
 **Consequence:** an agent cannot decide "I will make a scythe" and plan backwards to ore. It
 can only stumble forward. That is the gap these commands close.
@@ -238,7 +238,7 @@ Rules worth keeping:
 `FormatRecipe` and `FormatSeconds` were extracted from the anonymous namespace in
 `src/GameECS.cpp` into **`include/RecipeFormatting.h`** (now `inline`, behaviour unchanged).
 They moved because the guide had to describe a recipe from `AgentActions.h`, which cannot see a
-file-local namespace. `GameECS.cpp` includes the new header, and `FormatStationRecipes` still
+file-local namespace. `GameECSInit.cpp` includes the new header, and `FormatStationRecipes` still
 calls the same `FormatRecipe` — so a station and a guide cannot describe one recipe differently.
 
 That function's own comment fixes the item-naming convention:

@@ -1,0 +1,20 @@
+{
+  "armor": 4.0,
+  "name": "Pitted Skull Helm",
+  "occupies": 1,
+  "slot": "head",
+  "tags": [
+    "armor",
+    "iron",
+    "heavy"
+  ],
+  "tier": 3.0,
+  "worn": {
+    "hides": [
+      "hair",
+      "head"
+    ],
+    "sprite": "worn_pitted_skull_helm",
+    "z": 100
+  }
+}

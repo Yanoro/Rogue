@@ -730,7 +730,7 @@ judged by playing the quest map, not by a harness.
 **Stage 1 actuals.** `include/NavigationPlan.hpp` (candidates, state, question, choice
 interpretation, summary), `MoveToPlaceAction` (replaced by `MoveToCellAction` in 2.5) and
 `NavigateAction` in `include/AgentActions.h`,
-`[NAVIGATE $GOAL]` in `src/GameECS.cpp`, and `SystemOneClassifierResource` in
+`[NAVIGATE $GOAL]` in `src/GameECSInit.cpp:758`, and `SystemOneClassifierResource` in
 `include/Components.h`, published by `Game::Init` and updated on a profile swap. `Attribution` now
 carries `advisory`, and `JevClassifier` copies it into the record.
 
@@ -916,7 +916,7 @@ explained is the deliverable; adding a hint to make it pass is not.
 | `include/NavigationPlan.hpp` (new) | move struct, `BuildCandidates`, state/question builder, summary builder — pure, testable |
 | `include/AgentActions.h` | `NavigateAction` (state machine, async handoff, survey recovery, interruption/resume, summary); a place-id move target / `MoveToPlaceAction` |
 | `include/PlaceQuery.hpp` | a shared place-list renderer extracted from `PlacesAction`, used by `[PLACES]` and the navigation summary |
-| `src/GameECS.cpp` | register `[NAVIGATE $GOAL]` with help; set the System 1 resource |
+| `src/GameECSInit.cpp` | register `[NAVIGATE $GOAL]` with help; set the System 1 resource |
 | `include/Components.h` | `SystemOneResource` (`shared_ptr<SystemOneClassifier>`), if no resource exists |
 | `include/Game.h`, `src/Game.cpp` | publish the classifier to the resource at startup and on profile swap |
 | `include/SystemOneRecorder.h`, `src/JevClassifier.cpp` | `Attribution::advisory`; provider copies it into the record |

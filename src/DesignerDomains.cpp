@@ -40,6 +40,41 @@ const std::vector<Descriptor> &All() {
           &SpriteKinds::For(SpriteKinds::Kind::Object),
       },
       {
+          // A map. No sprite row: a map is drawn from its tiles, which is why its
+          // design chooses them instead of competing with them.
+          Domain::Map,
+          "map",
+          "Map",
+          "a map",
+          "maps/MAPDESIGNER.md",
+          "content.mapPromptFile",
+          nullptr,
+      },
+      {
+          // A rig. No sprite row: its parts are sprites, and the worn equipment layered
+          // over it is drawn from item definitions, so a rig-shaped sprite kind would be
+          // a category error.
+          Domain::Rig,
+          "rig",
+          "Rig",
+          "a rig",
+          "data/rigs/RIGDESIGNER.md",
+          "content.rigPromptFile",
+          nullptr,
+      },
+      {
+          // Worn equipment. No sprite row: the item has a world object (the object
+          // domain's document) and a worn layer (drawn over a rig); neither is this
+          // domain's own sprite kind.
+          Domain::Equipment,
+          "equipment",
+          "Equipment",
+          "a piece of equipment",
+          "data/items/EQUIPMENTDESIGNER.md",
+          "content.equipmentPromptFile",
+          nullptr,
+      },
+      {
           Domain::ActorSprite,
           "actor_sprite",
           "Actor sprite",

@@ -1,0 +1,13 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  sleeve = grass.0
+  sleeve_dark = grass.0
+  skin = sand.3
+}
+
+rect (7,12) (10,21) color=sleeve
+line (7,12) (7,21) color=sleeve_dark
+rect (7,21) (10,23) color=skin

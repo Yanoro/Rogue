@@ -5,6 +5,8 @@
 #include <fstream>
 
 #include "ActorSpriteRegistry.h"
+#include "ItemRegistry.h"
+#include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
 #include "Game.h"
@@ -216,6 +218,57 @@ std::string ActorSpriteFileName(const nlohmann::json &document) {
 
 std::string ActorSpriteSprite(const std::string &id) { return id; }
 
+// ---- items ----------------------------------------------------------------
+
+std::vector<Entry> ListItems(const World &world) {
+  std::vector<Entry> out;
+  for (const ItemDef *item : world.items.GetAll()) {
+    out.push_back({item->id, item->name.empty() ? item->id : item->name,
+                   "item definition"});
+  }
+  return out;
+}
+
+nlohmann::json ReadItem(const World &world, const std::string &id) {
+  const ItemDef *item = world.items.Get(id);
+  if (item == nullptr) return nlohmann::json::object();
+  return world.items.ToJson(*item);
+}
+
+bool ApplyItem(const World &world, const nlohmann::json &document,
+               std::string *error, std::vector<std::string> *warnings) {
+  return world.items.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string ItemFileName(const nlohmann::json &document) {
+  return document.value("id", std::string());
+}
+
+// ---- actor rigs ------------------------------------------------------------
+
+std::vector<Entry> ListRigs(const World &world) {
+  std::vector<Entry> out;
+  for (const ActorRig *rig : world.rigs.GetAll()) {
+    out.push_back({rig->id, rig->name, "rig definition"});
+  }
+  return out;
+}
+
+nlohmann::json ReadRig(const World &world, const std::string &id) {
+  const ActorRig *rig = world.rigs.Get(id);
+  if (rig == nullptr) return nlohmann::json::object();
+  return world.rigs.ToJson(*rig);
+}
+
+bool ApplyRig(const World &world, const nlohmann::json &document,
+              std::string *error, std::vector<std::string> *warnings) {
+  return world.rigs.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string RigFileName(const nlohmann::json &document) {
+  return RigRegistry::IdFor(document);
+}
+
 // ---- NPC templates ---------------------------------------------------------
 
 // A template is the body and the starting sheet; its art comes from the actor
@@ -360,6 +413,27 @@ const std::vector<Kind> &All() {
           nullptr,
           "id",
           &PrepareSkillDocument,
+      },
+      {
+          "items",
+          "Equipment",
+          /*hasSprites=*/false,
+          &ListItems,
+          &ReadItem,
+          &ApplyItem,
+          &ItemFileName,
+          nullptr,
+          /*fixedIdKey=*/"id",
+      },
+      {
+          "rigs",
+          "Actor rigs",
+          /*hasSprites=*/false,
+          &ListRigs,
+          &ReadRig,
+          &ApplyRig,
+          &RigFileName,
+          nullptr,
       },
       {
           "npcs",

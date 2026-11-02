@@ -1,0 +1,103 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  void_glow = #b87cf8
+  void_mid  = #782cb8
+  void_deep = #3a0d66
+  robe_hi   = #8e44ad
+  robe_base = #6c2d8a
+  robe_dark = #43165b
+  robe_deep = #2b0b3d
+  eye_glow  = #d6a2e8
+}
+
+// === Staff (Held on the left / behind) ===
+// Shaft
+line (7,10) (7,28) color=ink.base
+line (8,10) (8,28) color=wood.2
+line (9,10) (9,28) color=ink.base
+line (8,12) (8,26) color=wood.3
+
+// Staff head prongs / mount
+pixel (6,9) color=iron.2
+pixel (10,9) color=iron.1
+pixel (6,8) color=iron.3
+pixel (10,8) color=iron.2
+pixel (7,7) color=ink.base
+pixel (9,7) color=ink.base
+
+// Void crystal embedded atop staff
+polygon (8,3) (10,6) (8,9) (6,6) color=ink.base
+polygon (8,4) (9,6) (8,8) (7,6) color=void_deep
+pixel (8,5) color=void_glow
+pixel (8,6) color=void_mid
+pixel (7,5) color=void_mid
+
+// === Wizard Body & Robes ===
+// Silhouette outline
+polygon (11,14) (21,14) (26,29) (10,29) color=ink.base
+
+// Robe base volume
+polygon (12,15) (20,15) (25,28) (11,28) color=robe_base
+
+// Robe shading & folds (light from above-left)
+polygon (12,15) (15,15) (13,28) (11,28) color=robe_hi
+polygon (18,17) (21,16) (25,28) (22,28) color=robe_dark
+polygon (22,20) (25,28) (24,28) color=robe_deep
+
+// Central fold drape
+line (16,16) (16,28) color=robe_dark
+line (15,16) (15,28) color=robe_hi
+
+// Hem trim
+line (11,28) (25,28) color=robe_deep
+line (11,27) (25,27) color=robe_dark
+
+// Right sleeve / arm holding staff
+rect (8,17) (12,20) color=ink.base
+rect (9,18) (11,20) color=robe_base
+pixel (9,18) color=robe_hi
+// Hand gripping staff
+pixel (8,18) color=sand.1
+pixel (8,19) color=sand.2
+
+// === Wizard Hat & Head ===
+// Hat base / shadow base
+polygon (11,11) (23,11) (22,16) (12,16) color=ink.base
+
+// Wide brim
+line (8,12) (26,12) color=ink.base
+line (9,11) (25,11) color=robe_dark
+line (10,11) (17,11) color=robe_hi
+
+// Hat cone curving back/right
+polygon (13,10) (21,10) (18,2) (15,2) color=ink.base
+polygon (14,10) (20,10) (17,3) (15,3) color=robe_base
+polygon (14,10) (17,10) (16,3) (15,3) color=robe_hi
+polygon (18,10) (20,10) (17,4) color=robe_dark
+
+// Hat tip bend
+pixel (18,2) color=ink.base
+pixel (19,3) color=robe_base
+pixel (19,4) color=ink.base
+
+// Hat band
+line (13,10) (21,10) color=void_deep
+line (14,10) (17,10) color=void_mid
+
+// === Obscured Face / Unnatural Shadows ===
+// Pitch-black void beneath brim
+rect (12,13) (21,15) color=ink.base
+pixel (13,16) color=ink.base
+pixel (20,16) color=ink.base
+
+// Glowing void-touched eyes
+pixel (14,14) color=eye_glow
+pixel (18,14) color=eye_glow
+
+// Wisps of void aura around the staff crystal
+pixel (8,2) color=void_mid
+pixel (5,6) color=void_glow
+pixel (11,6) color=void_mid

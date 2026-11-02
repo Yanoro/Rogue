@@ -1,0 +1,38 @@
+{
+  "description": "An off-white robed figure whose features are entirely swallowed by hard-edged black shadow.",
+  "height": 32,
+  "name": "Shadow-Faced Wizard",
+  "parts": [
+    {
+      "id": "legs",
+      "sprite": "rig_shadow_faced_wizard_legs",
+      "z": 10
+    },
+    {
+      "id": "body",
+      "sprite": "rig_shadow_faced_wizard_body",
+      "z": 20
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_shadow_faced_wizard_arm_left",
+      "z": 25
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_shadow_faced_wizard_arm_right",
+      "z": 25
+    },
+    {
+      "id": "head",
+      "sprite": "rig_shadow_faced_wizard_head",
+      "z": 30
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_shadow_faced_wizard_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

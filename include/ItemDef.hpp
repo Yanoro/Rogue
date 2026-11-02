@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "SourceScaling.hpp"
 
 // Definition of one equippable item, loaded from data/items/<id>.json.
@@ -69,6 +71,26 @@ struct ItemDef {
   // any innate Armor the character or object carries, then subtracted from each
   // hit and floored at one point -- see ArmorOf.
   float armor = 0.0f;
+
+  // How the item looks worn by a *rigged* actor: a sprite convention id drawn over
+  // the rig, its draw order among the worn layers, and the rig parts it covers
+  // (`hides`, e.g. a helmet hiding the hair). Empty means the item has no worn art,
+  // which is the normal state for everything that is not worn on a body.
+  //
+  // Separate from the object template's sprite on purpose: a sword lying on the
+  // ground and a sword in a hand are different pictures.
+  std::string wornSprite;
+  // How the item looks worn, as authored. Kept so a later regeneration has the design
+  // intent to redraw from, rather than only a name.
+  std::string wornBrief;
+  int wornZ = 0;
+  std::vector<std::string> wornHides;
+
+  // The "effects" array exactly as authored. The typed definition does not model it --
+  // ParseEffectEntries folds it into the registry's DeclaredEffects -- so this is kept for
+  // the Content Editor, which must write back an item it did not change without silently
+  // dropping the effects it does not understand.
+  nlohmann::json effectsJson;
 
   // The same shape a StatDef and a SkillDef provide, so one contribution builder
   // serves all three.

@@ -35,14 +35,17 @@ if [[ -z "${IN_NIX_SHELL:-}" ]] && ! deps_available; then
 fi
 
 # --- Build (out-of-source). Assets are resolved relative to the project root.
-# Build on every core available on the machine.
+# build.sh sizes the parallelism from free RAM (12 compilers at once peak well
+# over 15 GiB and get OOM-killed) and defaults to a fast Debug build. Pass
+#   AIROGUE_BUILD_FLAGS=--release ./compile_and_run.sh
+# to build the optimized game instead.
 cd "$PROJECT_ROOT"
 
-if [[ ! -f "$BUILD_DIR/CMakeCache.txt" ]]; then
-  cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR"
+build_args=()
+if [[ -n "${AIROGUE_BUILD_FLAGS:-}" ]]; then
+  read -r -a build_args <<< "${AIROGUE_BUILD_FLAGS}"
 fi
-
-cmake --build "$BUILD_DIR" --parallel 4
+"$PROJECT_ROOT/build.sh" "${build_args[@]}"
 
 if [[ ! -x "$BINARY" ]]; then
   echo "error: the build finished but '$BINARY' does not exist." >&2

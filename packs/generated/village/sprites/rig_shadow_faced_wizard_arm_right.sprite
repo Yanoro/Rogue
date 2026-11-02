@@ -1,0 +1,37 @@
+sprite 32x32
+kind object
+material stone
+
+// Outline of the right arm and sleeve
+rect (22,12) (25,20) color=ink.base
+rect (22,20) (25,23) color=ink.base
+
+// Sleeve fill: draped off-white cloth
+rect (23,13) (24,19) color=sand.3
+pixel (22,14) color=sand.2
+pixel (22,16) color=sand.2
+pixel (25,15) color=sand.1
+pixel (25,18) color=sand.1
+
+// Sleeve highlights and fold shading
+line (23,13) (23,18) color=sand.4
+line (24,14) (24,19) color=sand.2
+pixel (23,19) color=sand.1
+pixel (24,19) color=sand.0
+
+// Sleeve cuff hem
+line (22,20) (25,20) color=stone.1
+line (23,20) (24,20) color=stone.2
+
+// Open hand emerging from sleeve (flesh / waiting to hold staff)
+rect (23,21) (24,22) color=sand.2
+pixel (22,21) color=sand.1
+pixel (25,21) color=sand.3
+pixel (23,22) color=sand.3
+pixel (24,22) color=sand.1
+
+// Hand contour / grasp shadow
+pixel (23,23) color=ink.base
+pixel (24,23) color=ink.base
+pixel (22,22) color=ink.base
+pixel (25,22) color=ink.base

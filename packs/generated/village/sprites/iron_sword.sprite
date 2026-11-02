@@ -1,0 +1,59 @@
+sprite 32x32
+kind object
+material iron
+
+// Pommel (disc) at bottom-left
+circle (5,26) radius=3 color=ink.base
+circle (5,26) radius=2 color=iron.2
+pixel (4,25) color=iron.3
+pixel (6,27) color=iron.0
+
+// Grip (diagonal leather wrap)
+line (6,25) (10,21) color=ink.base
+line (5,24) (9,20) color=wood.1
+line (6,25) (10,21) color=wood.2
+line (7,23) (10,20) color=wood.3
+pixel (8,22) color=wood.0
+pixel (6,24) color=wood.0
+
+// Crossguard
+line (7,18) (15,26) color=ink.base
+line (8,17) (16,25) color=ink.base
+line (8,18) (14,24) color=iron.2
+line (9,18) (11,20) color=iron.3
+line (12,23) (14,25) color=iron.1
+pixel (7,17) color=iron.4
+pixel (16,26) color=iron.0
+
+// Blade outline
+line (11,19) (26,4) color=ink.base
+line (12,20) (27,5) color=ink.base
+line (14,22) (29,7) color=ink.base
+line (13,23) (28,8) color=ink.base
+// Blade tip
+pixel (28,3) color=ink.base
+pixel (29,4) color=ink.base
+pixel (30,5) color=ink.base
+pixel (30,6) color=ink.base
+pixel (29,3) color=iron.4
+
+// Blade body: Upper/lit bevel
+line (12,18) (27,3) color=iron.4
+line (12,19) (27,4) color=iron.3
+line (13,19) (27,5) color=iron.3
+
+// Blade central fuller (shadowed ridge)
+line (13,20) (26,7) color=iron.1
+pixel (27,6) color=iron.2
+
+// Blade body: Lower/shaded bevel
+line (13,21) (27,7) color=iron.2
+line (14,21) (28,7) color=iron.1
+line (14,22) (28,8) color=iron.0
+
+// Highlights and edge glints
+pixel (26,3) color=stone.4
+pixel (20,9) color=iron.4
+pixel (28,4) color=stone.4
+pixel (10,18) color=iron.4
+pixel (11,17) color=iron.3

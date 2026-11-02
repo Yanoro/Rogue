@@ -1,0 +1,21 @@
+sprite 32x32
+kind object
+material sand
+
+// Face only. Hair is a separate layer drawn over it, so a helmet can hide the
+// hair while the face underneath stays.
+palette {
+  skin = sand.3
+  skin_shadow = sand.2
+  eye = ink.base
+  mouth = soil.2
+}
+
+rect (11,4) (21,12) color=skin
+// Jaw shadow.
+line (11,12) (21,12) color=skin_shadow
+// Eyes, one pixel each: at this size a two-pixel eye becomes a stare.
+line (14,7) (15,7) color=eye
+line (18,7) (19,7) color=eye
+// Mouth.
+line (15,10) (18,10) color=mouth

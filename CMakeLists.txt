@@ -6,6 +6,37 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ------------------------------------------------------------------------------
+# Build type
+# ------------------------------------------------------------------------------
+# Nix's gcc wrapper appends -O2 to every compile through NIX_CFLAGS_COMPILE.
+# With no CMAKE_BUILD_TYPE set, nothing overrides it, so the project compiled at
+# -O2 + AddressSanitizer + -g -- the slowest possible combination. Measured on
+# this machine for src/GameECS.cpp (before it was split):
+#
+#   -O2 -g (what an unset build type produced)  231 s   3.5 GiB peak RSS
+#   -O1 -g                                      148 s   3.3 GiB
+#   -O0 -g (Debug)                               55 s   2.7 GiB
+#
+# The same ratio holds for every translation unit, so the optimizer level is by
+# far the biggest lever on build time (an unset build type was ~4x slower than
+# intended: the -O0 below only applies when the config is actually Debug).
+# Default to Debug for the edit/build/test loop; configure with
+# -DCMAKE_BUILD_TYPE=Release when you care how fast the game runs.
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING
+        "Build type (Debug, Release, RelWithDebInfo, MinSizeRel)" FORCE)
+endif()
+
+option(AIROGUE_ASAN "Build with AddressSanitizer" ON)
+
+# Caps per-compiler-process memory with GCC's GC parameters. Measured on
+# (pre-split) src/GameECS.cpp: 55 s / 2.7 GiB normally vs 59 s / 1.5 GiB here -- ~45% less
+# RAM for ~6% more wall time, which is what makes a high -j safe on a 15 GiB
+# box. -g1 keeps line numbers (ASan stack traces stay readable) but drops
+# local-variable info, so `print` on locals in gdb stops working.
+option(AIROGUE_LOW_MEMORY "Use much less compiler RAM at slightly longer build time" OFF)
+
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
@@ -141,6 +172,13 @@ set(SOURCES
     src/GameDraw.cpp
     src/CombatHud.cpp
     src/GameECS.cpp
+    # GameECS.cpp was one 5.7k-line translation unit (~54 s, 2.7 GiB per compile,
+    # the build's critical path). It is split by responsibility; the symbols they
+    # share are declared in src/GameECSInternals.h, which is internal to these
+    # four files and not part of the include/ surface.
+    src/GameECSCombat.cpp
+    src/GameECSInitSystems.cpp
+    src/GameECSInit.cpp
     src/Map.cpp
     src/OllamaAI.cpp
     src/GeminiAI.cpp
@@ -168,6 +206,7 @@ set(SOURCES
     src/SettingsWindow.cpp
     src/DebugLog.cpp
     src/MapReloader.cpp
+    src/MapDesigner.cpp
     src/DrawAsciiDebug.cpp
     src/DebugWindows.cpp
     src/AgentBrain.cpp
@@ -210,6 +249,9 @@ set(SOURCES
     src/BlueprintExpansion.cpp
     src/GapLog.cpp
     src/ActorSpriteRegistry.cpp
+    src/RigRegistry.cpp
+    src/RigDesigner.cpp
+    src/EquipmentDesigner.cpp
     src/NpcTemplateRegistry.cpp
     src/BrainTemplateRegistry.cpp
     src/ArtRequestsPanel.cpp
@@ -282,7 +324,7 @@ endif()
 target_compile_options(AIRogue PRIVATE 
     ${CURL_CFLAGS_OTHER}
     ${RAYLIB_CFLAGS_OTHER}
-    -fsanitize=address
+    $<$<BOOL:${AIROGUE_ASAN}>:-fsanitize=address>
     -g -fno-omit-frame-pointer
     -Wall
     -Wno-maybe-uninitialized
@@ -295,9 +337,15 @@ target_compile_options(AIRogue PRIVATE
     # At -O0 Nix's forced _FORTIFY_SOURCE=3 is inert and emits a #warning in
     # every TU; silence it for Debug only.
     $<$<CONFIG:Debug>:-Wno-cpp>
+    # See AIROGUE_LOW_MEMORY above. -g1 must come after -g to win.
+    $<$<BOOL:${AIROGUE_LOW_MEMORY}>:-g1>
+    $<$<BOOL:${AIROGUE_LOW_MEMORY}>:--param=ggc-min-expand=20>
+    $<$<BOOL:${AIROGUE_LOW_MEMORY}>:--param=ggc-min-heapsize=32768>
 )
 
-target_link_options(AIRogue PRIVATE -fsanitize=address)
+if(AIROGUE_ASAN)
+    target_link_options(AIRogue PRIVATE -fsanitize=address)
+endif()
 
 
 # ------------------------------------------------------------------------------

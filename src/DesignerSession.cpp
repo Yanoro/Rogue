@@ -750,7 +750,7 @@ void DesignerSession::DrawSpeechBar(size_t index, Exchange &exchange) {
 
 void DesignerSession::DrawTranscript(
     bool showThoughts, bool showJson, const std::string &emptyHint,
-    const std::function<void(Exchange &)> &drawVerdict) {
+    const std::function<void(Exchange &)> &drawVerdict, bool autoScroll) {
   // Drawn from a copy taken under the lock, so the worker appending tokens cannot race
   // the render pass.
   std::vector<Exchange> snapshot;
@@ -819,4 +819,17 @@ void DesignerSession::DrawTranscript(
 
     ImGui::Separator();
   }
+
+  // Follow new output, not every frame: a growing reply or a new exchange changes the
+  // signature, while an idle transcript -- including one the reader scrolled up in -- does
+  // not move until something arrives.
+  size_t signature = snapshot.size();
+  if (!snapshot.empty()) {
+    signature = signature * 1315423911u + snapshot.back().answer.size();
+    signature = signature * 31u + (snapshot.back().done ? 1u : 0u);
+  }
+  if (autoScroll && signature != autoScrollSignature) {
+    ImGui::SetScrollHereY(1.0f);
+  }
+  autoScrollSignature = signature;
 }

@@ -34,4 +34,11 @@ PromptRewriter::Brief Object();
 // For the blueprint designer. What a building design can express.
 PromptRewriter::Brief Blueprint();
 
+// For the map designer. What a whole place can express: terrain, the walls and
+// floors of buildings, the roads between them, and the objects that belong to a
+// spot. A separate brief for the same reason as Object's -- an "improved" map
+// request that came back full of single-tile words would be improved into the wrong
+// domain, which is exactly what happened before this existed.
+PromptRewriter::Brief Map();
+
 }  // namespace RewriteBriefs

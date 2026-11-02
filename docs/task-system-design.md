@@ -225,7 +225,7 @@ This rides the existing authored-field pattern, so nothing new is invented:
   stamped at spawn.
 - `Map::LoadMap` reads `npcJson.value("background", "")` at `src/Map.cpp:197`; the goals array reads
   the same way, a few lines below.
-- `Game::createNPC` (`src/GameECS.cpp:203`) seeds `TaskList` with one `Terminal` entry per authored
+- `Game::createNPC` (`src/GameECS.cpp:348`) seeds `TaskList` with one `Terminal` entry per authored
   goal, each with `parent = -1` and no `kind`/`target`.
 - `Map::SaveMap` writes the `npcs[]` array back at `src/Map.cpp:553-561`. Terminal goals are authored
   data and must round-trip; the comment there already establishes that things `NPCData` does not
@@ -435,8 +435,8 @@ visible.
 ### The `[SET_TASKS]` verb
 
 A visible `GlobalCommand`, registered in `Game::ECSInit` **before** the `LoadMap` call so it lands in
-every NPC's prompt. The block runs from `GlobalCommandRegistry::Clear()` at `src/GameECS.cpp:2078`,
-with the 19 existing registrations from `:2080`; `LoadMap` is called at `src/GameECS.cpp:2307`. That
+every NPC's prompt. The block runs from `GlobalCommandRegistry::Clear()` at `src/GameECSInit.cpp:702`,
+with the 19 existing registrations from `:704`; `LoadMap` is called at `src/GameECSInit.cpp:1179`. That
 ordering is required — an NPC's prompt is built at spawn time from the registry, so a verb registered
 after the spawn is missing from that NPC forever. It is advertised like the other visible verbs now
 that the per-turn digest no longer teaches it; the task-kind vocabulary it accepts is listed by
@@ -469,7 +469,7 @@ list in place. Task `id`s are model-supplied but re-issued by the engine if dupl
 
 The existing prompt machinery substitutes placeholders at **spawn time only**:
 `%BACKGROUND%`, `%CHARACTERS%`, `%COMMANDS_LIST%` are all filled in `Game::createNPC` and stored once
-as the `system` turn (`src/GameECS.cpp:311-330`). Task state changes, so it cannot live there.
+as the `system` turn (`src/GameECS.cpp:483-501`). Task state changes, so it cannot live there.
 
 The digest therefore goes into `AIRequest.prompt` only on the agent's **first wake**, and is not
 repeated afterwards (`AgentBrain::buildWakePrompt`, `src/AgentBrain.cpp`). Re-sending the whole list
@@ -489,7 +489,7 @@ turn, but only when the agent actually needs the list.
 
 A per-turn `%TASKS%` placeholder in the configurable prompt template is a deliberate non-goal — it
 would require re-rendering the `system` turn, which changes the template contract documented at
-`src/GameECS.cpp:318-320`.
+`src/GameECS.cpp:483-498`.
 
 ### Digest format
 

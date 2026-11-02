@@ -23,6 +23,8 @@
 #include "ActorSpritePicker.hpp"
 #include "IconPicker.hpp"
 #include "SpritePaths.hpp"
+#include "RigDesigner.hpp"
+#include "RigRender.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
 
@@ -287,7 +289,8 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
-      game->iconRegistry, game->skillRegistry, game->npcTemplateRegistry,
+      game->iconRegistry, game->rigRegistry, game->itemRegistry,
+      game->skillRegistry, game->npcTemplateRegistry,
       game->brainTemplateRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }
@@ -515,6 +518,18 @@ void ContentEditorWindow::ArchiveActiveSprite(const std::string &conventionId) {
   if (active.empty()) return;
 
   std::error_code ec;
+  // A built-in sprite is art too. When a generated layer exists but nothing has been
+  // generated yet, the picture on screen is data/sprites/<id>.png; copying it to the
+  // active path first means the archive below keeps it as a variant, so regenerating can
+  // never be the moment the built-in look disappears.
+  if (!std::filesystem::exists(active, ec)) {
+    const std::string builtIn = std::string(SPRITE_DIRECTORY) + conventionId + ".png";
+    if (std::filesystem::exists(builtIn, ec)) {
+      std::filesystem::create_directories(std::filesystem::path(active).parent_path(),
+                                          ec);
+      std::filesystem::copy_file(builtIn, active, ec);
+    }
+  }
   if (!std::filesystem::exists(active, ec)) return;
 
   // The next free index, so regenerating twice keeps both.
@@ -676,6 +691,12 @@ void ContentEditorWindow::RefreshSelectedAsset() {
     game->RefreshObjectVisuals(entryId);
   } else if (kind->id == "actors" || kind->id == "icons") {
     game->ForgetActorSprite(entryId);
+  } else if (kind->id == "items") {
+    // The equipment tab's asset is the item's worn layer, not a sprite of the item id.
+    const ItemDef *item = game->itemRegistry.Get(entryId);
+    if (item != nullptr && !item->wornSprite.empty()) {
+      game->ForgetSpriteMemo(std::string(), item->wornSprite);
+    }
   } else {
     game->RefreshTileVisuals(entryId);
   }
@@ -703,8 +724,25 @@ void ContentEditorWindow::DrawSpritePane() {
     }
   }
 
+  DrawSpriteAsset(convention, entryId, SpriteKindOf(*kind), explicitSprite,
+                  /*builtInFallback=*/false, std::string());
+}
+
+void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
+                                          const std::string &requestName,
+                                          SpriteKinds::Kind spriteKind,
+                                          const std::string &explicitSprite,
+                                          bool builtInFallback,
+                                          const std::string &artRequirement) {
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
+  if (texture == nullptr && builtInFallback && explicitSprite.empty() &&
+      !convention.empty()) {
+    // A built-in layer (data/sprites) is not found by the pack-first convention lookup
+    // when a pack is configured. The rig renderer already falls back; the equipment tab
+    // must show the same picture the body will.
+    texture = RigRender::ResolveRigSprite(convention, game->resourceManager);
+  }
 
   const float size = 128.0f;
   if (texture != nullptr) {
@@ -761,7 +799,7 @@ void ContentEditorWindow::DrawSpritePane() {
     // icon would exist on disk and never appear. Point the marker at the generated
     // file before the async job lands; until it exists, resolution still falls back
     // to the pack.
-    if (kind->id == "icons") {
+    if (spriteKind == SpriteKinds::Kind::Icon) {
       const std::string markerPath = GeneratedSpriteMarkerPath(convention);
       if (!markerPath.empty()) {
         std::ofstream marker(markerPath);
@@ -780,13 +818,14 @@ void ContentEditorWindow::DrawSpritePane() {
       // invent them). Opening the window is not decoration: its Draw is what pumps the
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(entryId, SpriteKindOf(*kind));
+      game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
+                                            /*redesign=*/true);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
     } else {
       std::string reason;
-      if (game->RecompileSpriteArt(SpriteKindOf(*kind), entryId, &reason)) {
+      if (game->RecompileSpriteArt(spriteKind, requestName, &reason)) {
         status = "sprite generation queued; it lands when the queue finishes";
         statusIsError = false;
       } else {
@@ -878,6 +917,187 @@ void ContentEditorWindow::DrawSpritePane() {
   }
 }
 
+void ContentEditorWindow::DrawItemPreviewPane() {
+  if (entryId.empty() || game == nullptr) return;
+  const ItemDef *item = game->itemRegistry.Get(entryId);
+  if (item == nullptr) {
+    ImGui::TextDisabled(
+        "This item is not in the live registry yet -- save it to see the preview.");
+    return;
+  }
+  ImGui::Separator();
+  if (item->armor > 0.0f) {
+    ImGui::Text("%s  |  slot %s  |  tier %.0f  |  armour %.0f", item->id.c_str(),
+                item->slot.c_str(), static_cast<double>(item->tier),
+                static_cast<double>(item->armor));
+  } else {
+    ImGui::Text("%s  |  slot %s  |  tier %.0f", item->id.c_str(),
+                item->slot.c_str(), static_cast<double>(item->tier));
+  }
+  if (item->damage > 0.0f) {
+    ImGui::TextDisabled("damage %.0f | swing %.2fs | durability %d",
+                        static_cast<double>(item->damage),
+                        static_cast<double>(item->swingTime), item->durability);
+  }
+  if (!item->tags.empty()) {
+    std::string tags;
+    for (const std::string &tag : item->tags) {
+      if (!tags.empty()) tags += ", ";
+      tags += tag;
+    }
+    ImGui::TextDisabled("tags: %s", tags.c_str());
+  }
+
+  if (item->wornSprite.empty()) {
+    ImGui::TextDisabled(
+        "No worn art: this item has no layer on a rig, so there is nothing to draw "
+        "over a body.");
+    ImGui::Separator();
+    return;
+  }
+
+  // The same asset section an actor sprite gets: preview, document state, Regenerate and
+  // the archive of every variant, so no generated layer is ever lost and any of them can
+  // be made the active one.
+  ImGui::Separator();
+  ImGui::TextDisabled("Worn sprite");
+  // The regeneration brief: the worn look that was authored, when the item carries it,
+  // plus the frame every worn layer is drawn against. A worn sprite is not in a registry,
+  // so without this the model would be asked to redraw a bare id.
+  std::string wornRequirement;
+  if (!item->wornBrief.empty()) {
+    wornRequirement = "The worn layer of " + item->id + ": " + item->wornBrief + ". ";
+  } else {
+    wornRequirement = "The worn layer of " + item->id + ". ";
+  }
+  if (!item->wornHides.empty()) {
+    std::string hides;
+    for (const std::string &part : item->wornHides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    wornRequirement += "It hides the rig part(s): " + hides + ". ";
+  }
+  wornRequirement += RigDesigner::FrameContract();
+  DrawSpriteAsset(item->wornSprite, item->wornSprite, SpriteKinds::Kind::Actor,
+                  std::string(), /*builtInFallback=*/true, wornRequirement);
+
+  const auto rigs = game->rigRegistry.GetAll();
+  if (rigs.empty()) {
+    ImGui::TextDisabled("No rig is loaded, so there is no body to show the item on.");
+    ImGui::Separator();
+    return;
+  }
+  int selected = 0;
+  std::vector<const char *> names;
+  for (size_t i = 0; i < rigs.size(); ++i) {
+    names.push_back(rigs[i]->name.c_str());
+    if (rigs[i]->id == itemPreviewRig) selected = static_cast<int>(i);
+  }
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::Combo("##item_preview_rig", &selected, names.data(),
+                   static_cast<int>(names.size()))) {
+    itemPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+  }
+  const ActorRig *rig = game->rigRegistry.Get(itemPreviewRig);
+  if (rig != nullptr) {
+    std::vector<RigRender::WornLayer> worn;
+    RigRender::WornLayer layer;
+    layer.label = item->id;
+    layer.texture =
+        RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+    layer.z = item->wornZ;
+    layer.hides = item->wornHides;
+    worn.push_back(std::move(layer));
+    RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+    if (!item->wornHides.empty()) {
+      std::string hides;
+      for (const std::string &part : item->wornHides) {
+        if (!hides.empty()) hides += ", ";
+        hides += part;
+      }
+      ImGui::TextDisabled("hides: %s", hides.c_str());
+    }
+  }
+  ImGui::Separator();
+}
+
+void ContentEditorWindow::DrawRigPreviewPane() {
+  if (entryId.empty() || game == nullptr) return;
+  const ActorRig *rig = game->rigRegistry.Get(entryId);
+  if (rig == nullptr) {
+    ImGui::TextDisabled(
+        "This rig is not in the live registry yet -- save it to see the preview.");
+    return;
+  }
+
+  // A full outfit on a first look: the point of the pane is to show what layering does,
+  // and an empty one would show only that the parts compose.
+  if (rigPreviewEntry != entryId) {
+    rigPreviewEntry = entryId;
+    rigPreviewWorn.clear();
+    for (const ItemDef *item : game->itemRegistry.GetAll()) {
+      if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+    }
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled(
+      "rig %s  |  %dx%d canvas  |  %zu part(s)  |  %zu worn item(s) available",
+      rig->id.c_str(), rig->width, rig->height, rig->parts.size(),
+      game->itemRegistry.GetAll().size());
+
+  std::vector<RigRender::WornLayer> worn;
+  int column = 0;
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty()) continue;
+    bool on = rigPreviewWorn.count(item->id) > 0;
+    if (ImGui::Checkbox(item->id.c_str(), &on)) {
+      if (on) {
+        rigPreviewWorn.insert(item->id);
+      } else {
+        rigPreviewWorn.erase(item->id);
+      }
+    }
+    if (++column % 3 != 0) ImGui::SameLine();
+    if (on) {
+      RigRender::WornLayer layer;
+      layer.label = item->id;
+      layer.texture =
+          RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+      layer.z = item->wornZ;
+      layer.hides = item->wornHides;
+      worn.push_back(std::move(layer));
+    }
+  }
+  ImGui::NewLine();
+
+  RigRender::Draw(*rig, game->resourceManager, worn, 224.0f);
+  ImGui::SameLine();
+  ImGui::BeginGroup();
+  ImGui::TextDisabled("Draw order (back to front):");
+  std::vector<std::string> hidden;
+  int missingArt = 0;
+  for (const RigRender::Layer &layer :
+       RigRender::Order(*rig, game->resourceManager, worn, &hidden)) {
+    if (layer.texture == nullptr) ++missingArt;
+    ImGui::TextDisabled("%4d  %s%s%s", layer.z, layer.label.c_str(),
+                        layer.worn ? "  (worn)" : "",
+                        layer.texture == nullptr ? "  -- MISSING ART" : "");
+  }
+  for (const std::string &part : hidden) {
+    ImGui::TextDisabled("hidden: %s", part.c_str());
+  }
+  if (missingArt > 0) {
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f),
+                       "%d layer(s) have no sprite file.", missingArt);
+    ImGui::TextDisabled(
+        "Looked for the pack/generated file first, then data/sprites/<sprite>.png.");
+  }
+  ImGui::EndGroup();
+  ImGui::Separator();
+}
+
 void ContentEditorWindow::DrawDocumentPane() {
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr) return;
@@ -901,6 +1121,11 @@ void ContentEditorWindow::DrawDocumentPane() {
 
   if (!entryId.empty()) {
     DrawSpritePane();
+    if (kind->id == "rigs") {
+      DrawRigPreviewPane();
+    } else if (kind->id == "items") {
+      DrawItemPreviewPane();
+    }
   }
 
   // The requests this editor started, and anything else in flight. A button that queues

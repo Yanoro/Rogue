@@ -967,7 +967,73 @@ void DebugLogWindow::Draw() {
   ImGui::End();
 }
 
+// A 16x16 trash can, drawn rather than typed: the window uses ImGui's default font,
+// which has no glyph to spare, and the same red the content-deletion controls use
+// because it is the same kind of irreversible action.
+static bool DrawMapTrashButton(const char *id) {
+  const float size = 16.0f;
+  const ImVec2 corner = ImGui::GetCursorScreenPos();
+  const bool pressed = ImGui::InvisibleButton(id, ImVec2(size, size));
+  const bool hovered = ImGui::IsItemHovered();
+  const ImU32 colour = hovered ? IM_COL32(255, 120, 100, 255)
+                               : IM_COL32(200, 90, 80, 255);
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  draw->AddLine(ImVec2(corner.x + 3.0f, corner.y + 4.0f),
+                ImVec2(corner.x + 13.0f, corner.y + 4.0f), colour, 1.5f);
+  draw->AddLine(ImVec2(corner.x + 6.0f, corner.y + 2.0f),
+                ImVec2(corner.x + 10.0f, corner.y + 2.0f), colour, 1.5f);
+  draw->AddRect(ImVec2(corner.x + 4.0f, corner.y + 5.0f),
+                ImVec2(corner.x + 12.0f, corner.y + 14.0f), colour, 0.0f, 0, 1.5f);
+  draw->AddLine(ImVec2(corner.x + 6.5f, corner.y + 7.0f),
+                ImVec2(corner.x + 6.5f, corner.y + 12.0f), colour, 1.0f);
+  draw->AddLine(ImVec2(corner.x + 9.5f, corner.y + 7.0f),
+                ImVec2(corner.x + 9.5f, corner.y + 12.0f), colour, 1.0f);
+  if (hovered) ImGui::SetTooltip("Delete this map file");
+  return pressed;
+}
+
 MapReloadWindow::MapReloadWindow(Game* game) : game(game) {}
+
+void MapReloadWindow::SelectMap(int index) {
+  selectedIndex = index;
+  previewZoom = 0.0f;
+  RefreshPreview();
+}
+
+void MapReloadWindow::RefreshPreview() {
+  preview = MapPreview::Info{};
+  previewPath.clear();
+  previewModified = {};
+  const auto &mapList = game->mapReloader->GetMapList();
+  if (selectedIndex < 0 || static_cast<size_t>(selectedIndex) >= mapList.size()) {
+    selectedIndex = -1;
+    expanded = false;
+    previewZoom = 0.0f;
+    return;
+  }
+  previewPath = game->mapReloader->GetMapPath(static_cast<size_t>(selectedIndex));
+  std::string error;
+  if (!MapPreview::Load(previewPath, game->tileRegistry, preview, &error)) {
+    preview.error = error;
+  }
+  expanded = true;
+  std::error_code ec;
+  previewModified = std::filesystem::last_write_time(previewPath, ec);
+}
+
+void MapReloadWindow::SwitchToSelected() {
+  if (previewPath.empty()) {
+    return;
+  }
+  game->LoadMap(previewPath);
+  lastSwitchMessage = "Loaded " + preview.name + ".";
+  if (game->debugLog) {
+    game->debugLog->LogInfo("Loaded map: " + previewPath);
+  }
+  // The file may have changed since the preview, and the "in use" mark moved, so
+  // re-read rather than keep a stale picture.
+  RefreshPreview();
+}
 
 void MapReloadWindow::Draw() {
   bool isOpen = true;
@@ -979,19 +1045,110 @@ void MapReloadWindow::Draw() {
     return;
   }
 
-  ImGui::Text("Available Maps");
-  ImGui::Separator();
-
-  if (ImGui::Button("Refresh Map List")) {
-    game->mapReloader->RefreshMapList();
-    game->debugLog->LogInfo("Map list refreshed");
+  // A map edited on disk refreshes its preview without a click: the window is where
+  // content is inspected while it is being authored.
+  if (!previewPath.empty()) {
+    std::error_code ec;
+    const auto modified = std::filesystem::last_write_time(previewPath, ec);
+    if (!ec && modified != previewModified) {
+      previewModified = modified;
+      std::string error;
+      if (!MapPreview::Load(previewPath, game->tileRegistry, preview, &error)) {
+        preview.error = error;
+      }
+    }
   }
 
+  // Grow or shrink only when the selection changes; doing it every frame would
+  // undo a resize the user just made.
+  if (expanded != sizeApplied) {
+    ImGui::SetWindowSize(expanded ? ImVec2(900, 580) : ImVec2(420, 460));
+    sizeApplied = expanded;
+  }
+
+  if (ImGui::Button("Refresh Map List")) {
+    // Keep the selection across a refresh by path: the list is rebuilt, so the
+    // index it had may now point at a different file.
+    const std::string keepPath =
+        selectedIndex >= 0 ? game->mapReloader->GetMapPath(
+                                 static_cast<size_t>(selectedIndex))
+                           : std::string();
+    game->mapReloader->RefreshMapList();
+    selectedIndex = -1;
+    const auto &refreshed = game->mapReloader->GetMapList();
+    for (size_t i = 0; i < refreshed.size(); ++i) {
+      if (game->mapReloader->GetMapPath(i) == keepPath) {
+        selectedIndex = static_cast<int>(i);
+        break;
+      }
+    }
+    RefreshPreview();
+    if (game->debugLog) {
+      game->debugLog->LogInfo("Map list refreshed");
+    }
+  }
+  ImGui::SameLine();
+  ImGui::TextDisabled("%zu map(s) in %s", game->mapReloader->GetMapList().size(),
+                      game->mapReloader->GetDirectory().c_str());
   ImGui::Separator();
 
-  // Writes the running map into settings.json rather than touching the world.
-  // Kept apart from the list on purpose: a click in the list reloads the map on
-  // screen, while this changes which map the *next* run starts on.
+  const auto &mapList = game->mapReloader->GetMapList();
+  ImGui::BeginChild("##map-list-panel", ImVec2(expanded ? 300.0f : 0.0f, -1.0f),
+                    expanded);
+
+  if (mapList.empty()) {
+    ImGui::TextDisabled("No maps found in: %s",
+                        game->mapReloader->GetDirectory().c_str());
+  } else if (ImGui::BeginListBox("##MapList", ImVec2(-1.0f, -150.0f))) {
+    for (size_t i = 0; i < mapList.size(); ++i) {
+      const std::string path = game->mapReloader->GetMapPath(i);
+      // "in use" is about the file the world is showing, not about selection.
+      const bool inUse =
+          path == game->mapFilePath ||
+          std::filesystem::path(path).filename() ==
+              std::filesystem::path(game->mapFilePath).filename();
+      const std::string label = mapList[i] + (inUse ? "  (in use)" : "");
+      const bool isSelected = (selectedIndex == static_cast<int>(i));
+      ImGui::PushID(static_cast<int>(i));
+      // Leave the right edge for the trash can: a row is a preview target, and the
+      // delete control must not be part of that target.
+      const float rowWidth =
+          std::max(40.0f, ImGui::GetContentRegionAvail().x - 22.0f);
+      // Click previews; double-click is the shortcut for the button below, so a
+      // map can still be reloaded in one gesture.
+      if (ImGui::Selectable(label.c_str(), isSelected,
+                            ImGuiSelectableFlags_AllowDoubleClick,
+                            ImVec2(rowWidth, 0.0f))) {
+        SelectMap(static_cast<int>(i));
+        if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+          SwitchToSelected();
+        }
+      }
+      if (isSelected) {
+        ImGui::SetItemDefaultFocus();
+      }
+      ImGui::SameLine();
+      // Deleting the map the world is showing would leave the window pointing at a
+      // file nothing can reload, so that row's trash is disabled rather than only
+      // confirmed.
+      ImGui::BeginDisabled(inUse);
+      if (DrawMapTrashButton("##delete-map")) {
+        pendingDeletePath = path;
+        pendingDeleteName = mapList[i];
+      }
+      ImGui::EndDisabled();
+      if (inUse && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+        ImGui::SetTooltip(
+            "This map is loaded; switch to another map before deleting it.");
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndListBox();
+  }
+
+  // Writing the startup map is deliberately apart from the preview: a click in the
+  // list shows a map, this changes which map the *next* run starts on.
+  ImGui::Separator();
   const std::string &currentMap = game->mapFilePath;
   ImGui::TextWrapped("Current: %s",
                      currentMap.empty() ? "(no map loaded)" : currentMap.c_str());
@@ -1014,39 +1171,181 @@ void MapReloadWindow::Draw() {
   if (!lastDefaultMapMessage.empty()) {
     ImGui::TextWrapped("%s", lastDefaultMapMessage.c_str());
   }
+  ImGui::EndChild();
 
-  ImGui::Separator();
+  // The expansion: the preview and everything known about the map, beside the list
+  // rather than in a second window.
+  if (expanded && selectedIndex >= 0 &&
+      static_cast<size_t>(selectedIndex) < mapList.size()) {
+    ImGui::SameLine();
+    ImGui::BeginChild("##map-preview-panel", ImVec2(0.0f, -1.0f));
+    ImGui::TextWrapped("%s", preview.name.c_str());
+    if (preview.description.empty()) {
+      ImGui::TextDisabled(
+          "No description authored. Add \"description\" to the map file to fill "
+          "this in.");
+    } else {
+      ImGui::TextWrapped("%s", preview.description.c_str());
+    }
+    ImGui::Separator();
 
-  const auto &mapList = game->mapReloader->GetMapList();
-  if (mapList.empty()) {
-    ImGui::TextDisabled("No maps found in: %s", game->mapReloader->GetDirectory().c_str());
-  } else {
-    static int selectedMapIndex = 0;
-
-    // Sized to fill the window so the list grows and shrinks with it.
-    if (ImGui::BeginListBox("##MapList", ImVec2(-1, -1))) {
-      for (size_t i = 0; i < mapList.size(); i++) {
-        bool isSelected = (selectedMapIndex == (int)i);
-        if (ImGui::Selectable(mapList[i].c_str(), isSelected)) {
-          selectedMapIndex = i;
-          std::string mapPath = game->mapReloader->GetMapPath(i);
-          game->LoadMap(mapPath);
-          game->debugLog->LogInfo("Loaded map: " + mapList[i]);
-        }
-        if (isSelected) {
-          ImGui::SetItemDefaultFocus();
-        }
+    if (preview.valid) {
+      ImGui::Text("%d x %d tiles", preview.width, preview.height);
+      ImGui::SameLine();
+      ImGui::TextDisabled("(%d x %d px each)", preview.tileWidth,
+                          preview.tileHeight);
+      ImGui::Text("World size: %d x %d px", preview.width * preview.tileWidth,
+                  preview.height * preview.tileHeight);
+      const std::string counts =
+          MapPreview::Count(preview.objectCount, "object", "objects") + ", " +
+          MapPreview::Count(preview.npcCount, "NPC", "NPCs") + ", " +
+          MapPreview::Count(preview.placeCount, "place", "places");
+      ImGui::TextUnformatted(counts.c_str());
+      if (preview.hasPlayerStart) {
+        ImGui::Text("Player start: (%d, %d)", preview.playerStart.x,
+                    preview.playerStart.y);
       }
-      ImGui::EndListBox();
+      ImGui::TextDisabled("%s", preview.path.c_str());
+    } else {
+      ImGui::TextWrapped("Could not preview: %s", preview.error.c_str());
+    }
+    ImGui::Separator();
+
+    if (preview.valid) {
+      if (ImGui::SmallButton("Fit")) {
+        previewZoom = 0.0f;
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("scroll to zoom, double-click the map to fit");
+      const ImVec2 available = ImGui::GetContentRegionAvail();
+      const float previewHeight = std::max(60.0f, available.y - 64.0f);
+      MapPreview::Draw(preview, game->resourceManager, &game->objectFactory,
+                       &previewZoom, available.x, previewHeight);
     }
 
-    if (selectedMapIndex >= 0 && selectedMapIndex < (int)mapList.size()) {
-      std::string mapPath = game->mapReloader->GetMapPath(selectedMapIndex);
-      ImGui::Text("Selected: %s", mapList[selectedMapIndex].c_str());
-      ImGui::Text("Path: %s", mapPath.c_str());
+    const bool loaded =
+        previewPath == game->mapFilePath ||
+        std::filesystem::path(previewPath).filename() ==
+            std::filesystem::path(game->mapFilePath).filename();
+    ImGui::BeginDisabled(!preview.valid || loaded);
+    if (ImGui::Button("Switch to this map", ImVec2(-1.0f, 0.0f))) {
+      SwitchToSelected();
     }
+    ImGui::EndDisabled();
+    if (loaded) {
+      ImGui::TextDisabled("This map is already loaded.");
+    }
+    if (!lastSwitchMessage.empty()) {
+      ImGui::TextWrapped("%s", lastSwitchMessage.c_str());
+    }
+    ImGui::EndChild();
   }
 
+  ImGui::End();
+  DrawDeleteConfirmation();
+}
+
+void MapReloadWindow::DrawDeleteConfirmation() {
+  if (pendingDeletePath.empty()) {
+    return;
+  }
+
+  ImGui::SetNextWindowSize(ImVec2(560, 0), ImGuiCond_Appearing);
+  ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+                          ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+  bool stayOpen = true;
+  if (!ImGui::Begin("Delete map file?", &stayOpen,
+                    ImGuiWindowFlags_AlwaysAutoResize |
+                        ImGuiWindowFlags_NoCollapse)) {
+    ImGui::End();
+    // Closing the window with its X is a cancel.
+    pendingDeletePath.clear();
+    pendingDeleteName.clear();
+    return;
+  }
+
+  // A red frame, matching the Map Editor's content-deletion dialog, so a
+  // destructive question never reads as an ordinary one.
+  const ImVec2 min = ImGui::GetWindowPos();
+  const ImVec2 size = ImGui::GetWindowSize();
+  ImGui::GetWindowDrawList()->AddRect(min, ImVec2(min.x + size.x, min.y + size.y),
+                                      IM_COL32(255, 120, 90, 255), 0.0f, 0, 2.0f);
+
+  ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.6f, 1.0f));
+  ImGui::Text("Delete map '%s' from disk?", pendingDeleteName.c_str());
+  ImGui::PopStyleColor();
+  ImGui::TextDisabled(
+      "This removes the .json file, not the map the world is currently showing.");
+  ImGui::Separator();
+  ImGui::TextDisabled("%s", pendingDeletePath.c_str());
+
+  const std::string &startupMap = Settings().map.file;
+  const bool isStartupMap =
+      !startupMap.empty() &&
+      std::filesystem::path(startupMap).filename() ==
+          std::filesystem::path(pendingDeletePath).filename();
+  if (isStartupMap) {
+    ImGui::TextColored(
+        ImVec4(1.0f, 0.75f, 0.4f, 1.0f),
+        "This is the map.file startup map; the next launch will not find it.");
+  }
+
+  ImGui::Separator();
+  ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.45f, 0.10f, 0.10f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.62f, 0.14f, 0.14f, 1.0f));
+  ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.75f, 0.18f, 0.18f, 1.0f));
+  const bool confirmed = ImGui::Button("Delete file");
+  ImGui::PopStyleColor(3);
+  ImGui::SameLine();
+  if (ImGui::Button("Cancel")) {
+    stayOpen = false;
+  }
+
+  if (confirmed) {
+    const std::string keepPath =
+        selectedIndex >= 0
+            ? game->mapReloader->GetMapPath(static_cast<size_t>(selectedIndex))
+            : std::string();
+    std::error_code ec;
+    const bool removed = std::filesystem::remove(pendingDeletePath, ec);
+    if (game->debugLog) {
+      if (removed) {
+        game->debugLog->LogInfo("Deleted map file: " + pendingDeletePath);
+      } else {
+        game->debugLog->LogError("Could not delete map file " + pendingDeletePath +
+                                 ": " +
+                                 (ec ? ec.message() : std::string("unknown error")));
+      }
+    }
+    // The list is rebuilt, so a selection that was not the deleted file is
+    // re-found by path rather than left pointing at a shifted index.
+    game->mapReloader->RefreshMapList();
+    selectedIndex = -1;
+    const auto &mapList = game->mapReloader->GetMapList();
+    for (size_t i = 0; i < mapList.size(); ++i) {
+      if (game->mapReloader->GetMapPath(i) == keepPath) {
+        selectedIndex = static_cast<int>(i);
+        break;
+      }
+    }
+    if (selectedIndex >= 0) {
+      RefreshPreview();
+    } else {
+      preview = MapPreview::Info{};
+      previewPath.clear();
+      previewModified = {};
+      previewZoom = 0.0f;
+      expanded = false;
+    }
+    pendingDeletePath.clear();
+    pendingDeleteName.clear();
+    stayOpen = false;
+  }
+
+  if (!stayOpen) {
+    pendingDeletePath.clear();
+    pendingDeleteName.clear();
+  }
   ImGui::End();
 }
 

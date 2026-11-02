@@ -719,6 +719,11 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
     out << "\nWhat it will sit among, read from the building it is made for:\n"
         << brief.surroundings << "\n";
   }
+  if (brief.redesign) {
+    out << "\nThis is a re-draw of an existing sprite. Produce a materially different "
+           "interpretation -- vary the silhouette, the materials or the detail -- and "
+           "do not repeat the previous document.\n";
+  }
   if (!previousVerdict.empty()) {
     out << "\nThe compiler refused the previous document:\n"
         << previousVerdict

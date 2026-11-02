@@ -870,6 +870,27 @@ inline std::string BuildObjectInstanceList(const ObjectGroup &group,
   return out.str();
 }
 
+// Where the character is standing, in the words every navigation prompt uses:
+// "in an unnamed road (path 100%), facing south". Shared by the navigator's
+// STATE block and continuous navigation's spatial block so the two can never
+// describe the same place differently. No trailing period -- the callers add
+// the punctuation their sentence needs.
+inline std::string DescribeWhere(const SpatialMemory &memory, GamePosition here,
+                                 const Facing &facing) {
+  std::string out;
+  const KnownPlace *current = PlaceQuery::At(memory, here);
+  if (current != nullptr) {
+    out += "in " + PlaceQuery::DisplayName(*current);
+    const std::string aspects = detail::AspectSummary(*current, 2);
+    if (!aspects.empty()) out += " (" + aspects + ")";
+  } else {
+    out += "in open ground";
+  }
+  const std::string facingWord = SightReport::FacingWord(facing);
+  if (!facingWord.empty()) out += ", facing " + facingWord;
+  return out;
+}
+
 // The state handed to System 1. It must be readable on its own: System 1 has no
 // world model and no memory of the previous step, so the goal, where the
 // character is standing, what it has already visited, and the moves are all
@@ -885,18 +906,7 @@ inline std::string BuildState(const SpatialMemory &memory, GamePosition here,
   std::string out;
   out += "AGENT: " + agentName + "\n";
 
-  const KnownPlace *current = PlaceQuery::At(memory, here);
-  out += "YOU ARE: ";
-  if (current != nullptr) {
-    out += "in " + PlaceQuery::DisplayName(*current);
-    const std::string aspects = detail::AspectSummary(*current, 2);
-    if (!aspects.empty()) out += " (" + aspects + ")";
-  } else {
-    out += "in open ground";
-  }
-  const std::string facingWord = SightReport::FacingWord(facing);
-  if (!facingWord.empty()) out += ", facing " + facingWord;
-  out += ".\n";
+  out += "YOU ARE: " + DescribeWhere(memory, here, facing) + ".\n";
 
   out += "GOAL: " + goal + "\n";
   out += "STEPS: " + std::to_string(step);

@@ -33,7 +33,7 @@ An agent executing an action cannot receive information. Concretely:
   (`src/AgentBrain.cpp:704-717`). While an action reports `Doing`, the agent learns nothing.
 - `AgentBrain::update` re-arms `AgentSleepTimer{10}` on every frame of an executing action and
   early-returns while it is set (`src/AgentBrain.cpp:737-750`), so nothing re-deliberates mid-action.
-- Nothing perceives. There is no system anywhere in `GameECS.cpp` that observes proximity, movement,
+- Nothing perceives. There is no system anywhere in `GameECS.cpp` / `GameECSInitSystems.cpp` that observes proximity, movement,
   or world changes on behalf of an NPC.
 
 So two agents crossing paths exchange nothing. The moving one is not told what it passed, and the
@@ -278,7 +278,7 @@ Three rules this must respect, all of which are already conventions in the tree:
    through it. Nothing on the worker thread touches it.
 3. **Deferred mutation inside ECS iteration.** `GameECS.cpp` already does this
    (`entity.world().defer(...)`, `src/AgentBrain.cpp:741`) and already documents the reentrancy hazard
-   for agents contending over a shared resource (`src/GameECS.cpp:2494-2502`). Component writes from a
+   for agents contending over a shared resource (`src/GameECSCombat.cpp:870-878`). Component writes from a
    perception system follow the same rule.
 
 ```cpp

@@ -10,6 +10,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "AsciiArtTypes.hpp"
@@ -952,6 +953,64 @@ struct PlayerControlled {};
 struct NPCContext {
   std::vector<ChatMessage> history;
   std::string contextID;
+};
+
+// The standing attention brief for continuous navigation
+// (`navigation.agent = "inline"`, see NavigationStrategist's spatial block).
+//
+// The episode navigators carried this in their plan's `watch` field: a sentence
+// about what should make the walk stop. With no episode there is no plan, so it
+// lives on the character instead, set with [WATCH <what>] and cleared by a bare
+// [WATCH]. Empty means "nothing in particular", which is also the state before
+// the first [WATCH].
+//
+// Runtime-only and not serialized: it is a first-person intention, not world
+// state, so a reload starts with no brief rather than with a stale one.
+struct NavigationWatch {
+  std::string text;
+};
+
+// The ground a character has already walked, for continuous navigation.
+//
+// The single navigator kept this per episode: `walkedCells` stopped the compass
+// offering ground it had already covered, and `lastLegPath`/`legStart` were what
+// `back` retraced. Without an episode both belong to the character, because the
+// next step is a separate command rather than another iteration of one loop.
+//
+// `cells` is keyed by VisionQuery::CellKey, exactly like the navigator's set.
+// `lastPath` is the path the last completed [GO] actually planned, and
+// `lastStart` is where that walk began; [GO back] requires `lastPath` to end
+// where the character is now, so a [MOVE_TO] in between makes `back` report
+// that there is nothing to retrace instead of teleporting.
+//
+// Runtime-only: not serialized. A fresh load legitimately has walked nowhere
+// yet, and a saved path would describe ground the character may no longer be
+// standing on.
+struct WalkedGround {
+  std::unordered_set<std::uint64_t> cells;
+  GamePosition lastStart{0, 0};
+  std::vector<GamePosition> lastPath;
+};
+
+// One step a spatial block offered. Captured so [GO] resolves exactly the key
+// the agent read: place ids are re-derived as memory grows, so rebuilding the
+// candidate list a few seconds after the prompt can give "p17" a different
+// meaning. `target` is the cell that was offered at prompt time, which is what
+// the navigator's own captured candidate list did too.
+struct OfferedStep {
+  std::string key;
+  std::string label;
+  GamePosition target{-1, -1};
+  std::uint64_t objectId = 0;
+  bool examine = false;
+};
+
+// The steps the most recent spatial block printed, in the order it printed them
+// (`to:<n>` is the 1-based index). Rewritten at every wake, removed when the
+// step list is turned off, and runtime-only: a stale list from a previous run
+// would describe a place the character is no longer standing in.
+struct OfferedSteps {
+  std::vector<OfferedStep> steps;
 };
 
 struct AIRequest {

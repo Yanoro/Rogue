@@ -470,5 +470,7 @@ is an aspect, not a place; two names attach to the same region as two labels.
 - `include/SpatialMemory.hpp` — `ObserveObjects`, `DerivePlaces`, `AspectAt`, `ToShapes`, `DumpJson`
 - `include/PlaceCategoryRegistry.h` — the taxonomy and its file format
 - `include/Components.h` — `SeenObject`, `KnownPlace`, `AspectSource`, `PlaceAspect`, `Structural`
-- `src/GameECS.cpp` — observation call site, name-seed loading, `HarvestResolutionSystem`
+- `src/GameECS.cpp` / `src/GameECSInit.cpp` — observation call site and name-seed loading
+  (memory systems in the former, `ECSInit` in the latter)
+- `src/GameECSInitSystems.cpp:606` — `HarvestResolutionSystem`
 - `data/places.json`, `data/objects/*.json`, `data/tiles/*.json` — the vocabulary

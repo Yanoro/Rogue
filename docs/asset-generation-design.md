@@ -144,7 +144,7 @@ Two concrete consequences:
   ambiguous, which is a gameplay bug caused by a reskin.
 
 The multi-line `art` grid and `palette` are different: nothing reads them for prompts. Confirmed —
-their only consumers are the world renderer (`GameECS.cpp:405`), the storage window
+their only consumers are the world renderer (`GameECS.cpp:558`), the storage window
 (`StorageWindow.cpp:166`) and the editor's template palette (`DebugWindows.cpp:1140`), all through
 `AsciiArtDraw.hpp`. **`art`/`palette` are art; `character` is data.**
 
@@ -809,7 +809,7 @@ std::string tiles      = "data/tiles";
 std::string blueprints = "data/blueprints";
 ```
 
-and these are **wired, not merely declared**: `src/GameECS.cpp:1920-1968` passes each into its
+and these are **wired, not merely declared**: `src/GameECSInit.cpp:404-426` passes each into its
 registry, and `src/Settings.cpp:265-273` populates them from the file. The prompts are externalised on
 the same principle — `designer.promptFile` -> `data/blueprints/DESIGNER.md` (`src/Game.cpp:638`), and
 `ai.npcPromptFile` for the NPC prompt (`src/Game.cpp:197`). `src/main.cpp` already parses
@@ -819,7 +819,7 @@ So **a data pack is already almost expressible as a settings file today**:
 
 | thing | today | status |
 |---|---|---|
-| objects, recipes, stats, skills, items, races, tiles, blueprints | `settings.json` `content.*` -> `src/GameECS.cpp:1920-1968` | already wired ✅ |
+| objects, recipes, stats, skills, items, races, tiles, blueprints | `settings.json` `content.*` -> `src/GameECSInit.cpp:404-426` | already wired ✅ |
 | designer prompt | `designer.promptFile` -> `data/blueprints/DESIGNER.md` | already data ✅ |
 | NPC prompt | `ai.npcPromptFile` (empty = compiled-in) | already externalisable ✅ |
 | map | `map.file`, plus the `argv[1]` override | already per-launch ✅ |
@@ -1139,5 +1139,5 @@ Deliberately not resolved here.
 - **Do not put diffusion in the frame loop.** §10.1.
 - **Do not let generation write components it inferred.** `Interactable` vs `Obstacle` vs `Storage` is
   a behavioural decision. §7.4.
-- **Do not let this touch `GameECS.cpp`'s system list, `AgentBrain`, or the command DSL.** It is a
+- **Do not let this touch `GameECSInitSystems.cpp`'s system list, `AgentBrain`, or the command DSL.** It is a
   content pipeline. It reaches the game through the sprite root and the catalogs, and nothing else.

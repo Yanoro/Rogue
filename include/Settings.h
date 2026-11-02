@@ -383,10 +383,51 @@ struct GameSettings {
     int maxAttempts = 3;
   };
 
+  // Continuous navigation: the main agent's own context carries the spatial
+  // state and [GO] takes one step. There is no [NAVIGATE] episode to enter and
+  // none to end, so the prompt shapes it needs are the same facts the single
+  // navigator's STATE/ACTIONS block uses (candidate caps, compass radius,
+  // examine radius), built fresh at every wake.
+  //
+  // Named `inlineNav` because `inline` is a C++ keyword; the settings key is
+  // `navigation.inline`. The caps are duplicated from `single` on purpose:
+  // inline is the mode that is supposed to survive, so its budget should not
+  // move when the single navigator's block is eventually retired.
+  struct NavigationInlineSection {
+    // Compass moves offered in the spatial block, and total steps (compass plus
+    // distant places). Same unit and meaning as the single navigator's.
+    int maxDirections = 8;
+    int maxCandidates = 12;
+    // Include the [GO ...] step list. Off leaves the orientation line and the
+    // watch, which is the "does standing orientation alone help?" arm.
+    bool includeActions = true;
+    // Include the north-up ASCII map in the spatial block. Off by default: the
+    // block is meant to be cheap on every turn, and the map is the first thing
+    // to turn on when a run shows the model misreading the local layout.
+    bool includeMap = false;
+    int mapRadius = 6;
+    // Previous spatial blocks kept in the main context. 0 keeps only the newest.
+    // The blocks are the only messages whose content is fully replaced by the
+    // next one, and they arrive on every turn, so this is the first place a
+    // long session accumulates context it does not need. Retaining a couple
+    // still leaves the commands and their results in the transcript, which is
+    // what the agent's memory of the walk is built from.
+    int spatialHistory = 2;
+  };
+
   struct NavigationSection {
-    std::string agent = "single";  // "single" | "two"
+    // "single" -- one main-model context per navigation episode: [NAVIGATE] opens
+    //             an episode that plans, walks and returns a summary
+    //             (docs/llm-s1-navigation-design.md).
+    // "two"    -- the standard-LLM strategist above the System 1 pilot
+    //             (docs/llm-s1-navigation-design.md).
+    // "inline" -- no episode and no [NAVIGATE]: the agent's ordinary turns carry
+    //             the spatial state and [GO] takes one step. The agent keeps its
+    //             own topology; see `inlineNav` below.
+    std::string agent = "single";
     NavigationStrategistSection strategist;
     NavigationSingleSection single;
+    NavigationInlineSection inlineNav;
   };
 
   struct SystemOneSection {
@@ -686,11 +727,23 @@ struct GameSettings {
     // the two layers separately deletable: removing this directory reverts the
     // world to hand-authored vocabulary exactly.
     std::string generatedTiles = "data/generated/tiles";
-    // Actor assets: the beings a spawn can produce (data/actors/*.json). Sibling of the
-    // other content registries, and read by ActorSpriteRegistry.
-    // The actor-sprite catalogue: art for beings, keyed by sprite id (data/actor_sprites).
-    // Not a definition of a creature -- `Actor` is the tag that says something is alive.
+    // The actor-sprite catalogue: one image per being (data/actor_sprites). Not a
+    // definition of a creature -- `Actor` is the tag that says something is alive. This
+    // is the simple kind, and it stays the right answer for a wolf or a slime.
     std::string actorSprites = "data/actor_sprites";
+    // The actor-rig catalogue (data/rigs): layered humanoid rigs made of parts, which is
+    // what lets equipment be drawn over a body and hide one part without redrawing
+    // another. A rig and an actor sprite are alternatives, not variants of one thing.
+    std::string rigs = "data/rigs";
+    // Rig definitions the Designer produced, loaded after the catalog so a generated rig
+    // can be deleted back to the hand-authored one without touching it.
+    std::string generatedRigs = "data/generated/rigs";
+    // The rig designer's instructions: the humanoid frame and the per-part reply format.
+    std::string rigPromptFile = "data/rigs/RIGDESIGNER.md";
+    // Item definitions the Designer produced, loaded after data/items.
+    std::string generatedItems = "data/generated/items";
+    // The equipment designer's instructions: the worn-item reply format and slot rules.
+    std::string equipmentPromptFile = "data/items/EQUIPMENTDESIGNER.md";
     // Where the Content Editor writes its overrides, one directory per kind beneath
     // it (tiles/, objects/). Loaded last, so a human edit wins over both the catalog
     // and the generated overlay -- and the hand-authored files stay untouched, which
@@ -710,6 +763,10 @@ struct GameSettings {
     // it is substituted from `spriteContractFile` below, so the two kinds cannot
     // drift about how a reply is shaped.
     std::string objectPromptFile = "data/objects/OBJECTDESIGNER.md";
+    // The map designer's instructions: the compact legend-and-rows reply format and
+    // the rules MapDesigner validates. Empty stops the domain from being useful, which
+    // its pane says rather than sending an empty prompt.
+    std::string mapPromptFile = "maps/MAPDESIGNER.md";
     // The generated overlay for agent-created objects, the object counterpart of
     // `generatedTiles` above and a sibling of data/objects for the same reason:
     // ObjectFactory::LoadTemplates reads one directory and is not recursive. Empty

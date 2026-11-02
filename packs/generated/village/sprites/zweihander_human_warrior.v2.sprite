@@ -1,0 +1,95 @@
+sprite 32x32
+kind object
+material iron
+
+// --- Silhouette & Outline Underlay ---
+// Legs / Greaves
+rect (10,21) (14,30) color=ink.base
+rect (17,21) (21,30) color=ink.base
+
+// Torso / Fauld / Tassets
+rect (9,11) (22,21) color=ink.base
+
+// Shoulders / Arms
+rect (6,10) (11,18) color=ink.base
+rect (20,10) (25,18) color=ink.base
+
+// Helmet / Gorget
+rect (12,4) (19,11) color=ink.base
+
+// --- Legs / Greaves & Sabatons ---
+rect (11,22) (14,29) color=iron.1
+rect (18,22) (21,29) color=iron.2
+line (11,22) (11,28) color=iron.3
+line (18,22) (18,28) color=iron.4
+// Kneecaps (poleyns)
+rect (11,21) (14,22) color=iron.3
+rect (18,21) (21,22) color=iron.4
+// Sabatons / Boots
+rect (10,29) (14,30) color=iron.0
+rect (18,29) (22,30) color=iron.1
+
+// --- Torso & Armor ---
+// Breastplate core
+rect (10,11) (21,17) color=iron.2
+// Shadow on lower torso / Fauld
+rect (11,18) (20,20) color=iron.1
+line (10,18) (21,18) color=iron.0
+// Breastplate highlights
+line (11,12) (11,16) color=iron.4
+line (12,12) (15,12) color=iron.3
+line (16,13) (16,16) color=iron.0
+
+// Pauldrons (Shoulders)
+rect (6,10) (9,14) color=iron.3
+pixel (7,10) color=iron.4
+line (6,11) (6,13) color=iron.4
+rect (22,10) (25,14) color=iron.2
+line (22,10) (24,10) color=iron.3
+
+// Arms / Vambraces holding sword
+rect (8,15) (11,19) color=iron.2
+rect (20,15) (23,19) color=iron.1
+
+// --- Head / Helmet ---
+rect (13,4) (18,10) color=iron.2
+// Visor / Faceplate ridge & slit
+line (13,4) (16,4) color=iron.4
+line (13,5) (13,8) color=iron.4
+line (14,7) (18,7) color=ink.base
+line (15,8) (17,8) color=iron.1
+// Helmet crest / comb
+line (15,3) (16,3) color=iron.3
+pixel (15,2) color=iron.4
+
+// --- Hands (Gauntlets) & Zweihander ---
+// Gauntlets gripping the ricasso/grip
+rect (13,16) (16,19) color=iron.3
+pixel (13,17) color=iron.4
+pixel (16,18) color=iron.1
+
+// Zweihander: Pommel & Grip
+line (15,20) (15,22) color=wood.1
+pixel (15,23) color=stone.3
+
+// Zweihander: Crossguard
+line (11,16) (18,16) color=iron.4
+pixel (11,15) color=iron.3
+pixel (18,15) color=iron.3
+
+// Zweihander: Ricasso & Flukes / Parrying Lugs
+rect (14,13) (15,15) color=stone.2
+pixel (13,13) color=iron.4
+pixel (16,13) color=iron.4
+
+// Zweihander: Long Blade
+line (14,2) (14,12) color=stone.4
+line (15,2) (15,12) color=stone.2
+line (16,2) (16,12) color=ink.base
+line (13,2) (13,12) color=ink.base
+// Blade tip
+pixel (14,1) color=stone.4
+pixel (15,1) color=stone.3
+
+// Subtle surface scratches & metal grain
+scatter color=iron.0,iron.3 density=0.08 seed=42 inside
