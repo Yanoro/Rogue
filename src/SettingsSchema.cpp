@@ -1228,6 +1228,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.actorSprites",
             "Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature.", &GameSettings::content, &ContentSection::actorSprites))
         .Restart();
+    add(Field<ValueType::String>("content", "content.rigs",
+            "Actor-rig catalogue: layered humanoid rigs (parts plus worn equipment). The rigged counterpart of an actor sprite.", &GameSettings::content, &ContentSection::rigs))
+        .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
         .Restart();

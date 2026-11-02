@@ -70,6 +70,17 @@ struct ItemDef {
   // hit and floored at one point -- see ArmorOf.
   float armor = 0.0f;
 
+  // How the item looks worn by a *rigged* actor: a sprite convention id drawn over
+  // the rig, its draw order among the worn layers, and the rig parts it covers
+  // (`hides`, e.g. a helmet hiding the hair). Empty means the item has no worn art,
+  // which is the normal state for everything that is not worn on a body.
+  //
+  // Separate from the object template's sprite on purpose: a sword lying on the
+  // ground and a sword in a hand are different pictures.
+  std::string wornSprite;
+  int wornZ = 0;
+  std::vector<std::string> wornHides;
+
   // The same shape a StatDef and a SkillDef provide, so one contribution builder
   // serves all three.
   SourceScaling Scaling() const {

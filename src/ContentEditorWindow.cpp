@@ -20,6 +20,7 @@
 #include "SpriteDraw.hpp"
 #include "SpritePicker.hpp"
 #include "SpritePaths.hpp"
+#include "RigRender.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
 
@@ -210,9 +211,9 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
-      game->skillRegistry, game->npcTemplateRegistry,
-      game->brainTemplateRegistry, game->debugLog.get(),
-      [this]() { game->RefreshPlayerSkillBar(); }};
+      game->rigRegistry, game->itemRegistry, game->skillRegistry,
+      game->npcTemplateRegistry, game->brainTemplateRegistry,
+      game->debugLog.get(), [this]() { game->RefreshPlayerSkillBar(); }};
 }
 
 const ContentKinds::Kind *ContentEditorWindow::Kind() const {
@@ -748,6 +749,73 @@ void ContentEditorWindow::DrawSpritePane() {
   }
 }
 
+void ContentEditorWindow::DrawRigPreviewPane() {
+  if (entryId.empty() || game == nullptr) return;
+  const ActorRig *rig = game->rigRegistry.Get(entryId);
+  if (rig == nullptr) {
+    ImGui::TextDisabled(
+        "This rig is not in the live registry yet -- save it to see the preview.");
+    return;
+  }
+
+  // A full outfit on a first look: the point of the pane is to show what layering does,
+  // and an empty one would show only that the parts compose.
+  if (rigPreviewEntry != entryId) {
+    rigPreviewEntry = entryId;
+    rigPreviewWorn.clear();
+    for (const ItemDef *item : game->itemRegistry.GetAll()) {
+      if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+    }
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled(
+      "rig %s  |  %dx%d canvas  |  %zu part(s)  |  %zu worn item(s) available",
+      rig->id.c_str(), rig->width, rig->height, rig->parts.size(),
+      game->itemRegistry.GetAll().size());
+
+  std::vector<RigRender::WornLayer> worn;
+  int column = 0;
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty()) continue;
+    bool on = rigPreviewWorn.count(item->id) > 0;
+    if (ImGui::Checkbox(item->id.c_str(), &on)) {
+      if (on) {
+        rigPreviewWorn.insert(item->id);
+      } else {
+        rigPreviewWorn.erase(item->id);
+      }
+    }
+    if (++column % 3 != 0) ImGui::SameLine();
+    if (on) {
+      RigRender::WornLayer layer;
+      layer.label = item->id;
+      layer.texture = ResolveSpriteTexture(std::string(), item->wornSprite,
+                                           game->resourceManager, nullptr);
+      layer.z = item->wornZ;
+      layer.hides = item->wornHides;
+      worn.push_back(std::move(layer));
+    }
+  }
+  ImGui::NewLine();
+
+  RigRender::Draw(*rig, game->resourceManager, worn, 224.0f);
+  ImGui::SameLine();
+  ImGui::BeginGroup();
+  ImGui::TextDisabled("Draw order (back to front):");
+  std::vector<std::string> hidden;
+  for (const RigRender::Layer &layer :
+       RigRender::Order(*rig, game->resourceManager, worn, &hidden)) {
+    ImGui::TextDisabled("%4d  %s%s", layer.z, layer.label.c_str(),
+                        layer.worn ? "  (worn)" : "");
+  }
+  for (const std::string &part : hidden) {
+    ImGui::TextDisabled("hidden: %s", part.c_str());
+  }
+  ImGui::EndGroup();
+  ImGui::Separator();
+}
+
 void ContentEditorWindow::DrawDocumentPane() {
   if (entryId.empty()) {
     ImGui::TextWrapped(
@@ -768,6 +836,9 @@ void ContentEditorWindow::DrawDocumentPane() {
   ImGui::Separator();
 
   DrawSpritePane();
+  if (kind->id == "rigs") {
+    DrawRigPreviewPane();
+  }
 
   // The requests this editor started, and anything else in flight. A button that queues
   // work and then reports it once, in a status line the next click overwrites, is how a

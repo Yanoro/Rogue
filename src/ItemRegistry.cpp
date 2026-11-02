@@ -63,6 +63,31 @@ void ItemRegistry::LoadItems(const std::string& directoryPath) {
         def.armor = 0.0f;
       }
 
+      // Worn art, for rigged actors. Absent for most items and absent for every item
+      // until a worn sprite exists, so this is optional rather than required: an item
+      // still equips, it simply draws nothing on the rig yet.
+      if (j.contains("worn")) {
+        if (!j["worn"].is_object()) {
+          warn("Warning: Item '" + def.id +
+               "' has a non-object 'worn'; ignoring it.");
+        } else {
+          const nlohmann::json& worn = j["worn"];
+          def.wornSprite = worn.value("sprite", std::string());
+          def.wornZ = worn.value("z", 0);
+          if (worn.contains("hides") && worn["hides"].is_array()) {
+            for (const auto& hide : worn["hides"]) {
+              if (hide.is_string()) {
+                def.wornHides.push_back(hide.get<std::string>());
+              }
+            }
+          }
+          if (def.wornSprite.empty()) {
+            warn("Warning: Item '" + def.id +
+                 "' has a 'worn' block with no sprite; ignoring it.");
+          }
+        }
+      }
+
       // An item definition exists to be worn, so a missing slot is a content
       // error rather than a valid "carried only" item. Reported here where the
       // file name is still known; the item simply cannot be equipped.

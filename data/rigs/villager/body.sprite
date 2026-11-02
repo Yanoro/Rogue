@@ -1,0 +1,26 @@
+sprite 32x32
+kind object
+material grass
+
+// The tunic and belt. No arms and no head: those are their own layers, which is
+// what lets a helmet or a held sword attach to a part rather than the whole.
+palette {
+  tunic = grass.1
+  tunic_lit = grass.2
+  tunic_dark = grass.0
+  belt = ink.base
+  skin = sand.3
+}
+
+rect (10,11) (22,22) color=tunic
+// Shoulders catch the light.
+line (10,12) (21,12) color=tunic_lit
+line (11,13) (21,13) color=tunic_lit
+// Collar and the bit of neck above it.
+rect (14,10) (19,12) color=skin
+line (14,12) (19,12) color=tunic_dark
+// Belt.
+rect (10,19) (22,20) color=belt
+rect (15,19) (17,20) color=wood.2
+// Hem.
+line (10,22) (22,22) color=tunic_dark

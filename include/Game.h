@@ -24,6 +24,7 @@
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
+#include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
 #include "RaceRegistry.h"
@@ -296,6 +297,9 @@ private:
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
+  // The rigged counterpart: layered humanoid bodies, drawn part by part so equipment can
+  // be layered over them.
+  RigRegistry rigRegistry;
   // Named NPC definitions and the brains that drive them. Templates are spawn
   // seeds: createNPC copies their values onto the entity, and the instance owns
   // them afterwards. Brains are separate because a body can have none.

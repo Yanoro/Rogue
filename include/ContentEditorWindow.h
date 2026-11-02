@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,10 @@ private:
   void DrawKindAndList();
   void DrawDocumentPane();
   void DrawSpritePane();
+  // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
+  // one kind whose document is a *composition*, so the generic form alone cannot show
+  // what it makes.
+  void DrawRigPreviewPane();
 
   // Sprite variants. The convention file (`<id>.png`) is always the active one, because
   // that is what the world resolves; regenerating first copies it aside as `<id>.vN.png`,
@@ -73,6 +78,11 @@ private:
   // definition the selection came from, and an id is what the next read takes.
   std::string kindId = "tiles";
   std::string entryId;
+
+  // Which worn items the rig preview is showing, keyed by item id. Reset when the
+  // selected rig changes so a different rig starts from a full outfit.
+  std::set<std::string> rigPreviewWorn;
+  std::string rigPreviewEntry;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

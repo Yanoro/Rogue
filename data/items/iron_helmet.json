@@ -1,0 +1,12 @@
+{
+  "slot": "head",
+  "occupies": 1,
+  "tier": 2,
+  "tags": ["armor", "iron"],
+  "armor": 2,
+  "worn": {
+    "sprite": "worn_iron_helmet",
+    "z": 100,
+    "hides": ["hair"]
+  }
+}

@@ -3883,6 +3883,11 @@ void Game::ECSInit() {
   portraitRegistry.SetDebugLog(debugLog.get());
   portraitRegistry.LoadPortraits(settings.content.portraits);
 
+  // Rigged actor bodies, beside the single-image actor sprites rather than inside them:
+  // a rig is a composition, and a wolf does not need one.
+  rigRegistry.SetDebugLog(debugLog.get());
+  rigRegistry.Load(settings.content.rigs);
+
   // Named NPC definitions and the brains that drive them, loaded before the map so
   // a map entry can name one at spawn. Brains are loaded first: a template may
   // reference one.
