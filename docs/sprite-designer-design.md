@@ -773,7 +773,7 @@ Built and green. What it added:
 | `ObjectFactory` | `ComponentVocabulary` / `ComponentNames` / `HasComponent` / `KnownFieldNames`, built in the same call that installs each setter |
 | `include/ObjectDesigner.hpp`, `src/ObjectDesigner.cpp` | the reply handling, the verdict, the overlay write and load, and the prompt vocabulary |
 | `src/Game.cpp` | the object kind's prompt vocabulary is now generated from the factory |
-| `src/GameECS.cpp` | the generated object overlay is loaded at startup, after the catalog |
+| `src/GameECSInit.cpp` | the generated object overlay is loaded at startup, after the catalog |
 | `src/main.cpp` | `--sprite-design object` validates for real; `--sprite-design-overlay <dir>` makes the round trip testable |
 
 ### The wrong turn: a scratch `flecs::world`

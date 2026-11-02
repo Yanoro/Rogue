@@ -297,7 +297,7 @@ circle, and a failed fit is a shape worse than the cells it replaced.
 ### 4.1 Facing is derived, not plumbed
 
 No movement code changes. `Velocity` (`include/Components.h:74`) is already driven by the steer
-system (`src/GameECS.cpp:898`), which accelerates toward the next waypoint of
+system (`src/GameECS.cpp:860`), which accelerates toward the next waypoint of
 `MOVE_THROUGH_PATH_ACTION` and integrates friction and wall repulsion. So facing is a read:
 
 ```cpp
@@ -496,7 +496,7 @@ The goal is compression with provenance, in two steps that can be judged separat
 ### 6.1 First pass: the engine throttle (no model)
 
 **Built.** `Memory::Consolidate(memory, tick)`, called once per vision sample after places are
-derived (`src/GameECS.cpp`, the `SpatialMemoryPlaces` system).
+derived (`src/GameECS.cpp:1520`, the `SpatialMemoryPlaces` system).
 
 **Runs shadow the cells.** A run is a rectangle of one surface inside one place
 (`MemoryRun`), so `placeId` is always answerable without inspecting cells. Building runs deletes
@@ -815,7 +815,7 @@ flecs resolves a member's type at registration time (`include/Components.h:765-7
 - `include/VisionQuery.hpp` — `CellKey`, `PathIsOpaque`, `VisibleCells` (the one sweep)
 - `include/SpatialMemory.hpp` — `EnsureOrigin`, `ObserveCells`, `ObserveObjects`,
   `EnforceCellCap`, `ToShapes`, `DumpJson`
-- `src/GameECS.cpp` — `ECSInitMemorySystems:1213`, `DumpSpatialMemory:1238`,
+- `src/GameECS.cpp` — `ECSInitMemorySystems:1493`, `DumpSpatialMemory:1596`,
   tile layer `:370`, steer system `:898`, player setup `:3148`,
   player `Velocity` `:3155`, player `CharacterTag` `:3171`
 - `include/AgentActions.h` — `[MOVE_TO]` resolution, `[PLACES]` / `[NAME_PLACE]`,

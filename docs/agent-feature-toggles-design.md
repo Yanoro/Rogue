@@ -130,7 +130,7 @@ Per-NPC authored overrides live with the other authored NPC fields (`background`
 - `NPCData` (`include/Map.h:15-52`) gains the parsed override pair.
 - `Map::LoadMap` reads `npcJson.value("background", "")` at `src/Map.cpp:197`; the
   `agentFeatures` object reads the same way.
-- `Game::createNPC` (`src/GameECS.cpp:203`) stamps `AgentFeatureOverrides` at spawn.
+- `Game::createNPC` (`src/GameECS.cpp:348`) stamps `AgentFeatureOverrides` at spawn.
 - `Map::SaveMap` writes the `npcs[]` array back at `src/Map.cpp:553-561`. The comment there already
   establishes that fields `NPCData` does not model get dropped, so this must be modelled to round-trip.
 

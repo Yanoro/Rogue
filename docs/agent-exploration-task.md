@@ -50,7 +50,7 @@ Design docs: `docs/place-derivation-design.md` (places and aspects), `docs/spati
 (cells, caps, consolidation, digest), `docs/task-system-design.md` (goals and verification).
 
 **Crucial limitation:** `Vision` and `SpatialMemory` are attached to the **player only**
-(`src/GameECS.cpp`, the player setup near the end of the world init). The systems themselves filter on
+(`src/GameECSInit.cpp:1867`, the player setup near the end of the world init). The systems themselves filter on
 the components, so an NPC with them should be written and derived per-entity — that is an assumption to
 verify, not a fact to rely on.
 
@@ -68,7 +68,8 @@ gets them. Then verify, with the window and the dump, that:
 - the cell/object/place caps are per entity (they are fields of `SpatialMemory`, so this should hold);
 - nothing in the sampler assumes one character.
 
-Where: `src/GameECS.cpp` (spawn), possibly `ECSInitVisionSystems` / `ECSInitMemorySystems`.
+Where: `src/GameECS.cpp:348` (spawn), possibly `ECSInitVisionSystems` / `ECSInitMemorySystems`
+(`src/GameECS.cpp:1419`, `:1493`).
 
 ### 2. No goal can be completed by *finding* something (blocking)
 
@@ -189,7 +190,8 @@ Map format facts that cost time last session:
 2. `docs/spatial-memory-design.md` — cells, caps, consolidation, digest, and the debug surfaces.
 3. `include/SpatialMemory.hpp` — `ObserveCells`, `ObserveObjects`, `DerivePlaces`, `Consolidate`.
 4. `include/PlaceQuery.hpp`, `include/AgentActions.h` (`PlacesAction`, `MoveToEntityAction`).
-5. `src/GameECS.cpp` — vision/memory systems and the player-only setup near the end.
+5. `src/GameECS.cpp` — vision/memory systems — and `src/GameECSInit.cpp:1867`, the player-only
+   setup near the end.
 6. `src/TaskVerification.cpp` + `src/TaskKindRegistry.cpp` — how a goal is checked.
 
 ---
@@ -223,10 +225,10 @@ Paste this into a fresh session in this repository:
 
 Landed, in the order of "Suggested first cut":
 
-1. **Perception for NPCs.** `Game::AttachPerception` (`src/GameECS.cpp:1133`) gives any character
+1. **Perception for NPCs.** `Game::AttachPerception` (`src/GameECS.cpp:1365`) gives any character
    `Vision`, an empty `SpatialMemory` and the map's place seeds; `createNPC` calls it
-   (`src/GameECS.cpp:252`) and the player's bespoke setup was replaced by the same call
-   (`src/GameECS.cpp:3537`). The systems were already written per entity; verified by driving the
+   (`src/GameECS.cpp:348`) and the player's bespoke setup was replaced by the same call
+   (`src/GameECSInit.cpp:1867`). The systems were already written per entity; verified by driving the
    real `VisionQuery::VisibleCells` → `Memory::Observe*` → `Memory::DerivePlaces`/`Consolidate` path
    for two characters over `Map_Village_Quest` — the second record grew, the first was untouched.
 2. **`reach` task kind.** `CheckReach` + `CheckReachPlace` (`src/TaskKindRegistry.cpp:257`), with a
@@ -243,7 +245,7 @@ Landed, in the order of "Suggested first cut":
    cell is fixed at the start and a place is arrived at by standing on it; re-resolving it per frame
    flipped the far end at the midpoint and produced the 18:02 back-and-forth.
 5. **`[LOOK $DIRECTION]`.** `LookAction` (`include/AgentActions.h:314`), registered as a visible
-   command (`src/GameECS.cpp:2510`). It sets `Facing`, waits one frame for the sampler, then returns
+   command (`src/GameECSCombat.cpp:897`). It sets `Facing`, waits one frame for the sampler, then returns
    a prose report of the sweep: what ground, things and places are in sight, in eight compass
    sectors (`include/SightReport.hpp`). `[LOOK around]` is the same action with a one-shot
    360-degree sample (`Vision::fullCircleRequested`, consumed by the sampler and cleared after one

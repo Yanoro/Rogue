@@ -56,7 +56,7 @@ than a parallel rules engine.
 | `SourceKind::{Race, Class, Effect}` | `include/StatView.hpp` | Reserved; `GatherSources` already has the one door where statuses, classes and races get added |
 | `DurationResolver` + `HookRegistry` | `include/EffectResolver.hpp`, `include/Hooks.hpp` | Timed actions already carry explained, modifiable durations; hooks contribute, never decide |
 | `ActionTimer` / `ActionActor` / `ActionTarget` / `Busy` | `include/Components.h` | The action-entity pattern: start a timed action, resolve on `ActionCompleted` |
-| `HarvestResolutionSystem` / `CraftResolutionSystem` | `src/GameECS.cpp:1842`, `:1889` | The exact template for a combat resolution system, including "wake the agent once, with the result" |
+| `HarvestResolutionSystem` / `CraftResolutionSystem` | `src/GameECSInitSystems.cpp:606`, `:653` | The exact template for a combat resolution system, including "wake the agent once, with the result" |
 | `Holds` / `Equipped` / `ItemType` / `Requires` | `include/ItemTypes.h`, `EquipmentTypes.h`, `Components.h` | Weapons are items with tags and tier-scaled effects; "needs an edge weapon" is already content |
 | `SkillBlock` / `ApplyTraining` | `include/SkillTypes.h`, `SkillTraining.hpp` | A strike can train a weapon skill on the same path harvesting trains Farming |
 | `Rng::Derived` | `include/Rng.hpp` | Deterministic, per-source streams if a system does want dice |
@@ -284,7 +284,7 @@ character components):
 `help` block the other commands carry — the prompt builder already renders it.
 
 **System:** `AttackResolutionSystem` on `ActionActor`/`ActionTarget`/`AttackAction` with
-`ActionCompleted`, mirroring `CraftResolutionSystem` (`src/GameECS.cpp:1889`): resolve, apply damage,
+`ActionCompleted`, mirroring `CraftResolutionSystem` (`src/GameECSInitSystems.cpp:653`): resolve, apply damage,
 `SpawnFloatingDamage`, append one message to both agents, destruct the action entity.
 
 **Ending:** at 0 health the target gets `Incapacitated` and the attacker is told. **No death yet** —
@@ -343,7 +343,7 @@ in §9.4.
 | **Lock-on** | "who am I fighting" becomes real state: a prompt summary, a range/line-of-sight check, a default target for every ability. Cheap to build, and it makes every combat message unambiguous |
 | **Auto-attack** | the fight continues at the speed of the agent's thinking instead of waiting for it. The swing is just another duration fold, so it costs almost nothing to add |
 | **GCD** | a rate limit that maps onto the model's cadence. Roughly one model round-trip per action is the right trade, and it stops an agent from spamming a whole kit in one tick |
-| **Casts + interrupts** | the best decision an LLM can make in combat: read a telegraphed cast in text and stop it. `ActionProgressBarSystem` (`src/GameECS.cpp:492`) already draws a per-action bar, so the *visual* cast bar exists for free |
+| **Casts + interrupts** | the best decision an LLM can make in combat: read a telegraphed cast in text and stop it. `ActionProgressBarSystem` (`src/GameECS.cpp:644`) already draws a per-action bar, so the *visual* cast bar exists for free |
 | **Cooldowns + resource** | build variety without new engine concepts: an ability is data, and its cost/cooldown is the trade |
 | **Timed buffs/debuffs** | these are already `SourceKind::Effect` sources in waiting (`include/StatView.hpp`), so a buff is a link, not new machinery |
 
@@ -457,7 +457,7 @@ passively. That is what stops a toggle from applying before it is switched on.
 - **One resolver**: `include/CombatResolver.hpp` — `ResolveDamage`, `ResolveMaxHealth`,
   `FindEquippedWeapon`, all through the ordinary `Fold`, so an outcome carries its contribution
   breakdown.
-- **One door**: `UseSkill` in `GameECS.cpp` checks cooldown, GCD, target, range, weapon timing,
+- **One door**: `UseSkill` in `src/GameECSCombat.cpp:638` checks cooldown, GCD, target, range, weapon timing,
   folds damage, applies floating text and durability, grants skill XP, and returns a log line. The
   hotbar, auto-cast, and the future agent command all go through it.
 - **Systems**: `SkillCooldownSystem` ticks cooldowns and the GCD; `CombatAutoCastSystem` fires the

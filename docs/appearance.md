@@ -13,7 +13,7 @@ had no art.
 
 | site | what it draws |
 |---|---|
-| `Game::DrawEntityVisual` (`src/GameECS.cpp`) | the world: tiles, objects, characters |
+| `Game::DrawEntityVisual` (`src/GameECS.cpp:558`) | the world: tiles, objects, characters |
 | map editor tile palette (`src/DebugWindows.cpp`) | tile sprite or Unknown |
 | map editor object palette | template sprite or Unknown |
 | map editor terrain inspector | the tile's sprite or Unknown |
