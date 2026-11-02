@@ -127,8 +127,14 @@ for how it looks on a rig.
 
 The Content Editor lists the item registry under **Equipment**. The definition is editable
 through the generic form -- the id is the selection, injected on save, so the form has no
-id field -- and the preview shows the numbers and, when the item has worn art, the layer on
-a chosen rig. Generated items (`data/generated/items`), Designer overrides
+id field -- and the preview shows the numbers, the worn sprite on its own, and the layer
+composed on a chosen rig. The two views answer different questions: the plate is "is this
+layer right", the composition is "does it fit the body".
+
+The worn art can be regenerated from the pane: the current image is archived as a variant
+first, then the Designer recompiles the stored document (free under the DSL source) or asks
+the image model for a new one. The plate refreshes when the new PNG lands, by watching the
+file's write time rather than assuming the queue has finished. Generated items (`data/generated/items`), Designer overrides
 (`data/editor/items`) and the hand catalog all land in the same registry, with the catalog
 first.
 

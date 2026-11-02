@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -87,6 +88,11 @@ private:
   std::set<std::string> rigPreviewWorn;
   std::string rigPreviewEntry;
   std::string itemPreviewRig;
+  // The last write time seen per worn sprite, so regenerated art is noticed when its PNG
+  // lands (the texture memo remembers "missing" otherwise).
+  std::map<std::string, std::filesystem::file_time_type> itemArtStamps;
+  std::string itemArtMessage;
+  bool itemArtIsError = false;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.
