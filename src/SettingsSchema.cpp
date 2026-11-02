@@ -1231,6 +1231,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.rigs",
             "Actor-rig catalogue: layered humanoid rigs (parts plus worn equipment). The rigged counterpart of an actor sprite.", &GameSettings::content, &ContentSection::rigs))
         .Restart();
+    add(Field<ValueType::String>("content", "content.generatedRigs",
+            "Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only.", &GameSettings::content, &ContentSection::generatedRigs))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.rigPromptFile",
+            "The rig designer's instructions: the humanoid frame and the per-part reply format.", &GameSettings::content, &ContentSection::rigPromptFile))
+        .Restart();
     add(Field<ValueType::String>("content", "content.races",
             "Race registry directory.", &GameSettings::content, &ContentSection::races))
         .Restart();

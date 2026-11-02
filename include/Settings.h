@@ -686,6 +686,11 @@ struct GameSettings {
     // what lets equipment be drawn over a body and hide one part without redrawing
     // another. A rig and an actor sprite are alternatives, not variants of one thing.
     std::string rigs = "data/rigs";
+    // Rig definitions the Designer produced, loaded after the catalog so a generated rig
+    // can be deleted back to the hand-authored one without touching it.
+    std::string generatedRigs = "data/generated/rigs";
+    // The rig designer's instructions: the humanoid frame and the per-part reply format.
+    std::string rigPromptFile = "data/rigs/RIGDESIGNER.md";
     // Where the Content Editor writes its overrides, one directory per kind beneath
     // it (tiles/, objects/). Loaded last, so a human edit wins over both the catalog
     // and the generated overlay -- and the hand-authored files stay untouched, which

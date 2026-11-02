@@ -3887,6 +3887,9 @@ void Game::ECSInit() {
   // a rig is a composition, and a wolf does not need one.
   rigRegistry.SetDebugLog(debugLog.get());
   rigRegistry.Load(settings.content.rigs);
+  // Agent-authored rigs load after the catalog, so deleting one reverts to the
+  // hand-authored body it was written over.
+  rigRegistry.Load(settings.content.generatedRigs);
 
   // Named NPC definitions and the brains that drive them, loaded before the map so
   // a map entry can name one at spawn. Brains are loaded first: a template may

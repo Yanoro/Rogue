@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <deque>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -26,6 +27,7 @@
 #include "DesignerDomains.h"
 #include "MapDesigner.hpp"
 #include "MapPreview.hpp"
+#include "RigDesigner.hpp"
 #include "SpriteKinds.hpp"
 #include "SpriteRouter.hpp"
 #include "TileRegistry.h"
@@ -344,6 +346,10 @@ private:
     // pane draws it whole. It is the only artifact that is its own file.
     std::optional<MapDesigner::Draft> map;
 
+    // Rig: the definition plus its per-part briefs. The art is requested separately, so
+    // the draft is the thing worth keeping in the history.
+    std::optional<RigDesigner::Draft> rig;
+
     // Tile: by name, because the editor writes *through* a pointer into the registry.
     // The entry is therefore the asset's identity rather than a snapshot: re-accepting
     // "stone floor" updates this view too, which is the right answer for a name that
@@ -366,6 +372,28 @@ private:
   // The map the pane is showing, and the parsed preview of it. Parsed from the draft
   // rather than from a file, and cached because a map is 4096 cells.
   std::optional<MapDesigner::Draft> mapDraft;
+
+  // The rig draft, the queue of art requests it still owes, and the last file time seen
+  // per layer (a redraw changes the file, and the texture memo has to be told).
+  void DrawRigPreview();
+  void QueueRigPartArt(const RigDesigner::Part &part);
+  void QueueWornArt(const std::string &itemId);
+  void PumpRigArtQueue();
+  void RefreshRigArtMemo();
+  void SaveRig();
+
+  struct RigArtRequest {
+    std::string sprite;
+    std::string requirement;
+    std::string label;
+  };
+  std::optional<RigDesigner::Draft> rigDraft;
+  std::string rigError;
+  std::string rigArtMessage;
+  std::deque<RigArtRequest> rigArtQueue;
+  std::map<std::string, std::filesystem::file_time_type> rigArtStamps;
+  std::set<std::string> rigPreviewWorn;
+  char rigNameBuffer[96] = {};
   bool mapPreviewValid = false;
   MapPreview::Info mapPreviewInfo;
   std::string mapPreviewError;

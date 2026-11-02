@@ -201,6 +201,12 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
       "where the player begins, described as a legend plus rows of characters. A request\n"
       "for a place -- a dungeon, a yard, a village map -- is a map, even when it names\n"
       "the tiles or the things it should contain.\n";
+  state +=
+      "\nA rig is the layered humanoid body of one character: head, hair, body, arms and\n"
+      "legs drawn separately so equipment can be worn over them. A request for a person\n"
+      "whose body will wear armour or hold a weapon -- a villager, a soldier, a smith --\n"
+      "is a rig. A request for a single picture of a creature that wears nothing (a wolf,\n"
+      "a slime) is an actor sprite, not a rig.\n";
   state += "\nAnswer about the request itself, not about what you would design.";
 
   std::vector<SystemOne::Option> questions;
@@ -209,8 +215,8 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
   kind.id = kKindQuestion;
   kind.type = SystemOne::OptionType::Choice;
   kind.instructions =
-      "Is this request for a whole building, one or more tiles, one or more objects, or "
-      "a whole map?";
+      "Is this request for a whole building, one or more tiles, one or more objects, a "
+      "whole map, or a rigged humanoid body?";
   // The keys are the engine's, not the model's: they are what `DesignerDomains::Parse`
   // matches, and the protocol lets the caller name them precisely so a reply does not
   // depend on the model spelling anything a particular way.
@@ -221,7 +227,9 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
       {"object", "a thing with a capability: a wall, door, usable, carryable, "
                  "openable, harvestable, craftable or growing"},
       {"map", "a whole playable location: terrain, the objects on it and where the "
-              "player starts, authored as a legend and rows of characters"}};
+              "player starts, authored as a legend and rows of characters"},
+      {"rig", "the layered humanoid body of one character -- head, hair, body, arms and "
+              "legs -- so equipment can be worn over it"}};
   questions.push_back(std::move(kind));
 
   SystemOne::Option shape;
@@ -232,7 +240,8 @@ void Classify(SystemOne::SystemOneClassifier &classifier, const std::string &tex
   // `Parse`.
   shape.instructions =
       "Does the request describe a single sprite, or a set of several? A building is "
-      "always one blueprint and a map is always one map -- answer single for either.";
+      "always one blueprint, a map is always one map and a rig is always one body -- "
+      "answer single for any of them.";
   shape.options = {
       {"single", "one thing, named or described as one"},
       {"set", "several things: a themed group, a room's contents, a family of variants"}};

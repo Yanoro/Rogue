@@ -70,6 +70,37 @@ because a sword on the ground and a sword in a hand are different pictures.
   `--sprite-compile <doc> --sprite-compile-out data/sprites/<id>.png`. The art is a
   placeholder whose job is to prove alignment, not to be the reference style.
 
+## The Designer domain
+
+The rig's definition can be authored by the Designer. A request for a *person* (a
+villager, a soldier, a smith) routes to the **Rig** domain; the reply is a name,
+a description and one short brief per canonical part:
+
+```json
+{ "name": "Village Blacksmith", "designerNotes": "...", "width": 32, "height": 32,
+  "parts": { "legs": "...", "body": "...", "arm_left": "...", "arm_right": "...",
+             "head": "...", "hair": "..." } }
+```
+
+The model writes definitions, not pictures. The sprite-document pipeline draws each
+layer from its brief plus the shared frame contract (`RigDesigner::FrameContract`): the
+32x32 canvas and the six rectangles every part is drawn against. The Designer pane queues
+one art request at a time — the document conversation is one-at-a-time by design — shows
+the composed body as layers arrive, and lets any single layer be redrawn. Worn art for
+existing equipment is requested the same way (a helmet hides `hair` by its item
+definition, not by the prompt).
+
+A drafted rig is saved with **Save rig** into `content.generatedRigs`
+(`data/generated/rigs`), which loads after `data/rigs`:
+
+- the hand-authored catalog is never written to;
+- a generated rig with the same id replaces the catalog one in the world, and the pane
+  says so before saving;
+- deleting the generated file reverts to the catalog.
+
+The pane also warns when a layer has no art yet; a blank preview is not a state the user
+should have to diagnose.
+
 ## What this slice does not do
 
 - **No equipment lookup.** The preview is a manual outfit: it does not read `Equipped`
@@ -79,8 +110,10 @@ because a sword on the ground and a sword in a hand are different pictures.
   a rig for an entity yet. The renderer is ready, the attachment is not.
 - **No animation, no anchors.** The rig has no pivots, and the DSL has no timing (see
   `docs/pixel-dsl.md` §8). A swing needs `arm_right` and the worn sword to move together.
-- **No generation.** The Designer does not design rigs or worn art; the villager was
-  authored by hand in the DSL.
+- **No equipment *definitions*.** Worn art can be redrawn for items that already carry a
+  `worn` block; inventing a new helmet (slot, armour, hides) is a separate domain.
+- **No world rendering or equipment lookup** still: a saved rig is visible in the
+  Content Editor and the Designer, not on a spawned actor.
 
 ## Next, in order
 
@@ -88,4 +121,5 @@ because a sword on the ground and a sword in a hand are different pictures.
    rig instead of an actor sprite at spawn.
 2. The equipment lookup: `Equipped` slots → worn layers, live.
 3. Anchors/pivots per part, then clips whose keyframes rotate/offset parts by id.
-4. Designer support for rigs and worn art against the rig's frame.
+4. An equipment domain: item definitions (slot, armour, hides) generated beside the worn
+   art.

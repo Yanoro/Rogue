@@ -241,6 +241,7 @@ set(SOURCES
     src/GapLog.cpp
     src/ActorSpriteRegistry.cpp
     src/RigRegistry.cpp
+    src/RigDesigner.cpp
     src/NpcTemplateRegistry.cpp
     src/BrainTemplateRegistry.cpp
     src/ArtRequestsPanel.cpp

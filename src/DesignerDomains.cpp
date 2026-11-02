@@ -51,6 +51,18 @@ const std::vector<Descriptor> &All() {
           nullptr,
       },
       {
+          // A rig. No sprite row: its parts are sprites, and the worn equipment layered
+          // over it is drawn from item definitions, so a rig-shaped sprite kind would be
+          // a category error.
+          Domain::Rig,
+          "rig",
+          "Rig",
+          "a rig",
+          "data/rigs/RIGDESIGNER.md",
+          "content.rigPromptFile",
+          nullptr,
+      },
+      {
           Domain::ActorSprite,
           "actor_sprite",
           "Actor sprite",

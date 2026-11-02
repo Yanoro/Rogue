@@ -30,6 +30,7 @@
 #include "TileArt.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "RigRender.hpp"
 #include "TileArtQueue.hpp"
 #include "TimeUtils.hpp"
 #include "RaylibException.hpp"
@@ -841,6 +842,10 @@ static const char *ArtifactNoun(DesignerDomains::Domain domain) {
       return "object";
     case DesignerDomains::Domain::Tile:
       return "tile";
+    case DesignerDomains::Domain::Map:
+      return "map";
+    case DesignerDomains::Domain::Rig:
+      return "rig";
   }
   return "definition";
 }
@@ -1121,6 +1126,20 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObject = entry.object;
       editedObjectKey = entry.objectKey;
       editedObjectOverlayPath = entry.objectOverlayPath;
+      break;
+    case DesignerDomains::Domain::Rig:
+      rigDraft = entry.rig;
+      rigError.clear();
+      rigArtQueue.clear();
+      rigArtStamps.clear();
+      rigPreviewWorn.clear();
+      if (rigDraft.has_value()) {
+        std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
+                      rigDraft->name.c_str());
+        for (const ItemDef *item : game->itemRegistry.GetAll()) {
+          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+        }
+      }
       break;
     case DesignerDomains::Domain::Map:
       mapDraft = entry.map;
@@ -1410,6 +1429,34 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         applied.savedPath = entry.savedPath;
       }
     }
+  } else if (designMode == DesignerDomains::Domain::Rig) {
+    if (game == nullptr) {
+      reason = "there is no world to validate a rig against.";
+    } else {
+      const RigDesigner::ApplyResult result =
+          RigDesigner::ApplyReply(finished.ParsedAnswer());
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        rigDraft = result.draft;
+        rigError.clear();
+        rigArtQueue.clear();
+        rigArtStamps.clear();
+        rigPreviewWorn.clear();
+        std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
+                      result.draft.name.c_str());
+        for (const ItemDef *item : game->itemRegistry.GetAll()) {
+          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
+        }
+        rigArtMessage =
+            "Rig drafted. Draw its layers, look at it, then save it.";
+      } else {
+        rigError = result.error;
+      }
+    }
   } else if (designMode == DesignerDomains::Domain::Map) {
     if (game == nullptr) {
       reason = "there is no world to validate a map against.";
@@ -1498,6 +1545,12 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
       result.domain = designMode;
       result.label = applied.name;
       result.map = mapDraft;
+      CaptureViewed(std::move(result));
+    } else if (designMode == DesignerDomains::Domain::Rig) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.rig = rigDraft;
       CaptureViewed(std::move(result));
     } else {
       if (designMode == DesignerDomains::Domain::Object) {
@@ -2099,6 +2152,220 @@ void DesignerWindow::DrawObjectPreview() {
     ImGui::TextDisabled("written to %s", editedObjectOverlayPath.c_str());
   } else {
     ImGui::TextDisabled("not written to disk -- it exists for this session only");
+  }
+}
+
+void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
+  RigArtRequest request;
+  request.label = part.id;
+  request.sprite = part.sprite;
+  request.requirement = RigDesigner::FrameContract() + "\n\nThis layer: " +
+                        part.id + " -- " + part.brief +
+                        "\nDraw only this layer; the rest of the 32x32 frame stays "
+                        "transparent.";
+  rigArtQueue.push_back(std::move(request));
+  rigArtMessage = "Queued the " + part.id + " layer (" +
+                  std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+void DesignerWindow::QueueWornArt(const std::string &itemId) {
+  if (game == nullptr) return;
+  const ItemDef *item = game->itemRegistry.Get(itemId);
+  if (item == nullptr || item->wornSprite.empty()) return;
+  std::string hides;
+  for (const std::string &part : item->wornHides) {
+    if (!hides.empty()) hides += ", ";
+    hides += part;
+  }
+  RigArtRequest request;
+  request.label = itemId;
+  request.sprite = item->wornSprite;
+  request.requirement =
+      RigDesigner::FrameContract() + "\n\nThis layer is worn equipment: " + itemId +
+      ". Draw it over that frame, aligned with the body it is worn on. " +
+      (hides.empty()
+           ? "It hides no rig part; it is drawn in front of the body."
+           : "It hides the rig part(s): " + hides + ".") +
+      " Draw only the worn item, not the body underneath.";
+  rigArtQueue.push_back(std::move(request));
+  rigArtMessage = "Queued worn art for " + itemId + " (" +
+                  std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+void DesignerWindow::PumpRigArtQueue() {
+  if (!rigDraft.has_value() || rigArtQueue.empty() || game == nullptr) return;
+  if (session == nullptr || session->IsBusy()) return;
+  const RigArtRequest request = rigArtQueue.front();
+  rigArtQueue.pop_front();
+  // Kind Actor: a rig layer is an actor sprite with a fixed frame, and the sprite-document
+  // prompt already knows how to talk about an actor's look.
+  RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
+                        /*replaceGenerated=*/true, "", request.requirement);
+  rigArtMessage = "Asked the art pipeline for " + request.label + ".";
+}
+
+void DesignerWindow::RefreshRigArtMemo() {
+  if (!rigDraft.has_value() || game == nullptr) return;
+  // A layer's compiled PNG lands asynchronously. The texture cache remembers "missing",
+  // so the first sight of a file (and every redraw, which changes its write time) has to
+  // forget that path or the preview stays empty after the art arrives.
+  const auto refresh = [this](const std::string &sprite) {
+    std::string path;
+    if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return;
+    std::error_code ec;
+    const auto stamp = std::filesystem::last_write_time(path, ec);
+    if (ec) return;
+    const auto found = rigArtStamps.find(sprite);
+    if (found != rigArtStamps.end() && found->second == stamp) return;
+    rigArtStamps[sprite] = stamp;
+    game->ForgetSpriteMemo(std::string(), sprite);
+  };
+  for (const RigDesigner::Part &part : rigDraft->parts) refresh(part.sprite);
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (!item->wornSprite.empty()) refresh(item->wornSprite);
+  }
+}
+
+void DesignerWindow::SaveRig() {
+  if (!rigDraft.has_value() || game == nullptr) return;
+  RigDesigner::Draft &draft = *rigDraft;
+  draft.name = std::string(rigNameBuffer);
+  draft.slug = RigDesigner::SlugFor(draft.name);
+  if (draft.slug.empty()) {
+    rigArtMessage = "Give the rig a name before saving.";
+    return;
+  }
+  const bool existed = game->rigRegistry.Get(draft.slug) != nullptr;
+  std::string savedPath;
+  std::string error;
+  if (!RigDesigner::Save(draft, Settings().content.generatedRigs, &savedPath, &error)) {
+    rigArtMessage = error;
+    return;
+  }
+  game->rigRegistry.Load(Settings().content.generatedRigs);
+  rigArtMessage = "Saved " + savedPath +
+                  (existed ? " (the existing rig with that id is replaced)" : "") +
+                  ". It is now in the Content Editor under Actor rigs.";
+  if (game->debugLog) {
+    game->debugLog->LogInfo("Rig designer: saved " + savedPath);
+  }
+}
+
+void DesignerWindow::DrawRigPreview() {
+  if (!rigDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a character body and its layer briefs appear here. Draw a layer, look "
+        "at the composed body, then save the rig.");
+    ImGui::TextDisabled(
+        "For example: \"a broad, soot-marked village blacksmith\".");
+    if (!rigError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", rigError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+  RigDesigner::Draft &draft = *rigDraft;
+
+  ImGui::TextDisabled("Rig");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputText("##rig_name", rigNameBuffer, sizeof(rigNameBuffer))) {
+    draft.name = std::string(rigNameBuffer);
+    draft.slug = RigDesigner::SlugFor(draft.name);
+  }
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  if (!draft.designerNotes.empty()) {
+    ImGui::TextDisabled("%s", draft.designerNotes.c_str());
+  }
+
+  // The composed body first: the look is what this slice is for.
+  ActorRig renderRig;
+  renderRig.id = draft.slug;
+  renderRig.name = draft.name;
+  renderRig.width = draft.width;
+  renderRig.height = draft.height;
+  for (const RigDesigner::Part &part : draft.parts) {
+    renderRig.parts.push_back({part.id, part.sprite, part.z});
+  }
+  std::vector<RigRender::WornLayer> worn;
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty() || rigPreviewWorn.count(item->id) == 0) continue;
+    RigRender::WornLayer layer;
+    layer.label = item->id;
+    layer.texture =
+        RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+    layer.z = item->wornZ;
+    layer.hides = item->wornHides;
+    worn.push_back(std::move(layer));
+  }
+  ImGui::Separator();
+  RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f);
+  ImGui::Separator();
+
+  // The layers, each with its own draw button: a layer the model got wrong can be redrawn
+  // without touching the five that are right.
+  ImGui::TextDisabled("Layers");
+  for (const RigDesigner::Part &part : draft.parts) {
+    ImGui::PushID(part.id.c_str());
+    std::string resolved;
+    const bool drawn = SpriteResolves(std::string(), part.sprite, &resolved);
+    ImGui::Text("%s%s", part.id.c_str(), drawn ? "" : "   (no art yet)");
+    ImGui::SameLine();
+    if (ImGui::SmallButton(drawn ? "Redraw" : "Draw")) {
+      QueueRigPartArt(part);
+    }
+    ImGui::TextDisabled("%s", part.brief.c_str());
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  ImGui::TextDisabled("Worn equipment (preview)");
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item->wornSprite.empty()) continue;
+    ImGui::PushID(item->id.c_str());
+    bool on = rigPreviewWorn.count(item->id) > 0;
+    if (ImGui::Checkbox(item->id.c_str(), &on)) {
+      if (on) {
+        rigPreviewWorn.insert(item->id);
+      } else {
+        rigPreviewWorn.erase(item->id);
+      }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Redraw art")) {
+      QueueWornArt(item->id);
+    }
+    std::string hides;
+    for (const std::string &part : item->wornHides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    if (!hides.empty()) {
+      ImGui::TextDisabled("hides: %s", hides.c_str());
+    }
+    ImGui::PopID();
+  }
+
+  ImGui::Separator();
+  const bool exists = game->rigRegistry.Get(draft.slug) != nullptr;
+  if (exists) {
+    ImGui::TextDisabled(
+        "A rig with id '%s' already exists; saving replaces it in the world.",
+        draft.slug.c_str());
+  }
+  if (ImGui::Button("Save rig")) {
+    SaveRig();
+  }
+  if (!rigArtQueue.empty()) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu art request(s) queued", rigArtQueue.size());
+  }
+  if (!rigArtMessage.empty()) {
+    ImGui::TextWrapped("%s", rigArtMessage.c_str());
   }
 }
 
@@ -3773,6 +4040,11 @@ void DesignerWindow::Draw() {
     }
   }
 
+  // The rig's art requests are one conversation at a time, so they queue; the memo refresh
+  // is what makes a layer appear the moment its compiled PNG lands.
+  PumpRigArtQueue();
+  RefreshRigArtMemo();
+
   ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -footerHeight), true);
   DrawViewedToolbar();
   // What is *shown* and what is *being designed for* are deliberately two values now.
@@ -3786,6 +4058,8 @@ void DesignerWindow::Draw() {
     DrawObjectPreview();
   } else if (shown == DesignerDomains::Domain::Map) {
     DrawMapPreview();
+  } else if (shown == DesignerDomains::Domain::Rig) {
+    DrawRigPreview();
   } else {
     DrawPreviewPane();
   }
@@ -3848,6 +4122,11 @@ void DesignerWindow::Draw() {
                               "with one object definition and its own notes; an accepted "
                               "object is written to the generated overlay and is available "
                               "to blueprints and spawns on the next load."
+                      : mode == DesignerDomains::Domain::Rig
+                            ? "Ask for a body -- \"a soot-stained blacksmith\", \"a "
+                              "soldier in a patched coat\". The designer replies with a "
+                              "brief per body layer; press Draw on the ones you want, and "
+                              "the rig composes on the left as the art arrives."
                       : mode == DesignerDomains::Domain::Map
                             ? "Ask for a map -- \"a walled orchard with a well and a "
                               "road to a mill\". The designer replies with a legend and "

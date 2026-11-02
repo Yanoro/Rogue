@@ -552,6 +552,8 @@ Where each content registry loads its definitions from.
 | `items` | string | `data/items` | Item registry directory. *Restart to apply.* |
 | `actorSprites` | string | `data/actor_sprites` | Actor-sprite catalogue: art for beings, keyed by sprite id. Not a definition of a creature. *Restart to apply.* |
 | `rigs` | string | `data/rigs` | Actor-rig catalogue: layered humanoid rigs (parts plus worn equipment). The rigged counterpart of an actor sprite. *Restart to apply.* |
+| `generatedRigs` | string | `data/generated/rigs` | Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only. *Restart to apply.* |
+| `rigPromptFile` | string | `data/rigs/RIGDESIGNER.md` | The rig designer's instructions: the humanoid frame and the per-part reply format. *Restart to apply.* |
 | `races` | string | `data/races` | Race registry directory. *Restart to apply.* |
 | `npcs` | string | `data/npcs` | NPC template directory: named starting configurations a map spawns by name and overrides. *Restart to apply.* |
 | `brains` | string | `data/brains` | Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent. *Restart to apply.* |
