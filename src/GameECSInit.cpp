@@ -2122,6 +2122,7 @@ void Game::ECSInit() {
   blueprintWindowEntity = ecs.entity("Blueprint Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
+  npcSpawnerWindowEntity = ecs.entity("NPC Spawner Window");
   taskBoardWindowEntity = ecs.entity("Task Board Window");
   systemOneWindowEntity = ecs.entity("System 1 Overview Window");
   visionDebugWindowEntity = ecs.entity("Vision Debug Window");
