@@ -267,48 +267,72 @@ inline void Draw(const Info &info, ResourceManager &resources,
                     ImGuiWindowFlags_HorizontalScrollbar |
                         ImGuiWindowFlags_NoScrollWithMouse);
   const ImVec2 start = ImGui::GetCursorScreenPos();
-  const float oldScrollX = ImGui::GetScrollX();
-  const float oldScrollY = ImGui::GetScrollY();
-  float originX = start.x;
-  float originY = start.y;
+  const float startScrollX = ImGui::GetScrollX();
+  const float startScrollY = ImGui::GetScrollY();
+  float scrollX = startScrollX;
+  float scrollY = startScrollY;
   float drawCell = cell;
 
   const ImVec2 mouse = ImGui::GetIO().MousePos;
-  if (ImGui::IsWindowHovered()) {
-    const float wheel = ImGui::GetIO().MouseWheel;
-    if (wheel != 0.0f) {
-      const float next =
-          std::clamp(cell * (wheel > 0.0f ? 1.25f : 0.8f), 1.0f, 64.0f);
-      if (next != cell) {
-        // Keep the cell under the cursor where it is: the content coordinate under
-        // the mouse is unchanged, so the scroll has to absorb the scale change.
-        const float contentX = mouse.x - start.x;
-        const float contentY = mouse.y - start.y;
-        const float newScrollX = oldScrollX + (contentX / cell) * next - contentX;
-        const float newScrollY = oldScrollY + (contentY / cell) * next - contentY;
-        *zoom = next;
-        drawCell = next;
-        ImGui::SetScrollX(std::max(0.0f, newScrollX));
-        ImGui::SetScrollY(std::max(0.0f, newScrollY));
-        // The scroll takes effect at the next Begin, so draw at the origin it will
-        // produce rather than making the picture jump for one frame.
-        originX = start.x + oldScrollX - std::max(0.0f, newScrollX);
-        originY = start.y + oldScrollY - std::max(0.0f, newScrollY);
-      }
-    }
-    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-      // Double-click fits again, the same gesture as double-clicking a row switches.
-      *zoom = 0.0f;
-      drawCell = fitCell;
-      ImGui::SetScrollX(0.0f);
-      ImGui::SetScrollY(0.0f);
-      originX = start.x;
-      originY = start.y;
+
+  // The drag target. It sits at the frame's origin and reserves the canvas size, so
+  // it both captures the gesture and gives the child its scroll extent. When a drag
+  // or a zoom moves the content the picture is drawn shifted this frame and the
+  // scroll catches up on the next Begin, which is what keeps it from jumping.
+  const ImVec2 initialCanvas(info.width * drawCell, info.height * drawCell);
+  ImGui::SetCursorScreenPos(start);
+  ImGui::InvisibleButton("##map-pan", initialCanvas,
+                         ImGuiButtonFlags_MouseButtonLeft);
+  const bool hoveredCanvas = ImGui::IsItemHovered();
+  const float wheel = ImGui::GetIO().MouseWheel;
+  if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+    // Grab and move: dragging right moves the map right, so the view scrolls left.
+    const ImVec2 delta = ImGui::GetIO().MouseDelta;
+    scrollX -= delta.x;
+    scrollY -= delta.y;
+  }
+  // A hand while hovering, the four-way drag cursor while dragging: the canvas is a
+  // movable surface, not a button.
+  if (ImGui::IsItemActive()) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+  } else if (hoveredCanvas) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+  }
+
+  if (hoveredCanvas && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+    // Double-click fits again, the same gesture as double-clicking a row switches.
+    *zoom = 0.0f;
+    drawCell = fitCell;
+    scrollX = 0.0f;
+    scrollY = 0.0f;
+  }
+
+  // Zoom around the cell under the cursor: the content coordinate under the mouse is
+  // unchanged, so the scroll has to absorb the scale change.
+  if (ImGui::IsWindowHovered() && wheel != 0.0f) {
+    const float next =
+        std::clamp(drawCell * (wheel > 0.0f ? 1.25f : 0.8f), 1.0f, 64.0f);
+    if (next != drawCell) {
+      const float originNowX = start.x + startScrollX - scrollX;
+      const float originNowY = start.y + startScrollY - scrollY;
+      const float contentX = mouse.x - originNowX;
+      const float contentY = mouse.y - originNowY;
+      scrollX = scrollX + (contentX / drawCell) * next - contentX;
+      scrollY = scrollY + (contentY / drawCell) * next - contentY;
+      *zoom = next;
+      drawCell = next;
     }
   }
 
+  const float clampedScrollX = std::max(0.0f, scrollX);
+  const float clampedScrollY = std::max(0.0f, scrollY);
+  ImGui::SetScrollX(clampedScrollX);
+  ImGui::SetScrollY(clampedScrollY);
+  const float originX = start.x + startScrollX - clampedScrollX;
+  const float originY = start.y + startScrollY - clampedScrollY;
   const ImVec2 canvasSize(info.width * drawCell, info.height * drawCell);
   const ImVec2 bottomRight(originX + canvasSize.x, originY + canvasSize.y);
+
   ImDrawList *draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(ImVec2(originX, originY), bottomRight,
                       IM_COL32(18, 18, 20, 255));
@@ -443,11 +467,11 @@ inline void Draw(const Info &info, ResourceManager &resources,
         break;
       }
     }
-    ImGui::SetTooltip("%s\n(%d, %d)\nscroll to zoom, double-click to fit",
-                      label.c_str(), x, y);
+    ImGui::SetTooltip(
+        "%s\n(%d, %d)\nscroll to zoom, drag to pan, double-click to fit",
+        label.c_str(), x, y);
   }
 
-  ImGui::Dummy(canvasSize);
   ImGui::EndChild();
 }
 
