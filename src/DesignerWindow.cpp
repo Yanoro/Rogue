@@ -1771,6 +1771,8 @@ void DesignerWindow::RefreshRewriteBrief() {
     rewriter.SetBrief(RewriteBriefs::Blueprint());
   } else if (mode == DesignerDomains::Domain::Object) {
     rewriter.SetBrief(RewriteBriefs::Object());
+  } else if (mode == DesignerDomains::Domain::Map) {
+    rewriter.SetBrief(RewriteBriefs::Map());
   } else {
     rewriter.SetBrief(RewriteBriefs::Tile());
   }
@@ -3714,6 +3716,14 @@ void DesignerWindow::Draw() {
   // with an ungrabbable pane. The splitter is the one piece of the old Designer window's
   // layout worth keeping now that it is one window: a fixed fraction was always too wide
   // for a sprite and too narrow for a building.
+  // What the footer under the transcript needs: the Send row, up to two wrapped
+  // status lines, and the input. Reserved from the layout rather than left to the
+  // window's height, because the input used to hang below the visible area.
+  constexpr float kInputHeight = 64.0f;
+  const float footerHeight = ImGui::GetFrameHeightWithSpacing() * 2.0f +
+                             kInputHeight +
+                             ImGui::GetTextLineHeightWithSpacing() * 2.0f;
+
   const float available = ImGui::GetContentRegionAvail().x;
   const float maxPaneWidth =
       std::max(kMinPaneWidth, available - kMinTranscriptWidth - 8.0f);
@@ -3763,7 +3773,7 @@ void DesignerWindow::Draw() {
     }
   }
 
-  ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -70), true);
+  ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -footerHeight), true);
   DrawViewedToolbar();
   // What is *shown* and what is *being designed for* are deliberately two values now.
   // Before the history existed they were one, which is why looking at a building meant
@@ -3786,7 +3796,7 @@ void DesignerWindow::Draw() {
   // is the idiomatic way to make one.
   ImGui::SameLine(0.0f, 0.0f);
   const float paneLeft = ImGui::GetCursorScreenPos().x;
-  ImGui::InvisibleButton("designer_splitter", ImVec2(8.0f, -70));
+  ImGui::InvisibleButton("designer_splitter", ImVec2(8.0f, -footerHeight));
   const bool splitterHovered = ImGui::IsItemHovered();
   const bool splitterActive = ImGui::IsItemActive();
   if (splitterHovered || splitterActive) {
@@ -3812,7 +3822,7 @@ void DesignerWindow::Draw() {
 
   ImGui::SameLine(0.0f, 0.0f);
 
-  ImGui::BeginChild("designer_transcript", ImVec2(0, -70), true);
+  ImGui::BeginChild("designer_transcript", ImVec2(0, -footerHeight), true);
   // The transcript itself -- prompts, replies, the thinking tint, the streaming ellipsis,
   // the error line, the speech bar and the separator -- is DesignerSession's. What stays
   // here is the verdict: "Added", a per-entry set list and the art note are sprite facts,
@@ -3838,6 +3848,11 @@ void DesignerWindow::Draw() {
                               "with one object definition and its own notes; an accepted "
                               "object is written to the generated overlay and is available "
                               "to blueprints and spawns on the next load."
+                      : mode == DesignerDomains::Domain::Map
+                            ? "Ask for a map -- \"a walled orchard with a well and a "
+                              "road to a mill\". The designer replies with a legend and "
+                              "rows of terrain plus the objects on it; the draft appears "
+                              "on the left, and \"Save to maps/\" writes it."
                             : "Ask for a tile -- \"a stone hearth\", \"mossy "
                               "flagstones\", \"a puddle\". The designer replies with one "
                               "tile definition and its own notes; an accepted tile is "
@@ -3969,9 +3984,13 @@ void DesignerWindow::Draw() {
   ImGui::SetNextItemWidth(-1.0f);
   const bool submitted = ImGui::InputTextMultiline(
       "##tile_designer_input", inputBuffer, sizeof(inputBuffer),
-      ImVec2(-1.0f, 54.0f),
+      ImVec2(-1.0f, kInputHeight),
       ImGuiInputTextFlags_EnterReturnsTrue |
-          ImGuiInputTextFlags_CtrlEnterForNewLine);
+          ImGuiInputTextFlags_CtrlEnterForNewLine |
+          // Wrapped rather than scrolled sideways: a long request is normal, and a
+          // field that hides its own beginning is the reason the window used to be
+          // widened to read it.
+          ImGuiInputTextFlags_WordWrap);
 
   if ((send || submitted) && !busy) {
     std::string prompt(inputBuffer);

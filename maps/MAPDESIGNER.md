@@ -19,6 +19,19 @@ Keep the object list to roughly 40 entries and `designerNotes` to one or two
 sentences. If your model produces reasoning, keep it short: the reply is cut off
 when the output budget runs out, and a cut-off map is a refused map.
 
+## Buildings and objects
+
+A building is a footprint, not a picture: a ring of wall tiles with a floor inside
+and a gap in the wall as the door. A floor rectangle with no walls is not a
+building -- it reads as a stain on the ground. Give every building a reason to
+exist by putting the object that names it inside: an anvil and a forge in the
+smithy, a mill and a sack of flour in the mill, a bed and a chest in the house.
+
+Objects belong to a spot. Put them on the floor of the building they serve,
+against a wall, or beside a road. An object standing alone on open grass reads as
+a mistake, and a village of objects scattered at random is not a village. A road
+that connects two things is worth drawing; a road that ends nowhere is not.
+
 ## Your reply
 
 Answer with a short paragraph of prose, then exactly one fenced `json` block.
