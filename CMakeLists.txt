@@ -250,6 +250,7 @@ set(SOURCES
     src/GapLog.cpp
     src/ActorSpriteRegistry.cpp
     src/RigRegistry.cpp
+    src/MovementRegistry.cpp
     src/RigDesigner.cpp
     src/EquipmentDesigner.cpp
     src/NpcTemplateRegistry.cpp

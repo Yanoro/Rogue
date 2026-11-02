@@ -1,0 +1,24 @@
+{
+  "name": "Run",
+  "category": "locomotion",
+  "description": "A forward run: a longer stride than the walk, a deeper forward lean, arms bent and driving, and both feet off the ground at the flight poses.",
+  "frames": 6,
+  "fps": 12,
+  "loop": true,
+  "parts": [
+    "legs",
+    "body",
+    "arm_left",
+    "arm_right",
+    "head",
+    "hair"
+  ],
+  "poses": [
+    "contact: left foot lands forward, right arm driving back, body leaning in",
+    "down: weight settles onto the left leg, body at its lowest",
+    "push: left leg drives back, body rising, right knee coming forward",
+    "flight: both feet off the ground, right leg reaching forward",
+    "contact: right foot lands forward, left arm driving back",
+    "down: weight settles onto the right leg before the next push"
+  ]
+}

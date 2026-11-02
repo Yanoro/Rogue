@@ -199,6 +199,13 @@ struct SkillDef {
   // the registry existed still resolve through the compatibility fallback.
   std::string icon;
 
+  // The movement this skill plays, by movement id ("kick", "swing_sword"). Empty
+  // means the skill has no animation of its own. A rig's clip supplies the frames;
+  // an actor whose rig lacks the clip falls back to its static look. Kept as data
+  // now even though nothing plays it yet: it is what makes the registry's
+  // vocabulary real at the point a skill is authored.
+  std::string animation;
+
   // How this skill is used. Defaults to Passive so every skill written before
   // the type existed keeps meaning "always on", which is what it already did.
   SkillType type = SkillType::Passive;

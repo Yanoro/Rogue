@@ -2546,8 +2546,28 @@ void DesignerWindow::QueueRigPartClipArt(RigDesigner::Part &part, const RigClip 
 
 void DesignerWindow::QueueRigClipArt(const RigClip &clip) {
   if (!rigDraft.has_value() || game == nullptr || clip.frames < 1) return;
+  const MovementDef *movement =
+      clip.movement.empty() ? nullptr : game->movementRegistry.Get(clip.movement);
+  if (movement != nullptr && !movement->needs.empty()) {
+    std::string needs;
+    for (const std::string &need : movement->needs) {
+      if (!needs.empty()) needs += ", ";
+      needs += need;
+    }
+    rigArtMessage = "This movement needs " + needs +
+                    " to follow the body, and worn equipment does not animate yet; "
+                    "nothing was queued.";
+    return;
+  }
   int queued = 0;
   for (RigDesigner::Part &part : rigDraft->parts) {
+    // A movement that names participants animates only those; the rest keep their static
+    // sprite in this clip, which is how "a kick does not animate the hair" is said.
+    if (movement != nullptr && !movement->parts.empty() &&
+        std::find(movement->parts.begin(), movement->parts.end(), part.id) ==
+            movement->parts.end()) {
+      continue;
+    }
     QueueRigPartClipArt(part, clip);
     ++queued;
   }
@@ -2909,10 +2929,71 @@ void DesignerWindow::DrawRigPreview() {
   // The clip spec: what a generation asks for, and what a re-draw has to start from. It is
   // saved with the rig, so the intent outlives the PNGs.
   RigClip *editedClip = nullptr;
+  bool editedClipBlocked = false;
+  const auto joinList = [](const std::vector<std::string> &values) {
+    std::string out;
+    for (const std::string &value : values) {
+      if (!out.empty()) out += ", ";
+      out += value;
+    }
+    return out;
+  };
   if (draft.clips.empty()) {
-    ImGui::TextDisabled("No clip yet. The walk clip is the first one this slice knows "
-                        "how to generate.");
-    if (ImGui::Button("Create walk clip")) {
+    ImGui::TextDisabled("No clip yet. Create one from a movement template.");
+    if (game != nullptr && game->movementRegistry.Count() > 0) {
+      const auto movements = game->movementRegistry.GetAll();
+      if (game->movementRegistry.Get(rigNewMovement) == nullptr) {
+        rigNewMovement = game->movementRegistry.Get("walk") != nullptr
+                             ? "walk"
+                             : movements.front()->id;
+      }
+      int selected = 0;
+      std::vector<const char *> names;
+      for (size_t i = 0; i < movements.size(); ++i) {
+        names.push_back(movements[i]->name.c_str());
+        if (movements[i]->id == rigNewMovement) selected = static_cast<int>(i);
+      }
+      ImGui::SetNextItemWidth(200.0f);
+      if (ImGui::Combo("##rig_new_movement", &selected, names.data(),
+                       static_cast<int>(names.size()))) {
+        rigNewMovement = movements[static_cast<size_t>(selected)]->id;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button(("Create " + rigNewMovement + " clip").c_str())) {
+        if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+          RigClip clip;
+          clip.id = movement->id;
+          clip.movement = movement->id;
+          clip.frames = movement->frames;
+          clip.fps = movement->fps;
+          clip.loop = movement->loop;
+          clip.brief = movement->description;
+          clip.poses = movement->poses;
+          draft.clips.push_back(clip);
+          rigAnimClip = clip.id;
+          rigAnimTime = 0.0f;
+          SyncRigClipBuffers(draft.clips.back());
+          editedClip = &draft.clips.back();
+          rigArtMessage = "Created the " + movement->name +
+                          " clip from the movement registry.";
+        }
+      }
+      if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+        if (!movement->needs.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.4f, 1.0f));
+          ImGui::TextWrapped(
+              "Needs %s to follow the body. Worn equipment does not animate yet, so "
+              "generation stays disabled for this movement.",
+              joinList(movement->needs).c_str());
+          ImGui::PopStyleColor();
+        } else if (!movement->parts.empty()) {
+          ImGui::TextDisabled("Participating parts: %s",
+                              joinList(movement->parts).c_str());
+        }
+      }
+    } else if (ImGui::Button("Create walk clip")) {
+      // No registry loaded (a stripped content tree): keep the built-in walk so the
+      // slice is usable, but say that the template layer is missing.
       RigClip walk;
       walk.id = "walk";
       walk.frames = 4;
@@ -2932,8 +3013,7 @@ void DesignerWindow::DrawRigPreview() {
       rigAnimTime = 0.0f;
       SyncRigClipBuffers(draft.clips.back());
       editedClip = &draft.clips.back();
-      ImGui::TextDisabled("Walk clip created. Give it a brief and poses, then generate "
-                          "its layers.");
+      ImGui::TextDisabled("No movement registry loaded; using the built-in walk.");
     }
   } else {
     for (RigClip &clip : draft.clips) {
@@ -2941,6 +3021,23 @@ void DesignerWindow::DrawRigPreview() {
     }
     if (editedClip != nullptr) {
       if (rigClipBuffersFor != editedClip->id) SyncRigClipBuffers(*editedClip);
+      const MovementDef *movement =
+          (!editedClip->movement.empty() && game != nullptr)
+              ? game->movementRegistry.Get(editedClip->movement)
+              : nullptr;
+      editedClipBlocked = movement != nullptr && !movement->needs.empty();
+      if (movement != nullptr) {
+        ImGui::TextDisabled("Movement: %s (%s)", movement->name.c_str(),
+                            movement->category.c_str());
+        if (editedClipBlocked) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.4f, 1.0f));
+          ImGui::TextWrapped(
+              "Needs %s to follow the body; generation is disabled until worn "
+              "equipment animates.",
+              joinList(movement->needs).c_str());
+          ImGui::PopStyleColor();
+        }
+      }
       ImGui::PushID("rig_clip_spec");
       int frames = editedClip->frames;
       ImGui::SetNextItemWidth(80.0f);
@@ -2972,9 +3069,11 @@ void DesignerWindow::DrawRigPreview() {
       }
       if (!line.empty()) poses.push_back(line);
       editedClip->poses = poses;
+      ImGui::BeginDisabled(editedClipBlocked);
       if (ImGui::Button(("Generate " + editedClip->id + " for all layers").c_str())) {
         QueueRigClipArt(*editedClip);
       }
+      ImGui::EndDisabled();
       if (!rigArtQueue.empty()) {
         ImGui::SameLine();
         ImGui::TextDisabled("%zu art request(s) queued", rigArtQueue.size());
@@ -3001,7 +3100,7 @@ void DesignerWindow::DrawRigPreview() {
     if (ImGui::SmallButton(drawn ? "Redraw" : "Draw")) {
       QueueRigPartArt(part);
     }
-    if (editedClip != nullptr) {
+    if (editedClip != nullptr && !editedClipBlocked) {
       ImGui::SameLine();
       if (ImGui::SmallButton(("Animate " + editedClip->id).c_str())) {
         QueueRigPartClipArt(part, *editedClip);

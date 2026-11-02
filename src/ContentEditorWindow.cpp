@@ -289,8 +289,8 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
-      game->iconRegistry, game->rigRegistry, game->itemRegistry,
-      game->skillRegistry, game->npcTemplateRegistry,
+      game->iconRegistry, game->rigRegistry, game->movementRegistry,
+      game->itemRegistry, game->skillRegistry, game->npcTemplateRegistry,
       game->brainTemplateRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }

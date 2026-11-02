@@ -44,6 +44,10 @@ struct RigPart {
 // not from a list of frame names.
 struct RigClip {
   std::string id;
+  // The movement template this clip was generated from, when it came from one. Empty
+  // for a hand-written clip. The frames remain the rig's own; the movement is the intent
+  // a re-draw starts from and the reason a skill can name this animation.
+  std::string movement;
   int frames = 1;
   int fps = 8;
   bool loop = true;

@@ -1,0 +1,14 @@
+{
+  "name": "Kick",
+  "category": "attack",
+  "description": "A short front kick with the right leg: the knee lifts, the lower leg snaps out, then the leg returns to the stance. The arms counterbalance and the body leans back slightly on the extension.",
+  "frames": 3,
+  "fps": 10,
+  "loop": false,
+  "parts": ["legs", "body", "arm_left", "arm_right"],
+  "poses": [
+    "wind up: right knee raised toward the chest, body straight, arms ready",
+    "extend: right leg snapped forward and level, body leaning back, arms out for balance",
+    "recover: right leg lowering, body coming back over the hips"
+  ]
+}

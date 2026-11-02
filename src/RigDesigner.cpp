@@ -196,6 +196,7 @@ bool Save(const Draft &draft, const std::string &directory, std::string *savedPa
   for (const RigClip &clip : draft.clips) {
     nlohmann::json entry = {{"id", clip.id}, {"frames", clip.frames},
                             {"fps", clip.fps}, {"loop", clip.loop}};
+    if (!clip.movement.empty()) entry["movement"] = clip.movement;
     if (!clip.brief.empty()) entry["brief"] = clip.brief;
     if (!clip.poses.empty()) entry["poses"] = clip.poses;
     clips.push_back(std::move(entry));

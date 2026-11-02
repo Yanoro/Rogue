@@ -31,5 +31,6 @@
     "autoCast": false,
     "xpPerUse": 6,
     "interrupts": true
-  }
+  },
+  "animation": "kick"
 }

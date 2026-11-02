@@ -24,6 +24,7 @@
 #include "Hooks.hpp"
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
+#include "MovementRegistry.h"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
@@ -304,6 +305,9 @@ private:
   // The rigged counterpart: layered humanoid bodies, drawn part by part so equipment can
   // be layered over them.
   RigRegistry rigRegistry;
+  // Shared movement templates (walk, run, kick...). A rig's clips point at one of these
+  // and supply the frames for its own body; skills name the movement they play.
+  MovementRegistry movementRegistry;
   // Named NPC definitions and the brains that drive them. Templates are spawn
   // seeds: createNPC copies their values onto the entity, and the instance owns
   // them afterwards. Brains are separate because a body can have none.

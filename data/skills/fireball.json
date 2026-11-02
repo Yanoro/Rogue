@@ -31,5 +31,6 @@
     "autoCast": false,
     "xpPerUse": 8,
     "projectile": "fireball"
-  }
+  },
+  "animation": "spell_cast"
 }
