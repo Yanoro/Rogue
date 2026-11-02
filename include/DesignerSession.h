@@ -100,6 +100,9 @@ public:
     // sprite-document turn".
     std::string artName;
     int artKind = -1;
+    // For an animation request: the frame names the document must contain, so acceptance
+    // can validate them and write one PNG per frame. Empty for a single sprite.
+    std::vector<std::string> artFrames;
 
     // ---- which conversation this turn belongs to -------------------------------
     //

@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "RigRegistry.h"
+
 // Turning a designer reply into an actor rig.
 //
 // The model writes the *definition* -- a name, the brief for each canonical part -- and
@@ -37,6 +39,9 @@ struct Part {
   // The sprite convention id its art is requested under: rig_<slug>_<id>.
   std::string sprite;
   int z = 0;
+  // Frame lists per clip, in playing order. Carried across a redraft when the part's
+  // sprite base is unchanged, because a frame name is <sprite>_<clip>_fN.
+  std::vector<RigPartClip> clips;
 };
 
 struct Draft {
@@ -47,8 +52,14 @@ struct Draft {
   int width = kReferenceSide;
   int height = kReferenceSide;
   std::vector<Part> parts;
+  // Clips the rig can play, with the authoring intent kept for regeneration.
+  std::vector<RigClip> clips;
   std::vector<std::string> warnings;
 };
+
+// Moves `from`'s clips (and the frame lists of parts whose sprite base survived) onto a
+// newly drafted `to`. A redraft replaces the definition, not the animation work.
+void CarryAnimations(Draft &to, const Draft &from);
 
 // The id a name saves under. Public because the pane lets the name be edited before
 // saving, and the id has to follow the new name.

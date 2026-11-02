@@ -47,6 +47,66 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
     return false;
   }
 
+  // Clips first: a part's frame list names a clip, and the reference is checked once
+  // both have been read.
+  if (document.contains("clips") && !document["clips"].is_null()) {
+    if (!document["clips"].is_array()) {
+      if (warnings != nullptr) {
+        warnings->push_back("\"clips\" is not an array; ignored");
+      }
+    } else {
+      for (const auto& entry : document["clips"]) {
+        if (!entry.is_object()) {
+          if (warnings != nullptr) warnings->push_back("a clip is not an object; skipped");
+          continue;
+        }
+        RigClip clip;
+        clip.id = entry.value("id", std::string());
+        if (clip.id.empty()) {
+          if (warnings != nullptr) {
+            warnings->push_back("a clip has no \"id\"; skipped");
+          }
+          continue;
+        }
+        const bool duplicate =
+            std::any_of(out.clips.begin(), out.clips.end(),
+                        [&](const RigClip& existing) { return existing.id == clip.id; });
+        if (duplicate) {
+          if (warnings != nullptr) {
+            warnings->push_back("clip '" + clip.id + "' appears more than once; the later one wins");
+          }
+          out.clips.erase(std::remove_if(out.clips.begin(), out.clips.end(),
+                                         [&](const RigClip& existing) {
+                                           return existing.id == clip.id;
+                                         }),
+                          out.clips.end());
+        }
+        clip.frames = entry.value("frames", 1);
+        clip.fps = entry.value("fps", 8);
+        clip.loop = entry.value("loop", true);
+        clip.brief = entry.value("brief", std::string());
+        if (entry.contains("poses") && entry["poses"].is_array()) {
+          for (const auto& pose : entry["poses"]) {
+            if (pose.is_string()) clip.poses.push_back(pose.get<std::string>());
+          }
+        }
+        if (clip.frames < 1 || clip.frames > 64) {
+          if (warnings != nullptr) {
+            warnings->push_back("clip '" + clip.id + "' frame count is out of range; clamped to 1..64");
+          }
+          clip.frames = std::clamp(clip.frames, 1, 64);
+        }
+        if (clip.fps < 1 || clip.fps > 60) {
+          if (warnings != nullptr) {
+            warnings->push_back("clip '" + clip.id + "' fps is out of range; clamped to 1..60");
+          }
+          clip.fps = std::clamp(clip.fps, 1, 60);
+        }
+        out.clips.push_back(std::move(clip));
+      }
+    }
+  }
+
   if (!document.contains("parts") || !document["parts"].is_array() ||
       document["parts"].empty()) {
     if (error != nullptr) {
@@ -78,6 +138,36 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
       }
       continue;
     }
+    if (entry.contains("clips") && !entry["clips"].is_null()) {
+      if (!entry["clips"].is_object()) {
+        if (warnings != nullptr) {
+          warnings->push_back("part '" + part.id + "': \"clips\" is not an object; ignored");
+        }
+      } else {
+        for (auto it = entry["clips"].begin(); it != entry["clips"].end(); ++it) {
+          RigPartClip partClip;
+          partClip.clip = it.key();
+          if (!it.value().is_array()) {
+            if (warnings != nullptr) {
+              warnings->push_back("part '" + part.id + "': clip '" + partClip.clip +
+                                  "' is not an array; skipped");
+            }
+            continue;
+          }
+          for (const auto& frame : it.value()) {
+            if (frame.is_string()) partClip.frames.push_back(frame.get<std::string>());
+          }
+          if (partClip.frames.empty()) {
+            if (warnings != nullptr) {
+              warnings->push_back("part '" + part.id + "': clip '" + partClip.clip +
+                                  "' has no frames; skipped");
+            }
+            continue;
+          }
+          part.clips.push_back(std::move(partClip));
+        }
+      }
+    }
     if (!seen.insert(part.id).second) {
       if (warnings != nullptr) {
         warnings->push_back("part '" + part.id +
@@ -94,6 +184,34 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
   if (out.parts.empty()) {
     if (error != nullptr) *error = "no part could be read";
     return false;
+  }
+
+  for (RigPart& part : out.parts) {
+    part.clips.erase(
+        std::remove_if(part.clips.begin(), part.clips.end(),
+                       [&](const RigPartClip& partClip) {
+                         const auto found = std::find_if(
+                             out.clips.begin(), out.clips.end(),
+                             [&](const RigClip& clip) { return clip.id == partClip.clip; });
+                         if (found == out.clips.end()) {
+                           if (warnings != nullptr) {
+                             warnings->push_back("part '" + part.id + "': clip '" +
+                                                 partClip.clip +
+                                                 "' is not declared in \"clips\"; skipped");
+                           }
+                           return true;
+                         }
+                         if (static_cast<int>(partClip.frames.size()) != found->frames &&
+                             warnings != nullptr) {
+                           warnings->push_back("part '" + part.id + "': clip '" +
+                                               partClip.clip + "' has " +
+                                               std::to_string(partClip.frames.size()) +
+                                               " frames, the clip declares " +
+                                               std::to_string(found->frames));
+                         }
+                         return false;
+                       }),
+        part.clips.end());
   }
   return true;
 }
@@ -183,9 +301,27 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
   }
   document["width"] = definition.width;
   document["height"] = definition.height;
+  nlohmann::json clips = nlohmann::json::array();
+  for (const RigClip& clip : definition.clips) {
+    nlohmann::json entry = {{"id", clip.id}, {"frames", clip.frames},
+                            {"fps", clip.fps}, {"loop", clip.loop}};
+    if (!clip.brief.empty()) entry["brief"] = clip.brief;
+    if (!clip.poses.empty()) entry["poses"] = clip.poses;
+    clips.push_back(std::move(entry));
+  }
+  if (!clips.empty()) document["clips"] = std::move(clips);
+
   nlohmann::json parts = nlohmann::json::array();
   for (const RigPart& part : definition.parts) {
-    parts.push_back({{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}});
+    nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.clips.empty()) {
+      nlohmann::json partClips = nlohmann::json::object();
+      for (const RigPartClip& partClip : part.clips) {
+        partClips[partClip.clip] = partClip.frames;
+      }
+      entry["clips"] = std::move(partClips);
+    }
+    parts.push_back(std::move(entry));
   }
   document["parts"] = std::move(parts);
   return document;

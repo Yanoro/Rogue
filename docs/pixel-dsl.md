@@ -238,8 +238,10 @@ already is.
   layer.
 - No layers or blend modes. Blending produces colours outside the palette, which
   is the one property this exists to guarantee. Shading is a ramp step.
-- No animation timing. `frame` is a variant, not a walk cycle; the sprites this
-  replaces are static.
+- No animation timing in the compiler. `frame` blocks are still independent variants;
+  when they are used as a walk cycle, the timing lives in the rig's clip (`fps`, `loop`)
+  and the rig slices the frames, not the DSL. The compiler validates a frame block like
+  any other sprite, but it cannot see motion.
 - The compiler does not read the tile catalog or the object factory. It takes a
   document and returns pixels; naming, overlay writes and the swap stay in the
   code that already owns them.
