@@ -1453,6 +1453,24 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         }
         rigArtMessage =
             "Rig drafted. Draw its layers, look at it, then save it.";
+        // "Art automatically" means exactly that for a rig: its layers *are* the art, and
+        // a drafted body with none draws nothing. Missing layers are queued; layers that
+        // already have art are left alone, so redrafting a body does not silently
+        // overwrite art someone may have kept.
+        if (autoRequestArt && game->TileArtQueueState().Enabled()) {
+          int queued = 0;
+          for (const RigDesigner::Part &part : rigDraft->parts) {
+            std::string resolved;
+            if (SpriteResolves(std::string(), part.sprite, &resolved)) continue;
+            QueueRigPartArt(part);
+            ++queued;
+          }
+          rigArtMessage =
+              queued > 0
+                  ? "Rig drafted. Art automatically is on: " +
+                        std::to_string(queued) + " layer(s) queued."
+                  : "Rig drafted. Every layer already has art.";
+        }
       } else {
         rigError = result.error;
       }
@@ -3910,6 +3928,8 @@ void DesignerWindow::Draw() {
               "For a building: after a design is saved, create every asset it asked "
               "for -- definition first, then its sprite -- one at a time, with no "
               "further input.\n"
+              "For a rig: draw every body layer that has no art yet, one at a time, as "
+              "soon as the body is drafted.\n"
               "Requests are batched where they can be, and the run names what it could "
               "not make.\nPersisted in debug_windows_state."
             : "Art generation is off (art.generation.enabled in settings.json), so "
