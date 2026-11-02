@@ -395,6 +395,16 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
           }
         }
 
+        // The rig id, authored here or filled from the template. A rig replaces the
+        // single-image look with layered parts and worn equipment.
+        if (npcJson.contains("rig")) {
+          if (npcJson["rig"].is_string()) {
+            data.rig = npcJson["rig"].get<std::string>();
+          } else {
+            warn("Warning: NPC '" + data.name + "' has a non-string 'rig'; ignoring it.\n");
+          }
+        }
+
         // The NPC's own look, by image path. There is no convention path for
         // NPCs: a name-based lookup would break silently on a rename, so a
         // character that should not look like its race has to say so. An entry

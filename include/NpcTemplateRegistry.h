@@ -33,6 +33,9 @@ struct NpcTemplate {
   std::string description;
   // ActorSpriteRegistry id. Empty falls through to the race's art.
   std::string sprite;
+  // ActorRigRegistry id. Empty means the sprite/race look; a rig replaces the look with
+  // layered parts and worn equipment, and its clips play when the NPC moves.
+  std::string rig;
   // PortraitRegistry id. Empty falls through to the race's portrait.
   std::string portrait;
   // RaceRegistry id. Empty means the human default, exactly like the map key.

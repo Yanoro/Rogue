@@ -94,6 +94,7 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
   }
   out.description = document.value("description", std::string());
   out.sprite = document.value("sprite", std::string());
+  out.rig = document.value("rig", std::string());
   out.portrait = document.value("portrait", std::string());
   out.race = document.value("race", std::string());
   out.background = document.value("background", std::string());
@@ -223,6 +224,7 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   document["name"] = definition.name;
   if (!definition.description.empty()) document["description"] = definition.description;
   if (!definition.sprite.empty()) document["sprite"] = definition.sprite;
+  if (!definition.rig.empty()) document["rig"] = definition.rig;
   if (!definition.portrait.empty()) document["portrait"] = definition.portrait;
   if (!definition.race.empty()) document["race"] = definition.race;
   if (!definition.background.empty()) document["background"] = definition.background;

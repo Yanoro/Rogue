@@ -757,6 +757,12 @@ private:
   void DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                         const ScreenPosition &screenPos);
 
+  // Draws a rigged actor's layers and its worn equipment instead of its sprite. Returns
+  // false when the rig is unknown or nothing drew, so the caller can still fall back to
+  // the single-image look.
+  bool DrawRigEntity(flecs::entity e, const RigBody &body,
+                     const ScreenPosition &screenPos, const DrawAscii &ascii);
+
   // The blueprint placement path, shared by the preview and the commit so the
   // two cannot disagree: whatever the ghost tints green is exactly what a click
   // will write. Both are public because the placement window draws the preview

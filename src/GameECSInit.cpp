@@ -1965,6 +1965,21 @@ void Game::ECSInit() {
     }
   }
 
+  // The player's rig, when the settings name one. Layered art wins over the actor sprite
+  // in the renderer; an unknown id is reported and leaves the sprite in place.
+  if (!settings.player.rig.empty()) {
+    if (rigRegistry.Get(settings.player.rig) != nullptr) {
+      playerEntity.set<RigBody>({settings.player.rig});
+      playerEntity.set<RigAnim>({});
+    } else {
+      const std::string message =
+          "Warning: player.rig '" + settings.player.rig +
+          "' is not an actor rig; using the actor sprite or race look.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
+
   // The player's portrait, authored in settings with the race as the default.
   // Same rule as an NPC: an id, or no component at all, which the HUD reads as
   // the unknown sprite.

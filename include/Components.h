@@ -582,6 +582,24 @@ struct Sprite {
   std::string path;
 };
 
+// The rig an actor is drawn with, instead of its single Sprite.
+//
+// Runtime-only, like Sprite: the art lives in the rig and item registries, and the id is
+// all an entity needs. An entity with a RigBody is drawn part by part, with its equipped
+// items as worn layers. A rig id that does not resolve falls back to the sprite, so a typo
+// is a visible fallback rather than an invisible actor.
+struct RigBody {
+  std::string rig;
+};
+
+// Which clip a rigged actor is playing and how far into it. The animation system updates
+// this from movement; the renderer only reads it, which keeps a draw call from being the
+// place a clip starts.
+struct RigAnim {
+  std::string clip;
+  float time = 0.0f;
+};
+
 // Marks the map's own ground tiles, so the renderer can draw them before
 // everything that stands on them.
 //
@@ -1795,6 +1813,8 @@ inline void RegisterComponents(flecs::world &ecs) {
   // merely skipped, so there is nothing here a serializer needs.
   ecs.component<Vitals>().member<float>("health").member<float>("maxHealth");
   ecs.component<Portrait>().member<std::string>("id");
+  ecs.component<RigBody>().member<std::string>("rig");
+  ecs.component<RigAnim>().member<std::string>("clip").member<float>("time");
   ecs.component<Armor>().member<float>("value");
   ecs.component<Aggressive>()
       .member<float>("interval")

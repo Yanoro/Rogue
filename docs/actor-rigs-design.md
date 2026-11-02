@@ -235,28 +235,50 @@ Limits, stated rather than hidden:
 - Changing a clip's frame count does not rewrite the existing per-part frame lists; the
   next Generate does, and the registry warns on a saved mismatch.
 
+## World rendering and playback
+
+`RigBody { rig }` on an actor makes the world draw it part by part instead of as a single
+`Sprite`. It is assigned by `player.rig` (a setting; restart to apply), an NPC template's
+`"rig"`, or a map NPC's `"rig"`. An unknown id is reported at spawn and the actor keeps its
+sprite, so the fallback is visible rather than an invisible body. `DrawRigEntity` builds the
+worn layers from the items the actor actually has equipped -- `Equipped` on `Holds`
+children, `ItemType` -> `ItemDef` -> worn sprite/z/hides -- and draws through the same
+ordering and hiding the previews use.
+
+A `RigAnimationSystem` chooses the locomotion clip from the actor's real speed: `idle` when
+still, `run` at or above 60% of `MaxSpeed` (120 when the actor has none), `walk` otherwise,
+and advances the clip's clock. A rig with none of those clips -- including one with only a
+`kick` -- draws its static sprites, because a one-shot has no business being chosen by a
+speed test. The renderer only reads `RigAnim`; the clock is the game's, so a frame that
+skips the draw does not lose animation time.
+
+To try it: give the player or an NPC a rig id (`player.rig` in settings, `"rig"` on a
+template or map NPC), make sure that rig has `idle`/`walk`/`run` clips (generate them in the
+Designer and save), and move. Equipment is live: the player's map starting equipment and an
+NPC template's `equipped` list appear as worn layers.
+
 ## What this slice does not do
 
-- **No equipment lookup.** The preview is a manual outfit: it does not read `Equipped`
-  slots from an entity. Equipping a helmet in the world will not change the pane until
-  that lookup exists.
-- **No world rendering.** Spawned actors still draw their single `Sprite`; nothing reads
-  a rig for an entity yet. The renderer is ready, the attachment is not.
-- **No anchors, no world animation.** The rig has no pivots, so a part's frames must stay
-  registered by construction, and nothing plays a clip on a spawned actor: the Designer's
-  preview is the only player. A swing needs `arm_right` and the worn sword to move
-  together, which is the anchors slice.
-- **No world object for generated equipment.** An item can be worn in a preview; it
-  cannot spawn in a room until its object template is made with the Object domain.
-- **No world rendering or equipment lookup** still: a saved rig is visible in the
-  Content Editor and the Designer, not on a spawned actor.
+- **No anchors.** Worn equipment does not follow an animated part: the sword stays where it
+  is while the arm swings, because the rig has no per-frame attachment. This is the
+  anchors/worn-frames slice, and it is the reason `sword_swing` and `spell_cast` are gated.
+- **No directional art.** Rigs are drawn front-facing; there is no mirroring or
+  four-direction vocabulary, so a character walking left looks like one walking right.
+- **No skill playback.** A skill's `animation` field is authored and validated, but only
+  locomotion drives clips. Playing a kick when the skill activates is the next slice; the
+  clip machinery is in place for it.
+- **The previews are still a manual outfit.** The Content Editor and Designer previews do
+  not read `Equipped`; the world does. A pane showing a helmet you have not toggled is not a
+  bug, it is the preview's deliberate control.
+- **No world object for generated equipment.** An item can be worn in the world if its item
+  definition exists, but a generated item still cannot spawn in a room until its object
+  template is made with the Object domain.
 
 ## Next, in order
 
-1. A component (`RigBody { rig; worn items }`) and a world render path, then choosing a
-   rig instead of an actor sprite at spawn. Animation state and movement-driven clip
-   selection belong to that slice, not this one.
-2. The equipment lookup: `Equipped` slots → worn layers, live.
-3. Anchors/pivots per part, so worn art and animated parts can move together.
-4. An equipment domain: item definitions (slot, armour, hides) generated beside the worn
-   art.
+1. Anchors or per-frame worn frames, so equipment moves with the part it sits on; then
+   `sword_swing` and `spell_cast` can generate.
+2. Skill playback: the activated skill's movement runs as a one-shot clip, then returns to
+   locomotion.
+3. Directional rig art, or at least a horizontal flip, and the facing wiring.
+4. The previews read the live equipment lookup instead of a manual outfit.

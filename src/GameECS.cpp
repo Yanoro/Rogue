@@ -13,6 +13,7 @@
 #include "ActorArt.hpp"
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
+#include "RigRender.hpp"
 #include "SpritePaths.hpp"
 #include "SkillshotPath.hpp"
 #include "GapLog.h"
@@ -282,6 +283,7 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       if (data.background.empty()) data.background = definition->background;
       if (data.race.empty()) data.race = definition->race;
       if (data.sprite.empty()) data.sprite = definition->sprite;
+      if (data.rig.empty()) data.rig = definition->rig;
       if (data.portrait.empty()) data.portrait = definition->portrait;
       if (data.slots.empty()) data.slots = definition->slots;
       if (data.inventory.empty()) data.inventory = definition->inventory;
@@ -389,6 +391,18 @@ flecs::entity Game::createNPC(const NPCData &data) {
           .add<BlocksTile>();
 
   entity.add<Actor>();
+
+  // A template or map entry naming a rig gets layered art. Resolved here rather than in
+  // the renderer so an unknown id is reported once at spawn, with the NPC's name in hand.
+  if (!data.rig.empty()) {
+    if (rigRegistry.Get(data.rig) != nullptr) {
+      entity.set<RigBody>({data.rig});
+      entity.set<RigAnim>({});
+    } else if (debugLog) {
+      debugLog->LogWarning("Warning: NPC '" + name + "' names unknown rig '" +
+                           data.rig + "'; using its sprite or race look.");
+    }
+  }
 
   // The agent phase of docs/spatial-memory-design.md: an NPC perceives through
   // the same `Vision` + `SpatialMemory` pair the player does. It is not told
@@ -565,6 +579,15 @@ void Game::ECSInitRenderSystems() {
 
 void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                             const ScreenPosition &screenPos) {
+  // A rig wins over both: it is several layers with worn equipment over them. It only
+  // handles the fall-through when the rig itself cannot draw, in which case the sprite (or
+  // the unknown placeholder) is still the honest answer.
+  if (const RigBody *body = e.get<RigBody>()) {
+    if (DrawRigEntity(e, *body, screenPos, ascii)) {
+      return;
+    }
+  }
+
   // A raster sprite wins over the ASCII look when the entity has one.
   // Sprite is only ever attached once its image loaded (SpritePaths.hpp),
   // and the lookup is a cache hit, so a null here means the texture was
@@ -611,6 +634,43 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
       DrawRectangleLinesEx(spriteRect, 1.0f, BLUE);
     }
   }
+}
+
+bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
+                         const ScreenPosition &screenPos, const DrawAscii &ascii) {
+  const ActorRig *rig = rigRegistry.Get(body.rig);
+  if (rig == nullptr) return false;
+
+  // Worn equipment is read from the same held-item children the equipment system uses;
+  // an item that is not actually equipped (no Equipped component) is not drawn.
+  std::vector<RigRender::WornLayer> worn;
+  for (flecs::entity item : EquippedItems(e)) {
+    const ItemType *type = item.get<ItemType>();
+    const ItemDef *definition = type != nullptr ? itemRegistry.Get(type->id) : nullptr;
+    if (definition == nullptr || definition->wornSprite.empty()) continue;
+    RigRender::WornLayer layer;
+    layer.label = definition->id;
+    layer.texture = RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
+    layer.z = definition->wornZ;
+    layer.hides = definition->wornHides;
+    worn.push_back(std::move(layer));
+  }
+
+  RigRender::AnimationState animation;
+  if (const RigAnim *anim = e.get<RigAnim>()) {
+    for (const RigClip &clip : rig->clips) {
+      if (clip.id == anim->clip) {
+        animation.clip = &clip;
+        break;
+      }
+    }
+    animation.time = anim->time;
+  }
+
+  return RigRender::DrawWorld(
+      *rig, resourceManager, worn, screenPos.x, screenPos.y,
+      static_cast<float>(ascii.width), static_cast<float>(ascii.height),
+      animation.clip != nullptr ? &animation : nullptr);
 }
 
 // The render work that draws over the tile and entity layers: name tags and the
@@ -956,6 +1016,32 @@ void Game::ECSInitPhysicsSystems() {
   });
 
   ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
+
+  // A rigged actor chooses a locomotion clip from how fast it is actually moving, then
+  // advances it. Done here rather than in the renderer so a skipped frame does not lose
+  // animation time, and so the choice is a game fact rather than a drawing detail.
+  ecs.system<RigBody, RigAnim, Velocity>("RigAnimationSystem")
+      .each([this](flecs::entity e, const RigBody &body, RigAnim &anim,
+                   const Velocity &velocity) {
+        const ActorRig *rig = rigRegistry.Get(body.rig);
+        if (rig == nullptr) return;
+        const float speed =
+            std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        const MaxSpeed *maxSpeed = e.get<MaxSpeed>();
+        const float runThreshold =
+            maxSpeed != nullptr ? maxSpeed->value * 0.6f : 120.0f;
+        const RigClip *clip = RigRender::ChooseClip(*rig, speed, runThreshold);
+        if (clip == nullptr) {
+          anim.clip.clear();
+          anim.time = 0.0f;
+          return;
+        }
+        if (clip->id != anim.clip) {
+          anim.clip = clip->id;
+          anim.time = 0.0f;
+        }
+        anim.time += std::min(GetFrameTime(), 0.1f);
+      });
 }
 
 void Game::ECSInitLogicSystems() {

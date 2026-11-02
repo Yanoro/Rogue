@@ -616,6 +616,10 @@ struct GameSettings {
     // data/sprites/<id>.png, and an id with no art leaves the race's look in
     // place and is reported.
     std::string actorSprite;
+    // ActorRigRegistry id the player is drawn with instead of a single sprite. Empty
+    // keeps the actor sprite (or the race's look). A rig is layered, so equipped items are
+    // drawn over the body and the clips stored in the rig play when the player moves.
+    std::string rig;
     // Top movement speed in pixels per second. Holding a direction adds velocity
     // each frame and the movement system clamps it to this, so this is how fast
     // the player settles at walking, not how quickly they get there. 0 is a
