@@ -63,6 +63,18 @@ const std::vector<Descriptor> &All() {
           nullptr,
       },
       {
+          // Worn equipment. No sprite row: the item has a world object (the object
+          // domain's document) and a worn layer (drawn over a rig); neither is this
+          // domain's own sprite kind.
+          Domain::Equipment,
+          "equipment",
+          "Equipment",
+          "a piece of equipment",
+          "data/items/EQUIPMENTDESIGNER.md",
+          "content.equipmentPromptFile",
+          nullptr,
+      },
+      {
           Domain::ActorSprite,
           "actor_sprite",
           "Actor sprite",

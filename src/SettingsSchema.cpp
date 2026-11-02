@@ -1234,6 +1234,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.generatedRigs",
             "Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only.", &GameSettings::content, &ContentSection::generatedRigs))
         .Restart();
+    add(Field<ValueType::String>("content", "content.generatedItems",
+            "Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only.", &GameSettings::content, &ContentSection::generatedItems))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.equipmentPromptFile",
+            "The equipment designer's instructions: the worn-item reply format and which slots a rig can show.", &GameSettings::content, &ContentSection::equipmentPromptFile))
+        .Restart();
     add(Field<ValueType::String>("content", "content.rigPromptFile",
             "The rig designer's instructions: the humanoid frame and the per-part reply format.", &GameSettings::content, &ContentSection::rigPromptFile))
         .Restart();

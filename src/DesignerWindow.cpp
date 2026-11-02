@@ -846,6 +846,8 @@ static const char *ArtifactNoun(DesignerDomains::Domain domain) {
       return "map";
     case DesignerDomains::Domain::Rig:
       return "rig";
+    case DesignerDomains::Domain::Equipment:
+      return "item";
   }
   return "definition";
 }
@@ -1126,6 +1128,18 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObject = entry.object;
       editedObjectKey = entry.objectKey;
       editedObjectOverlayPath = entry.objectOverlayPath;
+      break;
+    case DesignerDomains::Domain::Equipment:
+      equipmentDraft = entry.equipment;
+      equipmentError.clear();
+      if (equipmentDraft.has_value()) {
+        std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
+                      equipmentDraft->name.c_str());
+        if (game != nullptr && game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
+          const auto rigs = game->rigRegistry.GetAll();
+          equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
+        }
+      }
       break;
     case DesignerDomains::Domain::Rig:
       rigDraft = entry.rig;
@@ -1429,6 +1443,35 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         applied.savedPath = entry.savedPath;
       }
     }
+  } else if (designMode == DesignerDomains::Domain::Equipment) {
+    if (game == nullptr) {
+      reason = "there is no world to validate an item against.";
+    } else {
+      const EquipmentDesigner::ApplyResult result =
+          EquipmentDesigner::ApplyReply(finished.ParsedAnswer());
+      applied.ok = result.ok;
+      applied.error = result.error;
+      applied.name = result.draft.name;
+      applied.notes = result.notes;
+      applied.warnings = result.draft.warnings;
+      if (result.ok) {
+        equipmentDraft = result.draft;
+        equipmentError.clear();
+        std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
+                      result.draft.name.c_str());
+        if (game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
+          const auto rigs = game->rigRegistry.GetAll();
+          equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
+        }
+        equipmentArtMessage =
+            "Item drafted. Draw its worn art, see it on a rig, then save it.";
+        if (autoRequestArt && game->TileArtQueueState().Enabled()) {
+          QueueEquipmentArt();
+        }
+      } else {
+        equipmentError = result.error;
+      }
+    }
   } else if (designMode == DesignerDomains::Domain::Rig) {
     if (game == nullptr) {
       reason = "there is no world to validate a rig against.";
@@ -1563,6 +1606,12 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
       result.domain = designMode;
       result.label = applied.name;
       result.map = mapDraft;
+      CaptureViewed(std::move(result));
+    } else if (designMode == DesignerDomains::Domain::Equipment) {
+      ViewedResult result;
+      result.domain = designMode;
+      result.label = applied.name;
+      result.equipment = equipmentDraft;
       CaptureViewed(std::move(result));
     } else if (designMode == DesignerDomains::Domain::Rig) {
       ViewedResult result;
@@ -2211,7 +2260,7 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
 }
 
 void DesignerWindow::PumpRigArtQueue() {
-  if (!rigDraft.has_value() || rigArtQueue.empty() || game == nullptr) return;
+  if (rigArtQueue.empty() || game == nullptr) return;
   if (session == nullptr || session->IsBusy()) return;
   const RigArtRequest request = rigArtQueue.front();
   rigArtQueue.pop_front();
@@ -2242,6 +2291,7 @@ void DesignerWindow::RefreshRigArtMemo() {
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (!item->wornSprite.empty()) refresh(item->wornSprite);
   }
+  if (equipmentDraft.has_value()) refresh(equipmentDraft->wornSprite);
 }
 
 void DesignerWindow::SaveRig() {
@@ -2266,6 +2316,159 @@ void DesignerWindow::SaveRig() {
                   ". It is now in the Content Editor under Actor rigs.";
   if (game->debugLog) {
     game->debugLog->LogInfo("Rig designer: saved " + savedPath);
+  }
+}
+
+void DesignerWindow::QueueEquipmentArt() {
+  if (!equipmentDraft.has_value() || game == nullptr) return;
+  const EquipmentDesigner::Draft &draft = *equipmentDraft;
+  RigArtRequest request;
+  request.label = draft.name;
+  request.sprite = draft.wornSprite;
+  request.requirement = EquipmentDesigner::WornArtRequirement(draft);
+  rigArtQueue.push_back(std::move(request));
+  equipmentArtMessage = "Queued worn art for " + draft.name + ".";
+}
+
+void DesignerWindow::SaveEquipment() {
+  if (!equipmentDraft.has_value() || game == nullptr) return;
+  EquipmentDesigner::Draft &draft = *equipmentDraft;
+  draft.name = std::string(equipmentNameBuffer);
+  draft.slug = EquipmentDesigner::SlugFor(draft.name);
+  if (draft.slug.empty()) {
+    equipmentArtMessage = "Give the item a name before saving.";
+    return;
+  }
+  const bool existed = game->itemRegistry.Get(draft.slug) != nullptr;
+  std::string savedPath;
+  std::string error;
+  if (!EquipmentDesigner::Save(draft, Settings().content.generatedItems, &savedPath,
+                               &error)) {
+    equipmentArtMessage = error;
+    return;
+  }
+  game->itemRegistry.LoadItems(Settings().content.generatedItems);
+  equipmentArtMessage =
+      "Saved " + savedPath +
+      (existed ? " (the existing item with that id is replaced)" : "") +
+      ". It is now worn by the rig preview in the Content Editor too.";
+  if (game->debugLog) {
+    game->debugLog->LogInfo("Equipment designer: saved " + savedPath);
+  }
+}
+
+void DesignerWindow::DrawEquipmentPreview() {
+  if (!equipmentDraft.has_value()) {
+    ImGui::TextWrapped(
+        "Ask for a piece of worn equipment and its definition and worn-art brief appear "
+        "here. Draw the layer, see it on a rig, then save the item.");
+    ImGui::TextDisabled("For example: \"an iron kettle helm\", \"a patched leather "
+                        "cuirass\".");
+    if (!equipmentError.empty()) {
+      ImGui::Separator();
+      ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
+      ImGui::TextWrapped("%s", equipmentError.c_str());
+      ImGui::PopStyleColor();
+    }
+    return;
+  }
+  EquipmentDesigner::Draft &draft = *equipmentDraft;
+
+  ImGui::TextDisabled("Item");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputText("##equipment_name", equipmentNameBuffer,
+                       sizeof(equipmentNameBuffer))) {
+    draft.name = std::string(equipmentNameBuffer);
+    draft.slug = EquipmentDesigner::SlugFor(draft.name);
+  }
+  if (!draft.description.empty()) {
+    ImGui::TextWrapped("%s", draft.description.c_str());
+  }
+  ImGui::TextDisabled("slot %s | tier %.0f | armor %.0f", draft.slot.c_str(),
+                      static_cast<double>(draft.tier),
+                      static_cast<double>(draft.armor));
+  if (draft.slot == "hand" && draft.damage > 0.0f) {
+    ImGui::TextDisabled("damage %.0f | swing %.2fs | durability %d",
+                        static_cast<double>(draft.damage),
+                        static_cast<double>(draft.swingTime), draft.durability);
+  }
+  if (!draft.tags.empty()) {
+    std::string tags;
+    for (const std::string &tag : draft.tags) {
+      if (!tags.empty()) tags += ", ";
+      tags += tag;
+    }
+    ImGui::TextDisabled("tags: %s", tags.c_str());
+  }
+  if (!draft.hides.empty()) {
+    std::string hides;
+    for (const std::string &part : draft.hides) {
+      if (!hides.empty()) hides += ", ";
+      hides += part;
+    }
+    ImGui::TextDisabled("hides: %s", hides.c_str());
+  }
+  if (!draft.warnings.empty()) {
+    for (const std::string &warning : draft.warnings) {
+      ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.5f, 1.0f), "! %s", warning.c_str());
+    }
+  }
+
+  ImGui::Separator();
+  std::string resolved;
+  const bool drawn = SpriteResolves(std::string(), draft.wornSprite, &resolved);
+  ImGui::Text("%s%s", draft.wornSprite.c_str(), drawn ? "" : "   (no art yet)");
+  ImGui::SameLine();
+  if (ImGui::SmallButton(drawn ? "Redraw worn art" : "Draw worn art")) {
+    QueueEquipmentArt();
+  }
+  ImGui::TextDisabled("%s", draft.wornBrief.c_str());
+
+  // See it on a body: a worn layer with nothing to wear it is not a look yet.
+  ImGui::Separator();
+  const auto rigs = game->rigRegistry.GetAll();
+  if (rigs.empty()) {
+    ImGui::TextDisabled(
+        "No rig is loaded, so there is no body to show the item on. Save a rig first.");
+  } else {
+    int selected = 0;
+    std::vector<const char *> names;
+    for (size_t i = 0; i < rigs.size(); ++i) {
+      names.push_back(rigs[i]->name.c_str());
+      if (rigs[i]->id == equipmentPreviewRig) selected = static_cast<int>(i);
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##equipment_rig", &selected, names.data(),
+                     static_cast<int>(names.size()))) {
+      equipmentPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+    }
+    const ActorRig *rig = game->rigRegistry.Get(equipmentPreviewRig);
+    if (rig != nullptr) {
+      std::vector<RigRender::WornLayer> worn;
+      RigRender::WornLayer layer;
+      layer.label = draft.slug;
+      layer.texture =
+          RigRender::ResolveRigSprite(draft.wornSprite, game->resourceManager);
+      layer.z = draft.wornZ;
+      layer.hides = draft.hides;
+      worn.push_back(std::move(layer));
+      RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+    }
+  }
+
+  ImGui::Separator();
+  const bool exists = game->itemRegistry.Get(draft.slug) != nullptr;
+  if (exists) {
+    ImGui::TextDisabled(
+        "An item with id '%s' already exists; saving replaces it in the world.",
+        draft.slug.c_str());
+  }
+  if (ImGui::Button("Save item")) {
+    SaveEquipment();
+  }
+  if (!equipmentArtMessage.empty()) {
+    ImGui::TextWrapped("%s", equipmentArtMessage.c_str());
   }
 }
 
@@ -4080,6 +4283,8 @@ void DesignerWindow::Draw() {
     DrawMapPreview();
   } else if (shown == DesignerDomains::Domain::Rig) {
     DrawRigPreview();
+  } else if (shown == DesignerDomains::Domain::Equipment) {
+    DrawEquipmentPreview();
   } else {
     DrawPreviewPane();
   }
@@ -4142,6 +4347,11 @@ void DesignerWindow::Draw() {
                               "with one object definition and its own notes; an accepted "
                               "object is written to the generated overlay and is available "
                               "to blueprints and spawns on the next load."
+                      : mode == DesignerDomains::Domain::Equipment
+                            ? "Ask for a piece of equipment -- \"an iron kettle helm\", "
+                              "\"a patched leather cuirass\". The designer replies with "
+                              "its slot, numbers and a brief for how it looks worn; draw "
+                              "that layer and see it on a rig."
                       : mode == DesignerDomains::Domain::Rig
                             ? "Ask for a body -- \"a soot-stained blacksmith\", \"a "
                               "soldier in a patched coat\". The designer replies with a "

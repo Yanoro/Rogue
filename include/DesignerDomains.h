@@ -33,6 +33,9 @@ enum class Domain {
   // pipeline draws. No sprite row and no overlay of its own: a rig is a composition of
   // sprites, not a sprite.
   Rig,
+  // One piece of *worn* equipment: an item definition plus the brief for how it looks on
+  // a rig. The world object it spawns from is the object domain's format, not this one.
+  Equipment,
   // A being's sprite, with no definition turn behind it. The actor already exists (or will
   // be authored by hand); this mode exists so "draw me a baker" produces baker.png rather
   // than a JSON document. It has no sprite descriptor row and no overlay because it is not

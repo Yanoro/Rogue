@@ -12,7 +12,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Nix's gcc wrapper appends -O2 to every compile through NIX_CFLAGS_COMPILE.
 # With no CMAKE_BUILD_TYPE set, nothing overrides it, so the project compiled at
 # -O2 + AddressSanitizer + -g -- the slowest possible combination. Measured on
-# this machine for src/GameECS.cpp:
+# this machine for src/GameECS.cpp (before it was split):
 #
 #   -O2 -g (what an unset build type produced)  231 s   3.5 GiB peak RSS
 #   -O1 -g                                      148 s   3.3 GiB
@@ -31,7 +31,7 @@ endif()
 option(AIROGUE_ASAN "Build with AddressSanitizer" ON)
 
 # Caps per-compiler-process memory with GCC's GC parameters. Measured on
-# src/GameECS.cpp: 55 s / 2.7 GiB normally vs 59 s / 1.5 GiB here -- ~45% less
+# (pre-split) src/GameECS.cpp: 55 s / 2.7 GiB normally vs 59 s / 1.5 GiB here -- ~45% less
 # RAM for ~6% more wall time, which is what makes a high -j safe on a 15 GiB
 # box. -g1 keeps line numbers (ASan stack traces stay readable) but drops
 # local-variable info, so `print` on locals in gdb stops working.
@@ -172,6 +172,13 @@ set(SOURCES
     src/GameDraw.cpp
     src/CombatHud.cpp
     src/GameECS.cpp
+    # GameECS.cpp was one 5.7k-line translation unit (~54 s, 2.7 GiB per compile,
+    # the build's critical path). It is split by responsibility; the symbols they
+    # share are declared in src/GameECSInternals.h, which is internal to these
+    # four files and not part of the include/ surface.
+    src/GameECSCombat.cpp
+    src/GameECSInitSystems.cpp
+    src/GameECSInit.cpp
     src/Map.cpp
     src/OllamaAI.cpp
     src/GeminiAI.cpp
@@ -242,6 +249,7 @@ set(SOURCES
     src/ActorSpriteRegistry.cpp
     src/RigRegistry.cpp
     src/RigDesigner.cpp
+    src/EquipmentDesigner.cpp
     src/NpcTemplateRegistry.cpp
     src/BrainTemplateRegistry.cpp
     src/ArtRequestsPanel.cpp

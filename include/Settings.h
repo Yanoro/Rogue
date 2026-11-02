@@ -691,6 +691,10 @@ struct GameSettings {
     std::string generatedRigs = "data/generated/rigs";
     // The rig designer's instructions: the humanoid frame and the per-part reply format.
     std::string rigPromptFile = "data/rigs/RIGDESIGNER.md";
+    // Item definitions the Designer produced, loaded after data/items.
+    std::string generatedItems = "data/generated/items";
+    // The equipment designer's instructions: the worn-item reply format and slot rules.
+    std::string equipmentPromptFile = "data/items/EQUIPMENTDESIGNER.md";
     // Where the Content Editor writes its overrides, one directory per kind beneath
     // it (tiles/, objects/). Loaded last, so a human edit wins over both the catalog
     // and the generated overlay -- and the hand-authored files stay untouched, which

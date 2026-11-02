@@ -25,6 +25,7 @@
 #include "DesignerWindow.h"
 #include "MapDesigner.hpp"
 #include "RigDesigner.hpp"
+#include "EquipmentDesigner.hpp"
 #include "imgui.h"
 #include "raylib.h"
 #include "rlImGui.h"
@@ -1516,11 +1517,18 @@ std::string Game::DesignerPromptFile(DesignerDomains::Domain domain) const {
   if (domain == DesignerDomains::Domain::Rig) {
     return RigDesigner::BuildSystemPrompt(Settings().content.rigPromptFile);
   }
+  if (domain == DesignerDomains::Domain::Equipment) {
+    return EquipmentDesigner::BuildSystemPrompt(
+        Settings().content.equipmentPromptFile);
+  }
   if (domain == DesignerDomains::Domain::Map) {
     return settings.content.mapPromptFile;
   }
   if (domain == DesignerDomains::Domain::Rig) {
     return settings.content.rigPromptFile;
+  }
+  if (domain == DesignerDomains::Domain::Equipment) {
+    return settings.content.equipmentPromptFile;
   }
   return settings.content.tilePromptFile;
 }
@@ -1540,6 +1548,10 @@ std::string Game::BuildDesignerPrompt(DesignerDomains::Domain domain,
   }
   if (domain == DesignerDomains::Domain::Rig) {
     return RigDesigner::BuildSystemPrompt(Settings().content.rigPromptFile);
+  }
+  if (domain == DesignerDomains::Domain::Equipment) {
+    return EquipmentDesigner::BuildSystemPrompt(
+        Settings().content.equipmentPromptFile);
   }
   if (domain == DesignerDomains::Domain::Map) {
     // The map prompt needs both vocabularies: the legend names tiles, and objects are

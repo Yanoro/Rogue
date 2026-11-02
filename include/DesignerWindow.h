@@ -28,6 +28,7 @@
 #include "MapDesigner.hpp"
 #include "MapPreview.hpp"
 #include "RigDesigner.hpp"
+#include "EquipmentDesigner.hpp"
 #include "SpriteKinds.hpp"
 #include "SpriteRouter.hpp"
 #include "TileRegistry.h"
@@ -350,6 +351,10 @@ private:
     // the draft is the thing worth keeping in the history.
     std::optional<RigDesigner::Draft> rig;
 
+    // Equipment: an item definition and its worn-art brief. The world object it would
+    // spawn from is not part of this domain.
+    std::optional<EquipmentDesigner::Draft> equipment;
+
     // Tile: by name, because the editor writes *through* a pointer into the registry.
     // The entry is therefore the asset's identity rather than a snapshot: re-accepting
     // "stone floor" updates this view too, which is the right answer for a name that
@@ -388,6 +393,17 @@ private:
     std::string label;
   };
   std::optional<RigDesigner::Draft> rigDraft;
+
+  // The equipment draft and its worn-art request. The preview composes it on one of the
+  // rigs in the registry, because a worn item with no body is just a number.
+  void DrawEquipmentPreview();
+  void QueueEquipmentArt();
+  void SaveEquipment();
+  std::optional<EquipmentDesigner::Draft> equipmentDraft;
+  std::string equipmentError;
+  std::string equipmentArtMessage;
+  std::string equipmentPreviewRig;
+  char equipmentNameBuffer[96] = {};
   std::string rigError;
   std::string rigArtMessage;
   std::deque<RigArtRequest> rigArtQueue;

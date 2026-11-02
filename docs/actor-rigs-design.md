@@ -101,6 +101,34 @@ A drafted rig is saved with **Save rig** into `content.generatedRigs`
 The pane also warns when a layer has no art yet; a blank preview is not a state the user
 should have to diagnose.
 
+## Equipment generation
+
+The Designer's **Equipment** domain generates a worn item: its definition and the brief
+for how it looks on a rig.
+
+```json
+{ "name": "Iron Kettle Helm", "slot": "head", "tier": 2, "armor": 2,
+  "tags": ["armor", "iron"],
+  "worn": { "brief": "a rounded iron cap with a nose guard", "hides": ["hair"] } }
+```
+
+- **Slots are the rig-wearable ones**: head, torso, legs, feet, hand. Anything else is
+  refused with a reason, because there is no worn layer to draw.
+- `worn.sprite` is `worn_<slug>`, `z` is fixed per slot (feet 45, legs 50, torso 60, head
+  100, hand 110) so a model cannot layer a helmet behind the hair, and `hides` is validated
+  against the canonical rig parts.
+- Hand items may carry `damage`, `swingTime` and `durability`; a hand item with damage 0
+  is a tool and gets a warning, not a refusal.
+- The pane draws the worn layer on a chosen rig (dropdown) and queues the worn art through
+  the same sprite-document path as a rig layer, respecting "Art automatically".
+- **Save item** writes `content.generatedItems` (`data/generated/items`), loaded after
+  `data/items`. An existing item with the same id is replaced in the world, and the pane
+  says so.
+
+What an equipment reply does **not** include is the world object template — the thing that
+makes an item spawnable in a room. That format belongs to the object designer, and until it
+exists a generated item can be worn in previews but not placed by an agent.
+
 ## What this slice does not do
 
 - **No equipment lookup.** The preview is a manual outfit: it does not read `Equipped`
@@ -110,8 +138,8 @@ should have to diagnose.
   a rig for an entity yet. The renderer is ready, the attachment is not.
 - **No animation, no anchors.** The rig has no pivots, and the DSL has no timing (see
   `docs/pixel-dsl.md` §8). A swing needs `arm_right` and the worn sword to move together.
-- **No equipment *definitions*.** Worn art can be redrawn for items that already carry a
-  `worn` block; inventing a new helmet (slot, armour, hides) is a separate domain.
+- **No world object for generated equipment.** An item can be worn in a preview; it
+  cannot spawn in a room until its object template is made with the Object domain.
 - **No world rendering or equipment lookup** still: a saved rig is visible in the
   Content Editor and the Designer, not on a spawned actor.
 
