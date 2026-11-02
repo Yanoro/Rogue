@@ -68,6 +68,9 @@ private:
   void SelectMap(int index);
   void RefreshPreview();
   void SwitchToSelected();
+  // The red confirmation shown before a map file is removed. Separate window, like
+  // the Map Editor's content deletion: a destructive question is not a menu item.
+  void DrawDeleteConfirmation();
 
   Game* game;
   // Result of the last "Make current map default" press, shown under the button.
@@ -82,6 +85,14 @@ private:
   // "Refresh Map List" (or simply waiting) shows the new version.
   std::filesystem::file_time_type previewModified{};
   std::string lastSwitchMessage;
+
+  // Pixels per cell in the preview; 0 means "fit the pane". Reset on selection so a
+  // zoom chosen for one map does not carry to a differently sized one.
+  float previewZoom = 0.0f;
+
+  // The file waiting on confirmation. Empty when nothing is queued.
+  std::string pendingDeletePath;
+  std::string pendingDeleteName;
 
   // The window is compact until a map is selected, then grows to fit the preview.
   // `sizeApplied` tracks which of the two sizes is in effect so resizing happens

@@ -242,31 +242,76 @@ inline std::string Count(int value, const char *singular, const char *plural) {
   return std::to_string(value) + " " + (value == 1 ? singular : plural);
 }
 
-// Draws the map fitted into `maxWidth` x `maxHeight`, in the current window. One
-// cell is as large as fits, so a 20x20 map and a 64x64 map both fill the pane
-// without a zoom control. Hovering a cell names it.
+// Draws the map in a scrollable pane. `zoom` is pixels per cell; 0 means "fit the
+// pane", which is what a freshly selected map uses. The mouse wheel changes it
+// around the cell under the cursor and the scrollbars pan -- the wheel cannot also
+// scroll, because it is the zoom gesture.
 inline void Draw(const Info &info, ResourceManager &resources,
-                 const ObjectFactory *objects, float maxWidth, float maxHeight) {
+                 const ObjectFactory *objects, float *zoom, float maxWidth,
+                 float maxHeight) {
   if (!info.valid || info.width <= 0 || info.height <= 0) {
     ImGui::TextDisabled("%s", info.error.empty() ? "No preview available."
                                                  : info.error.c_str());
     return;
   }
-  if (maxWidth <= 0.0f || maxHeight <= 0.0f) return;
+  if (maxWidth <= 0.0f || maxHeight <= 0.0f || zoom == nullptr) return;
 
-  const float cell = std::max(
+  const float fitCell = std::max(
       1.0f, std::floor(std::min(maxWidth / info.width, maxHeight / info.height)));
-  const ImVec2 canvasSize(info.width * cell, info.height * cell);
+  float cell = (*zoom > 0.0f) ? std::clamp(*zoom, 1.0f, 64.0f) : fitCell;
 
-  // One child for the canvas so the draw list is clipped to it and the hover test
-  // stays inside the map. Everything is drawn before the Dummy: the Dummy only
-  // reserves the layout box, and screen-space coordinates do not depend on it.
-  ImGui::BeginChild("##map-canvas", ImVec2(0.0f, canvasSize.y + 4.0f),
-                    ImGuiChildFlags_Borders);
-  const ImVec2 origin = ImGui::GetCursorScreenPos();
-  const ImVec2 bottomRight(origin.x + canvasSize.x, origin.y + canvasSize.y);
+  // NoScrollWithMouse: the wheel belongs to zoom, so the child must not also act on
+  // it. The scrollbars still pan, and SetScroll below moves them.
+  ImGui::BeginChild("##map-canvas", ImVec2(maxWidth, maxHeight),
+                    ImGuiChildFlags_Borders,
+                    ImGuiWindowFlags_HorizontalScrollbar |
+                        ImGuiWindowFlags_NoScrollWithMouse);
+  const ImVec2 start = ImGui::GetCursorScreenPos();
+  const float oldScrollX = ImGui::GetScrollX();
+  const float oldScrollY = ImGui::GetScrollY();
+  float originX = start.x;
+  float originY = start.y;
+  float drawCell = cell;
+
+  const ImVec2 mouse = ImGui::GetIO().MousePos;
+  if (ImGui::IsWindowHovered()) {
+    const float wheel = ImGui::GetIO().MouseWheel;
+    if (wheel != 0.0f) {
+      const float next =
+          std::clamp(cell * (wheel > 0.0f ? 1.25f : 0.8f), 1.0f, 64.0f);
+      if (next != cell) {
+        // Keep the cell under the cursor where it is: the content coordinate under
+        // the mouse is unchanged, so the scroll has to absorb the scale change.
+        const float contentX = mouse.x - start.x;
+        const float contentY = mouse.y - start.y;
+        const float newScrollX = oldScrollX + (contentX / cell) * next - contentX;
+        const float newScrollY = oldScrollY + (contentY / cell) * next - contentY;
+        *zoom = next;
+        drawCell = next;
+        ImGui::SetScrollX(std::max(0.0f, newScrollX));
+        ImGui::SetScrollY(std::max(0.0f, newScrollY));
+        // The scroll takes effect at the next Begin, so draw at the origin it will
+        // produce rather than making the picture jump for one frame.
+        originX = start.x + oldScrollX - std::max(0.0f, newScrollX);
+        originY = start.y + oldScrollY - std::max(0.0f, newScrollY);
+      }
+    }
+    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+      // Double-click fits again, the same gesture as double-clicking a row switches.
+      *zoom = 0.0f;
+      drawCell = fitCell;
+      ImGui::SetScrollX(0.0f);
+      ImGui::SetScrollY(0.0f);
+      originX = start.x;
+      originY = start.y;
+    }
+  }
+
+  const ImVec2 canvasSize(info.width * drawCell, info.height * drawCell);
+  const ImVec2 bottomRight(originX + canvasSize.x, originY + canvasSize.y);
   ImDrawList *draw = ImGui::GetWindowDrawList();
-  draw->AddRectFilled(origin, bottomRight, IM_COL32(18, 18, 20, 255));
+  draw->AddRectFilled(ImVec2(originX, originY), bottomRight,
+                      IM_COL32(18, 18, 20, 255));
 
   // Resolve each palette entry's sprite once rather than once per cell: a 64x64 map
   // is 4096 cells and most of them share a handful of textures.
@@ -278,14 +323,14 @@ inline void Draw(const Info &info, ResourceManager &resources,
                                        nullptr);
   }
 
-  const bool drawGlyphs = cell >= 10.0f;
+  const bool drawGlyphs = drawCell >= 10.0f;
   for (int x = 0; x < info.width; ++x) {
     for (int y = 0; y < info.height; ++y) {
       const size_t index = static_cast<size_t>(x) * info.height + y;
       if (index >= info.cells.size()) continue;
       const int entry = info.cells[index];
-      const ImVec2 topLeft(origin.x + x * cell, origin.y + y * cell);
-      const ImVec2 cellBottomRight(topLeft.x + cell, topLeft.y + cell);
+      const ImVec2 topLeft(originX + x * drawCell, originY + y * drawCell);
+      const ImVec2 cellBottomRight(topLeft.x + drawCell, topLeft.y + drawCell);
 
       if (entry < 0 || static_cast<size_t>(entry) >= info.palette.size()) {
         draw->AddRectFilled(topLeft, cellBottomRight, IM_COL32(40, 40, 44, 255));
@@ -305,7 +350,7 @@ inline void Draw(const Info &info, ResourceManager &resources,
       bool drewSprite = false;
       if (const Texture2D *texture = textures[static_cast<size_t>(entry)]) {
         const SpriteRect fit =
-            SpriteFitRect(*texture, topLeft.x, topLeft.y, cell, cell);
+            SpriteFitRect(*texture, topLeft.x, topLeft.y, drawCell, drawCell);
         if (fit.width > 0.0f && fit.height > 0.0f) {
           draw->AddImage(
               static_cast<ImTextureID>(static_cast<std::intptr_t>(texture->id)),
@@ -318,8 +363,8 @@ inline void Draw(const Info &info, ResourceManager &resources,
         const char glyph[2] = {definition.character, '\0'};
         const ImVec2 size = ImGui::CalcTextSize(glyph);
         const ImVec2 textPos(
-            std::round(topLeft.x + (cell - size.x) * 0.5f),
-            std::round(topLeft.y + (cell - size.y) * 0.5f));
+            std::round(topLeft.x + (drawCell - size.x) * 0.5f),
+            std::round(topLeft.y + (drawCell - size.y) * 0.5f));
         const Color ink = definition.hasCharacterColor
                               ? definition.characterColor
                               : Color{255, 255, 255, 255};
@@ -331,6 +376,7 @@ inline void Draw(const Info &info, ResourceManager &resources,
       }
     }
   }
+
   // Objects last, over the terrain they stand on. Resolved per type rather than per
   // object, and through the same pair of lookups the blueprint preview uses: the
   // template's own "sprite" override, then the convention path for the type, then
@@ -364,8 +410,10 @@ inline void Draw(const Info &info, ResourceManager &resources,
       }
       if (texture == nullptr) continue;
 
-      const ImVec2 topLeft(origin.x + object.x * cell, origin.y + object.y * cell);
-      const SpriteRect fit = SpriteFitRect(*texture, topLeft.x, topLeft.y, cell, cell);
+      const ImVec2 topLeft(originX + object.x * drawCell,
+                           originY + object.y * drawCell);
+      const SpriteRect fit =
+          SpriteFitRect(*texture, topLeft.x, topLeft.y, drawCell, drawCell);
       if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
       draw->AddImage(
           static_cast<ImTextureID>(static_cast<std::intptr_t>(texture->id)),
@@ -373,15 +421,14 @@ inline void Draw(const Info &info, ResourceManager &resources,
     }
   }
 
-  draw->AddRect(origin, bottomRight, IM_COL32(90, 90, 96, 255));
+  draw->AddRect(ImVec2(originX, originY), bottomRight, IM_COL32(90, 90, 96, 255));
 
   // Hover: name the cell under the cursor. A map is a picture of its tiles, and
   // "which tile is that" is otherwise unanswerable at four pixels per cell.
-  const ImVec2 mouse = ImGui::GetIO().MousePos;
-  if (ImGui::IsWindowHovered() && mouse.x >= origin.x && mouse.y >= origin.y &&
+  if (ImGui::IsWindowHovered() && mouse.x >= originX && mouse.y >= originY &&
       mouse.x < bottomRight.x && mouse.y < bottomRight.y) {
-    const int x = static_cast<int>((mouse.x - origin.x) / cell);
-    const int y = static_cast<int>((mouse.y - origin.y) / cell);
+    const int x = static_cast<int>((mouse.x - originX) / drawCell);
+    const int y = static_cast<int>((mouse.y - originY) / drawCell);
     const size_t index = static_cast<size_t>(x) * info.height + y;
     std::string label = "(erased)";
     if (index < info.cells.size()) {
@@ -396,7 +443,8 @@ inline void Draw(const Info &info, ResourceManager &resources,
         break;
       }
     }
-    ImGui::SetTooltip("%s\n(%d, %d)", label.c_str(), x, y);
+    ImGui::SetTooltip("%s\n(%d, %d)\nscroll to zoom, double-click to fit",
+                      label.c_str(), x, y);
   }
 
   ImGui::Dummy(canvasSize);
