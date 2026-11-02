@@ -513,6 +513,30 @@ bool Game::CastSkillshotAim() {
 }
 
 void Game::UpdateGUI() {
+  // A pending NPC spawn owns the next world click. It runs before aim and before
+  // normal targeting so a placement click cannot also lock a target or cast.
+  if (pendingNpcSpawn.active) {
+    if (map == nullptr) {
+      pendingNpcSpawn.active = false;
+      npcSpawnerStatus = "No map is loaded.";
+      return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      pendingNpcSpawn.active = false;
+      npcSpawnerStatus = "Spawn canceled.";
+      return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      const Vector2 mouseWorld = GetScreenToWorld2D(GetMousePosition(), camera);
+      const GamePosition position =
+          map->ScreenCoordsToGameCoords(mouseWorld.x, mouseWorld.y);
+      SpawnPendingNpcAt(position);
+      return;
+    }
+  }
+
   // Aim is resolved before targeting: a left-click that confirms a skillshot must
   // not also lock a target or commit a blueprint. Right-click and Esc cancel; the
   // early return keeps the world interaction from also firing on the same click.
@@ -996,7 +1020,10 @@ void Game::handleInput() {
   // Esc has two meanings: cancel an aim, otherwise close the game. Raylib's exit
   // key is disabled in Init so the aim state gets the press first.
   if (IsKeyPressed(KEY_ESCAPE)) {
-    if (playerEntity.has<SkillshotAim>()) {
+    if (pendingNpcSpawn.active) {
+      pendingNpcSpawn.active = false;
+      npcSpawnerStatus = "Spawn canceled.";
+    } else if (playerEntity.has<SkillshotAim>()) {
       CancelSkillshotAim();
     } else {
       quitRequestedFlag = true;
@@ -1444,6 +1471,7 @@ void Game::LoadContentOverrides() {
   };
   loadRegistryOverrides(root / "npcs", "npc template", npcTemplateRegistry);
   loadRegistryOverrides(root / "brains", "brain", brainTemplateRegistry);
+  loadRegistryOverrides(root / "icons", "icon", iconRegistry);
 }
 
 std::string Game::BuildDesignerSystemPrompt() const {
@@ -1522,7 +1550,8 @@ std::string Game::BuildDesignerPrompt(DesignerDomains::Domain domain,
   // An actor sprite has no definition prompt at all: its instructions are the sprite
   // document's. Without this the header (and `--designer-prompt actor_sprite`) reported
   // the *blueprint* prompt for a mode that never produces a blueprint.
-  if (domain == DesignerDomains::Domain::ActorSprite) {
+  if (domain == DesignerDomains::Domain::ActorSprite ||
+      domain == DesignerDomains::Domain::Icon) {
     return TileDesigner::BuildSpriteDocumentSystemPrompt(
         Settings().content.spriteDSLPromptFile, PixelDSL::Config{}.rampsPath);
   }
@@ -2199,7 +2228,8 @@ size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // same one the regeneration just overwrote, so without this the Content Editor keeps
   // drawing the old image over the new file.
   size_t updated = 0;
-  if (job.kind == SpriteKinds::Kind::Actor) {
+  if (job.kind == SpriteKinds::Kind::Actor ||
+      job.kind == SpriteKinds::Kind::Icon) {
     ForgetSpriteMemo(std::string(), job.conventionId);
   } else if (job.kind == SpriteKinds::Kind::Object) {
     updated = RefreshObjectVisuals(job.conventionId);
@@ -2211,12 +2241,14 @@ size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // sprite, which is normal for something designed and not placed, and is the difference
   // between "the swap failed" and "there was nothing to swap yet". Said in the log because
   // otherwise both look identical from outside.
-  const char *unit = job.kind == SpriteKinds::Kind::Actor
-                         ? " actor(s)"
+  const char *unit = (job.kind == SpriteKinds::Kind::Actor ||
+                      job.kind == SpriteKinds::Kind::Icon)
+                         ? " sprite(s)"
                          : (job.kind == SpriteKinds::Kind::Object ? " entity(ies)"
                                                                  : " cell(s)");
-  const char *unplaced = job.kind == SpriteKinds::Kind::Actor
-                             ? " (no actor spawn path yet)"
+  const char *unplaced = (job.kind == SpriteKinds::Kind::Actor ||
+                          job.kind == SpriteKinds::Kind::Icon)
+                             ? " (no spawned entities; the sprite is re-resolved)"
                              : (job.kind == SpriteKinds::Kind::Object
                                     ? " (nothing spawned from it yet)"
                                     : " (the tile is not on the map yet)");

@@ -43,6 +43,18 @@ struct NpcTemplate {
   // BrainTemplateRegistry id. Empty means no brain: the NPC is spawned with a
   // body and no agent, which is the non-LLM case.
   std::string brain;
+  // "neutral" or "aggressive". Aggressive attacks on sight; Neutral does not
+  // initiate, and only fights back when it also has `retaliates`.
+  std::string disposition = "neutral";
+  bool retaliates = false;
+  // The simple melee controller's profile. These are per-instance values once
+  // spawned; editing them never writes back to the template unless the user
+  // saves through the Content Editor.
+  float attackDamage = 8.0f;
+  float attackInterval = 6.0f;
+  // CombatStrategyRegistry id used by the non-LLM chase/tactic layer. Empty
+  // means hold position, which is the pre-strategy behavior.
+  std::string combatStrategy;
   std::vector<SlotSpec> slots;
   std::vector<ItemStack> inventory;
   std::vector<StartingSkill> startingSkills;

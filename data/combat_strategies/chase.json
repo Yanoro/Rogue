@@ -1,0 +1,7 @@
+{
+  "name": "Chase",
+  "description": "Close the distance to the aggressor with A* and keep pressing until within melee range.",
+  "behavior": "chase",
+  "preferredRange": 1.0,
+  "repathSeconds": 0.5
+}

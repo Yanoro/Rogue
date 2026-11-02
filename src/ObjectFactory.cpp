@@ -148,6 +148,7 @@ void ObjectFactory::RegisterDefaultComponents() {
   // ParameterSpecs is not type-checked -- both are quiet failures this metadata exists to
   // prevent.
   RecordComponentInfo("Interactable", {}, "it can be used");
+  RecordComponentInfo("Corpse", {}, "it is the remains left by a dead NPC");
   RecordComponentInfo("Obstacle", {}, "it blocks movement");
   // Independent of Obstacle on purpose: a glass wall is solid and transparent, and
   // tall grass is the other way round. docs/spatial-memory-design.md section 4.3.
@@ -239,6 +240,7 @@ void ObjectFactory::RegisterDefaultComponents() {
   });
 
   RegisterComponent<Interactable>("Interactable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Interactable>(); });
+  RegisterComponent<Corpse>("Corpse", [](flecs::entity obj, const nlohmann::json&) { obj.add<Corpse>(); });
   RegisterComponent<Obstacle>("Obstacle", [](flecs::entity obj, const nlohmann::json&) { obj.add<Obstacle>(); });
   RegisterComponent<BlocksVision>("BlocksVision", [](flecs::entity obj, const nlohmann::json&) { obj.add<BlocksVision>(); });
   RegisterComponent<Structural>("Structural", [](flecs::entity obj, const nlohmann::json&) { obj.add<Structural>(); });

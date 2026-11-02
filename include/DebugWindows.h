@@ -204,6 +204,27 @@ private:
 // A developer tool, not a diegetic capability: it renders NPCs' task lists
 // because a human with a debug build should see everything, and no agent can read
 // another's list through any in-world path (section 10).
+class NpcSpawnerWindow : public Window {
+public:
+  explicit NpcSpawnerWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+  std::string selectedTemplate;
+  int brainMode = 0;  // 0 template default, 1 none, 2 specific
+  std::string selectedBrain;
+  int strategyMode = 0;  // 0 template default, 1 none (hold), 2 specific
+  std::string selectedStrategy;
+  int stance = 0;     // 0 Neutral, 1 Aggressive
+  bool retaliates = false;
+  float spawnHealth = 0.0f;
+  float spawnSpeed = 0.0f;
+  float spawnDamage = 0.0f;
+  float spawnInterval = 0.0f;
+  flecs::entity selectedActor = flecs::entity::null();
+  std::string lastTemplate;
+};
+
 class TaskBoardWindow : public Window {
 public:
   explicit TaskBoardWindow(Game* game);

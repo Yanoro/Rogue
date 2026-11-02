@@ -1,5 +1,6 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "Game.h"
+#include "IconPaths.hpp"
 
 #include "Components.h"
 #include "CombatResolver.hpp"
@@ -472,9 +473,8 @@ void Game::DrawCombatHud() {
         }
 
         if (def != nullptr) {
-          if (const Texture2D *icon =
-                  ResolveSpriteReference(def->icon, resourceManager,
-                                         debugLog.get())) {
+          if (const Texture2D *icon = IconPaths::ResolveIconTexture(
+                  iconRegistry, resourceManager, def->icon, debugLog.get())) {
             DrawSpriteImGui(*icon, a + ImVec2(6, 6),
                             ImVec2(kSlotSize - 12.0f, kSlotSize - 12.0f));
           } else {

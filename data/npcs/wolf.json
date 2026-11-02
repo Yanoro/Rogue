@@ -11,5 +11,6 @@
     "attack": {
       "level": 2
     }
-  }
+  },
+  "combatStrategy": "chase"
 }

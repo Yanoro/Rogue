@@ -433,6 +433,10 @@ private:
   // sprite document, and the name typed beside the mode becomes its filename.
   void SendActorSpriteRequest(const std::string &description);
   char actorSpriteNameBuffer[64] = {};
+  // The icon counterpart: creates the IconRegistry entry and then asks the icon
+  // sprite-document turn for its art.
+  void SendIconRequest(const std::string &description);
+  char iconNameBuffer[64] = {};
 
   // Applies the rewritten brief for the current mode to the Improve button, so an
   // improved request is enriched inside the vocabulary it will actually be built with.

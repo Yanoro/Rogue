@@ -4,7 +4,8 @@
 #include "Game.h"
 #include "Settings.h"
 #include "SpriteDraw.hpp"
-#include "SpritePicker.hpp"
+#include "ActorSpritePicker.hpp"
+#include "IconPicker.hpp"
 #include "SpritePaths.hpp"
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -382,6 +383,11 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
 
   if (field.path == "player.actorSprite") {
     DrawPlayerActorSpriteRow(field);
+    return;
+  }
+
+  if (field.path == "combat.deathIcon") {
+    DrawDeathIconRow(field);
     return;
   }
 
@@ -1069,6 +1075,36 @@ void SettingsWindow::SelectActorSprite(
   overrideCacheDirty = true;
 }
 
+void SettingsWindow::SelectDeathIcon(
+    const SettingsSchema::FieldSpec &field, const std::string &id) {
+  std::string message;
+  const bool saved =
+      ApplySettingValue(SettingsFilePath(), field.path, id, message);
+  Report(saved, message);
+  overrideCacheDirty = true;
+}
+
+void SettingsWindow::DrawDeathIconRow(
+    const SettingsSchema::FieldSpec &field) {
+  GameSettings &settings = MutableSettings();
+  const std::string current =
+      *static_cast<std::string *>(field.access(settings));
+
+  ImGui::PushID(field.path.c_str());
+  ImGui::TextUnformatted(field.Label().c_str());
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
+  }
+  ImGui::SameLine(240.0f);
+  const std::optional<std::string> selected = IconPicker::Draw(
+      game->iconRegistry, game->resourceManager, current,
+      "##death-icon", iconFilter, /*allowNone=*/false, game->debugLog.get());
+  if (selected.has_value()) {
+    SelectDeathIcon(field, *selected);
+  }
+  ImGui::PopID();
+}
+
 void SettingsWindow::DrawPlayerActorSpriteRow(
     const SettingsSchema::FieldSpec &field) {
   GameSettings &settings = MutableSettings();
@@ -1081,77 +1117,11 @@ void SettingsWindow::DrawPlayerActorSpriteRow(
     ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
   }
   ImGui::SameLine(240.0f);
-  ImGui::SetNextItemWidth(190.0f);
-  ImGui::InputTextWithHint("##filter", "filter sprites", &actorSpriteFilter);
-  ImGui::SameLine();
-  ImGui::Checkbox("without art", &showActorSpritesWithoutArt);
-  ImGui::SameLine();
-  ImGui::TextDisabled("%s", current.empty() ? "(race default)" : current.c_str());
-
-  std::vector<SpritePicker::Item> items;
-  std::vector<std::string> keys;
-  const auto addCell = [&](const std::string &key, const std::string &label,
-                           const std::string &description,
-                           const std::string &placeholder,
-                           const Texture2D *texture) {
-    SpritePicker::Item item;
-    item.label = label;
-    item.description = description;
-    item.placeholder = placeholder;
-    item.texture = texture;
-    item.selected = (current == key);
-    items.push_back(std::move(item));
-    keys.push_back(key);
-  };
-
-  addCell(std::string(), "Race default",
-          "The race's own look, and then the ASCII art.", "race", nullptr);
-
-  const std::string needle = Lower(actorSpriteFilter);
-  const auto matches = [&needle](const std::string &id, const std::string &name,
-                                 const std::string &description) {
-    if (needle.empty()) return true;
-    return Lower(id).find(needle) != std::string::npos ||
-           Lower(name).find(needle) != std::string::npos ||
-           Lower(description).find(needle) != std::string::npos;
-  };
-
-  int shown = 0;
-  for (const ActorSpriteDef *definition : game->actorSpriteRegistry.GetAll()) {
-    const std::string name =
-        definition->name.empty() ? definition->id : definition->name;
-    if (!matches(definition->id, name, definition->description)) continue;
-    const Texture2D *texture =
-        ResolveSpriteTexture(std::string(), definition->id, game->resourceManager,
-                             nullptr);
-    if (texture == nullptr && !showActorSpritesWithoutArt) continue;
-    addCell(definition->id, name, definition->description, "?", texture);
-    ++shown;
-  }
-
-  SpritePicker::Options options;
-  options.cell = 52.0f;
-  options.rows = 3;
-  options.childId = "##player-actor-sprites";
-  const int clicked = SpritePicker::Draw(items, options);
-  if (clicked >= 0) {
-    SelectActorSprite(field, keys[clicked]);
-  }
-
-  if (shown == 0) {
-    // Distinguish "the filter hides everything" from "the catalogue has no art
-    // yet", because the second is the state a fresh checkout is in and the fix is
-    // somewhere else entirely.
-    if (game->actorSpriteRegistry.Count() == 0) {
-      ImGui::TextDisabled(
-          "No actor sprites are registered (data/actor_sprites).");
-    } else if (actorSpriteFilter.empty() && !showActorSpritesWithoutArt) {
-      ImGui::TextDisabled(
-          "No actor sprite has art yet. Generate them in the Content Editor's "
-          "actor sprites, or tick \"without art\".");
-    } else {
-      ImGui::TextDisabled("No actor sprites match.");
-    }
+  const std::optional<std::string> selected = ActorSpritePicker::Draw(
+      game->actorSpriteRegistry, game->resourceManager, current,
+      "##player-actor-sprites", actorSpriteFilter, showActorSpritesWithoutArt);
+  if (selected.has_value()) {
+    SelectActorSprite(field, *selected);
   }
   ImGui::PopID();
 }

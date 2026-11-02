@@ -334,6 +334,9 @@ inline const Color DEFAULT_ACTION_BAR_FILL = {90, 210, 90, 255};
 // attack is deliberately exempt and runs on its own weapon timer, so these two
 // numbers are what make combat feel continuous rather than turn-based.
 constexpr float DEFAULT_GLOBAL_COOLDOWN_SECONDS = 1.5f;
+constexpr float DEFAULT_SKILL_RANGE_PULSE_SECONDS = 0.8f;
+constexpr float DEFAULT_SKILL_RANGE_POST_CAST_SECONDS = 0.25f;
+constexpr float DEFAULT_MOVEMENT_EPSILON = 0.01f;
 // What a character with nothing in hand hits for, and how fast. Deliberately
 // weak: a weapon is meant to be the difference.
 constexpr float DEFAULT_UNARMED_DAMAGE = 2.0f;

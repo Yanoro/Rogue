@@ -6,6 +6,7 @@
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
+#include "IconPaths.hpp"
 #include "SkillshotPath.hpp"
 #include "GapLog.h"
 #include "LogPaths.h"
@@ -231,17 +232,40 @@ static void GiveBody(flecs::entity character, const RaceRegistry *races,
                               ? race->art
                               : DefaultHumanoidArt());
 
-  // A sprite replaces that art when one resolves; when none does, AttachSprite
-  // leaves the AsciiArt above in place and the character keeps the ASCII look.
-  // The NPC's own "sprite" wins, the race's is the fallback, and the race id is
-  // also the convention id -- so data/sprites/human.png, if it ever exists, gives
-  // every human a look with no JSON at all. The player passes no sprite path and
-  // takes the same route.
+  // A sprite replaces that art when one resolves; when none does, the
+  // AsciiArt above remains and the character keeps the ASCII look.
+  //
+  // `sprite` is an ActorSpriteRegistry id or an explicit image path, not only a
+  // path. AttachSprite's first argument is an explicit path, which is why passing
+  // an actor id such as "wolf" used to fail and fall through to the race's human
+  // look. Resolve the reference through the same path-or-convention rule the
+  // Content Editor and portraits use.
+  const auto attachReference = [&](const std::string &reference) {
+    if (reference.empty()) return false;
+    const bool explicitPath =
+        reference.find('/') != std::string::npos ||
+        reference.find('\\') != std::string::npos ||
+        (reference.size() > 4 &&
+         reference.compare(reference.size() - 4, 4, ".png") == 0);
+    std::string resolved;
+    const Texture2D *texture =
+        explicitPath
+            ? ResolveSpriteTexture(reference, std::string(), resources, debugLog,
+                                   &resolved)
+            : ResolveSpriteTexture(std::string(), reference, resources, debugLog,
+                                   &resolved);
+    if (texture == nullptr) return false;
+    character.set<Sprite>(Sprite{resolved});
+    return true;
+  };
+
   const std::string raceSprite = race != nullptr ? race->sprite : std::string();
   const std::string conventionId = race != nullptr ? race->id : std::string();
-  AttachSprite(character,
-               authorizedSprite.empty() ? raceSprite : authorizedSprite,
-               conventionId, resources, debugLog);
+  const std::string ownSprite =
+      authorizedSprite.empty() ? raceSprite : authorizedSprite;
+  if (!attachReference(ownSprite)) {
+    attachReference(conventionId);
+  }
 }
 
 // TODO: Adding checks to see if we are not repeating values seems like a good
@@ -257,6 +281,13 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
   // fill it: context outranks a template, but never overrides the map, which is
   // the one place an instance can say something different from its definition.
   const bool mapAuthoredBackground = !data.background.empty();
+
+  if (data.suppressBrain) {
+    data.brain.clear();
+  }
+  if (data.suppressCombatStrategy) {
+    data.combatStrategy.clear();
+  }
 
   if (!data.npcTemplate.empty()) {
     const NpcTemplate *definition = npcTemplateRegistry.Get(data.npcTemplate);
@@ -279,10 +310,25 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       }
       if (data.startingStats.empty()) data.startingStats = definition->startingStats;
       if (data.equipped.empty()) data.equipped = definition->equipped;
-      if (data.brain.empty()) data.brain = definition->brain;
+      if (!data.suppressBrain && data.brain.empty()) {
+        data.brain = definition->brain;
+      }
+      data.disposition = definition->disposition;
+      data.retaliates = definition->retaliates;
+      data.attackDamage = definition->attackDamage;
+      data.attackInterval = definition->attackInterval;
+      if (!data.suppressCombatStrategy && data.combatStrategy.empty()) {
+        data.combatStrategy = definition->combatStrategy;
+      }
     }
   }
 
+  if (data.suppressBrain) {
+    data.brain.clear();
+  }
+  if (data.suppressCombatStrategy) {
+    data.combatStrategy.clear();
+  }
   if (data.brain.empty()) {
     return;
   }
@@ -342,6 +388,31 @@ bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
   return true;
 }
 
+// The registries every resolution needs, gathered in one place so a call site
+// cannot forget one and silently resolve as if nothing had any effect. Any of
+// them may be absent in a half-initialised world; the fallbacks keep the failure
+// mode "nothing changes" rather than "nothing works".
+struct ResolutionInputs {
+  SourceDefinitions definitions;
+  const HookRegistry *hooks = nullptr;
+};
+
+ResolutionInputs MakeResolutionInputs(flecs::world world) {
+  auto statsRes = world.get<StatRegistryResource>();
+  auto skillRes = world.get<SkillRegistryResource>();
+  auto itemRes = world.get<ItemRegistryResource>();
+  auto hooksRes = world.get<HookRegistryResource>();
+
+  static const HookRegistry noHooks;
+  ResolutionInputs inputs;
+  inputs.definitions = SourceDefinitions(
+      statsRes ? statsRes->registry : nullptr,
+      skillRes ? skillRes->registry : nullptr,
+      itemRes ? itemRes->registry : nullptr);
+  inputs.hooks = (hooksRes && hooksRes->hooks) ? hooksRes->hooks : &noHooks;
+  return inputs;
+}
+
 flecs::entity Game::createNPC(const NPCData &data) {
   const GamePosition &pos = data.position;
   std::string name = data.name;
@@ -374,7 +445,9 @@ flecs::entity Game::createNPC(const NPCData &data) {
           .set<Facing>({})
           .set<Acceleration>({0, 0})
           .set<Friction>({DEFAULT_ENTITY_FRICTION})
-          .set<WindowOnClick>({WindowType::NPCContextWindowType})
+          // The EntityInfo fallback is replaced with NPCContext only when a
+          // brain is actually attached. A brainless wolf has no agent context
+          // window to show.
           .add<BlocksTile>();
 
   entity.add<Actor>();
@@ -431,6 +504,40 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
+  // Combat state. NPCs used to be bodies with stats but no health; the debug
+  // spawner and real hostility need the same Vitals the player resolves.
+  {
+    const ResolutionInputs inputs = MakeResolutionInputs(entity.world());
+    const FoldResult maxHealth = ResolveMaxHealth(entity, inputs.definitions);
+    const float ceiling = std::max(1.0f, maxHealth.value);
+    entity.set<Vitals>({ceiling, ceiling});
+  }
+  entity.set<MaxSpeed>({DEFAULT_MAXSPEED});
+
+  Disposition stance = Disposition::Neutral;
+  if (data.disposition == "aggressive") {
+    stance = Disposition::Aggressive;
+  }
+  entity.set<NpcDisposition>({stance});
+  if (data.retaliates) {
+    entity.add<Retaliates>();
+  }
+
+  // Every NPC carries the melee profile even while Neutral. The controller skips
+  // Neutral entities, so flipping the stance (or retaliating) starts it without
+  // rebuilding the entity or losing the authored numbers.
+  Aggressive attack;
+  attack.damage = data.attackDamage > 0.0f ? data.attackDamage : 8.0f;
+  attack.interval = data.attackInterval > 0.0f ? data.attackInterval : 6.0f;
+  entity.set<Aggressive>(attack);
+
+  // The tactic layer is for brainless bodies only: a brain-driven character's
+  // movement belongs to its agent. An unknown id is left on the component so the
+  // system can report/ignore it rather than silently substituting another tactic.
+  if (data.brain.empty() && !data.combatStrategy.empty()) {
+    entity.set<CombatStrategy>({data.combatStrategy, 0.0f});
+  }
+
   // Portrait identity: authored on this NPC, else the people's default. An id the
   // registry does not know is not an error here -- the HUD draws the unknown
   // sprite -- so a typo costs a face, not a spawn.
@@ -463,54 +570,205 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
-  std::string characterNames = "";
-
-  if (characterNames.length() >= 2) {
-    characterNames.erase(characterNames.length() - 2);
-  }
-
-  // Format-then-short-description, one entry per visible command. The same
-  // builder produces the bare [HELP] reply, so the list the model is spawned
-  // with and the list [HELP] prints cannot drift apart. The template already
-  // supplies the blank line that follows the list.
-  std::string commandsList = GlobalCommandRegistry::BuildVisibleCommandList();
-
-  std::regex re2("%BACKGROUND%");
-  std::regex re3("%CHARACTERS%");
-  std::regex re4("%COMMANDS_LIST%");
-
-  // The template is the compiled-in DEFAULT_NPC_PROMPT unless settings.ai
-  // supplied a file. Either way the same placeholders are substituted, so an
-  // authored prompt cannot silently lose the live command list.
-  //
-  // There is no place list here any more: a character must ask [PLACES] and can
-  // be wrong. Handing every agent the map's names at spawn was the known gap in
-  // docs/place-derivation-design.md section 10.
-  const std::string &promptTemplate = Settings().ai.npcPromptTemplate.empty()
-                                          ? DEFAULT_NPC_PROMPT
-                                          : Settings().ai.npcPromptTemplate;
-
-  std::string startingPrompt = promptTemplate;
-  startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
-  startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
-  startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
-  startingPrompt += "\n";
-  entity.set<NPCContext>({ {{"system", startingPrompt}}, ""});
-
-  if (name == "") {
-    flecs::entity_t id = entity.id();
-    name = "NPC " + std::to_string(id);
+  if (name.empty()) {
+    name = "NPC " + std::to_string(entity.id());
   }
   entity.set<DisplayName>({name});
   entity.set<NameTagColor>({BLUE});
-  entity.set_name(name.c_str());
+  // Flecs names are unique. The display name is intentionally shared -- two
+  // wolves are both "Wolf" -- so the entity identity gets the id suffix while
+  // every human-facing label keeps using DisplayName.
+  const std::string entityName = name + " #" + std::to_string(entity.id());
+  entity.set_name(entityName.c_str());
 
-  auto brain = std::make_unique<AgentBrain>(entity, name, debugLog.get());
-  brain->SetMemorySalience(systemOneClassifier.get(),
-                           Settings().ai.memorySalience);
-  brain->isStopped = debugWindowState ? debugWindowState->GetStopAllAI() : false;
-  entity.set<AgentBrainWrapper>({std::move(brain)});
+  // A brain is what makes the character LLM-driven. No brain id means a body
+  // with no agent: it can still fight (the disposition controller is a C++
+  // component), but it has no NPCContext and no AgentBrainWrapper.
+  if (!data.brain.empty()) {
+    std::string characterNames = "";
+    if (characterNames.length() >= 2) {
+      characterNames.erase(characterNames.length() - 2);
+    }
+
+    // Format-then-short-description, one entry per visible command. The same
+    // builder produces the bare [HELP] reply, so the list the model is spawned
+    // with and the list [HELP] prints cannot drift apart. The template already
+    // supplies the blank line that follows the list.
+    std::string commandsList = GlobalCommandRegistry::BuildVisibleCommandList();
+
+    std::regex re2("%BACKGROUND%");
+    std::regex re3("%CHARACTERS%");
+    std::regex re4("%COMMANDS_LIST%");
+
+    // The template is the compiled-in DEFAULT_NPC_PROMPT unless settings.ai
+    // supplied a file. Either way the same placeholders are substituted, so an
+    // authored prompt cannot silently lose the live command list.
+    //
+    // There is no place list here any more: a character must ask [PLACES] and
+    // can be wrong. Handing every agent the map's names at spawn was the known
+    // gap in docs/place-derivation-design.md section 10.
+    const std::string &promptTemplate = Settings().ai.npcPromptTemplate.empty()
+                                            ? DEFAULT_NPC_PROMPT
+                                            : Settings().ai.npcPromptTemplate;
+
+    std::string startingPrompt = promptTemplate;
+    startingPrompt = std::regex_replace(startingPrompt, re2, characterBackground);
+    startingPrompt = std::regex_replace(startingPrompt, re3, characterNames);
+    startingPrompt = std::regex_replace(startingPrompt, re4, commandsList);
+    startingPrompt += "\n";
+    entity.set<NPCContext>({ {{"system", startingPrompt}}, ""});
+
+    auto brain = std::make_unique<AgentBrain>(entity, name, debugLog.get());
+    brain->SetMemorySalience(systemOneClassifier.get(),
+                             Settings().ai.memorySalience);
+    brain->isStopped =
+        debugWindowState ? debugWindowState->GetStopAllAI() : false;
+    entity.set<AgentBrainWrapper>({std::move(brain)});
+  }
   return entity;
+}
+
+flecs::entity Game::SpawnNpc(NPCData data) {
+  // The caller resolves the template and applies instance overrides first;
+  // resolving again here would overwrite a per-spawn stance or attack profile.
+  flecs::entity npc = createNPC(data);
+  if (!npc.is_alive()) {
+    return npc;
+  }
+  if (auto factoryRes = ecs.get<ObjectFactoryResource>()) {
+    if (factoryRes->factory != nullptr) {
+      factoryRes->factory->SpawnInventory(ecs, npc, data.inventory);
+    }
+  }
+  return npc;
+}
+
+void Game::SpawnPendingNpcAt(GamePosition position) {
+  const PendingNpcSpawn request = pendingNpcSpawn;
+  npcSpawnerStatus.clear();
+
+  if (!map) {
+    npcSpawnerStatus = "No map is loaded.";
+    return;
+  }
+  if (!map->IsInBounds(static_cast<float>(position.x),
+                       static_cast<float>(position.y)) ||
+      map->IsBlocked(position.x, position.y)) {
+    npcSpawnerStatus = "Tile (" + std::to_string(position.x) + "," +
+                       std::to_string(position.y) +
+                       ") is blocked; click a free tile.";
+    return;
+  }
+
+  NPCData data;
+  data.position = position;
+  data.npcTemplate = request.npcTemplate;
+  data.brain = request.brain;
+  data.suppressBrain = request.suppressBrain;
+  ResolveNpcTemplate(data);
+
+  // The window's stance/attack choices are per-instance overrides, applied after
+  // the template has filled its own defaults.
+  data.disposition = request.aggressive ? "aggressive" : "neutral";
+  data.retaliates = request.retaliates;
+  if (request.suppressCombatStrategy) {
+    data.combatStrategy.clear();
+  } else if (!request.combatStrategy.empty()) {
+    data.combatStrategy = request.combatStrategy;
+  }
+  if (request.attackDamage > 0.0f) {
+    data.attackDamage = request.attackDamage;
+  }
+  if (request.attackInterval > 0.0f) {
+    data.attackInterval = request.attackInterval;
+  }
+
+  flecs::entity npc = SpawnNpc(data);
+  if (!npc.is_alive()) {
+    npcSpawnerStatus = "The NPC could not be created.";
+    pendingNpcSpawn.active = false;
+    return;
+  }
+  pendingNpcSpawn.active = false;
+
+  if (request.health > 0.0f) {
+    if (Vitals *vitals = npc.get_mut<Vitals>()) {
+      vitals->maxHealth = request.health;
+      vitals->health = request.health;
+    }
+  }
+  if (request.speed > 0.0f) {
+    npc.set<MaxSpeed>({request.speed});
+  }
+
+  std::string npcName = "NPC";
+  if (const DisplayName *displayName = npc.get<DisplayName>()) {
+    npcName = displayName->name;
+  }
+  npcSpawnerStatus = "Spawned " + npcName + " at (" +
+                     std::to_string(position.x) + "," +
+                     std::to_string(position.y) + ").";
+  if (debugLog) {
+    debugLog->LogInfo("NPC spawner: " + npcSpawnerStatus);
+  }
+}
+
+void Game::KillEntity(flecs::entity entity) {
+  if (!entity.is_alive() || entity.has<PlayerControlled>() ||
+      entity.has<TrainingDummy>()) {
+    return;
+  }
+
+  entity.add<Dead>();
+  const GamePosition *position = entity.get<GamePosition>();
+  std::string name = "NPC";
+  if (const DisplayName *displayName = entity.get<DisplayName>()) {
+    name = displayName->name;
+  }
+
+  // Spawn the corpse before destroying the body: it needs the death tile and
+  // the held items still attached. The corpse template deliberately has no
+  // Interactable and no Obstacle, so it is scenery the player can walk over and
+  // cannot interact with yet.
+  flecs::entity corpse = flecs::entity::null();
+  auto factoryRes = ecs.get<ObjectFactoryResource>();
+  flecs::entity mapEntity = ecs.lookup("CurrentMap");
+  if (factoryRes && factoryRes->factory != nullptr && map != nullptr &&
+      position != nullptr && mapEntity.is_alive()) {
+    corpse = factoryRes->factory->SpawnObject(
+        ecs, mapEntity, map.get(), "corpse", *position, false);
+  }
+
+  if (corpse.is_alive()) {
+    corpse.add<Corpse>();
+    std::vector<flecs::entity> held;
+    entity.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+    for (flecs::entity child : held) {
+      if (!child.is_alive()) {
+        continue;
+      }
+      entity.remove<Holds>(child);
+      child.child_of(corpse);
+      corpse.add<Holds>(child);
+    }
+  } else if (debugLog) {
+    debugLog->LogError("Death: could not spawn a corpse for " + name + ".");
+  }
+
+  // A dead caster's committed action must not survive the body.
+  if (const Casting *casting = entity.get<Casting>()) {
+    const flecs::entity action = casting->actionEntity;
+    if (action.is_alive()) {
+      action.destruct();
+    }
+  }
+  entity.remove<Casting>();
+  entity.remove<Busy>();
+
+  if (debugLog) {
+    debugLog->LogCombat(name + " dies.");
+  }
+  entity.destruct();
 }
 
 void Game::ECSInitRenderSystems() {
@@ -759,6 +1017,77 @@ void Game::ECSInitOverlaySystems() {
           DrawLineEx(a, b, 2.0f, DEFAULT_SKILLSHOT_AIM_EDGE);
         }
         DrawCircleV(aim.path.back(), 5.0f, DEFAULT_SKILLSHOT_AIM_TIP);
+      });
+
+  // Cast range and the positions from which a movement-enabled cast keeps its
+  // locked target in range. Chebyshev tiles, matching WithinActivationRange.
+  ecs.system<SkillRangeIndicator, GamePosition>("SkillRangeIndicatorRender")
+      .kind<Render>()
+      .each([this](flecs::entity entity,
+                   const SkillRangeIndicator &indicator,
+                   const GamePosition &casterPosition) {
+        if (!Settings().combat.showSkillRanges || map == nullptr ||
+            indicator.rangeTiles <= 0.0f) {
+          return;
+        }
+        const int range =
+            std::max(1, static_cast<int>(std::ceil(indicator.rangeTiles)));
+        const float tileWidth = static_cast<float>(map->GetTileWidth());
+        const float tileHeight = static_cast<float>(map->GetTileHeight());
+        const Color castColour = {90, 170, 255, 165};
+        const Color movementColour = {120, 230, 140, 125};
+        const Color movementFill = {120, 230, 140, 20};
+
+        const auto drawTile = [&](int x, int y, Color colour, bool filled) {
+          if (!map->IsInBounds(static_cast<float>(x),
+                               static_cast<float>(y))) {
+            return;
+          }
+          const ScreenPosition tile =
+              map->GameCoordsToScreenCoords(x, y);
+          const Rectangle rect = {tile.x, tile.y, tileWidth, tileHeight};
+          if (filled) {
+            DrawRectangleRec(rect, colour);
+          } else {
+            DrawRectangleLinesEx(rect, 1.5f, colour);
+          }
+        };
+
+        // Cast range: the boundary of the caster's square.
+        for (int dy = -range; dy <= range; ++dy) {
+          for (int dx = -range; dx <= range; ++dx) {
+            if (std::max(std::abs(dx), std::abs(dy)) != range) continue;
+            drawTile(casterPosition.x + dx, casterPosition.y + dy, castColour,
+                     false);
+          }
+        }
+
+        // Valid caster positions: tiles from which the target is still in the
+        // skill's range. A disabled-movement skill cancels on any step, so it
+        // deliberately shows only the cast ring, not a misleading safe area.
+        if (!indicator.movementArea || !indicator.target.is_alive()) {
+          return;
+        }
+        const GamePosition *targetPosition =
+            indicator.target.get<GamePosition>();
+        if (targetPosition == nullptr) {
+          return;
+        }
+        if (range <= 2) {
+          for (int dy = -range; dy <= range; ++dy) {
+            for (int dx = -range; dx <= range; ++dx) {
+              drawTile(targetPosition->x + dx, targetPosition->y + dy,
+                       movementFill, true);
+            }
+          }
+        }
+        for (int dy = -range; dy <= range; ++dy) {
+          for (int dx = -range; dx <= range; ++dx) {
+            if (std::max(std::abs(dx), std::abs(dy)) != range) continue;
+            drawTile(targetPosition->x + dx, targetPosition->y + dy,
+                     movementColour, false);
+          }
+        }
       });
 
   // Floating change numbers (XP today, damage later). Registered last so they
@@ -1746,30 +2075,6 @@ std::vector<std::string> RollLootTable(flecs::entity actor,
   return dropped;
 }
 
-// The registries every resolution needs, gathered in one place so a call site
-// cannot forget one and silently resolve as if nothing had any effect. Any of
-// them may be absent in a half-initialised world; the fallbacks keep the failure
-// mode "nothing changes" rather than "nothing works".
-struct ResolutionInputs {
-  SourceDefinitions definitions;
-  const HookRegistry *hooks = nullptr;
-};
-
-ResolutionInputs MakeResolutionInputs(flecs::world world) {
-  auto statsRes = world.get<StatRegistryResource>();
-  auto skillRes = world.get<SkillRegistryResource>();
-  auto itemRes = world.get<ItemRegistryResource>();
-  auto hooksRes = world.get<HookRegistryResource>();
-
-  static const HookRegistry noHooks;
-  ResolutionInputs inputs;
-  inputs.definitions = SourceDefinitions(
-      statsRes ? statsRes->registry : nullptr,
-      skillRes ? skillRes->registry : nullptr,
-      itemRes ? itemRes->registry : nullptr);
-  inputs.hooks = (hooksRes && hooksRes->hooks) ? hooksRes->hooks : &noHooks;
-  return inputs;
-}
 
 // Comma-joined list of item type ids. Empty when there are none, so each caller
 // can decide how to phrase "nothing" (harvest says "nothing", crafting says
@@ -2006,6 +2311,50 @@ bool InterruptCast(flecs::entity target) {
   return true;
 }
 
+// Cancels a committed cast for a reason other than damage: the target moved out
+// of range or vanished. This is intentionally not gated on `interruptible` --
+// interruptibility is about damage, while an invalid target is a hard range
+// requirement. The cooldown already started at cast start and is not refunded,
+// matching damage interrupts and the existing "a cast spends the skill" rule.
+bool CancelCast(flecs::entity target, const std::string &callout) {
+  Casting *casting = target.get_mut<Casting>();
+  if (casting == nullptr) {
+    return false;
+  }
+  const flecs::entity action = casting->actionEntity;
+  target.remove<Casting>();
+  SpawnFloatingCallout(target, callout, DEFAULT_INTERRUPT_CALL_OUT_COLOR);
+  if (const Busy *busy = target.get<Busy>()) {
+    if (busy->actionEntity == action) {
+      target.remove<Busy>();
+    }
+  }
+  if (action.is_alive()) {
+    flecs::world world = target.world();
+    world.defer([action]() {
+      if (action.is_alive()) {
+        action.destruct();
+      }
+    });
+  }
+  return true;
+}
+
+// A movement-locked cast forces the player to a stop before the wind-up starts.
+// Clearing the path as well as velocity matters: a held direction and a clicked
+// path are two different movement sources, and either one resuming cancels the
+// cast in CastMovementCancelSystem.
+void StopPlayerMovement(flecs::entity actor) {
+  actor.remove<MOVE_THROUGH_PATH_ACTION>();
+  actor.remove<PendingPlayerInteraction>();
+  if (Velocity *velocity = actor.get_mut<Velocity>()) {
+    *velocity = {0.0f, 0.0f};
+  }
+  if (Acceleration *acceleration = actor.get_mut<Acceleration>()) {
+    *acceleration = {0.0f, 0.0f};
+  }
+}
+
 // Applies one resolved hit: fold, armour, floating text, the dummy/player reset,
 // and an optional interrupt.
 //
@@ -2050,6 +2399,19 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
                ")";
   }
   message += ".";
+
+  // Neutral + Retaliates is the defensive case: the first player hit flips the
+  // stance, and the existing melee controller starts using the profile it was
+  // spawned with. Neutral without the tag stays out of the fight.
+  if (targetVitals->health > 0.0f && target.has<Retaliates>() &&
+      actor.has<PlayerControlled>()) {
+    if (NpcDisposition *disposition = target.get_mut<NpcDisposition>();
+        disposition != nullptr &&
+        disposition->value == Disposition::Neutral) {
+      disposition->value = Disposition::Aggressive;
+      message += " " + targetLabel + " turns on you.";
+    }
+  }
 
   if (targetVitals->health <= 0.0f) {
     if (target.has<TrainingDummy>()) {
@@ -2329,9 +2691,13 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   // spent the skill, which is what makes interrupting worth doing.
   cooldowns->Start(skillId, cooldownSeconds);
   if (def->activation.gcd) {
-    globalCooldown->remaining = def->activation.gcdSeconds > 0.0f
-                                    ? def->activation.gcdSeconds
-                                    : DEFAULT_GLOBAL_COOLDOWN_SECONDS;
+    // 0 is a deliberate "no global cooldown"; only the negative sentinel falls
+    // back to the character default. This is what lets Ice Lance with
+    // cooldown 0 / gcdSeconds 0 actually be usable again immediately.
+    globalCooldown->remaining =
+        def->activation.gcdSeconds >= 0.0f
+            ? def->activation.gcdSeconds
+            : DEFAULT_GLOBAL_COOLDOWN_SECONDS;
   }
 
   // An aimed skill needs a heading, not a target. A caller with no mouse (the
@@ -2351,20 +2717,41 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   const std::string actorLabel =
       secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
 
+  if (def->activation.requiresTarget && def->activation.rangeTiles > 0.0f) {
+    SkillRangeIndicator indicator;
+    indicator.rangeTiles = def->activation.rangeTiles;
+    indicator.remaining =
+        def->activation.castSeconds > 0.0f
+            ? def->activation.castSeconds +
+                  DEFAULT_SKILL_RANGE_POST_CAST_SECONDS
+            : DEFAULT_SKILL_RANGE_PULSE_SECONDS;
+    indicator.target = target;
+    indicator.movementArea = def->activation.canCastWhileMoving;
+    actor.set<SkillRangeIndicator>(indicator);
+  }
+
   if (def->activation.castSeconds > 0.0f) {
+    CastAction committed{skillId,       def->name, baseDamage,
+                          def->activation.interruptible, secondPerson, aim};
+    committed.requiresTarget = def->activation.requiresTarget;
+    committed.rangeTiles = def->activation.rangeTiles;
     flecs::entity action =
         actor.world()
             .entity()
             .set<ActionTimer>({def->activation.castSeconds})
             .set<ActionActor>({actor})
-            .set<CastAction>({skillId, def->name, baseDamage,
-                              def->activation.interruptible, secondPerson,
-                              aim});
+            .set<CastAction>(committed);
     if (def->activation.requiresTarget) {
       action.set<ActionTarget>({target});
     }
+    const bool movementLocked =
+        !def->activation.canCastWhileMoving && actor.has<PlayerControlled>();
+    if (movementLocked) {
+      StopPlayerMovement(actor);
+    }
     actor.set<Casting>(
-        {action, skillId, def->name, def->activation.interruptible});
+        {action, skillId, def->name, def->activation.interruptible,
+         movementLocked});
     actor.set<Busy>({action});
 
     outcome.used = true;
@@ -2590,15 +2977,17 @@ bool Game::ActivatePlayerSkill(int index, Vector2 direction) {
   if (bar == nullptr || index >= static_cast<int>(bar->ids.size())) {
     return false;
   }
+  // Copy before UseSkill: committing a cast adds Casting/Busy, which moves the
+  // player to a new archetype and invalidates a reference into SkillBar.
+  const std::string skillId = bar->ids[static_cast<size_t>(index)];
 
   flecs::entity target = flecs::entity::null();
   if (const LockedTarget *lock = playerEntity.get<LockedTarget>()) {
     target = lock->target;
   }
 
-  const SkillUseOutcome outcome = UseSkill(
-      playerEntity, bar->ids[static_cast<size_t>(index)], target, true, true,
-      direction);
+  const SkillUseOutcome outcome =
+      UseSkill(playerEntity, skillId, target, true, true, direction);
   if (debugLog && !outcome.message.empty()) {
     debugLog->LogCombat(outcome.message);
   }
@@ -2647,13 +3036,17 @@ int Game::RunCombatSelfCheck() {
     std::cout << "combat-check: the player has no skill bar\n";
     return 1;
   }
+  // Copy the ids: starting and canceling casts adds/removes Casting and Busy,
+  // which moves the player's archetype and invalidates a raw SkillBar* held
+  // across progress().
+  const std::vector<std::string> barIds = bar->ids;
 
   // Slots are looked up by id, not by index: every new skill file re-sorts the
   // bar, and a check that hardcoded "slot 1" would silently start testing
   // Fireball the day Fireball was added.
   auto slotOf = [&](const std::string &id) {
-    for (size_t i = 0; i < bar->ids.size(); ++i) {
-      if (bar->ids[i] == id) {
+    for (size_t i = 0; i < barIds.size(); ++i) {
+      if (barIds[i] == id) {
         return static_cast<int>(i);
       }
     }
@@ -2695,6 +3088,13 @@ int Game::RunCombatSelfCheck() {
 
   const bool hasCastSkill = heavySlot >= 0;
   const bool castStarted = hasCastSkill && ActivatePlayerSkill(heavySlot);
+  bool castRangeIndicator = false;
+  if (const SkillRangeIndicator *indicator =
+          playerEntity.get<SkillRangeIndicator>()) {
+    castRangeIndicator = indicator->rangeTiles == 1.0f &&
+                         indicator->movementArea &&
+                         indicator->target == dummy;
+  }
   const float healthBeforeCast = dummy.get<Vitals>()->health;
   bool castResolved = false;
   if (const Casting *casting = playerEntity.get<Casting>()) {
@@ -2707,6 +3107,53 @@ int Game::RunCombatSelfCheck() {
       ecs.progress();
       castResolved = dummy.get<Vitals>()->health < healthBeforeCast;
     }
+  }
+
+  // A targeted cast must be canceled when the target leaves its range during the
+  // wind-up, not merely fizzle when the timer completes. Move both position
+  // components: a GamePosition-only edit is reverted from ScreenPosition by the
+  // logic-phase sync, which is exactly the trap this test exposed.
+  bool castRangeStarted = false;
+  bool castRangeCanceled = !hasCastSkill;
+  if (hasCastSkill) {
+    clearCooldowns();
+    SetPlayerTarget(dummy);
+    castRangeStarted = ActivatePlayerSkill(heavySlot);
+    if (castRangeStarted) {
+      const GamePosition original = *dummy.get<GamePosition>();
+      const GamePosition far = {beside.x + 6, beside.y + 6};
+      dummy.set<GamePosition>(far);
+      if (map != nullptr) {
+        dummy.set<ScreenPosition>(map->GameCoordsToScreenCoords(far.x, far.y));
+      }
+      ecs.progress();
+      castRangeCanceled = !playerEntity.has<Casting>();
+      dummy.set<GamePosition>(original);
+      if (map != nullptr) {
+        dummy.set<ScreenPosition>(
+            map->GameCoordsToScreenCoords(original.x, original.y));
+      }
+      clearCooldowns();
+    }
+  }
+
+  // A movement-locked cast is canceled by resuming movement. This is the
+  // synthetic route because the loaded skill content leaves the option at its
+  // default (true/free movement).
+  bool movementCanceled = false;
+  {
+    flecs::entity action =
+        ecs.entity()
+            .set<ActionTimer>({1.0f})
+            .set<ActionActor>({playerEntity})
+            .set<CastAction>(
+                {std::string(), "Test Cast", 1.0f, true, false});
+    playerEntity.set<Casting>(
+        {action, std::string(), "Test Cast", true, true});
+    playerEntity.set<Velocity>({10.0f, 0.0f});
+    ecs.progress();
+    movementCanceled = !playerEntity.has<Casting>();
+    playerEntity.set<Velocity>({0.0f, 0.0f});
   }
 
   // Interrupt: put a cast on the dummy and kick it apart. The kick is instant and
@@ -2784,6 +3231,289 @@ int Game::RunCombatSelfCheck() {
     }
   }
 
+  // A cooldown-0 / gcdSeconds-0 Ice Lance must leave both clocks empty. Only
+  // assert this when the loaded content actually declares that combination;
+  // a checkout with the authored 8 s cooldown leaves the check vacuous rather
+  // than failing for unrelated content.
+  bool iceCooldownClear = true;
+  if (iceSlot >= 0) {
+    const SkillDef *ice = FindSkillDef(playerEntity.world(), "ice_lance");
+    if (ice != nullptr && ice->activation.cooldownSeconds <= 0.0f &&
+        ice->activation.gcd && ice->activation.gcdSeconds == 0.0f) {
+      const SkillCooldowns *cooldowns = playerEntity.get<SkillCooldowns>();
+      const GlobalCooldown *gcd = playerEntity.get<GlobalCooldown>();
+      iceCooldownClear =
+          cooldowns != nullptr &&
+          cooldowns->RemainingFor("ice_lance") <= 0.0f &&
+          gcd != nullptr && gcd->remaining <= 0.0f;
+    }
+  }
+
+  // NPC spawn/retaliation smoke: one brainless wolf and one brain-driven
+  // blacksmith. This exercises the spawn path the debug window uses, including
+  // Vitals, MaxSpeed, the Neutral/Retaliates flip, and the brain/no-brain split.
+  bool npcSpawned = false;
+  bool npcRetaliated = false;
+  bool npcBrainless = false;
+  bool npcBrainDriven = false;
+  bool npcDuplicateName = false;
+  bool npcSprite = false;
+  bool npcStrategy = false;
+  bool npcEntityInfoWindow = false;
+  bool npcBrainContextWindow = false;
+  bool npcChase = false;
+  bool corpseSpawned = false;
+  bool corpseNonInteractable = false;
+  bool corpseHoldsLoot = false;
+  bool corpseHasDeathSprite = false;
+  bool deathIconSwitch = false;
+  bool iconRegistryReady = false;
+  bool iconFallback = false;
+  GamePosition npcPos = beside;
+  if (map != nullptr) {
+    const int offsets[][2] = {{-1, 0}, {1, 0},  {0, -1}, {0, 1},
+                              {-1, -1}, {1, 1}, {-1, 1}, {1, -1}};
+    for (const auto& offset : offsets) {
+      const GamePosition candidate = {beside.x + offset[0],
+                                      beside.y + offset[1]};
+      if (map->IsInBounds(static_cast<float>(candidate.x),
+                          static_cast<float>(candidate.y)) &&
+          !map->IsBlocked(candidate.x, candidate.y)) {
+        npcPos = candidate;
+        break;
+      }
+    }
+  }
+  {
+    NPCData data;
+    data.position = npcPos;
+    data.npcTemplate = "wolf";
+    ResolveNpcTemplate(data);
+    data.disposition = "neutral";
+    data.retaliates = true;
+    flecs::entity npc = SpawnNpc(data);
+    if (npc.is_alive()) {
+      npcSpawned = npc.has<Vitals>() && npc.has<MaxSpeed>() &&
+                   npc.has<NpcDisposition>() && npc.has<Retaliates>() &&
+                   npc.has<Aggressive>();
+      npcBrainless = !npc.has<AgentBrainWrapper>();
+      npcSprite = npc.has<Sprite>();
+      const CombatStrategy* strategy = npc.get<CombatStrategy>();
+      npcStrategy = strategy != nullptr && strategy->id == "chase";
+      const WindowOnClick* clickWindow = npc.get<WindowOnClick>();
+      npcEntityInfoWindow =
+          clickWindow != nullptr &&
+          clickWindow->type == WindowType::EntityInfoWindowType;
+      if (npc.has<Vitals>()) {
+        const float before = npc.get<Vitals>()->health;
+        ApplyHit(playerEntity, npc, 1, "", "Test", true, false);
+        const Vitals* after = npc.get<Vitals>();
+        const NpcDisposition* stance = npc.get<NpcDisposition>();
+        npcRetaliated = after != nullptr && after->health < before &&
+                        stance != nullptr &&
+                        stance->value == Disposition::Aggressive;
+      }
+
+      // The regression this exercise exists for: two instances share the display
+      // name "Wolf". Flecs entity names are unique, so this must not abort.
+      NPCData duplicate = data;
+      flecs::entity second = SpawnNpc(duplicate);
+      if (second.is_alive()) {
+        npcDuplicateName = true;
+        std::vector<flecs::entity> secondHeld;
+        second.each<Holds>(
+            [&](flecs::entity child) { secondHeld.push_back(child); });
+        for (flecs::entity child : secondHeld) {
+          if (child.is_alive()) child.destruct();
+        }
+        second.destruct();
+      }
+
+      std::vector<flecs::entity> held;
+      npc.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+      for (flecs::entity child : held) {
+        if (child.is_alive()) child.destruct();
+      }
+      npc.destruct();
+    }
+  }
+  bool npcPendingSpawn = false;
+  {
+    pendingNpcSpawn = PendingNpcSpawn{};
+    pendingNpcSpawn.active = true;
+    pendingNpcSpawn.npcTemplate = "wolf";
+    pendingNpcSpawn.suppressBrain = true;
+    pendingNpcSpawn.aggressive = true;
+    pendingNpcSpawn.retaliates = false;
+    SpawnPendingNpcAt(npcPos);
+
+    flecs::entity spawned = flecs::entity::null();
+    ecs.filter<Actor, GamePosition, NpcDisposition>().each(
+        [&](flecs::entity entity, const Actor&, const GamePosition& position,
+            NpcDisposition& disposition) {
+          if (spawned.is_alive() || position.x != npcPos.x ||
+              position.y != npcPos.y) {
+            return;
+          }
+          if (disposition.value == Disposition::Aggressive &&
+              !entity.has<AgentBrainWrapper>()) {
+            spawned = entity;
+          }
+        });
+    if (spawned.is_alive()) {
+      npcPendingSpawn = true;
+      std::vector<flecs::entity> held;
+      spawned.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+      for (flecs::entity child : held) {
+        if (child.is_alive()) child.destruct();
+      }
+      spawned.destruct();
+    }
+  }
+  {
+    NPCData data;
+    data.position = npcPos;
+    data.npcTemplate = "blacksmith";
+    ResolveNpcTemplate(data);
+    data.disposition = "neutral";
+    data.retaliates = false;
+    flecs::entity npc = SpawnNpc(data);
+    if (npc.is_alive()) {
+      npcBrainDriven = npc.has<AgentBrainWrapper>() && npc.has<Vitals>();
+      const WindowOnClick* clickWindow = npc.get<WindowOnClick>();
+      npcBrainContextWindow =
+          clickWindow != nullptr &&
+          clickWindow->type == WindowType::NPCContextWindowType;
+      std::vector<flecs::entity> held;
+      npc.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+      for (flecs::entity child : held) {
+        if (child.is_alive()) child.destruct();
+      }
+      npc.destruct();
+    }
+  }
+
+  // Chase smoke: a far-away, already-Aggressive brainless wolf must arm an A*
+  // path through the real movement component. This is the behavior the strategy
+  // registry exists for; checking only the component would miss a dead system.
+  {
+    GamePosition chasePos = beside;
+    bool found = false;
+    if (map != nullptr) {
+      for (int radius = 3; radius <= 8 && !found; ++radius) {
+        for (int dx = -radius; dx <= radius && !found; ++dx) {
+          for (int dy = -radius; dy <= radius && !found; ++dy) {
+            if (std::max(std::abs(dx), std::abs(dy)) != radius) continue;
+            const GamePosition candidate = {beside.x + dx, beside.y + dy};
+            if (!map->IsInBounds(static_cast<float>(candidate.x),
+                                 static_cast<float>(candidate.y)) ||
+                map->IsBlocked(candidate.x, candidate.y)) {
+              continue;
+            }
+            chasePos = candidate;
+            found = true;
+          }
+        }
+      }
+    }
+    if (found) {
+      NPCData data;
+      data.position = chasePos;
+      data.npcTemplate = "wolf";
+      ResolveNpcTemplate(data);
+      data.disposition = "aggressive";
+      data.retaliates = false;
+      data.combatStrategy = "chase";
+      flecs::entity chaser = SpawnNpc(data);
+      if (chaser.is_alive()) {
+        ecs.progress();
+        npcChase = chaser.has<CombatStrategy>() &&
+                   chaser.has<MOVE_THROUGH_PATH_ACTION>();
+        std::vector<flecs::entity> held;
+        chaser.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+        for (flecs::entity child : held) {
+          if (child.is_alive()) child.destruct();
+        }
+        chaser.destruct();
+      }
+    }
+  }
+
+  // Death lifecycle: a zero-health NPC becomes a non-blocking, non-interactable
+  // corpse at its death tile, and its held item moves to the corpse.
+  {
+    NPCData data;
+    data.position = npcPos;
+    data.npcTemplate = "wolf";
+    ResolveNpcTemplate(data);
+    data.disposition = "neutral";
+    data.retaliates = false;
+    data.inventory.push_back({"bread", 1});
+    flecs::entity victim = SpawnNpc(data);
+    if (victim.is_alive()) {
+      if (Vitals *vitals = victim.get_mut<Vitals>()) {
+        vitals->health = 0.0f;
+      }
+      ecs.progress();
+
+      flecs::entity deadCorpse = flecs::entity::null();
+      ecs.filter<Corpse, GamePosition>().each(
+          [&](flecs::entity entity, const Corpse &,
+              const GamePosition &position) {
+            if (!deadCorpse.is_alive() && position.x == npcPos.x &&
+                position.y == npcPos.y) {
+              deadCorpse = entity;
+            }
+          });
+      if (deadCorpse.is_alive()) {
+        corpseSpawned = true;
+        corpseNonInteractable = !deadCorpse.has<Interactable>() &&
+                                !deadCorpse.has<Obstacle>();
+        const Sprite *corpseSprite = deadCorpse.get<Sprite>();
+        corpseHasDeathSprite = corpseSprite != nullptr &&
+                               corpseSprite->path.find("corpse.png") !=
+                                   std::string::npos;
+        int held = 0;
+        deadCorpse.each<Holds>([&](flecs::entity) { ++held; });
+        corpseHoldsLoot = held > 0;
+
+        // The setting is read by a system, not baked in at death: changing it
+        // must update a corpse already on the ground.
+        MutableSettings().combat.deathIcon = "skill_attack";
+        ecs.progress();
+        const Sprite *switched = deadCorpse.get<Sprite>();
+        deathIconSwitch = switched != nullptr &&
+                          switched->path.find("skill_attack") !=
+                              std::string::npos;
+        MutableSettings().combat.deathIcon = "death";
+        std::vector<flecs::entity> corpseItems;
+        deadCorpse.each<Holds>(
+            [&](flecs::entity child) { corpseItems.push_back(child); });
+        for (flecs::entity child : corpseItems) {
+          if (child.is_alive()) child.destruct();
+        }
+        deadCorpse.destruct();
+      }
+    }
+  }
+
+  // Icon registry: the fixed missing mark must resolve, skill icon ids must map
+  // to their sprite, and an unknown id must fall back to the missing mark.
+  {
+    iconRegistryReady = iconRegistry.Get("missing") != nullptr &&
+                        iconRegistry.Get("death") != nullptr &&
+                        iconRegistry.Get("skill_attack") != nullptr;
+    std::string skillPath;
+    const bool skillOk = IconPaths::ResolveIconPath(
+        iconRegistry, "skill_attack", resourceManager, debugLog.get(), &skillPath);
+    std::string missingPath;
+    const bool missingOk = IconPaths::ResolveIconPath(
+        iconRegistry, "does_not_exist", resourceManager, debugLog.get(),
+        &missingPath);
+    iconFallback = skillOk && skillPath.find("skill_attack") != std::string::npos &&
+                   missingOk && missingPath.find("unknown") != std::string::npos;
+  }
+
   // Print the combat lines the two calls produced, so the output shows the same
   // text a player would read in the Log window.
   if (debugLog) {
@@ -2795,22 +3525,22 @@ int Game::RunCombatSelfCheck() {
   }
 
   std::cout << "combat-check: attack slot = " << attackSlot << " ("
-            << bar->ids[static_cast<size_t>(attackSlot)] << ")\n";
+            << barIds[static_cast<size_t>(attackSlot)] << ")\n";
   if (hasCastSkill) {
     std::cout << "combat-check: cast slot = " << heavySlot << " ("
-              << bar->ids[static_cast<size_t>(heavySlot)] << ")\n";
+              << barIds[static_cast<size_t>(heavySlot)] << ")\n";
   }
   if (hasKick) {
     std::cout << "combat-check: kick slot = " << kickSlot << " ("
-              << bar->ids[static_cast<size_t>(kickSlot)] << ")\n";
+              << barIds[static_cast<size_t>(kickSlot)] << ")\n";
   }
   if (fireballSlot >= 0) {
     std::cout << "combat-check: fireball slot = " << fireballSlot << " ("
-              << bar->ids[static_cast<size_t>(fireballSlot)] << ")\n";
+              << barIds[static_cast<size_t>(fireballSlot)] << ")\n";
   }
   if (iceSlot >= 0) {
     std::cout << "combat-check: ice lance slot = " << iceSlot << " ("
-              << bar->ids[static_cast<size_t>(iceSlot)] << ")\n";
+              << barIds[static_cast<size_t>(iceSlot)] << ")\n";
   }
   std::cout << "combat-check: first swing used=" << first
             << " damage=" << (healthBefore - healthAfter)
@@ -2819,18 +3549,50 @@ int Game::RunCombatSelfCheck() {
   std::cout << "combat-check: immediate second swing used=" << second
             << " (expected 0: cooldown)\n";
   std::cout << "combat-check: cast started=" << castStarted
-            << " resolved=" << castResolved << "\n";
+            << " resolved=" << castResolved
+            << " range-indicator=" << castRangeIndicator
+            << " range-cancel-started=" << castRangeStarted
+            << " range-canceled=" << castRangeCanceled
+            << " movement-canceled=" << movementCanceled << "\n";
   std::cout << "combat-check: kick used=" << kickUsed
             << " interrupted=" << interrupted << "\n";
   std::cout << "combat-check: fireball used=" << fireballUsed
             << " impact=" << fireballHit << "\n";
   std::cout << "combat-check: ice lance used=" << iceUsed
-            << " impact=" << iceHit << "\n";
+            << " impact=" << iceHit
+            << " cooldown-clear=" << iceCooldownClear << "\n";
+  std::cout << "combat-check: npc spawned=" << npcSpawned
+            << " retaliated=" << npcRetaliated
+            << " brainless=" << npcBrainless
+            << " brain-driven=" << npcBrainDriven
+            << " pending-spawn=" << npcPendingSpawn
+            << " duplicate-name=" << npcDuplicateName
+            << " sprite=" << npcSprite
+            << " strategy=" << npcStrategy
+            << " entity-info=" << npcEntityInfoWindow
+            << " brain-context=" << npcBrainContextWindow
+            << " chase=" << npcChase
+            << " corpse=" << corpseSpawned
+            << " corpse-passive=" << corpseNonInteractable
+            << " corpse-loot=" << corpseHoldsLoot
+            << " corpse-sprite=" << corpseHasDeathSprite
+            << " death-icon-switch=" << deathIconSwitch
+            << " icons=" << iconRegistryReady
+            << " icon-fallback=" << iconFallback << "\n";
 
   const bool ok = first && !second && healthAfter < healthBefore &&
                   castStarted && castResolved && !playerEntity.has<Casting>() &&
+                  castRangeIndicator && castRangeStarted && castRangeCanceled &&
+                  movementCanceled &&
                   kickUsed && interrupted && fireballUsed && fireballHit &&
-                  iceUsed && iceHit;
+                  iceUsed && iceHit && iceCooldownClear &&
+                  npcSpawned && npcRetaliated &&
+                  npcBrainless && npcBrainDriven && npcPendingSpawn &&
+                  npcDuplicateName && npcSprite && npcStrategy &&
+                  npcEntityInfoWindow && npcBrainContextWindow && npcChase &&
+                  corpseSpawned && corpseNonInteractable && corpseHoldsLoot &&
+                  corpseHasDeathSprite && deathIconSwitch &&
+                  iconRegistryReady && iconFallback;
   std::cout << (ok ? "combat-check: OK\n" : "combat-check: FAILED\n");
   return ok ? 0 : 1;
 }
@@ -3036,7 +3798,10 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           return;
         }
 
-        for (const std::string& skillId : bar.ids) {
+        // Copy the ids: a successful UseSkill commits a cast, which adds
+        // Casting/Busy to `entity` and moves its archetype, invalidating `bar`.
+        const std::vector<std::string> barIds = bar.ids;
+        for (const std::string& skillId : barIds) {
           if (!autoCast.Has(skillId)) {
             continue;
           }
@@ -3074,10 +3839,82 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
             }
           }
 
+          // A committed cast adds Casting/Busy and moves the entity's
+          // archetype; the cooldown references captured by this system are no
+          // longer safe. One cast per frame is the intended cadence anyway.
+          if (entity.has<Casting>()) {
+            return;
+          }
           // The GCD the skill just started blocks every other GCD skill; the
           // loop ends here rather than continuing to check them.
           if (def->activation.gcd) {
             break;
+          }
+        }
+      });
+
+  // Non-LLM positioning. Only brainless Aggressive bodies execute a strategy;
+  // an LLM's agent owns its own movement. Chase repaths with A* on a cadence and
+  // stops once inside the tactic's preferred range, where the existing Aggressive
+  // controller takes over the telegraphed attack.
+  ecs.system<CombatStrategy, Aggressive, GamePosition, Vitals>(
+      "CombatStrategySystem")
+      .without<AgentBrainWrapper>()
+      .iter([this](flecs::iter& it, CombatStrategy* strategies,
+                   Aggressive*, GamePosition* positions, Vitals* vitals) {
+        if (!playerEntity.is_alive()) {
+          return;
+        }
+        const GamePosition* playerPosition = playerEntity.get<GamePosition>();
+        auto registryRes = ecs.get<CombatStrategyRegistryResource>();
+        if (playerPosition == nullptr || registryRes == nullptr ||
+            registryRes->registry == nullptr || map == nullptr) {
+          return;
+        }
+        const float dt = it.delta_time();
+        for (auto i : it) {
+          flecs::entity entity = it.entity(i);
+          CombatStrategy& strategy = strategies[i];
+
+          if (vitals[i].health <= 0.0f || entity.has<Casting>()) {
+            entity.remove<MOVE_THROUGH_PATH_ACTION>();
+            continue;
+          }
+          if (const NpcDisposition* disposition = entity.get<NpcDisposition>();
+              disposition != nullptr &&
+              disposition->value == Disposition::Neutral) {
+            entity.remove<MOVE_THROUGH_PATH_ACTION>();
+            continue;
+          }
+
+          const CombatStrategyDef* definition =
+              registryRes->registry->Get(strategy.id);
+          if (definition == nullptr ||
+              definition->behavior != "chase") {
+            entity.remove<MOVE_THROUGH_PATH_ACTION>();
+            continue;
+          }
+
+          const int dx = positions[i].x - playerPosition->x;
+          const int dy = positions[i].y - playerPosition->y;
+          const int steps = std::max(std::abs(dx), std::abs(dy));
+          if (static_cast<float>(steps) <= definition->preferredRange) {
+            entity.remove<MOVE_THROUGH_PATH_ACTION>();
+            strategy.repathTimer = 0.0f;
+            continue;
+          }
+
+          strategy.repathTimer = std::max(0.0f, strategy.repathTimer - dt);
+          if (strategy.repathTimer > 0.0f &&
+              entity.has<MOVE_THROUGH_PATH_ACTION>()) {
+            continue;
+          }
+
+          strategy.repathTimer = definition->repathSeconds;
+          const std::vector<GamePosition> path =
+              AStar(map.get(), positions[i], *playerPosition);
+          if (!path.empty()) {
+            entity.set<MOVE_THROUGH_PATH_ACTION>({path});
           }
         }
       });
@@ -3099,6 +3936,13 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         for (auto i : it) {
           flecs::entity entity = it.entity(i);
           if (vitals[i].health <= 0.0f || entity.has<Casting>()) {
+            continue;
+          }
+          // NPCs start Neutral and only this controller makes them attack. The
+          // sparring dummy has no NpcDisposition, so it keeps its old behavior.
+          if (const NpcDisposition *disposition = entity.get<NpcDisposition>();
+              disposition != nullptr &&
+              disposition->value == Disposition::Neutral) {
             continue;
           }
           if (aggressive[i].timer > 0.0f) {
@@ -3141,6 +3985,124 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         }
       });
 
+  // The corpse visual is a setting, not a property baked into the death event.
+  // Resolve it every frame so changing the death icon updates corpses already on
+  // the ground as well as future ones, and an unresolved icon still lands on the
+  // missing interrogation mark.
+  ecs.system<Corpse>("CorpseIconSystem")
+      .each([this](flecs::entity entity, const Corpse&) {
+        std::string iconPath;
+        if (!IconPaths::ResolveIconPath(iconRegistry,
+                                        Settings().combat.deathIcon,
+                                        resourceManager, debugLog.get(),
+                                        &iconPath)) {
+          return;
+        }
+        const Sprite *current = entity.get<Sprite>();
+        if (current == nullptr || current->path != iconPath) {
+          entity.set<Sprite>(Sprite{iconPath});
+        }
+      });
+
+  // Death lifecycle: NPCs only. The player has a knockout/reset path and training
+  // Death lifecycle: NPCs only. The player has a knockout/reset path and training
+  // dummies are immortal; objects with Vitals are not corpses yet. Marking Dead
+  // before the deferred body teardown prevents a second pass in the same frame.
+  ecs.system<Vitals>("DeathSystem")
+      .with<Actor>()
+      .without<PlayerControlled>()
+      .without<TrainingDummy>()
+      .without<Dead>()
+      .each([this](flecs::entity entity, Vitals& vitals) {
+        if (vitals.health > 0.0f) {
+          return;
+        }
+        entity.add<Dead>();
+        ecs.defer([this, entity]() { KillEntity(entity); });
+      });
+
+  // A targeted cast is a commitment to a target, not just to a timer. Re-check
+  // the distance every frame while the timer is live; if the target steps out of
+  // the skill's range the cast is canceled immediately instead of waiting for the
+  // completion fizzle. This is what makes Heavy Swing readable as a melee cast:
+  // the target can walk away from it.
+  ecs.system<ActionActor, CastAction, ActionTimer>("CastRangeCancelSystem")
+      .each([this](flecs::entity actionEntity, ActionActor& actorRef,
+                   CastAction& cast, const ActionTimer&) {
+        if (!cast.requiresTarget || cast.skillId.empty()) {
+          return;
+        }
+        flecs::entity actor = actorRef.actor;
+        if (!actor.is_alive()) {
+          return;
+        }
+        const Casting* casting = actor.get<Casting>();
+        if (casting == nullptr || casting->actionEntity != actionEntity) {
+          return;
+        }
+        const ActionTarget* targetRef = actionEntity.get<ActionTarget>();
+        const bool targetLost =
+            targetRef == nullptr || !targetRef->target.is_alive();
+        const bool outOfRange =
+            !targetLost &&
+            !WithinActivationRange(actor, targetRef->target, cast.rangeTiles);
+        if (!targetLost && !outOfRange) {
+          return;
+        }
+        if (!CancelCast(actor, targetLost ? "Target lost!" : "Out of range!")) {
+          return;
+        }
+        if (debugLog) {
+          const std::string owner =
+              cast.playerCast ? std::string("Your ")
+                              : EntityLabel(actor, "Someone") + "'s ";
+          debugLog->LogCombat(
+              owner + cast.label +
+              (targetLost ? " is canceled: the target is gone."
+                          : " is canceled: the target moved out of range."));
+        }
+      });
+
+  // A movement-locked cast is canceled by resuming either movement source.
+  // Input commands run before the combat keys, so the forced stop above wins on
+  // the activation frame; a held direction or a clicked path on a later frame is
+  // the deliberate "move again" that cancels.
+  ecs.system<Casting>("CastMovementCancelSystem")
+      .each([this](flecs::entity actor, Casting& casting) {
+        if (!casting.movementLocked || !actor.has<PlayerControlled>()) {
+          return;
+        }
+        const Velocity* velocity = actor.get<Velocity>();
+        const bool moving =
+            actor.has<MOVE_THROUGH_PATH_ACTION>() ||
+            (velocity != nullptr &&
+             (std::abs(velocity->x) > DEFAULT_MOVEMENT_EPSILON ||
+              std::abs(velocity->y) > DEFAULT_MOVEMENT_EPSILON));
+        if (!moving) {
+          return;
+        }
+        if (!CancelCast(actor, "Movement!")) {
+          return;
+        }
+        if (debugLog) {
+          debugLog->LogCombat("Your " + casting.label +
+                              " is canceled: you moved.");
+        }
+      });
+
+  // The range overlay is a short-lived visual fact, not a permanent component.
+  ecs.system<SkillRangeIndicator>("SkillRangeIndicatorLifetime")
+      .iter([](flecs::iter& it, SkillRangeIndicator* indicators) {
+        const float dt = it.delta_time();
+        for (auto i : it) {
+          indicators[i].remaining =
+              std::max(0.0f, indicators[i].remaining - dt);
+          if (indicators[i].remaining <= 0.0f) {
+            it.entity(i).remove<SkillRangeIndicator>();
+          }
+        }
+      });
+
   // Applies the effect of a cast whose timer completed. Any caster can carry a
   // CastAction -- the player's skill cast and the aggressive dummy's inline
   // strike share this one resolution path.
@@ -3155,6 +4117,15 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         }
 
         if (actor.is_alive()) {
+          // A range cancellation or an interrupt removed Casting and queued the
+          // action for destruction. If the timer completed in the same frame,
+          // do not resolve a cast the caster no longer owns.
+          const Casting* activeCast = actor.get<Casting>();
+          if (activeCast == nullptr ||
+              activeCast->actionEntity != actionEntity) {
+            actionEntity.destruct();
+            return;
+          }
           actor.remove<Casting>();
           if (const Busy* busy = actor.get<Busy>()) {
             if (busy->actionEntity == actionEntity) {
@@ -3883,6 +4854,9 @@ void Game::ECSInit() {
   portraitRegistry.SetDebugLog(debugLog.get());
   portraitRegistry.LoadPortraits(settings.content.portraits);
 
+  iconRegistry.SetDebugLog(debugLog.get());
+  iconRegistry.Load(settings.content.icons);
+
   // Named NPC definitions and the brains that drive them, loaded before the map so
   // a map entry can name one at spawn. Brains are loaded first: a template may
   // reference one.
@@ -3890,6 +4864,23 @@ void Game::ECSInit() {
   brainTemplateRegistry.Load(settings.content.brains);
   npcTemplateRegistry.SetDebugLog(debugLog.get());
   npcTemplateRegistry.Load(settings.content.npcs);
+
+  // Non-LLM tactics. Loaded alongside the NPC templates because a template names
+  // one; the validation pass below reports ids that do not resolve.
+  combatStrategyRegistry.SetDebugLog(debugLog.get());
+  combatStrategyRegistry.Load(settings.content.combatStrategies);
+  ecs.set<CombatStrategyRegistryResource>({&combatStrategyRegistry});
+  for (const NpcTemplate *definition : npcTemplateRegistry.GetAll()) {
+    if (definition->combatStrategy.empty()) continue;
+    if (combatStrategyRegistry.Get(definition->combatStrategy) == nullptr) {
+      const std::string message =
+          "Warning: NPC template '" + definition->id + "' names combat strategy '" +
+          definition->combatStrategy +
+          "', which the registry does not define; it will hold position.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
 
   // A template naming content the game does not have would fail one character at
   // a time at spawn. Report it once, here, where the template's id is still in
@@ -5460,6 +6451,7 @@ void Game::ECSInit() {
   blueprintWindowEntity = ecs.entity("Blueprint Window");
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
+  npcSpawnerWindowEntity = ecs.entity("NPC Spawner Window");
   taskBoardWindowEntity = ecs.entity("Task Board Window");
   systemOneWindowEntity = ecs.entity("System 1 Overview Window");
   visionDebugWindowEntity = ecs.entity("Vision Debug Window");

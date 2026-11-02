@@ -698,8 +698,11 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
   // actor's sprite read as a prop.
   const char *subject = brief.kind == SpriteKinds::Kind::Tile
                             ? "the tile"
-                            : brief.kind == SpriteKinds::Kind::Actor ? "the actor"
-                                                                     : "the object";
+                            : brief.kind == SpriteKinds::Kind::Actor
+                                  ? "the actor"
+                                  : brief.kind == SpriteKinds::Kind::Icon
+                                        ? "the icon"
+                                        : "the object";
   out << "Design the sprite document for " << subject << " \"" << brief.name
       << "\".\n";
   if (!brief.description.empty()) {

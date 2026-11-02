@@ -500,6 +500,10 @@ void DesignerWindow::SendUserMessage(const std::string &prompt) {
     SendActorSpriteRequest(prompt);
     return;
   }
+  if (mode == DesignerDomains::Domain::Icon) {
+    SendIconRequest(prompt);
+    return;
+  }
 
   // A new request restarts the attempt budget: the cap is per request, not per
   // session, or the third tile of a session could never be retried.
@@ -586,9 +590,12 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   // An actor is not a definition domain: its definition lives in data/actors, so a
   // sprite request for one leaves the header where it is rather than claiming the next
   // request would produce an object or a tile.
-  if (kind != SpriteKinds::Kind::Actor) {
-    mode = kind == SpriteKinds::Kind::Object ? DesignerDomains::Domain::Object
-                                             : DesignerDomains::Domain::Tile;
+  if (kind == SpriteKinds::Kind::Icon) {
+    mode = DesignerDomains::Domain::Icon;
+  } else if (kind == SpriteKinds::Kind::Object) {
+    mode = DesignerDomains::Domain::Object;
+  } else if (kind == SpriteKinds::Kind::Tile) {
+    mode = DesignerDomains::Domain::Tile;
   }
 
   const std::string conventionId = SpriteKinds::ConventionIdFor(kind, name);
@@ -647,6 +654,10 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     if (const ActorSpriteDef *actor = game->actorSpriteRegistry.Get(name)) {
       artBrief.description = actor->description;
     }
+  } else if (kind == SpriteKinds::Kind::Icon) {
+    if (const IconDef *icon = game->iconRegistry.Get(name)) {
+      artBrief.description = icon->description;
+    }
   } else if (ObjectFactory *objects = Objects()) {
     const auto &templates = objects->GetTemplates();
     const auto found = templates.find(conventionId);
@@ -684,8 +695,11 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   statusIsError = false;
   const std::string kindWord = kind == SpriteKinds::Kind::Tile
                                    ? "tile"
-                                   : kind == SpriteKinds::Kind::Actor ? "actor"
-                                                                      : "object";
+                                   : kind == SpriteKinds::Kind::Actor
+                                         ? "actor"
+                                         : kind == SpriteKinds::Kind::Icon
+                                               ? "icon"
+                                               : "object";
   statusLine = "Asking for a sprite document for the " + kindWord + " '" + name +
                "'. It will be compiled before anything is written.";
   session->LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + kindWord + ", " +
@@ -841,6 +855,10 @@ static const char *ArtifactNoun(DesignerDomains::Domain domain) {
       return "object";
     case DesignerDomains::Domain::Tile:
       return "tile";
+    case DesignerDomains::Domain::Icon:
+      return "icon";
+    case DesignerDomains::Domain::ActorSprite:
+      return "sprite";
   }
   return "definition";
 }
@@ -1121,6 +1139,11 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObject = entry.object;
       editedObjectKey = entry.objectKey;
       editedObjectOverlayPath = entry.objectOverlayPath;
+      break;
+    case DesignerDomains::Domain::Icon:
+    case DesignerDomains::Domain::ActorSprite:
+      // Sprite-only domains have no editable definition; the viewed pane is just the
+      // request/response transcript and the sprite preview.
       break;
     case DesignerDomains::Domain::Tile: {
       // By name, not by pointer: the editor writes through a pointer into the registry, so
@@ -1779,6 +1802,61 @@ void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
   // `requirement` overrides the catalog description, which is what makes this a prompt for
   // a *new* being rather than a redraw of one that exists: the text typed is the brief.
   RequestSpriteDocument(name, SpriteKinds::Kind::Actor, /*replaceGenerated=*/true,
+                        std::string(), description);
+}
+
+void DesignerWindow::SendIconRequest(const std::string &description) {
+  if (game == nullptr) return;
+
+  nlohmann::json named = nlohmann::json::object();
+  named["name"] = std::string(iconNameBuffer);
+  const std::string name = IconRegistry::IdFor(named);
+  if (name.empty()) {
+    statusIsError = true;
+    statusLine = "Give the icon a name first: the box beside the mode is the filename "
+                 "and the IconRegistry id.";
+    return;
+  }
+
+  // The entry is the definition. It is written before the art turn so the generated
+  // sprite has an id to attach to, and added live so the Content Editor and the
+  // Settings picker see it immediately.
+  nlohmann::json entry = nlohmann::json::object();
+  entry["name"] = std::string(iconNameBuffer);
+  if (!description.empty()) {
+    entry["description"] = description;
+  }
+  const std::filesystem::path directory = Settings().content.icons;
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  const std::filesystem::path path = directory / (name + ".json");
+  std::ofstream out(path);
+  std::string error;
+  std::vector<std::string> warnings;
+  if (!out.is_open()) {
+    statusIsError = true;
+    statusLine = "Could not write the icon entry to " + path.string();
+    return;
+  }
+  out << entry.dump(2) << "\n";
+  out.close();
+  game->iconRegistry.AddOrReplace(entry, path.string(), &error, &warnings);
+  session->LogEvent("ICON ENTRY WRITTEN: " + path.string());
+
+  // Make the new generated art win over any pack copy with the same id. Until the
+  // asynchronous job writes the PNG, resolution falls back to the pack, so a failed
+  // generation does not blank an existing icon.
+  const std::string markerPath = GeneratedSpriteMarkerPath(name);
+  if (!markerPath.empty()) {
+    std::ofstream marker(markerPath);
+    if (marker.is_open()) {
+      nlohmann::json choice = nlohmann::json::object();
+      choice["sprite"] = name + ".png";
+      marker << choice.dump(2) << "\n";
+    }
+  }
+
+  RequestSpriteDocument(name, SpriteKinds::Kind::Icon, /*replaceGenerated=*/true,
                         std::string(), description);
 }
 
@@ -3399,13 +3477,18 @@ void DesignerWindow::Draw() {
     // The sprite needs a filename before the request can be sent, and the mode is the one
     // place it can be asked for. Only drawn in this mode: a name box beside "Building"
     // would be a control with nothing to name.
-    if (mode == DesignerDomains::Domain::ActorSprite) {
+    if (mode == DesignerDomains::Domain::ActorSprite ||
+        mode == DesignerDomains::Domain::Icon) {
       ImGui::SameLine();
       ImGui::TextDisabled("as");
       ImGui::SameLine();
       ImGui::SetNextItemWidth(140.0f);
-      ImGui::InputTextWithHint("##actorSpriteName", "name (baker)", actorSpriteNameBuffer,
-                               sizeof(actorSpriteNameBuffer));
+      ImGui::InputTextWithHint(
+          mode == DesignerDomains::Domain::Icon ? "##iconName" : "##actorSpriteName",
+          mode == DesignerDomains::Domain::Icon ? "name (skull)" : "name (baker)",
+          mode == DesignerDomains::Domain::Icon ? iconNameBuffer
+                                                : actorSpriteNameBuffer,
+          sizeof(actorSpriteNameBuffer));
     }
 
     // Single or set. The router proposes it, but a person can ask for one without a

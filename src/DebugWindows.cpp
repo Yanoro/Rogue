@@ -253,6 +253,16 @@ void DebugConsoleWindow::Draw() {
       game->npcMenuWindowEntity.remove<ActiveWindow>();
     }
   }
+  ImGui::SameLine();
+  bool showNpcSpawner = game->npcSpawnerWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("NPC Spawner", &showNpcSpawner)) {
+    if (showNpcSpawner) {
+      game->npcSpawnerWindowEntity.set<ActiveWindow>(
+          {std::make_shared<NpcSpawnerWindow>(game)});
+    } else {
+      game->npcSpawnerWindowEntity.remove<ActiveWindow>();
+    }
+  }
 
   // The task board opens a new row rather than joining the one above, per the
   // rule stated below: the rows above already fill a narrow Debug Console and
@@ -2859,6 +2869,447 @@ void NPCMenuWindow::Draw() {
 // whose stated intent and running action disagree are all invisible locally and
 // obvious in a column of rows.
 TaskBoardWindow::TaskBoardWindow(Game* game) : game(game) {}
+
+NpcSpawnerWindow::NpcSpawnerWindow(Game* game) : game(game) {}
+
+void NpcSpawnerWindow::Draw() {
+  bool open = true;
+  ImGui::SetNextWindowSize(ImVec2(980, 680), ImGuiCond_FirstUseEver);
+  if (!ImGui::Begin("NPC Spawner", &open, ImGuiWindowFlags_None)) {
+    ImGui::End();
+    return;
+  }
+  if (!open) {
+    if (game->pendingNpcSpawn.active) {
+      game->pendingNpcSpawn.active = false;
+      game->npcSpawnerStatus = "Spawn canceled.";
+    }
+    game->npcSpawnerWindowEntity.remove<ActiveWindow>();
+    ImGui::End();
+    return;
+  }
+
+  if (game == nullptr) {
+    ImGui::TextWrapped("The window has no game to read from.");
+    ImGui::End();
+    return;
+  }
+
+  const std::vector<const NpcTemplate*> templates =
+      game->npcTemplateRegistry.GetAll();
+  if (templates.empty()) {
+    ImGui::TextWrapped("No NPC templates are loaded. Add JSON under content.npcs.");
+    ImGui::End();
+    return;
+  }
+
+  if (selectedTemplate.empty()) {
+    selectedTemplate = templates.front()->id;
+    lastTemplate.clear();
+  }
+  const NpcTemplate* tmpl = game->npcTemplateRegistry.Get(selectedTemplate);
+  if (tmpl == nullptr) {
+    selectedTemplate = templates.front()->id;
+    tmpl = templates.front();
+    lastTemplate.clear();
+  }
+
+  // Load the template's defaults once per selection. The fields are per-spawn
+  // overrides from then on; changing them never edits the template file.
+  if (lastTemplate != selectedTemplate) {
+    lastTemplate = selectedTemplate;
+    brainMode = tmpl->brain.empty() ? 1 : 0;
+    selectedBrain = tmpl->brain;
+    strategyMode = tmpl->combatStrategy.empty() ? 1 : 0;
+    selectedStrategy = tmpl->combatStrategy;
+    stance = tmpl->disposition == "aggressive" ? 1 : 0;
+    retaliates = tmpl->retaliates;
+    spawnHealth = 0.0f;
+    spawnSpeed = 0.0f;
+    spawnDamage = tmpl->attackDamage;
+    spawnInterval = tmpl->attackInterval;
+  }
+
+  ImGui::TextDisabled("Spawn a real Actor, optionally LLM-driven.");
+  ImGui::Separator();
+
+  // --- template ---------------------------------------------------------
+  ImGui::SetNextItemWidth(300.0f);
+  if (ImGui::BeginCombo("NPC template", tmpl->name.c_str())) {
+    for (const NpcTemplate* candidate : templates) {
+      const bool selected = candidate->id == selectedTemplate;
+      if (ImGui::Selectable(candidate->name.c_str(), selected)) {
+        selectedTemplate = candidate->id;
+      }
+      if (selected) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+  if (!tmpl->description.empty()) {
+    ImGui::TextWrapped("%s", tmpl->description.c_str());
+  }
+
+  // --- brain ------------------------------------------------------------
+  const char* brainLabels[] = {"Template default", "None (non-LLM)",
+                               "Specific brain"};
+  ImGui::SetNextItemWidth(300.0f);
+  ImGui::Combo("Brain", &brainMode, brainLabels, 3);
+  if (brainMode == 0) {
+    ImGui::TextDisabled("Uses the template's brain: %s",
+                        tmpl->brain.empty() ? "(none)" : tmpl->brain.c_str());
+  } else if (brainMode == 1) {
+    ImGui::TextDisabled("No AgentBrainWrapper: a C++ body, not an LLM.");
+  } else {
+    const std::vector<const BrainTemplate*> brains =
+        game->brainTemplateRegistry.GetAll();
+    if (brains.empty()) {
+      ImGui::TextDisabled("No brain templates loaded.");
+      brainMode = 1;
+    } else {
+      bool brainStillExists = false;
+      for (const BrainTemplate* brain : brains) {
+        if (brain->id == selectedBrain) brainStillExists = true;
+      }
+      if (!brainStillExists) selectedBrain = brains.front()->id;
+      const BrainTemplate* selected = game->brainTemplateRegistry.Get(selectedBrain);
+      ImGui::SetNextItemWidth(300.0f);
+      if (ImGui::BeginCombo("Specific brain",
+                            selected != nullptr ? selected->name.c_str()
+                                                : selectedBrain.c_str())) {
+        for (const BrainTemplate* brain : brains) {
+          if (ImGui::Selectable(brain->name.c_str(), brain->id == selectedBrain)) {
+            selectedBrain = brain->id;
+          }
+        }
+        ImGui::EndCombo();
+      }
+    }
+  }
+
+  // --- stance -----------------------------------------------------------
+  const char* stanceLabels[] = {"Neutral", "Aggressive"};
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::Combo("Stance", &stance, stanceLabels, 2);
+  ImGui::Checkbox("Retaliates", &retaliates);
+  ImGui::SameLine();
+  ImGui::TextDisabled("Neutral + Retaliates turns hostile only after being hit.");
+
+  // --- non-LLM combat tactic --------------------------------------------
+  const char* strategyLabels[] = {"Template default", "None (hold)",
+                                  "Specific strategy"};
+  ImGui::SetNextItemWidth(220.0f);
+  ImGui::Combo("Combat strategy", &strategyMode, strategyLabels, 3);
+  if (strategyMode == 0) {
+    ImGui::TextDisabled("Template strategy: %s",
+                        tmpl->combatStrategy.empty()
+                            ? "(hold)"
+                            : tmpl->combatStrategy.c_str());
+  } else if (strategyMode == 1) {
+    ImGui::TextDisabled("No tactic: the body holds position and auto-attacks.");
+  } else {
+    const std::vector<const CombatStrategyDef*> strategies =
+        game->combatStrategyRegistry.GetAll();
+    if (strategies.empty()) {
+      ImGui::TextDisabled("No combat strategies are loaded.");
+      strategyMode = 1;
+    } else {
+      bool stillExists = false;
+      for (const CombatStrategyDef* candidate : strategies) {
+        if (candidate->id == selectedStrategy) stillExists = true;
+      }
+      if (!stillExists) selectedStrategy = strategies.front()->id;
+      const CombatStrategyDef* selected =
+          game->combatStrategyRegistry.Get(selectedStrategy);
+      ImGui::SetNextItemWidth(220.0f);
+      if (ImGui::BeginCombo("Specific strategy",
+                            selected != nullptr ? selected->name.c_str()
+                                                : selectedStrategy.c_str())) {
+        for (const CombatStrategyDef* candidate : strategies) {
+          if (ImGui::Selectable(candidate->name.c_str(),
+                                candidate->id == selectedStrategy)) {
+            selectedStrategy = candidate->id;
+          }
+        }
+        ImGui::EndCombo();
+      }
+    }
+  }
+  ImGui::TextDisabled(
+      "Only used by non-LLM bodies; a selected brain owns movement.");
+
+  // --- per-spawn overrides ---------------------------------------------
+  ImGui::SeparatorText("Spawn overrides");
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputFloat("Max HP (0 = resolved)", &spawnHealth, 0.0f, 0.0f, "%.0f");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputFloat("Speed (0 = default)", &spawnSpeed, 0.0f, 0.0f, "%.1f");
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputFloat("Attack damage (0 = template)", &spawnDamage, 0.0f, 0.0f,
+                    "%.1f");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputFloat("Attack interval", &spawnInterval, 0.0f, 0.0f, "%.1f");
+  spawnHealth = std::max(0.0f, spawnHealth);
+  spawnSpeed = std::max(0.0f, spawnSpeed);
+  spawnDamage = std::max(0.0f, spawnDamage);
+  spawnInterval = std::max(0.0f, spawnInterval);
+
+  if (game->pendingNpcSpawn.active) {
+    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f),
+                       "Click a free map tile to spawn. Right-click or Esc cancels.");
+    if (ImGui::Button("Cancel placement")) {
+      game->pendingNpcSpawn.active = false;
+      game->npcSpawnerStatus = "Spawn canceled.";
+    }
+  } else if (ImGui::Button("Place on map")) {
+    Game::PendingNpcSpawn request;
+    request.npcTemplate = selectedTemplate;
+    request.suppressBrain = brainMode == 1;
+    if (brainMode == 2) request.brain = selectedBrain;
+    request.suppressCombatStrategy = strategyMode == 1;
+    if (strategyMode == 2) request.combatStrategy = selectedStrategy;
+    request.aggressive = stance == 1;
+    request.retaliates = retaliates;
+    request.health = spawnHealth;
+    request.speed = spawnSpeed;
+    request.attackDamage = spawnDamage;
+    request.attackInterval = spawnInterval;
+    request.active = true;
+    game->pendingNpcSpawn = request;
+    game->npcSpawnerStatus = "Click a free map tile to spawn " + tmpl->name + ".";
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Edit NPC template")) {
+    if (game->contentEditorWindow) {
+      game->contentEditorWindow->SelectEntry("npcs", selectedTemplate);
+      game->contentEditorWindowEntity.set<ActiveWindow>(
+          {game->contentEditorWindow});
+    }
+  }
+
+  if (!game->npcSpawnerStatus.empty()) {
+    ImGui::TextWrapped("%s", game->npcSpawnerStatus.c_str());
+  }
+
+  // --- live actor list / rows ------------------------------------------
+  ImGui::SeparatorText("Actors (click a row to edit; Kill destroys)");
+  struct ActorRow {
+    flecs::entity entity;
+    std::string name;
+    float health = 0.0f;
+    float maxHealth = 0.0f;
+    std::string stance;
+    bool retaliates = false;
+  };
+  std::vector<ActorRow> rows;
+  game->ecs.filter<Actor, Vitals>().each(
+      [&](flecs::entity entity, const Actor&, Vitals& vitals) {
+        if (entity == game->playerEntity) return;
+        std::string name = "Actor " + std::to_string(entity.id());
+        if (const DisplayName* displayName = entity.get<DisplayName>()) {
+          name = displayName->name;
+        }
+        std::string stanceLabel = "-";
+        if (const NpcDisposition* disposition = entity.get<NpcDisposition>()) {
+          stanceLabel =
+              disposition->value == Disposition::Aggressive ? "Aggressive"
+                                                            : "Neutral";
+        }
+        rows.push_back({entity, name, vitals.health, vitals.maxHealth,
+                        stanceLabel, entity.has<Retaliates>()});
+      });
+  std::sort(rows.begin(), rows.end(),
+            [](const ActorRow& a, const ActorRow& b) { return a.name < b.name; });
+
+  flecs::entity killTarget = flecs::entity::null();
+  if (ImGui::BeginTable("NpcSpawnerActors", 5,
+                        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                            ImGuiTableFlags_ScrollY,
+                        ImVec2(0.0f, 190.0f))) {
+    ImGui::TableSetupColumn("Name");
+    ImGui::TableSetupColumn("HP", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+    ImGui::TableSetupColumn("Stance", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+    ImGui::TableSetupColumn("Retaliates", ImGuiTableColumnFlags_WidthFixed,
+                            80.0f);
+    ImGui::TableSetupColumn("##kill", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+    ImGui::TableHeadersRow();
+
+    for (const ActorRow& row : rows) {
+      ImGui::TableNextRow();
+      ImGui::PushID(static_cast<int>(row.entity.id()));
+      ImGui::TableSetColumnIndex(0);
+      if (ImGui::Selectable(row.name.c_str(), selectedActor == row.entity,
+                            ImGuiSelectableFlags_None)) {
+        selectedActor = row.entity;
+      }
+      ImGui::TableSetColumnIndex(1);
+      ImGui::Text("%.0f / %.0f", row.health, row.maxHealth);
+      ImGui::TableSetColumnIndex(2);
+      ImGui::TextUnformatted(row.stance.c_str());
+      ImGui::TableSetColumnIndex(3);
+      ImGui::TextUnformatted(row.retaliates ? "yes" : "no");
+      ImGui::TableSetColumnIndex(4);
+      if (ImGui::SmallButton("Kill")) {
+        killTarget = row.entity;
+      }
+      ImGui::PopID();
+    }
+    ImGui::EndTable();
+  }
+
+  auto killActor = [&](flecs::entity target) {
+    if (!target.is_alive()) return;
+    std::string killedName = "Actor " + std::to_string(target.id());
+    if (const DisplayName* displayName = target.get<DisplayName>()) {
+      killedName = displayName->name;
+    }
+    if (target.has<Actor>() && !target.has<PlayerControlled>() &&
+        !target.has<TrainingDummy>()) {
+      // Go through the death lifecycle so a debug kill also leaves a corpse and
+      // preserves the held items on it.
+      game->KillEntity(target);
+    } else {
+      // Dummies and the player are outside the corpse lifecycle; keep the old
+      // debug teardown for them.
+      if (const Casting* casting = target.get<Casting>()) {
+        if (casting->actionEntity.is_alive()) casting->actionEntity.destruct();
+      }
+      std::vector<flecs::entity> held;
+      target.each<Holds>([&](flecs::entity child) { held.push_back(child); });
+      for (flecs::entity child : held) {
+        if (child.is_alive()) child.destruct();
+      }
+      target.destruct();
+    }
+    if (selectedActor == target) selectedActor = flecs::entity::null();
+    game->npcSpawnerStatus = "Killed " + killedName + ".";
+    if (game->debugLog) {
+      game->debugLog->LogInfo("NPC spawner: killed " + killedName);
+    }
+  };
+  if (killTarget.is_alive()) {
+    killActor(killTarget);
+  }
+
+  if (selectedActor.is_alive()) {
+    flecs::entity entity = selectedActor;
+    Vitals* vitals = entity.get_mut<Vitals>();
+    if (vitals == nullptr) {
+      selectedActor = flecs::entity::null();
+    } else {
+      ImGui::SeparatorText("Selected instance (live edits; template unchanged)");
+      std::string name = "Actor " + std::to_string(entity.id());
+      if (const DisplayName* displayName = entity.get<DisplayName>()) {
+        name = displayName->name;
+      }
+      ImGui::Text("%s  (id %llu)", name.c_str(),
+                  static_cast<unsigned long long>(entity.id()));
+
+      float maxHealth = vitals->maxHealth;
+      float health = vitals->health;
+      ImGui::SetNextItemWidth(160.0f);
+      if (ImGui::InputFloat("Instance max HP", &maxHealth, 0.0f, 0.0f, "%.0f")) {
+        vitals->maxHealth = std::max(1.0f, maxHealth);
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(160.0f);
+      if (ImGui::InputFloat("Instance HP", &health, 0.0f, 0.0f, "%.0f")) {
+        vitals->health = std::clamp(health, 0.0f, vitals->maxHealth);
+      }
+      if (vitals->health > vitals->maxHealth) vitals->health = vitals->maxHealth;
+
+      MaxSpeed* speed = entity.get_mut<MaxSpeed>();
+      if (speed == nullptr) {
+        entity.set<MaxSpeed>({DEFAULT_MAXSPEED});
+        speed = entity.get_mut<MaxSpeed>();
+      }
+      if (speed != nullptr) {
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("Instance speed", &speed->value, 0.0f, 0.0f, "%.1f");
+        speed->value = std::max(0.0f, speed->value);
+      }
+
+      NpcDisposition* disposition = entity.get_mut<NpcDisposition>();
+      if (disposition == nullptr) {
+        entity.set<NpcDisposition>({Disposition::Neutral});
+        disposition = entity.get_mut<NpcDisposition>();
+      }
+      if (disposition != nullptr) {
+        int stanceIndex = disposition->value == Disposition::Aggressive ? 1 : 0;
+        const char* stanceLabels[] = {"Neutral", "Aggressive"};
+        ImGui::SetNextItemWidth(160.0f);
+        if (ImGui::Combo("Instance stance", &stanceIndex, stanceLabels, 2)) {
+          disposition->value = stanceIndex == 1 ? Disposition::Aggressive
+                                                : Disposition::Neutral;
+        }
+      }
+
+      bool entityRetaliates = entity.has<Retaliates>();
+      if (ImGui::Checkbox("Instance retaliates", &entityRetaliates)) {
+        if (entityRetaliates) entity.add<Retaliates>();
+        else entity.remove<Retaliates>();
+      }
+
+      const bool brainDriven = entity.has<AgentBrainWrapper>();
+      ImGui::BeginDisabled(brainDriven);
+      const CombatStrategy* currentStrategy = entity.get<CombatStrategy>();
+      const std::string currentStrategyId =
+          currentStrategy != nullptr ? currentStrategy->id : std::string();
+      std::string strategyPreview =
+          currentStrategyId.empty() ? "None (hold)" : currentStrategyId;
+      const std::vector<const CombatStrategyDef*> strategyDefs =
+          game->combatStrategyRegistry.GetAll();
+      for (const CombatStrategyDef* definition : strategyDefs) {
+        if (definition->id == currentStrategyId) {
+          strategyPreview = definition->name;
+        }
+      }
+      ImGui::SetNextItemWidth(200.0f);
+      if (ImGui::BeginCombo("Instance combat strategy",
+                            strategyPreview.c_str())) {
+        if (ImGui::Selectable("None (hold)", currentStrategyId.empty())) {
+          entity.remove<CombatStrategy>();
+        }
+        for (const CombatStrategyDef* definition : strategyDefs) {
+          if (ImGui::Selectable(definition->name.c_str(),
+                                currentStrategyId == definition->id)) {
+            entity.set<CombatStrategy>({definition->id, 0.0f});
+          }
+        }
+        ImGui::EndCombo();
+      }
+      ImGui::EndDisabled();
+      if (brainDriven) {
+        ImGui::TextDisabled(
+            "Brain-driven: movement belongs to the agent, strategy ignored.");
+      }
+
+      Aggressive* attack = entity.get_mut<Aggressive>();
+      if (attack == nullptr) {
+        entity.set<Aggressive>({});
+        attack = entity.get_mut<Aggressive>();
+      }
+      if (attack != nullptr) {
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("Instance attack damage", &attack->damage, 0.0f, 0.0f, "%.1f");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::InputFloat("Instance attack interval", &attack->interval, 0.0f, 0.0f,
+                          "%.1f");
+        attack->damage = std::max(1.0f, attack->damage);
+        attack->interval = std::max(0.5f, attack->interval);
+        ImGui::TextDisabled("Aggressive strikes only when the player is in melee range.");
+      }
+
+      if (ImGui::Button("Kill selected")) {
+        killActor(entity);
+      }
+    }
+  }
+
+  ImGui::End();
+}
 
 void TaskBoardWindow::Draw() {
   bool show = game->taskBoardWindowEntity.has<ActiveWindow>();

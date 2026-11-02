@@ -1202,6 +1202,10 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     // --- combat -----------------------------------------------------------
     add(Field<ValueType::Bool>("combat", "combat.instantSkillshots",
             "Fire aimed skills at the cursor immediately instead of showing their aim indicator first.", &GameSettings::combat, &CombatSection::instantSkillshots));
+    add(Field<ValueType::Bool>("combat", "combat.showSkillRanges",
+            "Draw the cast range of targeted skills, plus the positions that keep the target in range while a movement-enabled cast is active.", &GameSettings::combat, &CombatSection::showSkillRanges));
+    add(Field<ValueType::String>("combat", "combat.deathIcon",
+            "IconRegistry id used as the corpse visual for every NPC death.", &GameSettings::combat, &CombatSection::deathIcon));
 
     // --- world ------------------------------------------------------------
     add(Field<ValueType::UInt64>("world", "world.seed",
@@ -1240,11 +1244,17 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.portraits",
             "Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id.", &GameSettings::content, &ContentSection::portraits))
         .Restart();
+    add(Field<ValueType::String>("content", "content.icons",
+            "Icon registry directory: one JSON per named icon (skill buttons, death marker, missing marker, future UI icons).", &GameSettings::content, &ContentSection::icons))
+        .Restart();
     add(Field<ValueType::String>("content", "content.projectiles",
             "Projectile registry directory: one JSON per flying object, with its sprite, speed and size.", &GameSettings::content, &ContentSection::projectiles))
         .Restart();
     add(Field<ValueType::String>("content", "content.skillshots",
             "Skillshot registry directory: one JSON per aimed delivery, with its sprite, path, speed, width and length.", &GameSettings::content, &ContentSection::skillshots))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.combatStrategies",
+            "Combat strategy registry directory: one JSON per non-LLM combat tactic.", &GameSettings::content, &ContentSection::combatStrategies))
         .Restart();
     add(Field<ValueType::String>("content", "content.places",
             "The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule.", &GameSettings::content, &ContentSection::places))

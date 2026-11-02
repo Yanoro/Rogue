@@ -181,8 +181,10 @@ set(SOURCES
     src/SkillRegistry.cpp
     src/StatRegistry.cpp
     src/PortraitRegistry.cpp
+    src/IconRegistry.cpp
     src/ProjectileRegistry.cpp
     src/SkillshotRegistry.cpp
+    src/CombatStrategyRegistry.cpp
     src/TileRegistry.cpp
     src/MemoryDigestJob.cpp
   src/PlaceCategoryRegistry.cpp

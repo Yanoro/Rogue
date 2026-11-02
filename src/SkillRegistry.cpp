@@ -75,8 +75,10 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
       def.activation.cooldownSeconds = a.value("cooldown", 1.5f);
       def.activation.rangeTiles = a.value("range", 1.0f);
       def.activation.gcd = a.value("gcd", true);
-      def.activation.gcdSeconds = a.value("gcdSeconds", 0.0f);
+      def.activation.gcdSeconds =
+          a.contains("gcdSeconds") ? a.value("gcdSeconds", 0.0f) : -1.0f;
       def.activation.autoCast = a.value("autoCast", false);
+      def.activation.canCastWhileMoving = a.value("canCastWhileMoving", true);
       def.activation.xpPerUse = a.value("xpPerUse", 0);
       def.activation.requiresTarget = a.value("requiresTarget", true);
       def.activation.castSeconds = a.value("cast", 0.0f);
@@ -114,10 +116,10 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
          "' has activation range <= 0; using 1 tile.");
     def.activation.rangeTiles = 1.0f;
   }
-  if (def.activation.gcdSeconds < 0.0f) {
+  if (def.activation.gcdSeconds < -1.0f) {
     warn("Warning: Skill '" + def.id +
-         "' has a negative gcdSeconds; using 0 (the default).");
-    def.activation.gcdSeconds = 0.0f;
+         "' has an invalid negative gcdSeconds; using the character default.");
+    def.activation.gcdSeconds = -1.0f;
   }
   if (def.activation.castSeconds < 0.0f) {
     warn("Warning: Skill '" + def.id +
@@ -357,8 +359,15 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
     activation["cooldown"] = def->activation.cooldownSeconds;
     activation["range"] = def->activation.rangeTiles;
     activation["gcd"] = def->activation.gcd;
-    activation["gcdSeconds"] = def->activation.gcdSeconds;
+    if (def->activation.gcdSeconds >= 0.0f) {
+      activation["gcdSeconds"] = def->activation.gcdSeconds;
+    } else {
+      // -1 is the "no override" sentinel; leaving it in the document would be
+      // meaningless content and would make a reload change the value.
+      activation.erase("gcdSeconds");
+    }
     activation["autoCast"] = def->activation.autoCast;
+    activation["canCastWhileMoving"] = def->activation.canCastWhileMoving;
     activation["xpPerUse"] = def->activation.xpPerUse;
     activation["requiresTarget"] = def->activation.requiresTarget;
     activation["cast"] = def->activation.castSeconds;

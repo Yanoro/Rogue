@@ -30,6 +30,10 @@ enum class Domain {
   // than a JSON document. It has no sprite descriptor row and no overlay because it is not
   // a definition kind -- Send routes to the sprite-document conversation instead.
   ActorSprite,
+  // A UI icon, with no definition turn behind it. The IconRegistry entry is the
+  // identity; this domain exists so the Designer can create the art and the
+  // registry entry together.
+  Icon,
 };
 
 struct Descriptor {

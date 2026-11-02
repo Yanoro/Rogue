@@ -1,0 +1,20 @@
+{
+  "name": "Corpse",
+  "description": "The remains of a fallen creature. It has nothing to say yet.",
+  "components": ["Corpse"],
+  "sprite": "data/sprites/corpse.png",
+  "art": [
+    "  x  ",
+    " /|\\ ",
+    " / \\ "
+  ],
+  "palette": {
+    "x": [230, 225, 205, 255],
+    "/": [180, 174, 154, 255],
+    "\\": [180, 174, 154, 255]
+  },
+  "character": "%",
+  "characterColor": [230, 225, 205, 255],
+  "backgroundColor": [0, 0, 0, 0],
+  "nameTagColor": [200, 195, 180, 255]
+}

@@ -1,7 +1,7 @@
 {
   "name": "Attack",
   "description": "Swing whatever is in your hand. The weapon sets the damage and the tempo, so a better blade is felt immediately; unarmed, this is a fist.",
-  "icon": "data/sprites/skill_attack.png",
+  "icon": "skill_attack",
   "type": "active",
   "stages": [
     "Initiate",

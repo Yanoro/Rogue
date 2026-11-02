@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <optional>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -19,6 +20,8 @@
 #include "Settings.h"
 #include "SpriteDraw.hpp"
 #include "SpritePicker.hpp"
+#include "ActorSpritePicker.hpp"
+#include "IconPicker.hpp"
 #include "SpritePaths.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
@@ -85,20 +88,91 @@ bool DrawColourValue(nlohmann::json &value) {
   return changed;
 }
 
+// Optional context for fields that should not use the generic editor. Only the
+// top-level "sprite" key of an NPC template uses the actor-sprite picker; all
+// other strings, including nested fields, stay ordinary text fields.
+struct JsonFormOptions {
+  const ActorSpriteRegistry *actorSprites = nullptr;
+  ResourceManager *resources = nullptr;
+  std::string *actorSpriteFilter = nullptr;
+  bool *showActorSpritesWithoutArt = nullptr;
+  const CombatStrategyRegistry *combatStrategies = nullptr;
+  const IconRegistry *icons = nullptr;
+  std::string *iconFilter = nullptr;
+  DebugLog *debugLog = nullptr;
+};
+
 // One value of the document, edited in place. Returns true when it changed.
 //
 // Recursive over the JSON rather than a type per registry: the form has to be able to
 // draw a document it has never seen, which is the whole point of the editor. Arrays get
 // add/remove because they are how the grammar expresses most things (components, art,
 // palette); objects get add/remove of keys for the same reason.
+//
+// `depth` starts at zero for the document itself; top-level keys are depth 1. The
+// actor-sprite special case is deliberately restricted to depth 1 so a nested
+// "sprite" field in some future object cannot silently become a picker.
 bool DrawJsonValue(nlohmann::json &value, const std::string &key,
-                   bool inPalette) {
+                   bool inPalette, const JsonFormOptions &options,
+                   int depth = 0) {
   bool changed = false;
 
   // A colour is recognised before the array branch, because it *is* an array of
   // numbers and would otherwise be drawn as four spinners.
   if ((inPalette || KeyMentionsColour(key)) && IsColourArray(value)) {
     return DrawColourValue(value);
+  }
+
+  if (depth == 1 && key == "icon" && value.is_string() &&
+      options.icons != nullptr && options.iconFilter != nullptr) {
+    const std::string current = value.get<std::string>();
+    const std::optional<std::string> selected = IconPicker::Draw(
+        *options.icons, *options.resources, current,
+        "##content-skill-icon", *options.iconFilter, /*allowNone=*/true,
+        options.debugLog);
+    if (selected.has_value()) {
+      value = *selected;
+      return true;
+    }
+    return false;
+  }
+
+  if (depth == 1 && key == "combatStrategy" && value.is_string() &&
+      options.combatStrategies != nullptr) {
+    const std::string current = value.get<std::string>();
+    if (ImGui::BeginCombo("##combatStrategy",
+                          current.empty() ? "None (hold)" : current.c_str())) {
+      if (ImGui::Selectable("None (hold)", current.empty())) {
+        value = "";
+        return true;
+      }
+      for (const CombatStrategyDef *definition :
+           options.combatStrategies->GetAll()) {
+        if (ImGui::Selectable(definition->name.c_str(),
+                              current == definition->id)) {
+          value = definition->id;
+          return true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    return false;
+  }
+
+  if (depth == 1 && key == "sprite" && value.is_string() &&
+      options.actorSprites != nullptr && options.resources != nullptr &&
+      options.actorSpriteFilter != nullptr &&
+      options.showActorSpritesWithoutArt != nullptr) {
+    const std::string current = value.get<std::string>();
+    const std::optional<std::string> selected = ActorSpritePicker::Draw(
+        *options.actorSprites, *options.resources, current,
+        "##npc-template-actor-sprites", *options.actorSpriteFilter,
+        *options.showActorSpritesWithoutArt);
+    if (selected.has_value()) {
+      value = *selected;
+      return true;
+    }
+    return false;
   }
 
   if (value.is_boolean()) {
@@ -146,7 +220,8 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
         ImGui::TextDisabled("%zu", i);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-60.0f);
-        changed |= DrawJsonValue(value[i], key, inPalette);
+        changed |= DrawJsonValue(value[i], key, inPalette, options,
+                                 depth + 1);
         ImGui::SameLine();
         if (ImGui::SmallButton("x")) {
           value.erase(value.begin() + static_cast<nlohmann::json::difference_type>(i));
@@ -178,7 +253,8 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
         changed |= DrawJsonValue(entry.value(), entry.key(),
-                                   inPalette || KeyIsPalette(entry.key()));
+                                 inPalette || KeyIsPalette(entry.key()), options,
+                                 depth + 1);
         ImGui::PopID();
       }
       ImGui::TreePop();
@@ -196,6 +272,7 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
 SpriteKinds::Kind SpriteKindOf(const ContentKinds::Kind &kind) {
   if (kind.id == "objects") return SpriteKinds::Kind::Object;
   if (kind.id == "actors") return SpriteKinds::Kind::Actor;
+  if (kind.id == "icons") return SpriteKinds::Kind::Icon;
   return SpriteKinds::Kind::Tile;
 }
 
@@ -210,13 +287,23 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
-      game->skillRegistry, game->npcTemplateRegistry,
+      game->iconRegistry, game->skillRegistry, game->npcTemplateRegistry,
       game->brainTemplateRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }
 
 const ContentKinds::Kind *ContentEditorWindow::Kind() const {
   return ContentKinds::For(kindId);
+}
+
+void ContentEditorWindow::SelectEntry(const std::string &kind,
+                                      const std::string &entry) {
+  kindId = kind;
+  entryId = entry;
+  filterBuffer[0] = '\0';
+  status.clear();
+  statusIsError = false;
+  ReloadDocument();
 }
 
 void ContentEditorWindow::ReloadDocument() {
@@ -229,7 +316,8 @@ void ContentEditorWindow::ReloadDocument() {
 
 void ContentEditorWindow::Save() {
   const ContentKinds::Kind *kind = Kind();
-  if (kind == nullptr || game == nullptr || entryId.empty()) return;
+  if (kind == nullptr || game == nullptr) return;
+  if (entryId.empty() && kind->id != "icons") return;
 
   const std::string directory =
       (std::filesystem::path(Settings().content.editor) / kind->id).string();
@@ -283,7 +371,10 @@ void ContentEditorWindow::Save() {
   // Skills may have been normalized by the apply (a type default filled in, an
   // activation added), so show the live document. Other kinds keep the form on
   // the authored copy, as before.
-  if (kind->id == "skills") {
+  if (kind->id == "skills" || kind->id == "icons") {
+    if (kind->id == "icons") {
+      entryId = kind->fileName(saveDocument);
+    }
     ReloadDocument();
   }
   status = "saved " + path.string() +
@@ -314,6 +405,20 @@ void ContentEditorWindow::DrawKindAndList() {
   const std::vector<ContentKinds::Entry> entries = kind->list(World_());
   std::string lowered(filterBuffer);
   for (char &c : lowered) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+  if (kind->id == "icons") {
+    if (ImGui::Button("New icon")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Icon";
+      document["description"] = std::string();
+      document["sprite"] = std::string();
+      entryId.clear();
+      dirty = true;
+      status = "Name the icon, then Save. Its id is the slug of the name; it can "
+               "have no art until you create one.";
+      statusIsError = false;
+    }
+  }
 
   ImGui::BeginChild("content_list", ImVec2(0, 0), true);
   for (const ContentKinds::Entry &entry : entries) {
@@ -569,7 +674,7 @@ void ContentEditorWindow::RefreshSelectedAsset() {
   // large preview kept drawing the sprite that was showing before the switch.
   if (kind->id == "objects") {
     game->RefreshObjectVisuals(entryId);
-  } else if (kind->id == "actors") {
+  } else if (kind->id == "actors" || kind->id == "icons") {
     game->ForgetActorSprite(entryId);
   } else {
     game->RefreshTileVisuals(entryId);
@@ -584,10 +689,19 @@ void ContentEditorWindow::DrawSpritePane() {
 
   // The document's own `sprite` override wins, exactly as it does in the world, so the
   // preview cannot show an authored path the renderer would ignore.
-  const std::string explicitSprite =
+  std::string explicitSprite =
       document.contains("sprite") && document["sprite"].is_string()
           ? document["sprite"].get<std::string>()
           : std::string();
+
+  // A regenerated icon may have an authored `sprite` path from before the marker.
+  // The marker is the newer choice, so show the generated file once it exists.
+  if (kind->id == "icons" && PrefersGeneratedSprite(convention)) {
+    const std::string generated = GeneratedSpritePath(convention);
+    if (!generated.empty() && std::filesystem::exists(generated)) {
+      explicitSprite = generated;
+    }
+  }
 
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
@@ -642,6 +756,22 @@ void ContentEditorWindow::DrawSpritePane() {
     // The current image is copied aside first, so "regenerate" is never destructive:
     // whatever was on screen a moment ago is still in the list below.
     ArchiveActiveSprite(convention);
+    // Icons usually already have pack art. Regeneration writes the generated layer,
+    // but without this marker the pack still wins the resolution order, so the new
+    // icon would exist on disk and never appear. Point the marker at the generated
+    // file before the async job lands; until it exists, resolution still falls back
+    // to the pack.
+    if (kind->id == "icons") {
+      const std::string markerPath = GeneratedSpriteMarkerPath(convention);
+      if (!markerPath.empty()) {
+        std::ofstream marker(markerPath);
+        if (marker.is_open()) {
+          nlohmann::json choice = nlohmann::json::object();
+          choice["sprite"] = convention + ".png";
+          marker << choice.dump(2) << "\n";
+        }
+      }
+    }
     if (game->designerWindow) {
       // Through the Designer, always: it is the window that owns the document turn. With
       // a document present this just queues the compile; without one it asks the model to
@@ -749,25 +879,29 @@ void ContentEditorWindow::DrawSpritePane() {
 }
 
 void ContentEditorWindow::DrawDocumentPane() {
-  if (entryId.empty()) {
+  const ContentKinds::Kind *kind = Kind();
+  if (kind == nullptr) return;
+  if (entryId.empty() && kind->id != "icons") {
     ImGui::TextWrapped(
         "Pick an entry on the left. The document is shown as a form generated from its "
         "own JSON, so a kind added to the registry table is editable without a new "
         "window.");
     return;
   }
-
-  const ContentKinds::Kind *kind = Kind();
-  if (kind == nullptr) return;
-
-  ImGui::TextDisabled("%s / %s", kind->id.c_str(), entryId.c_str());
+  if (entryId.empty()) {
+    ImGui::TextDisabled("icons / new entry (not saved yet)");
+  } else {
+    ImGui::TextDisabled("%s / %s", kind->id.c_str(), entryId.c_str());
+  }
   ImGui::SameLine();
   if (dirty) {
     ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "(edited, not saved)");
   }
   ImGui::Separator();
 
-  DrawSpritePane();
+  if (!entryId.empty()) {
+    DrawSpritePane();
+  }
 
   // The requests this editor started, and anything else in flight. A button that queues
   // work and then reports it once, in a status line the next click overwrites, is how a
@@ -786,7 +920,21 @@ void ContentEditorWindow::DrawDocumentPane() {
   ImGui::BeginChild("content_document", ImVec2(0, -34.0f), true);
   // One form for the whole document: the fields are whatever the file has, and the
   // registry's own validator is what decides whether the result is usable.
-  if (DrawJsonValue(document, std::string(), false)) {
+  JsonFormOptions options;
+  if (kind->id == "npcs") {
+    options.actorSprites = &game->actorSpriteRegistry;
+    options.resources = &game->resourceManager;
+    options.actorSpriteFilter = &npcSpriteFilter;
+    options.showActorSpritesWithoutArt = &showActorSpritesWithoutArt;
+    options.combatStrategies = &game->combatStrategyRegistry;
+  }
+  if (kind->id == "skills") {
+    options.icons = &game->iconRegistry;
+    options.resources = &game->resourceManager;
+    options.iconFilter = &skillIconFilter;
+    options.debugLog = game->debugLog.get();
+  }
+  if (DrawJsonValue(document, std::string(), false, options)) {
     dirty = true;
   }
   ImGui::EndChild();

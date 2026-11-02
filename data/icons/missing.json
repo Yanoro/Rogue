@@ -1,0 +1,5 @@
+{
+  "name": "Missing",
+  "description": "The interrogation mark used when an icon has no art or an asset reference cannot be resolved.",
+  "sprite": "data/sprites/unknown.png"
+}

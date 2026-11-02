@@ -198,7 +198,9 @@
     "portrait": "player"
   },
   "combat": {
-    "instantSkillshots": false
+    "instantSkillshots": false,
+    "showSkillRanges": true,
+    "deathIcon": "death"
   },
   "world": {
     "seed": 0
@@ -211,8 +213,10 @@
     "items": "data/items",
     "races": "data/races",
     "portraits": "data/portraits",
+    "icons": "data/icons",
     "projectiles": "data/projectiles",
-    "skillshots": "data/skillshots"
+    "skillshots": "data/skillshots",
+    "combatStrategies": "data/combat_strategies"
   },
   "debug": {
     "windowStateFile": "./debug_windows_state.json",

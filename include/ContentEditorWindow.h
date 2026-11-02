@@ -36,6 +36,10 @@ public:
 
   void Draw() override;
 
+  // Opens this editor on one registry entry. Used by the NPC spawner's "Edit
+  // template" button; the window is already kept alive by Game.
+  void SelectEntry(const std::string &kind, const std::string &entry);
+
 private:
   // Rebuilds the working copy from the live registry. Also what "Revert" does.
   void ReloadDocument();
@@ -81,6 +85,12 @@ private:
 
   std::string status;
   bool statusIsError = false;
+
+  // Actor-sprite picker state for the NPC template's "sprite" field. Session
+  // state, like the Settings picker's filter: it should not survive a reopen.
+  std::string npcSpriteFilter;
+  bool showActorSpritesWithoutArt = false;
+  std::string skillIconFilter;
 
   // A filter, because both catalogs are the whole world's vocabulary and a list of a few
   // hundred rows is not a list. A plain buffer rather than std::string so ImGui can edit

@@ -51,6 +51,18 @@ const std::vector<Descriptor> &All() {
           "",
           nullptr,
       },
+      {
+          Domain::Icon,
+          "icon",
+          "Icon",
+          "an icon",
+          // No definition prompt and no overlay, because the IconRegistry is the
+          // definition. The sprite row is what makes the art conventions and
+          // generated layer work exactly as they do for actors.
+          "",
+          "",
+          &SpriteKinds::For(SpriteKinds::Kind::Icon),
+      },
   };
   return kAll;
 }

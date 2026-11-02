@@ -549,7 +549,9 @@ std::string TalkAction::getFailureMessage() {
 AgentBrain::AgentBrain(flecs::entity entity, std::string name, DebugLog *debugLog)
     : entity(entity), debugLog(debugLog) {
   entity.set<WindowOnClick>({WindowType::NPCContextWindowType});
-  entity.set_name(name.c_str());
+  // createNPC owns the entity's unique Flecs name (the display name plus the
+  // entity id); overwriting it with the shared display name aborts the second
+  // NPC with the same template name.
 
   const std::string agentKey = LogPaths::AgentKey(name, entity.id());
   logFilePath = LogPaths::NpcFile(

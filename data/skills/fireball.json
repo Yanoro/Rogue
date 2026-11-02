@@ -1,14 +1,28 @@
 {
   "name": "Fireball",
   "description": "A ball of flame thrown across the yard. The impact is the damage; the flight is just how it gets there.",
-  "icon": "data/sprites/skill_fireball.png",
+  "icon": "skill_fireball",
   "type": "active",
-  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
   "levelsPerStage": 9,
-  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
   "baseline": 0,
   "scale": 9,
-  "trainedBy": ["use"],
+  "trainedBy": [
+    "use"
+  ],
   "activation": {
     "baseDamage": 14,
     "cooldown": 6.0,

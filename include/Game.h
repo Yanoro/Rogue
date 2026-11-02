@@ -29,8 +29,10 @@
 #include "RaceRegistry.h"
 #include "RecipeRegistry.h"
 #include "PortraitRegistry.h"
+#include "IconRegistry.h"
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
+#include "CombatStrategyRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "SpriteGapOffer.hpp"
@@ -291,8 +293,10 @@ private:
   ItemRegistry itemRegistry;
   RaceRegistry raceRegistry;
   PortraitRegistry portraitRegistry;
+  IconRegistry iconRegistry;
   ProjectileRegistry projectileRegistry;
   SkillshotRegistry skillshotRegistry;
+  CombatStrategyRegistry combatStrategyRegistry;
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
@@ -476,6 +480,7 @@ private:
   flecs::entity blueprintWindowEntity;
   flecs::entity aiMenuWindowEntity;
   flecs::entity npcMenuWindowEntity;
+  flecs::entity npcSpawnerWindowEntity;
   flecs::entity taskBoardWindowEntity;
   flecs::entity systemOneWindowEntity;
   // Stage 0 of docs/spatial-memory-design.md: holds the facing-marker checkbox
@@ -524,6 +529,25 @@ private:
   // the user was looking at -- rebuilding it on every toggle would throw both away.
   std::shared_ptr<class ContentEditorWindow> contentEditorWindow;
   flecs::entity contentEditorWindowEntity;
+
+  // What the NPC spawner has queued while the user is picking a map tile.
+  struct PendingNpcSpawn {
+    bool active = false;
+    std::string npcTemplate;
+    std::string brain;
+    bool suppressBrain = false;
+    bool aggressive = false;
+    bool retaliates = false;
+    std::string combatStrategy;
+    bool suppressCombatStrategy = false;
+    float health = 0.0f;          // 0 means "the resolved maximum"
+    float speed = 0.0f;           // 0 means DEFAULT_MAXSPEED
+    float attackDamage = 0.0f;    // 0 means the template/default
+    float attackInterval = 0.0f;  // 0 means the template/default
+  };
+
+  PendingNpcSpawn pendingNpcSpawn;
+  std::string npcSpawnerStatus;
 
   // The one gap-to-sprite request in flight (see SpriteGapOffer.hpp). Null when nothing
   // is being designed; replaced rather than queued when a second gap is offered, because
@@ -600,6 +624,7 @@ private:
   friend class PlaceSeedNamingWindow;
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
+  friend class NpcSpawnerWindow;
   friend class TaskBoardWindow;
   friend class SystemOneWindow;
   friend class VisionChatWindow;
@@ -735,6 +760,17 @@ private:
   // after a skill save so a type/activation change appears immediately; it keeps
   // existing "Always casts" choices and adds new auto-cast defaults.
   void RefreshPlayerSkillBar();
+
+  // One NPC through the whole spawn path: resolve the template, create the body
+  // and brain (or deliberately no brain), and spawn the authored inventory.
+  flecs::entity SpawnNpc(NPCData data);
+
+  // Completes a pending spawn at a clicked tile. Refuses out-of-bounds/blocked
+  // tiles and leaves a human-readable reason in npcSpawnerStatus.
+  void SpawnPendingNpcAt(GamePosition position);
+  // Spawns the corpse, transfers held items, and destroys the body. Used by the
+  // death system and the debug kill control; the entity must be an NPC.
+  void KillEntity(flecs::entity entity);
   void ECSInitRenderSystems();
 
   // The render systems that draw over the tile and entity layers (name tags and

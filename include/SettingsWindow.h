@@ -42,6 +42,10 @@ private:
   void DrawPlayerActorSpriteRow(const SettingsSchema::FieldSpec &field);
   void SelectActorSprite(const SettingsSchema::FieldSpec &field,
                          const std::string &id);
+  // The corpse visual: an IconRegistry picker rather than a raw id string.
+  void DrawDeathIconRow(const SettingsSchema::FieldSpec &field);
+  void SelectDeathIcon(const SettingsSchema::FieldSpec &field,
+                       const std::string &id);
   // Re-applies the player settings that land in components after a reload or
   // reset, so those rows are genuinely live rather than only when edited.
   void RefreshPlayerSettings();
@@ -70,6 +74,7 @@ private:
   // would hide sprites the next time the window opened.
   std::string actorSpriteFilter;
   bool showActorSpritesWithoutArt = false;
+  std::string iconFilter;
   std::string status;
   bool statusOk = true;
   bool showRestartOnly = false;

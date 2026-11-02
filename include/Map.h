@@ -22,6 +22,19 @@ struct NPCData {
   // The BrainTemplate that drives this NPC, from "brain" or from its template.
   // Empty means no brain: a body with no agent (the non-LLM case).
   std::string brain;
+  // Set by the spawn window's "None" brain choice so ResolveNpcTemplate does not
+  // fill the template's authored brain back in.
+  bool suppressBrain = false;
+  // "neutral" or "aggressive"; see NpcDisposition. Copied from the template by
+  // ResolveNpcTemplate, then overridden per instance where needed.
+  std::string disposition = "neutral";
+  bool retaliates = false;
+  float attackDamage = 8.0f;
+  float attackInterval = 6.0f;
+  // CombatStrategyRegistry id for the non-LLM tactic. Resolved from the
+  // template unless the spawner/author clears it.
+  std::string combatStrategy;
+  bool suppressCombatStrategy = false;
   // Starting stat values from "stats": {"strength": 14}. Applied over the
   // registry baselines GiveDefaultStats stamps, before the brain exists.
   std::vector<StatValue> startingStats;

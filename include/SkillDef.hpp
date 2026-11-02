@@ -102,9 +102,11 @@ struct SkillActivation {
   // exempt on purpose: it runs on its own weapon timer, so it keeps flowing
   // between skills instead of competing with them for the same beat.
   bool gcd = true;
-  // Per-skill override of the global cooldown length. 0 means the character's
-  // default, so a fast skill can recover sooner without a second clock.
-  float gcdSeconds = 0.0f;
+  // Per-skill override of the global cooldown length. A negative value means
+  // "use the character's default"; 0 explicitly means "no global cooldown".
+  // The distinction matters for cooldown-0 skills such as Ice Lance: an
+  // authored 0 must not silently turn into the 1.5 s default.
+  float gcdSeconds = -1.0f;
 
   // Initial state of the right-click "Always casts" toggle. True only for the
   // basic attack, which is what keeps combat moving while the player (and, in
@@ -118,6 +120,12 @@ struct SkillActivation {
 
   // False for a self-buff or a utility skill that needs no target.
   bool requiresTarget = true;
+
+  // Whether the player may start this cast while already walking. The default
+  // keeps the historical behaviour: free movement during the cast. False means
+  // activating it forces the player to a stop, and any movement during the cast
+  // cancels it. Only meaningful for cast-time skills.
+  bool canCastWhileMoving = true;
 
   // Seconds of wind-up before the effect lands. 0 is instant.
   //
@@ -185,9 +193,10 @@ struct SkillDef {
   // clause is generated from the registered links (section 9.1).
   std::string description;
 
-  // Optional icon for the ability bar: a sprite convention id ("skill_attack")
-  // or an explicit path. Empty means the slot falls back to the skill's name,
-  // so a skill is usable from data alone without an art dependency.
+  // Optional IconRegistry id ("skill_attack") for the ability bar. Empty means
+  // the slot falls back to the skill's name, so a skill is usable from data
+  // alone without an art dependency. Explicit paths/conventions written before
+  // the registry existed still resolve through the compatibility fallback.
   std::string icon;
 
   // How this skill is used. Defaults to Passive so every skill written before

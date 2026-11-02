@@ -98,6 +98,32 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
   out.race = document.value("race", std::string());
   out.background = document.value("background", std::string());
   out.brain = document.value("brain", std::string());
+  out.disposition = document.value("disposition", std::string("neutral"));
+  for (char &c : out.disposition) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  if (out.disposition != "neutral" && out.disposition != "aggressive") {
+    Warn("Template '" + out.name + "' has disposition '" + out.disposition +
+         "'; using neutral", warnings);
+    out.disposition = "neutral";
+  }
+  out.retaliates = document.value("retaliates", false);
+  out.attackDamage = document.value("attackDamage", 8.0f);
+  out.attackInterval = document.value("attackInterval", 6.0f);
+  out.combatStrategy = document.value("combatStrategy", std::string());
+  for (char &c : out.combatStrategy) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  if (out.attackDamage <= 0.0f) {
+    Warn("Template '" + out.name + "' has non-positive attackDamage; using 8",
+         warnings);
+    out.attackDamage = 8.0f;
+  }
+  if (out.attackInterval <= 0.0f) {
+    Warn("Template '" + out.name + "' has non-positive attackInterval; using 6",
+         warnings);
+    out.attackInterval = 6.0f;
+  }
 
   if (document.contains("slots")) {
     ParseSlots(document["slots"], out.name, out.slots, warnings);
@@ -222,11 +248,16 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   nlohmann::json document = nlohmann::json::object();
   document["name"] = definition.name;
   if (!definition.description.empty()) document["description"] = definition.description;
-  if (!definition.sprite.empty()) document["sprite"] = definition.sprite;
+  document["sprite"] = definition.sprite;
   if (!definition.portrait.empty()) document["portrait"] = definition.portrait;
   if (!definition.race.empty()) document["race"] = definition.race;
   if (!definition.background.empty()) document["background"] = definition.background;
   if (!definition.brain.empty()) document["brain"] = definition.brain;
+  document["disposition"] = definition.disposition;
+  document["retaliates"] = definition.retaliates;
+  document["attackDamage"] = definition.attackDamage;
+  document["attackInterval"] = definition.attackInterval;
+  document["combatStrategy"] = definition.combatStrategy;
   if (!definition.slots.empty()) {
     nlohmann::json slots = nlohmann::json::array();
     for (const SlotSpec& slot : definition.slots) {

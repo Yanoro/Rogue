@@ -1,7 +1,7 @@
 {
   "name": "Power Strike",
   "description": "A committed blow with the whole body behind it. Slower than a plain attack, and the recovery after it is long enough to be punished.",
-  "icon": "data/sprites/skill_power_strike.png",
+  "icon": "skill_power_strike",
   "type": "active",
   "stages": [
     "Initiate",

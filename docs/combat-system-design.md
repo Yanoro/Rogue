@@ -753,3 +753,403 @@ Verification: an ad-hoc registry round-trip (`ToJson` -> edit -> `OverrideDefini
 passes, and a temporary `data/editor/skills/heavy_swing.json` changed the live Heavy Swing damage from
 18 to 99 in `--combat-check`, proving the startup override layer. The full game still builds at `-j2`
 and the combat check and HUD smoke run pass.
+
+---
+
+## 17. Testing combat against real NPCs
+
+### 17.1 The NPC Spawner window
+
+Open it from the Debug Console (F11) with **NPC Spawner**. It offers:
+
+- **NPC template** — every entry in `data/npcs/`.
+- **Brain** — *Template default*, *None (non-LLM)*, or a specific `BrainTemplate`. The
+  None option suppresses the template's brain, so the spawned character has a body and a
+  combat profile but no `NPCContext`/`AgentBrainWrapper`; a selected brain creates the
+  normal LLM-driven character.
+- **Stance** — Neutral or Aggressive — and **Retaliates**.
+- Per-spawn **Max HP / Speed / attack damage / attack interval** overrides. Zero means
+  use the resolved/template value.
+- **Place on map**: the next left-click on a free map tile spawns the NPC. Right-click or
+  Esc cancels; a blocked tile keeps the placement active so another tile can be chosen.
+- **Edit NPC template**: opens the Content Editor on the selected `npcs` entry, so the
+  source template can be changed without touching the spawned instance.
+
+The actor list below shows every alive `Actor` with `Vitals` (the player excluded). Clicking
+a row exposes live per-instance fields: current/max HP, `MaxSpeed`, stance, `Retaliates`,
+and the melee attack damage/interval. These edits never write the template; the template
+path is the **Edit NPC template** button. Each row also has **Kill**, which destroys the
+entity and its held items.
+
+### 17.2 Neutral, Aggressive, Retaliates
+
+- `NpcDisposition` is a component with `Disposition::Neutral` or `Disposition::Aggressive`.
+- `Retaliates` is a tag.
+- Aggressive NPCs use the existing telegraphed melee controller and attack the player when
+  in range.
+- Neutral NPCs do not initiate. A Neutral NPC with `Retaliates` flips to Aggressive the
+  first time the player damages it; Neutral without the tag never joins the fight.
+- The controller itself skips `NpcDisposition::Neutral`, so the same `Aggressive` profile
+  can be edited before or after the stance flips. Training dummies have no disposition and
+  keep their old always-on behavior.
+- No chase: an Aggressive NPC strikes when the player is already in melee range, matching
+  the sparring dummy's existing controller.
+
+### 17.3 NPC bodies
+
+`createNPC` now resolves `Vitals` from Constitution (like the player), gives NPCs a
+`MaxSpeed`, stamps a `NpcDisposition`, adds `Retaliates` when authored, and installs an
+`Aggressive` melee profile. A missing brain id produces a non-LLM body: name tag, health,
+movement speed and combat profile, but no agent context or wrapper. Brain templates are
+copyable in `NpcTemplate` (`brain`, `disposition`, `retaliates`, `attackDamage`,
+`attackInterval`), so the Content Editor can author them; spawning without a brain is the
+explicit window override.
+
+A brainless body has no NPC Context window. `createNPC` leaves
+`WindowOnClick = EntityInfoWindowType`; only the `AgentBrain` constructor replaces it
+with `NPCContextWindowType`. The combat check asserts both sides of that split.
+
+The same body attachment code now treats `sprite` as the reference it is: an
+`ActorSpriteRegistry` id is resolved through the convention path (`wolf` ->
+`packs/.../sprites/wolf.png`), while an explicit image path still works. Previously
+the id was passed as an explicit path, failed to load, and every wolf fell through to
+the human race look. The check verifies the wolf ends up with a `Sprite`.
+
+Flecs entity names are unique, while display names are not: two wolves are both
+"Wolf". `createNPC` therefore sets the Flecs name to `Wolf #<entity id>` and leaves
+`DisplayName` as the authored name for name tags, menus and combat text; `AgentBrain`
+no longer overwrites the entity name with the shared display name. The combat check
+spawns two wolves while both are alive to keep this regression covered.
+
+### 17.4 Verification
+
+`--combat-check` now also spawns a brainless wolf with `Retaliates`, verifies
+`Vitals`/`MaxSpeed`/stance/profile and the no-brain split, hits it with the player, checks
+that it flipped to Aggressive, then spawns a brain-driven blacksmith and checks the wrapper:
+
+```
+combat-check: npc spawned=1 retaliated=1 brainless=1 brain-driven=1 pending-spawn=1 duplicate-name=1 sprite=1 strategy=1 entity-info=1 brain-context=1 chase=1
+combat-check: OK
+```
+
+The window itself was smoke-tested open for five seconds with the training map's actors
+listed; no ASan or ImGui assertions. The placement click and live editing are UI paths and
+were not driven headlessly.
+
+---
+
+## 18. NPC template actor-sprite picker
+
+The Content Editor's NPC template form no longer shows `sprite` as an editable
+string. For `npcs` documents, the top-level `sprite` key is drawn with the same
+actor-sprite selector used by **Settings → Player → Actor sprite**.
+
+- Lists `ActorSpriteRegistry` entries as a thumbnail grid, with the same filter and
+  “without art” toggle as the player picker.
+- Includes the **Race default** cell. Selecting it stores an empty string, which
+  `NpcTemplate` already means “use the race's look”.
+- Selecting an actor sprite stores its registry id. Arbitrary image paths are no
+  longer editable here; the field is an actor-sprite reference.
+- The actor-sprite content kind itself is unchanged: its id *is* the sprite, and it
+  has no `sprite` field.
+- `NpcTemplateRegistry::ToJson` now always emits `sprite` (possibly empty), so every
+  NPC template exposes the picker even when it previously had no sprite key.
+
+The drawing code lives in one header-only helper,
+`include/ActorSpritePicker.hpp`, and both Settings and the Content Editor call it.
+The Content Editor special case is restricted to depth 1 (a top-level `sprite`
+key), so nested strings named `sprite` in future documents cannot silently become
+a picker.
+
+Build verified with the shared picker; `--combat-check` and the HUD smoke run still
+pass. The picker itself is a UI path and was not driven headlessly in this pass.
+
+---
+
+## 19. Non-LLM combat strategies
+
+The C++ tactic layer for brainless Aggressive bodies is a registry, not a second AI
+system. It answers only **where the body stands while it fights**; the LLM brain owns
+goals, memory, conversation and its own movement, and an LLM-driven NPC never executes
+a combat strategy. Attack damage, interval and range remain on the NPC template and
+spawner overrides. This keeps the record small and lets a future mage tactic add a
+ranged skill reference instead of turning the strategy into a union of every possible
+feature.
+
+### 19.1 Registry
+
+`data/combat_strategies/<id>.json`, path configurable as
+`content.combatStrategies`:
+
+```json
+{
+  "name": "Chase",
+  "description": "Close the distance to the aggressor with A*.",
+  "behavior": "chase",
+  "preferredRange": 1.0,
+  "repathSeconds": 0.5
+}
+```
+
+Only `chase` is implemented. The loader warns and falls back to chase for another
+`behavior` so a future kite/mage document cannot silently pretend to work. Missing
+strategy on a template means **hold**, today's stationary behavior, so existing
+aggressive NPCs do not change unless they opt in.
+
+### 19.2 Where it is selected
+
+- `NpcTemplate.combatStrategy` (empty = hold) and the Content Editor's NPC form now
+  shows a strategy combo. It is also emitted as an empty key so every template exposes
+  the choice.
+- The NPC Spawner has **Combat strategy: Template default / None (hold) / Specific**,
+  with a per-instance override in the selected-actor editor. The field is disabled for
+  brain-driven actors and labelled as ignored there.
+- The wolf template selects `chase`; the local `data/editor/npcs/wolf.json` override
+  must carry the same field because editor overrides outrank the catalogue file.
+
+### 19.3 Chase
+
+`CombatStrategySystem` runs for entities with `CombatStrategy` that do **not** have
+`AgentBrainWrapper`, are not Neutral, are alive, and are not casting. It repaths to the
+player with the existing `AStar` implementation every `repathSeconds`, writes
+`MOVE_THROUGH_PATH_ACTION`, and removes the path once within `preferredRange`, where
+the existing telegraphed melee controller attacks. There is no leash or return-home
+behavior, by choice; the body pursues while the player exists. `preferredRange` is in
+tiles and uses the same Chebyshev step count as the attack range checks.
+
+The combat check spawns a far-away Aggressive wolf, runs a tick, and asserts both the
+`CombatStrategy` component and an armed `MOVE_THROUGH_PATH_ACTION`:
+
+```
+combat-check: npc spawned=1 retaliated=1 brainless=1 brain-driven=1 pending-spawn=1 duplicate-name=1 sprite=1 strategy=1 entity-info=1 brain-context=1 chase=1
+combat-check: OK
+```
+
+---
+
+## 20. Cast range and cooldowns
+
+### 20.1 Targeted casts cancel when the target leaves range
+
+A targeted, non-skillshot cast now copies its range requirement into the cast
+action at commit time. `CastRangeCancelSystem` re-checks the distance every frame
+while the action timer is live. If the target dies or steps outside the skill's
+range, the cast is canceled immediately with an **Out of range!** / **Target lost!**
+callout, instead of waiting for the completion fizzle.
+
+The cancel is not gated on damage-interruptibility: interruptibility is about taking
+damage, while range is a hard target requirement. The cooldown was already started at
+cast start and is not refunded, matching the existing "a cast spends the skill" rule.
+`CastResolutionSystem` also checks that the caster still owns the cast before resolving,
+so a cancel that lands on the same frame as timer completion cannot still apply.
+
+The combat check starts Heavy Swing, moves the target six tiles away in both
+`GamePosition` and `ScreenPosition` (the logic sync uses the screen position), runs a
+tick, and asserts `Casting` is gone. That is why the check prints:
+
+```
+combat-check: cast started=1 resolved=1 range-cancel-started=1 range-canceled=1
+```
+
+### 20.2 Zero global cooldown
+
+`SkillActivation::gcdSeconds` now distinguishes:
+
+- **negative** (`-1`, the default when the key is absent): use the character's
+  default global cooldown (`DEFAULT_GLOBAL_COOLDOWN_SECONDS`, 1.5 s);
+- **0**: explicitly no global cooldown;
+- **positive**: that many seconds.
+
+Previously, `gcdSeconds: 0` was indistinguishable from "unset" and fell back to the
+1.5 s default. That was the extra 1–2 second lock on Ice Lance even with cooldown 0.
+The parser now records whether the key was present, `UseSkill` respects an explicit
+zero, and `SkillRegistry::ToJson` omits the sentinel instead of writing `-1`.
+
+The local Ice Lance override sets `cooldown: 0`, `gcd: true`, `gcdSeconds: 0`; the
+combat check verifies both clocks are empty after the cast:
+
+```
+combat-check: ice lance used=1 impact=1 cooldown-clear=1
+```
+
+One related fix: `ActivatePlayerSkill` and `CombatAutoCastSystem` copy skill ids
+before calling `UseSkill`. Committing a cast adds `Casting`/`Busy`, which moves the
+entity's archetype and invalidates pointers/references into `SkillBar`; holding the
+old reference across that mutation was a dangling-reference bug.
+
+Build verified with `--combat-check` (all checks pass); no debug diagnostics remain.
+
+---
+
+## 21. Skill range and movement during casts
+
+### 21.1 Range indicator
+
+`combat.showSkillRanges` (Settings → Combat, default on) draws two tile overlays
+when a targeted skill is used:
+
+- a blue boundary at the caster's skill range, using the same Chebyshev distance as
+  `WithinActivationRange`;
+- a green movement area around the locked target: the tiles from which the target
+  stays within the skill's range.
+
+The movement area is shown only for skills that allow free movement
+(`canCastWhileMoving = true`). A movement-locked skill cancels on any movement, so
+showing a "safe area" there would be misleading. The overlay is a short-lived
+`SkillRangeIndicator` component: cast duration plus 0.25 s, or an 0.8 s pulse for
+instant targeted skills. It follows the caster and target and disappears on its own.
+
+Heavy Swing therefore shows both its melee ring and the adjacent tiles around its
+target from which the cast can continue.
+
+### 21.2 `canCastWhileMoving`
+
+`SkillActivation.canCastWhileMoving` is a per-skill option, default **true**:
+
+- **true** — today's behavior: the player may start the cast while walking and keeps
+  moving. Moving is not itself a cancel; the existing target-range check cancels if
+  the target leaves reach, which is what the green movement area describes.
+- **false** — activation forces the player to a stop: the path, pending interaction,
+  velocity and acceleration are cleared. Any subsequent movement input cancels the
+  cast with a **Movement!** callout. The cooldown already started and is not refunded.
+
+This applies to cast-time skills only; instant skills have no cast window. `Casting`
+carries `movementLocked`, so only the casts that opted into the stop are watched by
+`CastMovementCancelSystem`.
+
+The stopped player's `Velocity` is cleared before the cast is registered, which is
+important because `handleInput` applies movement commands before combat keys. A held
+direction on the next frame is the deliberate movement that cancels.
+
+### 21.3 Verification
+
+The combat check asserts the Heavy Swing range indicator, its movement area/target,
+the target-out-of-range cancel, and a synthetic movement-locked cast canceled by
+setting velocity:
+
+```
+combat-check: cast started=1 resolved=1 range-indicator=1 range-cancel-started=1 range-canceled=1 movement-canceled=1
+```
+
+---
+
+## 22. Death lifecycle and corpses
+
+NPC death is now a real transition, not just health reaching zero:
+
+1. `DeathSystem` finds an entity with `Actor` and `Vitals.health <= 0`, excluding
+   `PlayerControlled` and `TrainingDummy`, and tags it `Dead`.
+2. The body is torn down after the current iteration. `KillEntity` spawns a `corpse`
+   object at the death tile before destroying the NPC.
+3. The corpse template (`data/objects/corpse.json`) has the new `Corpse` tag and the
+   skull-and-crossbones sprite `data/sprites/corpse.png`, but deliberately **no**
+   `Interactable` (cannot be used) and **no** `Obstacle` (does not block movement).
+4. Every held item is moved from the body to the corpse: the `Holds` relationship and
+   its `child_of` parent both change, so the loot survives the body's destruction. The
+   corpse is not a loot container yet; this preserves the items for a later window.
+5. A committed cast action is destroyed with the body. The player knockout/reset path
+   and training dummies are unchanged.
+
+The NPC Spawner's **Kill** now routes NPCs through `KillEntity`, so debug kills also
+produce corpses. Dummies and the player keep the old debug teardown because they are
+outside this lifecycle.
+
+The combat check kills a wolf at zero health, verifies the corpse is at the death tile,
+is non-interactable/non-blocking, and received the wolf's held bread:
+
+```
+combat-check: corpse=1 corpse-passive=1 corpse-loot=1
+```
+
+This is the death lifecycle only. The generalized effect-hook registry discussed
+earlier is not implemented yet; there is a single `KillEntity` path ready to emit an
+event later.
+
+---
+
+## 23. Generic icon registry
+
+`data/icons/*.json` is now the single catalogue for UI pictures that are not
+actor sprites, portraits, tiles or object art:
+
+```json
+{
+  "name": "Skill Attack",
+  "description": "The basic weapon swing.",
+  "sprite": ""
+}
+```
+
+- The id is the slug of `name` (`skill_attack`).
+- `sprite` may be an explicit path or a sprite convention id. Empty means the
+  icon id is used as the convention, which is what lets a newly created
+  `my_icon` resolve a generated `my_icon.png`.
+- `missing` points at `data/sprites/unknown.png` (the interrogation mark).
+- `death` points at `data/sprites/corpse.png` (the skull and bones).
+- The six current skill icons are `skill_attack`, `skill_fireball`,
+  `skill_heavy_swing`, `skill_ice_lance`, `skill_kick`, `skill_power_strike`;
+  their skill JSON now names those ids.
+
+`content.icons` (default `data/icons`) is the load path; Content Editor overrides
+live under `content.editor/icons` and are loaded last.
+
+### 23.1 Fallback and skill icons
+
+`IconPaths::ResolveIconPath` / `ResolveIconTexture` resolve an icon id, with the
+missing entry as the icon-only fallback. Explicit old skill icon paths and old
+sprite conventions still resolve, so content written before the registry keeps
+drawing. The global unknown sprite used by actors/objects/tiles is unchanged.
+
+The ability bar resolves `SkillDef.icon` through the icon registry. An empty icon
+still falls back to the clipped skill name; an unknown non-empty icon shows the
+interrogation mark.
+
+### 23.2 Death icon setting
+
+**Settings → Combat → Death icon** is an IconRegistry picker. The value is
+`combat.deathIcon` (default `death`). `CorpseIconSystem` reads it every frame and
+rewrites every corpse's `Sprite`, so changing the setting updates corpses already
+on the ground as well as future ones. The corpse still has no `Interactable` and no
+`Obstacle`.
+
+### 23.3 Content Editor
+
+- A new **Icons** kind lists/edits the registry and has its own sprite pane.
+- **New icon** starts a document named "New icon"; naming it and pressing Save
+  creates `icons/<slug>.json`, selects the new entry, and exposes the normal sprite
+  controls. Empty art is valid and displays the missing mark until generated.
+- Icons use a dedicated `SpriteKinds::Kind::Icon` and a Designer **Icon** mode.
+  The Designer writes the IconRegistry entry and then asks the icon sprite-document
+  turn for its art, so it no longer presents the request as actor art.
+- **Regenerate** on an icon writes the generated-choice marker before the async job
+  lands. This is the fix for the old "generated but nothing changed": the art pack
+  still won the normal resolution order, so the new file existed and was never
+  selected. Until the PNG arrives the marker falls back to the pack, so a failed
+  generation does not blank an existing icon.
+- Skill docs now show an icon picker over this registry instead of a raw string.
+  **None** clears the field (name fallback); old explicit paths remain readable.
+- The Content Editor's sprite refresh path treats icons like actor sprites, and
+  `HandleTileArtGenerated` forgets the icon texture path on completion, so a
+  regenerated icon is immediately re-resolved.
+
+### 23.4 Verification
+
+The combat check resolves the registry, the missing fallback, the corpse sprite,
+and a live death-icon switch:
+
+```
+combat-check: corpse-sprite=1 death-icon-switch=1 icons=1 icon-fallback=1
+combat-check: OK
+```
+
+### 23.5 Designer window
+
+The Designer's domain dropdown now has **Icon**. Its name box creates
+`<content.icons>/<slug>.json` with the typed description, adds it to the live
+registry, sets the generated-choice marker, and sends the icon sprite-document
+request. The same Icon sprite kind backs the Content Editor's Regenerate button, so
+both paths draw and refresh the same way.
+
+Build verified with `--combat-check`. The Settings/Content Editor pickers, the
+Designer Icon send, and the Icons kind's creation flow are UI paths not driven
+headlessly.

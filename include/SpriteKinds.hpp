@@ -36,6 +36,9 @@ enum class Kind {
   // its sprite. That is why it has no row in the descriptor table below -- those rows
   // carry a prompt file and a definition overlay directory, and an actor has neither.
   Actor,
+  // UI icons: no definition turn, like Actor. The icon registry is the definition;
+  // this kind exists so the Designer knows it is drawing an icon rather than a being.
+  Icon,
 };
 
 struct Descriptor {

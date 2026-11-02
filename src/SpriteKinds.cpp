@@ -44,6 +44,20 @@ const std::vector<Descriptor> kAll = {
         "## Object components the engine can spawn",
         "  (none: the object factory registered no components)",
     },
+    {
+        Kind::Icon,
+        "icon",
+        "Icon",
+        "icon",
+        // Icons are sprite-only, like actors: the registry is the definition, so
+        // there is no definition prompt or overlay directory.
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    },
 };
 
 }  // namespace
@@ -75,9 +89,9 @@ std::string ConventionIdFor(Kind kind, const std::string &name) {
   // The object key is derived from a definition, so it is wrapped and unwrapped here
   // rather than duplicating the slug rule. One extra JSON object per call, on a path that
   // runs once per accepted definition -- not per frame.
-  if (kind == Kind::Actor) {
-    // The registry keys actors by the slug of their name, so the id *is* the convention
-    // id -- no wrapper, no second slug rule.
+  if (kind == Kind::Actor || kind == Kind::Icon) {
+    // The actor/icon registry keys entries by the slug of their name, so the id *is*
+    // the convention id -- no wrapper, no second slug rule.
     return name;
   }
   if (kind == Kind::Object) {

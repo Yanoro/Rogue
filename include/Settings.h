@@ -628,6 +628,12 @@ struct GameSettings {
     // True: the same press fires immediately at the cursor, with no preview.
     // Read on every input, so toggling it in Settings takes effect next press.
     bool instantSkillshots = false;
+    // Draw the cast-range ring and (for movement-enabled skills) the positions
+    // from which the locked target stays in range. Read at draw time.
+    bool showSkillRanges = true;
+    // IconRegistry id used as the corpse visual. Read every frame by the corpse
+    // icon system, so existing corpses change with the setting.
+    std::string deathIcon = "death";
   } combat;
 
   struct WorldSection {
@@ -653,8 +659,10 @@ struct GameSettings {
     // template can be spawned with no brain at all.
     std::string brains = "data/brains";
     std::string portraits = "data/portraits";
+    std::string icons = "data/icons";
     std::string projectiles = "data/projectiles";
     std::string skillshots = "data/skillshots";
+    std::string combatStrategies = "data/combat_strategies";
     // The place taxonomy (docs/place-derivation-design.md section 4): which
     // categories form places, their seed thresholds, link radii and split rule.
     // A file rather than a directory, because it is one vocabulary, not a catalog.

@@ -8,6 +8,7 @@
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
 #include "Game.h"
+#include "IconRegistry.h"
 #include "ObjectFactory.h"
 #include "SkillRegistry.h"
 #include "SpritePaths.hpp"
@@ -99,6 +100,33 @@ std::string ObjectFileName(const nlohmann::json &document) {
 }
 
 std::string ObjectSprite(const std::string &id) { return id; }
+
+// ---- icons -----------------------------------------------------------------
+
+std::vector<Entry> ListIcons(const World &world) {
+  std::vector<Entry> out;
+  for (const IconDef *definition : world.icons.GetAll()) {
+    out.push_back({definition->id, definition->name, "icon registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadIcon(const World &world, const std::string &id) {
+  const IconDef *definition = world.icons.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.icons.ToJson(*definition);
+}
+
+bool ApplyIcon(const World &world, const nlohmann::json &document,
+               std::string *error, std::vector<std::string> *warnings) {
+  return world.icons.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string IconFileName(const nlohmann::json &document) {
+  return IconRegistry::IdFor(document);
+}
+
+std::string IconSprite(const std::string &id) { return id; }
 
 // ---- skills ----------------------------------------------------------------
 
@@ -310,6 +338,16 @@ const std::vector<Kind> &All() {
           &ApplyActorSprite,
           &ActorSpriteFileName,
           &ActorSpriteSprite,
+      },
+      {
+          "icons",
+          "Icons",
+          /*hasSprites=*/true,
+          &ListIcons,
+          &ReadIcon,
+          &ApplyIcon,
+          &IconFileName,
+          &IconSprite,
       },
       {
           "skills",

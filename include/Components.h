@@ -1297,6 +1297,12 @@ struct CastAction {
   // Locked at cast start for aimed skills: the player can move the mouse after
   // committing, but the lance must go where the indicator pointed when it began.
   Vector2 direction = {1.0f, 0.0f};
+
+  // Copied from the skill at cast start, like baseDamage: a data reload during
+  // the wind-up must not change whether the cast requires a target or how far
+  // that target may move before the cast is canceled.
+  bool requiresTarget = false;
+  float rangeTiles = 0.0f;
 };
 
 // The cast the character is currently committed to, on the CASTER.
@@ -1309,6 +1315,19 @@ struct Casting {
   std::string skillId;
   std::string label;
   bool interruptible = true;
+  // True for a cast whose skill disallows casting while moving: activation
+  // stopped the player, and the next movement input cancels the cast.
+  bool movementLocked = false;
+};
+
+// A short-lived visual owned by the caster: the skill's range ring, and for a
+// movement-enabled targeted cast, the positions from which the target remains in
+// range. The component is runtime-only; the render system checks the setting.
+struct SkillRangeIndicator {
+  float rangeTiles = 0.0f;
+  float remaining = 0.0f;
+  flecs::entity target = flecs::entity::null();
+  bool movementArea = false;
 };
 
 // Innate protection, in points per hit, on a character or an object.
@@ -1334,6 +1353,42 @@ struct Aggressive {
   float castSeconds = 2.0f; // wind-up, which is the interrupt window
   float damage = 8.0f;
   std::string label = "Strike";
+};
+
+// Whether a character initiates combat. Aggressive attacks on sight (when in
+// melee range); Neutral does not, unless it also carries Retaliates and is hit
+// by the player.
+enum class Disposition { Neutral, Aggressive };
+
+struct NpcDisposition {
+  Disposition value = Disposition::Neutral;
+};
+
+// A tag, not a field: "will fight back when attacked". It is what makes a
+// Neutral character defensive rather than harmless. Aggressive characters do
+// not need it, but keeping it on them is harmless and lets the window toggle
+// the two axes independently.
+struct Retaliates {};
+
+// Runtime death markers. Dead is added by the death system before the entity is
+// torn down, so a second scan in the same frame cannot kill it twice. Corpse is
+// carried by the object left at the death tile; it has no interaction path yet.
+struct Dead {};
+struct Corpse {};
+
+// The non-LLM tactic an NPC uses while Aggressive. Only bodies without an
+// AgentBrainWrapper execute it; an LLM character's own movement wins.
+//
+// The id names a CombatStrategyRegistry entry; the timer is per-instance A*
+// repath pacing, not content.
+struct CombatStrategy {
+  std::string id;
+  float repathTimer = 0.0f;
+};
+
+class CombatStrategyRegistry;
+struct CombatStrategyRegistryResource {
+  const CombatStrategyRegistry *registry = nullptr;
 };
 
 // A projectile in flight: the delivery, not the effect. It carries a copy of

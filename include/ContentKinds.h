@@ -11,6 +11,7 @@ class TileRegistry;
 class ObjectFactory;
 class DebugLog;
 class ActorSpriteRegistry;
+class IconRegistry;
 class SkillRegistry;
 class NpcTemplateRegistry;
 class BrainTemplateRegistry;
@@ -39,6 +40,7 @@ struct World {
   TileRegistry &tiles;
   ObjectFactory &objects;
   ActorSpriteRegistry &actorSprites;
+  IconRegistry &icons;
   SkillRegistry &skills;
   NpcTemplateRegistry &npcs;
   BrainTemplateRegistry &brains;
