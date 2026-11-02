@@ -188,7 +188,11 @@ private:
                              bool replaceGenerated = false,
                              const std::string &surroundings = std::string(),
                              const std::string &requirement = std::string(),
-                             bool redesign = false);
+                             bool redesign = false,
+                             const std::vector<std::string> &frameNames =
+                                 std::vector<std::string>(),
+                             const std::vector<std::string> &poses =
+                                 std::vector<std::string>());
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -200,7 +204,9 @@ private:
                                   const std::string &requirement) const;
 
   void SendArtTurn(const std::string &prompt, const std::string &artName,
-                  SpriteKinds::Kind artKind);
+                  SpriteKinds::Kind artKind,
+                  const std::vector<std::string> &artFrames =
+                      std::vector<std::string>());
   void InspectFinishedArtDocument(size_t index,
                                   const DesignerSession::Exchange &finished);
   // True when settings say the generation source is "dsl".
@@ -389,6 +395,13 @@ private:
   // per layer (a redraw changes the file, and the texture memo has to be told).
   void DrawRigPreview();
   void QueueRigPartArt(const RigDesigner::Part &part);
+  // Queues every layer of the draft for one clip, and declares each part's frame sprites
+  // in the draft first (the art is requested by those names).
+  void QueueRigClipArt(const RigClip &clip);
+  // Queues one layer's frames for one clip; also declares them in the draft.
+  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip);
+  // Copies the selected clip's brief and poses into the edit buffers.
+  void SyncRigClipBuffers(const RigClip &clip);
   void QueueWornArt(const std::string &itemId);
   void PumpRigArtQueue();
   // True while a finished reply has not yet been inspected. A new art request must not
@@ -403,6 +416,10 @@ private:
     std::string sprite;
     std::string requirement;
     std::string label;
+    // Animation: the frame blocks the document must contain (f1..fN) and the per-frame
+    // poses the prompt reads. Empty for a single-sprite layer.
+    std::vector<std::string> frames;
+    std::vector<std::string> poses;
     // True when art already exists and this is a deliberate re-draw, so the prompt asks
     // for a different interpretation rather than a copy of the current document.
     bool redesign = false;
@@ -424,6 +441,14 @@ private:
   std::deque<RigArtRequest> rigArtQueue;
   std::map<std::string, std::filesystem::file_time_type> rigArtStamps;
   std::set<std::string> rigPreviewWorn;
+  // Animation playback in the rig preview. The window owns the clock, so a pane that is
+  // not drawn does not advance it.
+  float rigAnimTime = 0.0f;
+  bool rigAnimPlaying = true;
+  std::string rigAnimClip;
+  char rigClipBriefBuffer[512] = {};
+  char rigClipPosesBuffer[1024] = {};
+  std::string rigClipBuffersFor;
   char rigNameBuffer[96] = {};
   bool mapPreviewValid = false;
   MapPreview::Info mapPreviewInfo;
