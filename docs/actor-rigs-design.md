@@ -282,6 +282,16 @@ acceptably, whether the hand makes the grip believable, and whether the sword ne
 pre-drawn angles. If the arm reads well but the sword only reads at coarse steps, the
 equipment needs its own directional art or per-clip worn frames before cutout can ship.
 
+The **Hybrid spike** (Debug Console -> Hybrid spike) is the cheaper experiment for that
+alternative: the body stays frame-swapped, while the iron sword gets a generated frame set
+for the selected clip (`<worn sprite>_<clip>_f1..fN`) drawn at the item's z. No anchors, no
+runtime rotation. The request includes the right arm's animation document as a reference,
+so the model can put the sword in the hand; the window composites body and sword frames,
+toggles the static sword for comparison, and plays the clip. It is a throwaway window: the
+frames are test outputs and nothing in the item model knows about them. If this reads well,
+the hybrid is worth a real worn-frames model; if the sword still floats or drifts, the
+alignment needs anchors.
+
 ## World rendering and playback
 
 `RigBody { rig }` on an actor makes the world draw it part by part instead of as a single

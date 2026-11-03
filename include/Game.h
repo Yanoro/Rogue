@@ -476,6 +476,8 @@ private:
   flecs::entity debugConsoleWindowEntity;
   // Throwaway cutout-animation evaluation window (CutoutSpikeWindow.h).
   flecs::entity cutoutSpikeWindowEntity;
+  // Throwaway hybrid (body frames + worn-item frames) evaluation window.
+  flecs::entity hybridSpikeWindowEntity;
   flecs::entity tileInfoWindowEntity;
   flecs::entity astarWindowEntity;
   flecs::entity entityOverviewWindowEntity;
@@ -596,6 +598,7 @@ private:
 
   friend class DebugConsoleWindow;
   friend class CutoutSpikeWindow;
+  friend class HybridSpikeWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
   friend class EntityOverviewWindow;

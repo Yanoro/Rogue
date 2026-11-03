@@ -172,6 +172,13 @@ public:
   bool QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
                          std::string *error);
 
+  // Throwaway hybrid-spike helper: asks for a worn item's frames for one clip, with the
+  // right arm's animation document as the alignment reference. The frames land as
+  // <worn sprite>_<clip>_f1..fN and are only read by the Hybrid spike window; nothing in
+  // the item model knows about them.
+  bool QueueWornClipArt(const std::string &itemId, const ActorRig &rig,
+                        const RigClip &clip, std::string *error);
+
 private:
   // The two conversations this window runs. A definition turn answers "what is this";
   // a pixel-document turn answers "how is it drawn". Named constants rather than bare 0

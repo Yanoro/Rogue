@@ -30,6 +30,7 @@
 #include "ContentEditorWindow.h"
 #include "DesignerWindow.h"
 #include "CutoutSpikeWindow.h"
+#include "HybridSpikeWindow.h"
 #include <algorithm>
 #include <map>
 #include <vector>
@@ -315,6 +316,15 @@ void DebugConsoleWindow::Draw() {
           {std::make_shared<CutoutSpikeWindow>(game)});
     } else {
       game->cutoutSpikeWindowEntity.remove<ActiveWindow>();
+    }
+  }
+  bool showHybridSpike = game->hybridSpikeWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Hybrid spike", &showHybridSpike)) {
+    if (showHybridSpike) {
+      game->hybridSpikeWindowEntity.set<ActiveWindow>(
+          {std::make_shared<HybridSpikeWindow>(game)});
+    } else {
+      game->hybridSpikeWindowEntity.remove<ActiveWindow>();
     }
   }
   if (ImGui::Checkbox("Blueprints", &showBlueprint)) {

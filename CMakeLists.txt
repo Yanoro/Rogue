@@ -219,6 +219,7 @@ set(SOURCES
     src/RaceRegistry.cpp
     src/SkillRegistry.cpp
     src/CutoutSpikeWindow.cpp
+    src/HybridSpikeWindow.cpp
     src/StatRegistry.cpp
     src/PortraitRegistry.cpp
     src/ProjectileRegistry.cpp
