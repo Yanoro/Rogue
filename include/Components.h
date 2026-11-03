@@ -598,6 +598,10 @@ struct RigBody {
 struct RigAnim {
   std::string clip;
   float time = 0.0f;
+  // A skill-driven clip plays once and then yields to locomotion. Kept on the component
+  // rather than inferred from the clip's loop flag because a preview or a locomotion clip
+  // can legitimately be non-looping too, and only the skill path owns this hand-over.
+  bool oneShot = false;
 };
 
 // Marks the map's own ground tiles, so the renderer can draw them before
@@ -1636,6 +1640,14 @@ struct ItemRegistryResource {
   ItemRegistry* registry;
 };
 
+class RigRegistry;
+// Actor-rig definitions, loaded once at init. UseSkill is a free function and needs the
+// rig's clips to start a skill animation; this is the same resource pattern as the item
+// and skill registries above.
+struct RigRegistryResource {
+  RigRegistry* registry;
+};
+
 class RaceRegistry;
 // Race definitions, loaded once at init from data/races/*.json (see
 // RaceRegistry.h). Supplies the body slots a character is born with, which is
@@ -1814,7 +1826,7 @@ inline void RegisterComponents(flecs::world &ecs) {
   ecs.component<Vitals>().member<float>("health").member<float>("maxHealth");
   ecs.component<Portrait>().member<std::string>("id");
   ecs.component<RigBody>().member<std::string>("rig");
-  ecs.component<RigAnim>().member<std::string>("clip").member<float>("time");
+  ecs.component<RigAnim>().member<std::string>("clip").member<float>("time").member<bool>("oneShot");
   ecs.component<Armor>().member<float>("value");
   ecs.component<Aggressive>()
       .member<float>("interval")

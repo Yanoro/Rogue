@@ -1047,6 +1047,32 @@ void Game::ECSInitPhysicsSystems() {
                    const Velocity &velocity) {
         const ActorRig *rig = rigRegistry.Get(body.rig);
         if (rig == nullptr) return;
+        // A skill clip owns the body until it finishes; locomotion resumes on the
+        // frame it ends, so the body never holds the last kick pose for a frame.
+        if (anim.oneShot) {
+          const RigClip *active = nullptr;
+          for (const RigClip &clip : rig->clips) {
+            if (clip.id == anim.clip) {
+              active = &clip;
+              break;
+            }
+          }
+          if (active == nullptr) {
+            anim.oneShot = false;
+          } else {
+            const float delta = std::min(GetFrameTime(), 0.1f);
+            anim.time += delta;
+            const float duration =
+                active->fps > 0
+                    ? active->frames / static_cast<float>(active->fps)
+                    : 0.0f;
+            if (duration > 0.0f && anim.time < duration) {
+              return;
+            }
+            anim.oneShot = false;
+            anim.time = 0.0f;
+          }
+        }
         const float speed =
             std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
         const MaxSpeed *maxSpeed = e.get<MaxSpeed>();

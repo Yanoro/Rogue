@@ -455,6 +455,7 @@ void Game::ECSInit() {
   // Agent-authored rigs load after the catalog, so deleting one reverts to the
   // hand-authored body it was written over.
   rigRegistry.Load(settings.content.generatedRigs);
+  ecs.set<RigRegistryResource>({&rigRegistry});
 
   // Movement templates load after the rigs so the cross-check below can see both. A rig
   // clip and a skill both name a movement by id; a typo would otherwise be a silent

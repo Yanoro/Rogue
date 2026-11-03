@@ -290,10 +290,13 @@ NPC template's `equipped` list appear as worn layers.
   anchors/worn-frames slice, and it is the reason `sword_swing` and `spell_cast` are gated.
 - **No directional art.** Rigs are drawn front-facing; there is no mirroring or
   four-direction vocabulary, so a character walking left looks like one walking right.
-- **No skill playback.** A skill's `animation` field is authored and validated, but only
-  locomotion drives clips in the world. A kick/attack clip can be previewed and inspected
-  in the Designer and the Content Editor, but nothing plays it when a skill activates; the
-  clip machinery is in place for it.
+- **Skill playback is a one-shot at activation.** `UseSkill` starts the skill's movement
+  clip on the actor's rig (after the target/range/cooldown checks pass), and the animation
+  system plays it once and returns to locomotion. It requires the actor to be rigged and
+  its rig to have that clip; an actor with no rig, or a rig without the clip, still uses
+  the skill -- it simply has no animation for that body. Cast-time skills start the
+  animation at activation, not when the effect lands, so the visual is not synced to the
+  cast bar or the hit.
 - **The previews are still a manual outfit.** The Content Editor and Designer previews do
   not read `Equipped`; the world does. A pane showing a helmet you have not toggled is not a
   bug, it is the preview's deliberate control.
@@ -305,7 +308,7 @@ NPC template's `equipped` list appear as worn layers.
 
 1. Anchors or per-frame worn frames, so equipment moves with the part it sits on; then
    `sword_swing` and `spell_cast` can generate.
-2. Skill playback: the activated skill's movement runs as a one-shot clip, then returns to
-   locomotion.
-3. Directional rig art, or at least a horizontal flip, and the facing wiring.
-4. The previews read the live equipment lookup instead of a manual outfit.
+2. Directional rig art, or at least a horizontal flip, and the facing wiring.
+3. The previews read the live equipment lookup instead of a manual outfit.
+4. Cast-time skills could hold their cast clip until the cast completes, instead of the
+   one-shot starting at activation.
