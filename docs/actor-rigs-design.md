@@ -267,10 +267,20 @@ document costs prompt tokens per part. The movement's `requires` gate still appl
 sword/cast clips are refused until worn equipment follows the body.
 
 A throwaway **Cutout spike** debug window (Debug Console -> Cutout spike) evaluates the
-segmented-animation route before it becomes production work: orc_brute's right arm split at
-the elbow, the iron sword attached at the wrist, four hardcoded poses, Play/Pause/speed/time
-and a rest reference. Nothing in it is a data model; it exists to answer whether this pixel
-art reads acceptably when articulated, and how much per-frame authoring it costs.
+segmented-animation route before it becomes production work. The first version was a stress
+test (orc_brute's 4x12 bar arm, two straight cuts, no hand, 215 degrees of shoulder travel,
+one freely rotated sword) and it looked bad for exactly those reasons. The fair version
+uses a small synthetic **three-segment test arm** (sleeve, forearm, hand with a thumb,
+overlapping joints), the iron sword attached to the **hand** at a grip offset, the hand
+drawn over the grip, six **eased** poses over about 85 degrees of shoulder travel, joint
+caps, Play/Pause/speed/time, and a sword-angle-step control (smooth / 15 / 30 / 45 / 90
+degrees) that approximates drawing the sword at a few pre-rendered angles.
+
+It still is not a data model: the segments, pivots and poses are hardcoded for the test
+asset. It answers whether articulated pixel art with proper segment shapes reads
+acceptably, whether the hand makes the grip believable, and whether the sword needs
+pre-drawn angles. If the arm reads well but the sword only reads at coarse steps, the
+equipment needs its own directional art or per-clip worn frames before cutout can ship.
 
 ## World rendering and playback
 

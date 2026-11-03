@@ -6,11 +6,13 @@ class Game;
 
 // Throwaway evaluation window: an articulated arm and a worn sword.
 //
-// It answers one question -- does cutout animation of this pixel art read acceptably, and
-// would the production version (segmented parts, pivots, keyframes, worn gear attached to a
-// pivot) be worth building? The segment rectangles, pivots, keyframes and the rig/item ids
-// are hardcoded for orc_brute's right arm and the iron sword. Nothing here is a data model;
-// delete this window once the decision is made.
+// The first version used orc_brute's 4x12 bar arm with two straight cuts, no hand and
+// extreme angles; it was a stress test, not a fair look. This version uses a small
+// three-segment test arm (sleeve, forearm, hand) with overlapping joints, a hand the sword
+// is attached to, eased six-pose keyframes, and an angle-step control that simulates drawing
+// the sword at a few pre-rendered angles rather than rotating one image freely.
+//
+// Nothing here is a data model. Delete the window once the decision is made.
 class CutoutSpikeWindow : public Window {
 public:
   explicit CutoutSpikeWindow(Game *game);
@@ -22,4 +24,9 @@ private:
   float time = 0.0f;
   bool playing = true;
   float speed = 1.0f;
+  // Degrees per sword-angle step; 0 rotates one image freely. Snapping approximates a set
+  // of pre-drawn sword angles, which is what production would need for a weapon.
+  int swordAngleStep = 0;
+  float gripOffset = 0.0f;
+  bool jointCaps = true;
 };
