@@ -283,14 +283,27 @@ pre-drawn angles. If the arm reads well but the sword only reads at coarse steps
 equipment needs its own directional art or per-clip worn frames before cutout can ship.
 
 The **Hybrid spike** (Debug Console -> Hybrid spike) is the cheaper experiment for that
-alternative: the body stays frame-swapped, while the iron sword gets a generated frame set
-for the selected clip (`<worn sprite>_<clip>_f1..fN`) drawn at the item's z. No anchors, no
+alternative: the body stays frame-swapped, while a hand item gets a generated frame set for
+the selected clip (`<worn sprite>_<clip>_f1..fN`) drawn at the item's z. No anchors, no
 runtime rotation. The request includes the right arm's animation document as a reference,
-so the model can put the sword in the hand; the window composites body and sword frames,
-toggles the static sword for comparison, and plays the clip. It is a throwaway window: the
-frames are test outputs and nothing in the item model knows about them. If this reads well,
-the hybrid is worth a real worn-frames model; if the sword still floats or drifts, the
-alignment needs anchors.
+so the model can put the weapon in the hand; the window composites body and weapon frames
+and plays the clip.
+
+It also compares that against the **grip path**, which is the route that avoids generating
+per weapon: the static weapon sprite is placed at the hand and angle read from the **arm
+frame's pixels** (bottom = hand, shoulder-to-hand = arm direction), with a grip-offset
+slider and angle snapping to stand in for pre-drawn angles. The window has three modes --
+static, generated frames, grip path -- and an item picker for hand items with worn art
+(the iron sword and the blood-tempered katana are the test pair, deliberately different
+blades). Everything is throwaway: the generated frames are test outputs and nothing in the
+item model knows about them.
+
+What to compare: the frame sets are the best look but cost one request per item per clip
+(per rig, because they follow that rig's arm frames); the grip path costs no generation per
+weapon but rotates one image, so check the katana's curve and the sword's straight blade at
+the same angles. If the frames read clearly better than the grip path, spend generation on
+the weapons that matter and use the grip path for the rest; if the grip path is close, the
+worn-frame model can wait.
 
 ## World rendering and playback
 

@@ -22,13 +22,119 @@ struct Layer {
 
 constexpr float kBox = 224.0f;
 
+// Where the weapon is held in its own 32x32 image. The two test weapons have different
+// hilts; production would store this on the item.
+ImVec2 GripFor(const ItemDef &item) {
+  if (item.wornSprite == "worn_blood_tempered_katana") return ImVec2(24.0f, 24.0f);
+  return ImVec2(24.0f, 22.0f);
+}
+
+struct ArmGrip {
+  bool ok = false;
+  float handX = 0.0f;
+  float handY = 0.0f;
+  float angle = 90.0f;  // direction from shoulder to hand, screen degrees
+};
+
+// The hand is the bottom of the arm frame; the arm direction is shoulder -> hand. This is
+// the stand-in for an anchor: a few numbers read from the pixels the body frames already
+// have.
+ArmGrip AnalyzeArm(const Texture2D &texture) {
+  ArmGrip grip;
+  Image image = LoadImageFromTexture(texture);
+  if (image.data == nullptr) return grip;
+  int minY = image.height;
+  int maxY = -1;
+  for (int y = 0; y < image.height; ++y) {
+    for (int x = 0; x < image.width; ++x) {
+      if (GetImageColor(image, x, y).a > 0) {
+        minY = std::min(minY, y);
+        maxY = std::max(maxY, y);
+      }
+    }
+  }
+  if (maxY < minY) {
+    UnloadImage(image);
+    return grip;
+  }
+  const int band = std::max(1, (maxY - minY + 1) / 4);
+  const auto centroid = [&](int y0, int y1, float &cx, float &cy) {
+    float sx = 0.0f;
+    float sy = 0.0f;
+    int count = 0;
+    for (int y = y0; y <= y1; ++y) {
+      for (int x = 0; x < image.width; ++x) {
+        if (GetImageColor(image, x, y).a > 0) {
+          sx += static_cast<float>(x);
+          sy += static_cast<float>(y);
+          ++count;
+        }
+      }
+    }
+    if (count == 0) return false;
+    cx = sx / static_cast<float>(count);
+    cy = sy / static_cast<float>(count);
+    return true;
+  };
+  float shoulderX = 0.0f;
+  float shoulderY = 0.0f;
+  if (!centroid(minY, std::min(maxY, minY + band), shoulderX, shoulderY)) {
+    UnloadImage(image);
+    return grip;
+  }
+  if (!centroid(std::max(minY, maxY - band), maxY, grip.handX, grip.handY)) {
+    UnloadImage(image);
+    return grip;
+  }
+  UnloadImage(image);
+  grip.angle = std::atan2(grip.handY - shoulderY, grip.handX - shoulderX) * 57.29578f;
+  grip.ok = true;
+  return grip;
+}
+
+ImVec2 Rotate(ImVec2 v, float degrees) {
+  const float r = degrees * 3.14159265358979f / 180.0f;
+  const float c = std::cos(r);
+  const float s = std::sin(r);
+  return ImVec2(v.x * c - v.y * s, v.x * s + v.y * c);
+}
+
+// Draws a source rectangle rotated about a source-space pivot placed at `pivotScreen`.
+void DrawSegment(ImDrawList *draw, const Texture2D &texture, float srcX, float srcY,
+                 float srcW, float srcH, float pivotSrcX, float pivotSrcY,
+                 ImVec2 pivotScreen, float degrees, float scale) {
+  SetTextureFilter(texture, TEXTURE_FILTER_POINT);
+  const ImVec2 corners[4] = {
+      ImVec2(srcX - pivotSrcX, srcY - pivotSrcY),
+      ImVec2(srcX + srcW - pivotSrcX, srcY - pivotSrcY),
+      ImVec2(srcX + srcW - pivotSrcX, srcY + srcH - pivotSrcY),
+      ImVec2(srcX - pivotSrcX, srcY + srcH - pivotSrcY),
+  };
+  ImVec2 screen[4];
+  for (int i = 0; i < 4; ++i) {
+    const ImVec2 rotated = Rotate(corners[i], degrees);
+    screen[i] = ImVec2(pivotScreen.x + rotated.x * scale,
+                       pivotScreen.y + rotated.y * scale);
+  }
+  const ImVec2 uv[4] = {
+      ImVec2(srcX / texture.width, srcY / texture.height),
+      ImVec2((srcX + srcW) / texture.width, srcY / texture.height),
+      ImVec2((srcX + srcW) / texture.width, (srcY + srcH) / texture.height),
+      ImVec2(srcX / texture.width, (srcY + srcH) / texture.height),
+  };
+  draw->AddImageQuad(
+      static_cast<ImTextureID>(static_cast<intptr_t>(texture.id)),
+      screen[0], screen[1], screen[2], screen[3], uv[0], uv[1], uv[2], uv[3],
+      IM_COL32_WHITE);
+}
+
 }  // namespace
 
 HybridSpikeWindow::HybridSpikeWindow(Game *game) : game(game) {}
 
 void HybridSpikeWindow::Draw() {
   bool isOpen = true;
-  ImGui::SetNextWindowSize(ImVec2(560, 470), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(580, 560), ImGuiCond_FirstUseEver);
   ImGui::Begin("Hybrid spike", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->hybridSpikeWindowEntity.remove<ActiveWindow>();
@@ -37,19 +143,64 @@ void HybridSpikeWindow::Draw() {
   }
 
   const ActorRig *rig = game->rigRegistry.Get("orc_brute");
-  const ItemDef *item = game->itemRegistry.Get("iron_sword");
-  if (rig == nullptr || item == nullptr || item->wornSprite.empty()) {
-    ImGui::TextWrapped(
-        "This spike needs the orc_brute rig and the iron_sword item (with worn art).");
+  if (rig == nullptr) {
+    ImGui::TextWrapped("This spike needs the orc_brute rig.");
     ImGui::End();
     return;
   }
 
+  // Items that have worn art; the two test weapons first.
+  std::vector<const ItemDef *> wornItems;
+  for (const ItemDef *candidate : game->itemRegistry.GetAll()) {
+    // Hand items only: a helmet has worn art but no grip for this comparison.
+    if (candidate->slot != "hand" || candidate->wornSprite.empty()) continue;
+    wornItems.push_back(candidate);
+  }
+  std::sort(wornItems.begin(), wornItems.end(),
+            [](const ItemDef *a, const ItemDef *b) { return a->id < b->id; });
+  if (wornItems.empty()) {
+    ImGui::TextWrapped("No item has worn art.");
+    ImGui::End();
+    return;
+  }
+  const ItemDef *item = game->itemRegistry.Get(itemId);
+  if (item == nullptr || item->wornSprite.empty()) {
+    item = wornItems.front();
+    itemId = item->id;
+  }
+
   ImGui::TextDisabled(
-      "Hybrid experiment: existing frame-swapped body + generated sword frames, drawn at "
-      "the item's z. No anchors, no rotation. Throwaway.");
-  ImGui::TextDisabled("rig %s  |  item %s (%s)", rig->id.c_str(), item->id.c_str(),
-                      item->wornSprite.c_str());
+      "Hybrid experiment: existing frame-swapped body + worn equipment. Compare generated "
+      "worn frames with a static weapon on a grip path derived from the arm frames. "
+      "Throwaway.");
+  ImGui::TextDisabled("rig %s  |  %zu item(s) with worn art", rig->id.c_str(),
+                      wornItems.size());
+
+  int itemSelected = 0;
+  std::vector<const char *> itemNames;
+  for (size_t i = 0; i < wornItems.size(); ++i) {
+    itemNames.push_back(wornItems[i]->name.empty() ? wornItems[i]->id.c_str()
+                                                   : wornItems[i]->name.c_str());
+    if (wornItems[i]->id == itemId) itemSelected = static_cast<int>(i);
+  }
+  ImGui::SetNextItemWidth(200.0f);
+  if (ImGui::Combo("##hybrid_item", &itemSelected, itemNames.data(),
+                   static_cast<int>(itemNames.size()))) {
+    itemId = wornItems[static_cast<size_t>(itemSelected)]->id;
+    time = 0.0f;
+    status.clear();
+  }
+  ImGui::SameLine();
+  const char *kModes[] = {"static", "generated frames", "grip path"};
+  ImGui::SetNextItemWidth(150.0f);
+  ImGui::Combo("worn", &wornMode, kModes, 3);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "static: one worn sprite at the item's z.\n"
+        "generated frames: the <worn>_<clip>_fN set, if generated.\n"
+        "grip path: the static sprite placed at the hand and angle read from the arm's "
+        "animation frames -- the cheap alternative to per-weapon frames.");
+  }
 
   if (rig->clips.empty()) {
     ImGui::TextWrapped("orc_brute has no clips; add one in the Content Editor first.");
@@ -93,8 +244,6 @@ void HybridSpikeWindow::Draw() {
   ImGui::SameLine();
   ImGui::SetNextItemWidth(100.0f);
   ImGui::SliderFloat("speed", &speed, 0.25f, 2.0f, "%.2fx");
-  ImGui::SameLine();
-  ImGui::Checkbox("worn frames", &useWornFrames);
 
   const float duration = clip->fps > 0 ? clip->frames / static_cast<float>(clip->fps)
                                        : 0.0f;
@@ -115,7 +264,7 @@ void HybridSpikeWindow::Draw() {
   ImGui::SameLine();
   ImGui::TextDisabled("frame %d / %d", frame + 1, clip->frames);
 
-  // The sword's frame set, if one has been generated for this clip.
+  // The generated frame set, if any.
   std::vector<std::string> wornFrameSprites;
   int wornFramesPresent = 0;
   for (int i = 1; i <= clip->frames; ++i) {
@@ -125,7 +274,6 @@ void HybridSpikeWindow::Draw() {
     if (SpriteResolves(std::string(), sprite, nullptr)) ++wornFramesPresent;
   }
 
-  // Generated frames land asynchronously; forget the cached texture when a file changes.
   const auto refresh = [this](const std::string &sprite) {
     std::string path;
     if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return;
@@ -146,33 +294,40 @@ void HybridSpikeWindow::Draw() {
   refresh(item->wornSprite);
   for (const std::string &sprite : wornFrameSprites) refresh(sprite);
 
-  // Compose the body from the clip's frames, then the sword above it.
   std::vector<std::string> hidden = item->wornHides;
   std::vector<Layer> layers;
+  std::string armFrameSprite = "rig_orc_brute_arm_right";
   for (const RigPart &part : rig->parts) {
-    if (std::find(hidden.begin(), hidden.end(), part.id) != hidden.end()) continue;
     std::string sprite = part.sprite;
     for (const RigPartClip &partClip : part.clips) {
       if (partClip.clip != clip->id || partClip.frames.empty()) continue;
       const int index = std::min(static_cast<int>(partClip.frames.size()) - 1, frame);
       sprite = partClip.frames[static_cast<size_t>(index)];
     }
+    if (part.id == "arm_right") armFrameSprite = sprite;
+    if (std::find(hidden.begin(), hidden.end(), part.id) != hidden.end()) continue;
     Layer layer;
     layer.label = part.id;
     layer.texture = RigRender::ResolveRigSprite(sprite, game->resourceManager);
     layer.z = part.z;
     layers.push_back(std::move(layer));
   }
-  std::string wornSprite = item->wornSprite;
-  if (useWornFrames && wornFramesPresent == clip->frames) {
-    wornSprite = wornFrameSprites[static_cast<size_t>(frame)];
+
+  const bool gripPath = wornMode == 2;
+  const Texture2D *staticWorn =
+      RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+  if (!gripPath) {
+    std::string wornSprite = item->wornSprite;
+    if (wornMode == 1 && wornFramesPresent == clip->frames) {
+      wornSprite = wornFrameSprites[static_cast<size_t>(frame)];
+    }
+    Layer worn;
+    worn.label = item->id;
+    worn.texture = RigRender::ResolveRigSprite(wornSprite, game->resourceManager);
+    worn.z = item->wornZ;
+    worn.worn = true;
+    layers.push_back(std::move(worn));
   }
-  Layer sword;
-  sword.label = item->id;
-  sword.texture = RigRender::ResolveRigSprite(wornSprite, game->resourceManager);
-  sword.z = item->wornZ;
-  sword.worn = true;
-  layers.push_back(std::move(sword));
   std::stable_sort(layers.begin(), layers.end(),
                    [](const Layer &a, const Layer &b) { return a.z < b.z; });
 
@@ -181,6 +336,7 @@ void HybridSpikeWindow::Draw() {
   ImDrawList *draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(topLeft, ImVec2(topLeft.x + kBox, topLeft.y + kBox),
                       IM_COL32(26, 26, 30, 255));
+  const float scale = kBox / 32.0f;
   int missing = 0;
   for (const Layer &layer : layers) {
     if (layer.texture == nullptr) {
@@ -188,12 +344,34 @@ void HybridSpikeWindow::Draw() {
       continue;
     }
     SetTextureFilter(*layer.texture, TEXTURE_FILTER_POINT);
-    const SpriteRect fit =
-        SpriteFitRect(*layer.texture, topLeft.x, topLeft.y, kBox, kBox);
+    const SpriteRect fit = SpriteFitRect(*layer.texture, topLeft.x, topLeft.y, kBox, kBox);
     if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
     draw->AddImage(
         static_cast<ImTextureID>(static_cast<intptr_t>(layer.texture->id)),
         ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+  }
+
+  // Grip path: place the static weapon at the hand read from the arm frame, rotated by the
+  // arm direction plus an offset. Angle snapping approximates a few pre-drawn angles.
+  if (gripPath && staticWorn != nullptr) {
+    const Texture2D *armTexture =
+        RigRender::ResolveRigSprite(armFrameSprite, game->resourceManager);
+    const ArmGrip arm = armTexture != nullptr ? AnalyzeArm(*armTexture) : ArmGrip{};
+    if (arm.ok) {
+      const ImVec2 grip = GripFor(*item);
+      float angle = arm.angle - 90.0f + gripOffset;
+      if (gripAngleStep > 0) {
+        angle = std::round(angle / static_cast<float>(gripAngleStep)) *
+                static_cast<float>(gripAngleStep);
+      }
+      const ImVec2 hand(topLeft.x + arm.handX * scale, topLeft.y + arm.handY * scale);
+      DrawSegment(draw, *staticWorn, 0.0f, 0.0f,
+                  static_cast<float>(staticWorn->width),
+                  static_cast<float>(staticWorn->height), grip.x, grip.y, hand, angle,
+                  scale);
+    } else {
+      missing += 1;
+    }
   }
   draw->AddRect(topLeft, ImVec2(topLeft.x + kBox, topLeft.y + kBox),
                 IM_COL32(90, 90, 96, 255));
@@ -205,28 +383,49 @@ void HybridSpikeWindow::Draw() {
                         layer.worn ? "  (worn)" : "",
                         layer.texture == nullptr ? "  -- MISSING" : "");
   }
+  if (gripPath) {
+    ImGui::TextDisabled("%4d  %s  (grip path)", item->wornZ, item->id.c_str());
+  }
   if (missing > 0) {
-    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f),
-                       "%d layer(s) have no sprite file.", missing);
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f), "%d layer(s) have no sprite file.",
+                       missing);
   }
   ImGui::TextDisabled("worn frames: %d / %d", wornFramesPresent, clip->frames);
   ImGui::EndGroup();
 
   ImGui::Separator();
-  if (wornFramesPresent < clip->frames) {
+  if (gripPath) {
+    ImGui::SetNextItemWidth(180.0f);
+    ImGui::SliderFloat("grip offset", &gripOffset, -45.0f, 45.0f, "%.0f deg");
+    ImGui::SameLine();
+    static const int kSteps[] = {0, 15, 30, 45, 90};
+    const char *kStepLabels[] = {"smooth", "15", "30", "45", "90"};
+    int stepIndex = 0;
+    for (int i = 0; i < 5; ++i) {
+      if (gripAngleStep == kSteps[i]) stepIndex = i;
+    }
+    ImGui::SetNextItemWidth(110.0f);
+    if (ImGui::Combo("angle step", &stepIndex, kStepLabels, 5)) {
+      gripAngleStep = kSteps[stepIndex];
+    }
     ImGui::TextDisabled(
-        "No complete sword frame set for this clip yet. Generate it: the request includes "
-        "the right arm's animation document so the model can put the sword in the hand.");
+        "The grip comes from the arm frame's pixels: the bottom is the hand, the "
+        "shoulder-to-hand direction is the arm. No generation per weapon; angle snapping "
+        "stands in for pre-drawn angles.");
+  } else if (wornFramesPresent < clip->frames) {
+    ImGui::TextDisabled(
+        "No complete worn frame set for this item/clip yet. Generate it: the request "
+        "includes the right arm's animation document so the model can put it in the hand.");
   }
-  if (ImGui::Button(("Generate " + clip->id + " sword frames").c_str())) {
+  if (ImGui::Button(("Generate " + item->id + " " + clip->id + " frames").c_str())) {
     std::string error;
     if (game->designerWindow == nullptr) {
       error = "The Designer window is not available.";
     }
     if (error.empty() &&
         game->designerWindow->QueueWornClipArt(item->id, *rig, *clip, &error)) {
-      status = "Queued sword frames for " + clip->id +
-               "; watch the Designer transcript. They appear here as they land.";
+      status = "Queued " + item->id + " " + clip->id +
+               " frames; watch the Designer transcript.";
       statusIsError = false;
     } else {
       status = error;
@@ -241,8 +440,9 @@ void HybridSpikeWindow::Draw() {
     }
   }
   ImGui::TextDisabled(
-      "Compare with 'worn frames' off (the static sword). Judge whether the frames put "
-      "the grip in the hand and keep the blade plausible; if they do, the hybrid is worth "
-      "a real data model. If not, the alignment needs anchors.");
+      "Compare the three modes on each item. Frames are the best look but cost one request "
+      "per item per clip; the grip path costs no generation per weapon but rotates one "
+      "image, so judge the katana's curve and the sword's straight blade at the same "
+      "angles.");
   ImGui::End();
 }

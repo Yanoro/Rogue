@@ -28,7 +28,12 @@ private:
   bool playing = true;
   float speed = 1.0f;
   std::string clipId;
-  bool useWornFrames = true;
+  std::string itemId = "iron_sword";
+  // 0 = static worn sprite, 1 = generated worn frames, 2 = static sprite on a grip path
+  // derived from the arm frames.
+  int wornMode = 1;
+  float gripOffset = 0.0f;
+  int gripAngleStep = 0;
   std::string status;
   bool statusIsError = false;
   // Write times of the body/worn frames, so generated art replaces the cached texture.
