@@ -958,22 +958,33 @@ void ContentEditorWindow::DrawRigPreviewPane() {
 
   // Generated frames land asynchronously. The texture memo remembers "missing", so the
   // pane watches the write times and forgets a layer or frame when its PNG changes.
+  bool framesLanded = false;
   const auto refreshSprite = [this](const std::string &sprite) {
     std::string path;
-    if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return;
+    if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return false;
     std::error_code ec;
     const auto stamp = std::filesystem::last_write_time(path, ec);
-    if (ec) return;
+    if (ec) return false;
     const auto found = rigAnimStamps.find(sprite);
-    if (found != rigAnimStamps.end() && found->second == stamp) return;
+    if (found != rigAnimStamps.end() && found->second == stamp) return false;
     rigAnimStamps[sprite] = stamp;
     game->ForgetSpriteMemo(std::string(), sprite);
+    return true;
   };
   for (const RigPart &part : rig->parts) {
     refreshSprite(part.sprite);
     for (const RigPartClip &partClip : part.clips) {
-      for (const std::string &frame : partClip.frames) refreshSprite(frame);
+      for (const std::string &frame : partClip.frames) {
+        if (refreshSprite(frame)) framesLanded = true;
+      }
     }
+  }
+  // The clock may already be past the end when the frames arrive -- generation takes
+  // seconds and a kick is 0.3s long. Restart, or the first thing the user sees is the
+  // last frame and "it does not move".
+  if (framesLanded) {
+    rigClipTime = 0.0f;
+    rigClipPlaying = true;
   }
 
   // A full outfit on a first look: the point of the pane is to show what layering does,
@@ -1004,9 +1015,12 @@ void ContentEditorWindow::DrawRigPreviewPane() {
   }
   if (rigClip != nullptr && rigClipPlaying) {
     rigClipTime += std::min(ImGui::GetIO().DeltaTime, 0.1f);
-    if (!rigClip->loop && rigClip->fps > 0) {
-      rigClipTime = std::min(
-          rigClipTime, rigClip->frames / static_cast<float>(rigClip->fps));
+    if (rigClip->fps > 0) {
+      const float duration =
+          rigClip->frames / static_cast<float>(rigClip->fps);
+      if (duration > 0.0f && rigClipTime >= duration) {
+        rigClipTime = std::fmod(rigClipTime, duration);
+      }
     }
   }
   RigRender::AnimationState animation;
@@ -1094,6 +1108,20 @@ void ContentEditorWindow::DrawRigPreviewPane() {
       ImGui::TextDisabled("%d frame(s) at %d fps%s", rigClip->frames,
                           rigClip->fps, rigClip->loop ? "" : " (once)");
     }
+    if (rigClip != nullptr && rigClip->frames > 0 && rigClip->fps > 0) {
+      int frame = std::min(
+          static_cast<int>(rigClipTime * static_cast<float>(rigClip->fps)),
+          rigClip->frames - 1);
+      ImGui::SetNextItemWidth(160.0f);
+      if (ImGui::SliderInt("##ce_rig_frame", &frame, 0, rigClip->frames - 1,
+                           "frame %d")) {
+        rigClipPlaying = false;
+        rigClipTime = frame / static_cast<float>(rigClip->fps);
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("frame %d / %d  (preview loops)", frame + 1,
+                          rigClip->frames);
+    }
   } else {
     ImGui::TextDisabled("No clips yet -- add one from a movement template.");
   }
@@ -1143,9 +1171,16 @@ void ContentEditorWindow::DrawRigPreviewPane() {
           rigClipId = clip.id;
           rigClipTime = 0.0f;
           rigClipPlaying = true;
-          rigAnimStatus = "Added the " + movement->name +
-                          " clip. Press Save to keep the clip declarations.";
-          rigAnimStatusIsError = false;
+          // Persist the declaration now, not on a later Save: the frames take seconds to
+          // generate and a restart between Add and Save would lose the clip while leaving
+          // the PNGs behind. Save() also re-applies the document.
+          Save();
+          rigAnimStatus = statusIsError
+                              ? status
+                              : "Added the " + movement->name +
+                                    " clip and saved it. Generate the layers, or the "
+                                    "frames already in the generated layer will show.";
+          rigAnimStatusIsError = statusIsError;
         } else {
           rigAnimStatus = error;
           rigAnimStatusIsError = true;

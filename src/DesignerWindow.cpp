@@ -2605,10 +2605,12 @@ void DesignerWindow::PumpRigArtQueue() {
 
 void DesignerWindow::RefreshRigArtMemo() {
   if (!rigDraft.has_value() || game == nullptr) return;
+  bool framesLanded = false;
   // A layer's compiled PNG lands asynchronously. The texture cache remembers "missing",
   // so the first sight of a file (and every redraw, which changes its write time) has to
   // forget that path or the preview stays empty after the art arrives.
-  const auto refresh = [this](const std::string &sprite) {
+  const auto refresh = [this, &framesLanded](const std::string &sprite,
+                                             bool isFrame) {
     std::string path;
     if (!SpriteResolves(std::string(), sprite, &path) || path.empty()) return;
     std::error_code ec;
@@ -2618,17 +2620,25 @@ void DesignerWindow::RefreshRigArtMemo() {
     if (found != rigArtStamps.end() && found->second == stamp) return;
     rigArtStamps[sprite] = stamp;
     game->ForgetSpriteMemo(std::string(), sprite);
+    if (isFrame) framesLanded = true;
   };
   for (const RigDesigner::Part &part : rigDraft->parts) {
-    refresh(part.sprite);
+    refresh(part.sprite, false);
     for (const RigPartClip &clip : part.clips) {
-      for (const std::string &frame : clip.frames) refresh(frame);
+      for (const std::string &frame : clip.frames) refresh(frame, true);
     }
   }
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
-    if (!item->wornSprite.empty()) refresh(item->wornSprite);
+    if (!item->wornSprite.empty()) refresh(item->wornSprite, false);
   }
-  if (equipmentDraft.has_value()) refresh(equipmentDraft->wornSprite);
+  if (equipmentDraft.has_value()) refresh(equipmentDraft->wornSprite, false);
+  // Generation is slow relative to a clip: by the time the frames land the clock may
+  // already be past the end, so the preview restarts instead of showing only its last
+  // frame.
+  if (framesLanded) {
+    rigAnimTime = 0.0f;
+    rigAnimPlaying = true;
+  }
 }
 
 void DesignerWindow::SaveRig() {
@@ -2882,9 +2892,12 @@ void DesignerWindow::DrawRigPreview() {
     // Delta time can be huge after a stall; a walk that jumps half a cycle reads as a bug
     // in the art.
     rigAnimTime += std::min(ImGui::GetIO().DeltaTime, 0.1f);
-    if (!selectedClip->loop && selectedClip->fps > 0) {
-      rigAnimTime = std::min(
-          rigAnimTime, selectedClip->frames / static_cast<float>(selectedClip->fps));
+    if (selectedClip->fps > 0) {
+      const float duration =
+          selectedClip->frames / static_cast<float>(selectedClip->fps);
+      if (duration > 0.0f && rigAnimTime >= duration) {
+        rigAnimTime = std::fmod(rigAnimTime, duration);
+      }
     }
   }
 
@@ -2922,6 +2935,21 @@ void DesignerWindow::DrawRigPreview() {
       ImGui::SameLine();
       ImGui::TextDisabled("%d frame(s) at %d fps%s", selectedClip->frames,
                           selectedClip->fps, selectedClip->loop ? "" : " (once)");
+    }
+    if (selectedClip != nullptr && selectedClip->frames > 0 &&
+        selectedClip->fps > 0) {
+      int frame = std::min(
+          static_cast<int>(rigAnimTime * static_cast<float>(selectedClip->fps)),
+          selectedClip->frames - 1);
+      ImGui::SetNextItemWidth(160.0f);
+      if (ImGui::SliderInt("##rig_anim_frame", &frame, 0,
+                           selectedClip->frames - 1, "frame %d")) {
+        rigAnimPlaying = false;
+        rigAnimTime = frame / static_cast<float>(selectedClip->fps);
+      }
+      ImGui::SameLine();
+      ImGui::TextDisabled("frame %d / %d  (preview loops)", frame + 1,
+                          selectedClip->frames);
     }
   }
   ImGui::Separator();

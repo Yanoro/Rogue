@@ -243,10 +243,15 @@ pane:
 
 1. select the rig;
 2. **Animation → Add clip** picks a movement and writes the clip plus its deterministic
-   per-part frame sprites into the live registry and the editor document;
+   per-part frame sprites into the live registry and the editor document, then saves the
+   rig immediately -- the frames take seconds to generate and a restart between Add and a
+   later Save would leave the PNGs with no clip pointing at them;
 3. **Generate <clip> for all layers** queues one multi-frame document per participating
    part through the Designer's art session (the Designer window opens to pump the replies);
-   the frames appear in the pane as they land, and Play/Pause previews the clip;
+   the frames appear in the pane as they land, Play/Pause previews the clip, and a frame
+   scrubber inspects it. The preview **loops** one-shot clips and restarts the clock when
+   frames arrive: generation is slow relative to a 0.3s kick, so without that the first
+   thing seen is the last frame;
 4. **Save** writes the clip declarations to the Content Editor's rig override
    (`content.editor/rigs/<id>.json`), leaving the catalog file untouched.
 
@@ -286,7 +291,8 @@ NPC template's `equipped` list appear as worn layers.
 - **No directional art.** Rigs are drawn front-facing; there is no mirroring or
   four-direction vocabulary, so a character walking left looks like one walking right.
 - **No skill playback.** A skill's `animation` field is authored and validated, but only
-  locomotion drives clips. Playing a kick when the skill activates is the next slice; the
+  locomotion drives clips in the world. A kick/attack clip can be previewed and inspected
+  in the Designer and the Content Editor, but nothing plays it when a skill activates; the
   clip machinery is in place for it.
 - **The previews are still a manual outfit.** The Content Editor and Designer previews do
   not read `Equipped`; the world does. A pane showing a helmet you have not toggled is not a
