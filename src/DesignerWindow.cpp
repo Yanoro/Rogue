@@ -3005,6 +3005,67 @@ void DesignerWindow::DrawRigPreview() {
           editedClip->id.c_str(), editedClip->frames);
       ImGui::PopID();
     }
+
+    // A rig normally has several clips (idle, walk, run), so adding another must not
+    // require a new draft. A movement already used by this rig is a disabled choice
+    // rather than a duplicate id.
+    if (game != nullptr && game->movementRegistry.Count() > 0) {
+      ImGui::Separator();
+      const auto movements = game->movementRegistry.GetAll();
+      if (game->movementRegistry.Get(rigNewMovement) == nullptr) {
+        rigNewMovement = game->movementRegistry.Get("walk") != nullptr
+                             ? "walk"
+                             : movements.front()->id;
+      }
+      int selected = 0;
+      std::vector<const char *> names;
+      for (size_t i = 0; i < movements.size(); ++i) {
+        names.push_back(movements[i]->name.c_str());
+        if (movements[i]->id == rigNewMovement) selected = static_cast<int>(i);
+      }
+      ImGui::TextDisabled("Add another clip");
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(200.0f);
+      if (ImGui::Combo("##rig_add_movement", &selected, names.data(),
+                       static_cast<int>(names.size()))) {
+        rigNewMovement = movements[static_cast<size_t>(selected)]->id;
+      }
+      ImGui::SameLine();
+      const bool already = std::any_of(
+          draft.clips.begin(), draft.clips.end(),
+          [&](const RigClip &clip) { return clip.id == rigNewMovement; });
+      ImGui::BeginDisabled(already);
+      const std::string addLabel =
+          already ? "Already a clip" : "Add " + rigNewMovement + " clip";
+      if (ImGui::Button(addLabel.c_str())) {
+        if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+          RigClip clip;
+          clip.id = movement->id;
+          clip.movement = movement->id;
+          clip.frames = movement->frames;
+          clip.fps = movement->fps;
+          clip.loop = movement->loop;
+          clip.brief = movement->description;
+          clip.poses = movement->poses;
+          draft.clips.push_back(clip);
+          rigAnimClip = clip.id;
+          rigAnimTime = 0.0f;
+          SyncRigClipBuffers(draft.clips.back());
+          editedClip = &draft.clips.back();
+          rigArtMessage = "Added the " + movement->name + " clip.";
+        }
+      }
+      ImGui::EndDisabled();
+      if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+        if (!movement->needs.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.4f, 1.0f));
+          ImGui::TextWrapped("Needs %s; generation is disabled until worn equipment "
+                             "animates.",
+                             joinList(movement->needs).c_str());
+          ImGui::PopStyleColor();
+        }
+      }
+    }
   }
 
   ImGui::Separator();
