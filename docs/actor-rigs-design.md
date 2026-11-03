@@ -235,6 +235,27 @@ Limits, stated rather than hidden:
 - Changing a clip's frame count does not rewrite the existing per-part frame lists; the
   next Generate does, and the registry warns on a saved mismatch.
 
+### Animating an existing rig
+
+A rig's JSON now stores each part's `brief` (the prose it was drawn from), so a saved rig
+can be animated without re-drafting the whole body. In the Content Editor's **Actor rigs**
+pane:
+
+1. select the rig;
+2. **Animation → Add clip** picks a movement and writes the clip plus its deterministic
+   per-part frame sprites into the live registry and the editor document;
+3. **Generate <clip> for all layers** queues one multi-frame document per participating
+   part through the Designer's art session (the Designer window opens to pump the replies);
+   the frames appear in the pane as they land, and Play/Pause previews the clip;
+4. **Save** writes the clip declarations to the Content Editor's rig override
+   (`content.editor/rigs/<id>.json`), leaving the catalog file untouched.
+
+The prompt gets the part's `brief` and the movement's description and pose plan. It does
+not see the existing PNG, so an accurate brief is what keeps the new frames on-model; a
+rig saved before briefs existed falls back to "the <part> layer of the <rig> rig". The
+movement's `requires` gate still applies: sword/cast clips are refused until worn
+equipment follows the body.
+
 ## World rendering and playback
 
 `RigBody { rig }` on an actor makes the world draw it part by part instead of as a single

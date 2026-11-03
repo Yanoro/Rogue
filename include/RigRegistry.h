@@ -34,6 +34,11 @@ struct RigPart {
   int z = 0;
   // The clips this part draws, one frame list each.
   std::vector<RigPartClip> clips;
+  // How this layer looks, in prose. Authoring intent kept with the rig: the animation
+  // prompts are cut from it, so an existing rig can be animated without re-drafting.
+  // Empty means the caller falls back to a generic "the <id> layer" description. Last
+  // because existing aggregate initializations spell the other fields in order.
+  std::string brief;
 };
 
 // One clip the rig can play.

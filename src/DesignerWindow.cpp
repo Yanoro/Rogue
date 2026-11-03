@@ -708,6 +708,85 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
               artBrief.kind, frameNames);
 }
 
+bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
+                                       std::string *error) {
+  if (error != nullptr) error->clear();
+  if (game == nullptr) {
+    if (error != nullptr) *error = "There is no world to animate against.";
+    return false;
+  }
+  if (rig.parts.empty() || clip.frames < 1) {
+    if (error != nullptr) *error = "The rig has no layers or the clip has no frames.";
+    return false;
+  }
+  const MovementDef *movement =
+      clip.movement.empty() ? nullptr : game->movementRegistry.Get(clip.movement);
+  if (movement != nullptr && !movement->needs.empty()) {
+    std::string needs;
+    for (const std::string &need : movement->needs) {
+      if (!needs.empty()) needs += ", ";
+      needs += need;
+    }
+    if (error != nullptr) {
+      *error = "This movement needs " + needs +
+               " to follow the body, and worn equipment does not animate yet.";
+    }
+    return false;
+  }
+
+  // The Designer's Draw is what pumps the reply, so the window has to be open even though
+  // the request was started from the Content Editor.
+  game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+
+  const std::string motion =
+      !clip.brief.empty()
+          ? clip.brief
+          : (movement != nullptr ? movement->description
+                                 : ("a " + std::to_string(clip.frames) + "-frame " +
+                                    clip.id + " cycle"));
+  int queued = 0;
+  for (const RigPart &part : rig.parts) {
+    if (movement != nullptr && !movement->parts.empty() &&
+        std::find(movement->parts.begin(), movement->parts.end(), part.id) ==
+            movement->parts.end()) {
+      continue;
+    }
+    RigArtRequest request;
+    request.label = part.id + " " + clip.id;
+    request.sprite = AnimationDocumentName(part.sprite, clip.id);
+    for (int frame = 1; frame <= clip.frames; ++frame) {
+      request.frames.push_back("f" + std::to_string(frame));
+    }
+    request.poses = clip.poses;
+    const std::string brief =
+        part.brief.empty()
+            ? ("the " + part.id + " layer of the " +
+               (rig.name.empty() ? rig.id : rig.name) + " rig")
+            : part.brief;
+    request.requirement =
+        RigDesigner::FrameContract() + "\n\nThis layer: " + part.id + " -- " + brief +
+        "\n\nAnimation: " + motion +
+        "\nEach frame is a full drawing of this layer in a different pose. Draw only this "
+        "layer; the rest of the 32x32 frame stays transparent. Match the layer described "
+        "above rather than redesigning the character, and keep the pixels that do not move "
+        "in the same place.";
+    {
+      std::string resolved;
+      request.redesign = FindSpriteDSLDocument(request.sprite).found ||
+                         SpriteResolves(std::string(), request.sprite, &resolved);
+    }
+    rigArtQueue.push_back(std::move(request));
+    ++queued;
+  }
+  if (queued == 0) {
+    if (error != nullptr) *error = "No layer of this rig participates in the clip.";
+    return false;
+  }
+  rigArtMessage = "Queued " + std::to_string(queued) + " layer(s) for " + rig.id + "'s " +
+                  clip.id + " clip.";
+  return true;
+}
+
 void DesignerWindow::SendArtTurn(const std::string &prompt,
                                  const std::string &artName,
                                  SpriteKinds::Kind artKind,

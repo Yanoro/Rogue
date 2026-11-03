@@ -124,6 +124,7 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
     }
     RigPart part;
     part.id = entry.value("id", std::string());
+    part.brief = entry.value("brief", std::string());
     part.sprite = entry.value("sprite", std::string());
     part.z = entry.value("z", 0);
     if (part.id.empty()) {
@@ -316,6 +317,7 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
   nlohmann::json parts = nlohmann::json::array();
   for (const RigPart& part : definition.parts) {
     nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.brief.empty()) entry["brief"] = part.brief;
     if (!part.clips.empty()) {
       nlohmann::json partClips = nlohmann::json::object();
       for (const RigPartClip& partClip : part.clips) {

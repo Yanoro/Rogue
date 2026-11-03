@@ -204,6 +204,7 @@ bool Save(const Draft &draft, const std::string &directory, std::string *savedPa
   nlohmann::json parts = nlohmann::json::array();
   for (const Part &part : draft.parts) {
     nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.brief.empty()) entry["brief"] = part.brief;
     if (!part.clips.empty()) {
       nlohmann::json partClips = nlohmann::json::object();
       for (const RigPartClip &partClip : part.clips) {

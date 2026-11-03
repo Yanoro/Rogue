@@ -164,6 +164,14 @@ public:
                        const std::string &requirement = std::string(),
                        bool redesign = true);
 
+  // Queues animation art for a rig that is not this window's draft (the Content Editor's
+  // rig). The clip's frame declarations live in the caller's registry document; this asks
+  // for one multi-frame document per participating part and opens the window so its Draw
+  // pumps the replies. Returns false, with a reason, when the movement's requirements are
+  // not met or there is nothing to animate.
+  bool QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
+                         std::string *error);
+
 private:
   // The two conversations this window runs. A definition turn answers "what is this";
   // a pixel-document turn answers "how is it drawn". Named constants rather than bare 0
