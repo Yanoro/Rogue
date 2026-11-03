@@ -29,6 +29,7 @@
 #include "SpriteGapPanel.hpp"
 #include "ContentEditorWindow.h"
 #include "DesignerWindow.h"
+#include "CutoutSpikeWindow.h"
 #include <algorithm>
 #include <map>
 #include <vector>
@@ -307,6 +308,15 @@ void DebugConsoleWindow::Draw() {
   }
 
   bool showBlueprint = game->blueprintWindowEntity.has<ActiveWindow>();
+  bool showCutoutSpike = game->cutoutSpikeWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Cutout spike", &showCutoutSpike)) {
+    if (showCutoutSpike) {
+      game->cutoutSpikeWindowEntity.set<ActiveWindow>(
+          {std::make_shared<CutoutSpikeWindow>(game)});
+    } else {
+      game->cutoutSpikeWindowEntity.remove<ActiveWindow>();
+    }
+  }
   if (ImGui::Checkbox("Blueprints", &showBlueprint)) {
     if (showBlueprint) {
       game->blueprintWindowEntity.set<ActiveWindow>({std::make_shared<BlueprintWindow>(game)});

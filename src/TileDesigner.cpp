@@ -716,6 +716,15 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
     out << "\nWhat it will sit among, read from the building it is made for:\n"
         << brief.surroundings << "\n";
   }
+  if (!brief.baseDocument.empty()) {
+    // Fenced with a tag rather than backticks: the reply must contain exactly one ```sprite
+    // block, and a second fenced block here would compete with that instruction.
+    out << "\nThe layer's current document, verbatim:\n<base-document>\n"
+        << brief.baseDocument << "\n</base-document>\n"
+        << "Produce the animation frames by editing this document. Keep its palette and "
+           "every operation that is not part of the moving pose; change only what the "
+           "pose requires. These frames are the same character, not a new drawing of it.\n";
+  }
   if (!brief.frameNames.empty()) {
     out << "\nThis is an animation layer: the document must contain exactly "
         << brief.frameNames.size() << " frame blocks, named and in this order: ";

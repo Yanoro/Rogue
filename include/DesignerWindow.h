@@ -200,7 +200,8 @@ private:
                              const std::vector<std::string> &frameNames =
                                  std::vector<std::string>(),
                              const std::vector<std::string> &poses =
-                                 std::vector<std::string>());
+                                 std::vector<std::string>(),
+                             const std::string &baseDocument = std::string());
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -428,6 +429,9 @@ private:
     // poses the prompt reads. Empty for a single-sprite layer.
     std::vector<std::string> frames;
     std::vector<std::string> poses;
+    // The base layer's source document, when one exists; the prompt asks the model to edit
+    // it instead of redrawing the layer from its brief.
+    std::string baseDocument;
     // True when art already exists and this is a deliberate re-draw, so the prompt asks
     // for a different interpretation rather than a copy of the current document.
     bool redesign = false;

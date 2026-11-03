@@ -572,7 +572,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                const std::string &requirement,
                                                bool redesign,
                                                const std::vector<std::string> &frameNames,
-                                               const std::vector<std::string> &poses) {
+                                               const std::vector<std::string> &poses,
+                                               const std::string &baseDocument) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -650,6 +651,7 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief.redesign = redesign;
   artBrief.frameNames = frameNames;
   artBrief.poses = poses;
+  artBrief.baseDocument = baseDocument;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;
@@ -708,6 +710,37 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
               artBrief.kind, frameNames);
 }
 
+namespace {
+
+std::string ReadTextFile(const std::string &path) {
+  std::ifstream in(path);
+  if (!in.is_open()) return std::string();
+  return std::string(std::istreambuf_iterator<char>(in),
+                     std::istreambuf_iterator<char>());
+}
+
+// The layer's source document, if there is one. Generated rigs keep it beside the sprite;
+// a hand-authored rig keeps its sources under data/rigs/<rig>/<part>.sprite (the villager),
+// which the convention lookup cannot find because the compiled sprite has a different name.
+std::string BaseLayerDocument(const std::string &sprite, const std::string &rigId,
+                              const std::string &partId) {
+  const SpriteDSLDocument found = FindSpriteDSLDocument(sprite);
+  if (found.found && !found.path.empty()) {
+    return ReadTextFile(found.path);
+  }
+  if (!rigId.empty() && !partId.empty()) {
+    const std::filesystem::path path =
+        std::filesystem::path(Settings().content.rigs) / rigId / (partId + ".sprite");
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
+      return ReadTextFile(path.string());
+    }
+  }
+  return std::string();
+}
+
+}  // namespace
+
 bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
                                        std::string *error) {
   if (error != nullptr) error->clear();
@@ -758,6 +791,7 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
       request.frames.push_back("f" + std::to_string(frame));
     }
     request.poses = clip.poses;
+    request.baseDocument = BaseLayerDocument(part.sprite, rig.id, part.id);
     const std::string brief =
         part.brief.empty()
             ? ("the " + part.id + " layer of the " +
@@ -2522,6 +2556,9 @@ void DesignerWindow::QueueRigPartClipArt(RigDesigner::Part &part, const RigClip 
     request.frames.push_back("f" + std::to_string(frame));
   }
   request.poses = clip.poses;
+  request.baseDocument =
+      BaseLayerDocument(part.sprite, rigDraft.has_value() ? rigDraft->slug : std::string(),
+                        part.id);
   const std::string motion =
       clip.brief.empty()
           ? ("a " + std::to_string(clip.frames) + "-frame " + clip.id + " cycle")
@@ -2599,7 +2636,8 @@ void DesignerWindow::PumpRigArtQueue() {
   // prompt already knows how to talk about an actor's look.
   RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
                         /*replaceGenerated=*/true, "", request.requirement,
-                        request.redesign, request.frames, request.poses);
+                        request.redesign, request.frames, request.poses,
+                        request.baseDocument);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 

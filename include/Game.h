@@ -474,6 +474,8 @@ private:
 
   // Debug window entities in ECS
   flecs::entity debugConsoleWindowEntity;
+  // Throwaway cutout-animation evaluation window (CutoutSpikeWindow.h).
+  flecs::entity cutoutSpikeWindowEntity;
   flecs::entity tileInfoWindowEntity;
   flecs::entity astarWindowEntity;
   flecs::entity entityOverviewWindowEntity;
@@ -593,6 +595,7 @@ private:
   std::string speechUnavailableReason;
 
   friend class DebugConsoleWindow;
+  friend class CutoutSpikeWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
   friend class EntityOverviewWindow;

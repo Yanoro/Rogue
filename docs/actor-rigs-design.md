@@ -255,11 +255,22 @@ pane:
 4. **Save** writes the clip declarations to the Content Editor's rig override
    (`content.editor/rigs/<id>.json`), leaving the catalog file untouched.
 
-The prompt gets the part's `brief` and the movement's description and pose plan. It does
-not see the existing PNG, so an accurate brief is what keeps the new frames on-model; a
-rig saved before briefs existed falls back to "the <part> layer of the <rig> rig". The
-movement's `requires` gate still applies: sword/cast clips are refused until worn
-equipment follows the body.
+The prompt gets the part's `brief`, the movement's description and pose plan, and -- when
+one exists -- the layer's current `.sprite` document under `<base-document>`. The model is
+told to produce the frames by **editing that document**: keep its palette and every
+operation the pose does not need to change. That is the identity fix for the base being
+shirtless while the animation invented leather armour; the model starts from the existing
+art rather than from the brief. Generated rigs keep their source beside the sprite; a
+hand-authored rig like the villager falls back to `data/rigs/<rig>/<part>.sprite`. There is
+**no automatic palette guard yet** -- a disobedient reply can still drift, and the base
+document costs prompt tokens per part. The movement's `requires` gate still applies:
+sword/cast clips are refused until worn equipment follows the body.
+
+A throwaway **Cutout spike** debug window (Debug Console -> Cutout spike) evaluates the
+segmented-animation route before it becomes production work: orc_brute's right arm split at
+the elbow, the iron sword attached at the wrist, four hardcoded poses, Play/Pause/speed/time
+and a rest reference. Nothing in it is a data model; it exists to answer whether this pixel
+art reads acceptably when articulated, and how much per-frame authoring it costs.
 
 ## World rendering and playback
 
