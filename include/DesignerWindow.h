@@ -164,7 +164,13 @@ public:
                        const std::string &requirement = std::string(),
                        bool redesign = true);
 
+  // Bulk regeneration for every icon whose style field names `styleId`. Requests
+  // run one after another; this window must be visible for replies to be pumped.
+  void QueueIconStyleBatch(const std::string &styleId);
+  void PumpArtBatch();
+
 private:
+  void DrawStyleBatch();
   // The two conversations this window runs. A definition turn answers "what is this";
   // a pixel-document turn answers "how is it drawn". Named constants rather than bare 0
   // and 1 because an index spelled out at its use site is an index that will eventually
@@ -218,6 +224,17 @@ private:
   bool autoStarted = false;
   int autoIdleFrames = 0;
   std::vector<std::string> autoFailures;
+
+  // Bulk style regeneration queue. A queue rather than a loop: the art turn is
+  // one conversation and the session refuses a second request while one is busy.
+  std::deque<std::pair<std::string, SpriteKinds::Kind>> artBatch;
+  std::string artBatchStyle;
+  bool artBatchStarted = false;
+  // True while a batch item's exchanges are still being inspected. The next
+  // request must not start until the previous brief has been consumed, or the
+  // shared artBrief is overwritten and documents land under the wrong name.
+  bool artBatchWaitingForInspection = false;
+  int batchStyleIndex = 0;
 
   TileDesigner::SpriteDocumentBrief artBrief;
   // The last compile verdict, kept for the pane: "compiled" is not the interesting
@@ -506,6 +523,10 @@ private:
   // sprite-document turn for its art.
   void SendIconRequest(const std::string &description);
   char iconNameBuffer[64] = {};
+  // A reusable surface overlay sprite. The SurfaceRegistry definition is authored
+  // elsewhere; this only creates the art entry and its generated image.
+  void SendSurfaceSpriteRequest(const std::string &description);
+  char surfaceSpriteNameBuffer[64] = {};
 
   // Applies the rewritten brief for the current mode to the Improve button, so an
   // improved request is enriched inside the vocabulary it will actually be built with.

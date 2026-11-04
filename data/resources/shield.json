@@ -1,0 +1,11 @@
+{
+  "name": "Shield",
+  "description": "A temporary barrier. Separate from Health and consumed before a vital resource.",
+  "icon": "resource_shield",
+  "color": "#a78bfa",
+  "baseMax": 0,
+  "canBeVital": false,
+  "canBeSpendable": false,
+  "shield": true,
+  "displayOrder": 5
+}

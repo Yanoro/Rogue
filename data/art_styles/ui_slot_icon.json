@@ -1,0 +1,8 @@
+{
+  "id": "ui_slot_icon",
+  "name": "Inventory Slot Icons",
+  "description": "Transparent, monochrome line-art icons for body slots and inventory UI states.",
+  "appliesTo": ["slot_icon"],
+  "positive": "Readable at 32x32: a single centred symbol, clean monochrome warm-grey line art with one consistent dark outline, flat two-tone interior, generous transparent padding, no colour accent, no background, silhouette first.",
+  "negative": "Do not use text, labels, backgrounds, drop shadows, gradients, multiple objects, coloured fills, or thin broken lines."
+}

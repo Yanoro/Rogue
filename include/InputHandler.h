@@ -10,6 +10,9 @@ public:
 
   std::vector<Command*> handleInput();
 
+  // Raw movement intent, used by cast movement locks to tell "still holding the
+  // key from before the cast" apart from a new movement input.
+  static bool MovementInputDown();
 
 private:
   raylib::Camera2D *camera;

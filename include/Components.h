@@ -33,6 +33,15 @@ struct ScreenPosition : public raylib::Vector2 {
   }
 };
 
+class Game;
+
+// The live Game behind a world, for free helpers (skill resolution, projectile
+// impacts) that need a service owned by Game rather than a component. Runtime
+// only; never serialized.
+struct GameRuntimeResource {
+  Game *game = nullptr;
+};
+
 struct GamePosition {
   int x;
   int y;
@@ -73,6 +82,26 @@ struct GamePosition {
 
 struct MaxSpeed {
   float value;
+};
+
+// A multiplier applied to MaxSpeed by a held movement skill (Running today).
+// Kept separate from MaxSpeed so the configured baseline is not overwritten and
+// future speed modifiers can compose.
+struct SpeedMultiplier {
+  float value = 1.0f;
+};
+
+struct HeldSkillState {
+  std::string skillId;
+  bool active = false;
+  float regenDelay = 0.0f;
+};
+
+// How many inventory cells this character has. The inventory window renders
+// 30 cells per page; a capacity that is not a multiple of 30 leaves the tail of
+// the last page crossed out.
+struct InventorySlots {
+  int capacity = 30;
 };
 
 struct Velocity : public raylib::Vector2 {
@@ -945,6 +974,46 @@ struct AgentSleepTimer {
 // world will treat it as scenery.
 struct Actor {};
 
+// The last tile an actor occupied, used by the central tile-transition system.
+// Surfaces react to transitions; storing this on the actor means walking,
+// clicking a path and teleporting all produce the same enter/exit events.
+struct LastTile {
+  GamePosition position{0, 0};
+  bool initialized = false;
+};
+
+// Provenance for an effect instance. This is not a stat snapshot: a live caster
+// is used by the effect fold to gather current equipment/class/stat modifiers.
+struct EffectOrigin {
+  flecs::entity caster = flecs::entity::null();
+  uint64_t casterId = 0;
+  std::string casterName;
+  std::string causeId;
+  std::vector<std::string> causeTags;
+
+  bool IsLive() const { return caster.is_alive(); }
+};
+
+// One active status on an actor. The definition lives in StatusEffectRegistry;
+// this is only the per-actor runtime state.
+struct StatusEffectInstance {
+  std::string id;
+  float remaining = 0.0f;
+  float tickTimer = 0.0f;
+  EffectOrigin origin;
+};
+
+struct StatusEffects {
+  std::vector<StatusEffectInstance> effects;
+
+  bool Has(const std::string &id) const {
+    for (const StatusEffectInstance &effect : effects) {
+      if (effect.id == id) return true;
+    }
+    return false;
+  }
+};
+
 // The one character a human is driving. A tag rather than a pointer slot so a
 // resolver that only has an entity (a damage application, an interrupt) can tell
 // "this is the player" without reaching into Game.
@@ -1219,6 +1288,37 @@ struct Vitals {
   float maxHealth = 100.0f;
 };
 
+// One live resource pool on a character. `vital`/`primary` are per-character,
+// not properties of the global ResourceDef: a ghost's Mana is vital while a
+// human's Mana is not.
+struct ResourcePool {
+  std::string id;
+  float current = 0.0f;
+  bool vital = false;
+  bool primary = false;
+  bool shield = false;
+  // Optional authored ceiling (training dummies). 0 means resolve from the
+  // resource definition and the stat fold.
+  float maxOverride = 0.0f;
+};
+
+struct ResourcePools {
+  std::vector<ResourcePool> pools;
+
+  ResourcePool *Find(const std::string &id) {
+    for (ResourcePool &pool : pools) {
+      if (pool.id == id) return &pool;
+    }
+    return nullptr;
+  }
+  const ResourcePool *Find(const std::string &id) const {
+    for (const ResourcePool &pool : pools) {
+      if (pool.id == id) return &pool;
+    }
+    return nullptr;
+  }
+};
+
 // The portrait this character uses in the HUD, by PortraitRegistry id.
 //
 // An id rather than a path or a texture: the image behind a portrait can be
@@ -1362,6 +1462,13 @@ struct CastAction {
   // that target may move before the cast is canceled.
   bool requiresTarget = false;
   float rangeTiles = 0.0f;
+
+  // Surface created at the target tile when this cast lands. Copied at cast
+  // start for the same reason as the range: a content reload mid-wind-up must
+  // not add or remove terrain from a committed action.
+  std::string surfaceId;
+  float surfaceDuration = 0.0f;
+  int surfaceRadius = 0;
 };
 
 // The cast the character is currently committed to, on the CASTER.
@@ -1375,8 +1482,15 @@ struct Casting {
   std::string label;
   bool interruptible = true;
   // True for a cast whose skill disallows casting while moving: activation
-  // stopped the player, and the next movement input cancels the cast.
+  // stopped the player, and new movement input cancels the cast.
   bool movementLocked = false;
+  // Movement-locked casts normally force a stop. A sliding cast preserves the
+  // current velocity instead; only new movement input or a clicked path cancels.
+  bool allowSliding = false;
+  // False while an already-held movement key from the moment of activation is
+  // being ignored. The cast arms itself once that input returns to neutral, so
+  // casting while walking does not immediately cancel itself.
+  bool movementInputArmed = true;
 };
 
 // A short-lived visual owned by the caster: the skill's range ring, and for a
@@ -1470,6 +1584,10 @@ struct Projectile {
   float size = 24.0f;
   bool playerCast = false;
   bool interrupts = false;
+  // Surface created at the impact tile, copied from the skill at launch.
+  std::string surfaceId;
+  float surfaceDuration = 0.0f;
+  int surfaceRadius = 0;
 };
 
 class ProjectileRegistry;
@@ -1725,9 +1843,14 @@ struct DebugLogResource {
 };
 
 class ItemRegistry;
+class ResourceRegistry;
 // Equippable item definitions, loaded once at init from data/items/*.json (see
 // ItemRegistry.h). Same resource-component pattern as StatRegistryResource:
 // components carry item type ids, definitions live only in the registry.
+struct ResourceRegistryResource {
+  const ResourceRegistry *registry = nullptr;
+};
+
 struct ItemRegistryResource {
   ItemRegistry* registry;
 };

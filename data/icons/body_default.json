@@ -1,0 +1,6 @@
+{
+  "name": "Body Default",
+  "description": "Fallback transparent body outline for races without a silhouette.",
+  "sprite": "",
+  "style": "body_silhouette"
+}

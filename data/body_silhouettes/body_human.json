@@ -1,0 +1,18 @@
+{
+  "id": "body_human",
+  "name": "Human",
+  "description": "Default humanoid paper-doll layout.",
+  "icon": "body_human",
+  "anchors": [
+    { "slot": "head",      "x": 0.50, "y": 0.070, "size": 0.18 },
+    { "slot": "neck",      "x": 0.50, "y": 0.170, "size": 0.16 },
+    { "slot": "torso",     "x": 0.50, "y": 0.340, "size": 0.22 },
+    { "slot": "back",      "x": 0.74, "y": 0.310, "size": 0.19 },
+    { "slot": "main_hand", "x": 0.20, "y": 0.480, "size": 0.18 },
+    { "slot": "off_hand",  "x": 0.80, "y": 0.480, "size": 0.18 },
+    { "slot": "ring_1",    "x": 0.30, "y": 0.590, "size": 0.14 },
+    { "slot": "ring_2",    "x": 0.70, "y": 0.590, "size": 0.14 },
+    { "slot": "legs",      "x": 0.50, "y": 0.700, "size": 0.22 },
+    { "slot": "feet",      "x": 0.50, "y": 0.850, "size": 0.18 }
+  ]
+}

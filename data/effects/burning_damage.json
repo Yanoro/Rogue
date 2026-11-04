@@ -1,0 +1,8 @@
+{
+  "name": "Burning Damage",
+  "description": "The intrinsic damage of a burning tick.",
+  "kind": "damage",
+  "base": 2,
+  "damageType": "fire",
+  "tags": ["fire", "damage", "burning"]
+}

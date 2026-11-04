@@ -41,8 +41,12 @@ void ChangeVelocityCommand::execute(flecs::entity e) {
   //TODO: Can probably clean this up
   if (e.has<MaxSpeed>()) {
     auto maxSpeed = e.get_ref<MaxSpeed>();
-    v->x = std::clamp(v->x + dx, -maxSpeed->value, maxSpeed->value);
-    v->y = std::clamp(v->y + dy, -maxSpeed->value, maxSpeed->value);
+    float limit = maxSpeed->value;
+    if (const SpeedMultiplier *speed = e.get<SpeedMultiplier>()) {
+      limit *= std::max(0.0f, speed->value);
+    }
+    v->x = std::clamp(v->x + dx, -limit, limit);
+    v->y = std::clamp(v->y + dy, -limit, limit);
   } else {
     v->x += dx;
     v->y += dy;

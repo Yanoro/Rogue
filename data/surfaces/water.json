@@ -1,0 +1,22 @@
+{
+  "name": "Water",
+  "description": "A spreading pool that soaks anyone who steps in it and puts out fire.",
+  "sprite": "surface_water",
+  "permanent": true,
+  "layer": 5,
+  "alpha": 0.6,
+  "tags": [
+    "water",
+    "wet"
+  ],
+  "enter": [
+    "soak",
+    "douse"
+  ],
+  "stay": {
+    "every": 1.0,
+    "effects": [
+      "soak"
+    ]
+  }
+}

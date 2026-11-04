@@ -33,6 +33,8 @@ using WindowSection = GameSettings::WindowSection;
 using RenderSection = GameSettings::RenderSection;
 using PlayerSection = GameSettings::PlayerSection;
 using CombatSection = GameSettings::CombatSection;
+using HudSection = GameSettings::HudSection;
+using PortraitSection = GameSettings::HudSection::PortraitSection;
 using WorldSection = GameSettings::WorldSection;
 using ContentSection = GameSettings::ContentSection;
 using ArtSection = GameSettings::ArtSection;
@@ -622,6 +624,8 @@ const std::vector<SectionSpec> &Sections() {
       {"render", "render", "Font and starting camera.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
       {"combat", "combat", "Aimed skills: indicator-first or instant at the cursor.", ""},
+      {"hud", "HUD", "Player-facing HUD layout.", ""},
+      {"hud.portrait", "Player portrait", "Which resources the player portrait shows, in what order, and how much of each row is drawn.", ""},
       {"world", "world", "World generation.", ""},
       {"content", "content", "Where each content registry loads its definitions from.", ""},
       {"art", "art", "The art pack and its generated overlay. Convention sprites resolve from `<pack>/sprites/` first, then the generated layer.", ""},
@@ -1216,6 +1220,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Float>("player", "player.maxSpeed",
             "Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this.", &GameSettings::player, &PlayerSection::maxSpeed))
         .Min(0.0, DEFAULT_MAXSPEED);
+    add(Field<ValueType::Int>("player", "player.inventorySlots",
+            "Total inventory cells. Every 30 cells form one page; unused tail cells are crossed out.", &GameSettings::player, &PlayerSection::inventorySlots))
+        .Between(0, 300);
     add(Field<ValueType::String>("player", "player.portrait",
             "PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite.", &GameSettings::player, &PlayerSection::portrait))
         .Restart();
@@ -1227,6 +1234,27 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "Draw the cast range of targeted skills, plus the positions that keep the target in range while a movement-enabled cast is active.", &GameSettings::combat, &CombatSection::showSkillRanges));
     add(Field<ValueType::String>("combat", "combat.deathIcon",
             "IconRegistry id used as the corpse visual for every NPC death.", &GameSettings::combat, &CombatSection::deathIcon));
+
+    // --- hud.portrait -----------------------------------------------------
+    add(Field<ValueType::Bool>("hud.portrait", "hud.portrait.showIcons",
+            "Master switch for resource icons in the player portrait. Individual resources still control their own icon.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::showIcons));
+    add(Field<ValueType::Bool>("hud.portrait", "hud.portrait.showValues",
+            "Show current / maximum numbers beside each resource bar.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::showValues));
+    add(Field<ValueType::Bool>("hud.portrait", "hud.portrait.showNames",
+            "Show the resource name beside each bar.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::showNames));
+    add(Field<ValueType::Bool>("hud.portrait", "hud.portrait.compact",
+            "Use tighter rows and a smaller portrait resource block.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::compact));
+    add(Field<ValueType::Float>("hud.portrait", "hud.portrait.barHeight",
+            "Height of each resource bar in pixels.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::barHeight))
+        .Between(6.0, 28.0);
+    add(Field<ValueType::Json>("hud.portrait", "hud.portrait.resources",
+            "Ordered resource rows. Each entry is {id, visible, showIcon}; the array order is the portrait order. The Settings window edits this list directly.",
+            &GameSettings::hud, &HudSection::portrait, &PortraitSection::resources));
 
     // --- world ------------------------------------------------------------
     add(Field<ValueType::UInt64>("world", "world.seed",
@@ -1280,6 +1308,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.portraits",
             "Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id.", &GameSettings::content, &ContentSection::portraits))
         .Restart();
+    add(Field<ValueType::String>("content", "content.artStyles",
+            "Directory of prose art-style profiles used when generating sprites and icons.", &GameSettings::content, &ContentSection::artStyles))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.bodySilhouettes",
+            "Directory of body silhouettes with normalised slot anchors for the inventory paper-doll.", &GameSettings::content, &ContentSection::bodySilhouettes))
+        .Restart();
     add(Field<ValueType::String>("content", "content.icons",
             "Icon registry directory: one JSON per named icon (skill buttons, death marker, missing marker, future UI icons).", &GameSettings::content, &ContentSection::icons))
         .Restart();
@@ -1292,6 +1326,17 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.combatStrategies",
             "Combat strategy registry directory: one JSON per non-LLM combat tactic.", &GameSettings::content, &ContentSection::combatStrategies))
         .Restart();
+    add(Field<ValueType::String>("content", "content.surfaceSprites",
+            "Directory scanned for reusable surface-sprite entries.", &GameSettings::content, &ContentSection::surfaceSprites));
+    add(Field<ValueType::String>("content", "content.surfaces",
+            "Directory scanned for surface definitions (fire, water, oil).", &GameSettings::content, &ContentSection::surfaces));
+    add(Field<ValueType::String>("content", "content.statusEffects",
+            "Directory scanned for reusable actor statuses such as wet and burning.", &GameSettings::content, &ContentSection::statusEffects));
+    add(Field<ValueType::String>("content", "content.effects",
+            "Directory scanned for atomic effect definitions used by surfaces and statuses.", &GameSettings::content, &ContentSection::effects));
+    add(Field<ValueType::String>("content", "content.resources",
+            "Directory scanned for character resource definitions (health, mana, stamina, shields).", &GameSettings::content, &ContentSection::resources));
+
     add(Field<ValueType::String>("content", "content.places",
             "The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule.", &GameSettings::content, &ContentSection::places))
         .Restart();

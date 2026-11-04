@@ -1,0 +1,29 @@
+{
+  "name": "Running",
+  "description": "Hold Left Shift to sprint while stamina lasts. Moving drains Stamina; standing or releasing the key lets it recover.",
+  "icon": "skill_running",
+  "type": "active",
+  "stages": ["Initiate", "Journeyman", "Adept", "Master", "Grandmaster"],
+  "levelsPerStage": 9,
+  "xpPerStage": [100, 300, 900, 2700, 8100],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": ["use"],
+  "activation": {
+    "baseDamage": 0,
+    "cooldown": 0,
+    "range": 0,
+    "gcd": false,
+    "autoCast": false,
+    "requiresTarget": false,
+    "xpPerUse": 0,
+    "held": {
+      "resource": "stamina",
+      "speedMultiplier": 1.6,
+      "drainPerSecond": 10,
+      "regenPerSecond": 6,
+      "regenDelaySeconds": 1.0,
+      "minResource": 10
+    }
+  }
+}

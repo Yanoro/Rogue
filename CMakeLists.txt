@@ -224,6 +224,17 @@ set(SOURCES
     src/ProjectileRegistry.cpp
     src/SkillshotRegistry.cpp
     src/CombatStrategyRegistry.cpp
+    src/SurfaceSpriteRegistry.cpp
+    src/SurfaceRegistry.cpp
+    src/StatusEffectRegistry.cpp
+    src/EffectRegistry.cpp
+    src/EffectSystem.cpp
+    src/ResourceRegistry.cpp
+    src/ResourceSystem.cpp
+    src/InventoryWindow.cpp
+    src/ArtStyleRegistry.cpp
+    src/BodySilhouetteRegistry.cpp
+    src/SurfaceSystem.cpp
     src/TileRegistry.cpp
     src/MemoryDigestJob.cpp
   src/PlaceCategoryRegistry.cpp

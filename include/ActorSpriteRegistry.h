@@ -20,6 +20,8 @@ struct ActorSpriteDef {
   std::string id;
   std::string name;
   std::string description;
+  // Optional ArtStyleRegistry override; empty uses the family default.
+  std::string style;
 };
 
 // The actor-sprite catalogue, loaded from data/actor_sprites/<id>.json.

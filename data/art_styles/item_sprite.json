@@ -1,0 +1,8 @@
+{
+  "id": "item_sprite",
+  "name": "World Item Sprites",
+  "description": "Object and equipment art placed in the world.",
+  "appliesTo": ["item", "object"],
+  "positive": "Top-down three-quarter game sprite, 32x32, compact centred silhouette, warm limited palette, one-pixel dark outline, transparent background, readable at a glance, modest highlight and shadow.",
+  "negative": "Do not use text, UI frames, large empty backgrounds, photorealism, or a perspective that contradicts the top-down world."
+}

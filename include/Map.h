@@ -1,6 +1,7 @@
 #pragma once
 #include "Components.h"
 #include "StartingSkills.hpp"
+#include "ResourceRegistry.h"
 #include <memory>
 #include <flecs.h>
 #include <nlohmann/json.hpp>
@@ -83,6 +84,9 @@ struct NPCData {
   // who the character is. Everything below the terminal line belongs to the
   // agent (docs/task-system-design.md section 5).
   std::vector<std::string> terminalGoals;
+  // Resource pools authored on this instance. Empty falls through to the
+  // template, then the race, then the default Health pool.
+  std::vector<ResourceSpec> resources;
 };
 
 class Map {

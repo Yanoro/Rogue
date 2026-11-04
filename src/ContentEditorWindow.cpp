@@ -1,3 +1,4 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "ContentEditorWindow.h"
 
 #include <algorithm>
@@ -22,6 +23,7 @@
 #include "SpritePicker.hpp"
 #include "ActorSpritePicker.hpp"
 #include "IconPicker.hpp"
+#include "SurfaceSpritePicker.hpp"
 #include "SpritePaths.hpp"
 #include "RigDesigner.hpp"
 #include "RigRender.hpp"
@@ -101,8 +103,19 @@ struct JsonFormOptions {
   const CombatStrategyRegistry *combatStrategies = nullptr;
   const IconRegistry *icons = nullptr;
   std::string *iconFilter = nullptr;
+  const SurfaceSpriteRegistry *surfaceSprites = nullptr;
+  std::string *surfaceSpriteFilter = nullptr;
+  const ArtStyleRegistry *artStyles = nullptr;
   DebugLog *debugLog = nullptr;
 };
+
+// Keys that carry prose rather than identifiers or one art row. A nested
+// description or art-style note wraps even though it is not a top-level key.
+bool IsProseKey(const std::string &key) {
+  return key == "description" || key == "brief" || key == "notes" ||
+         key == "positive" || key == "negative" || key == "prompt" ||
+         key == "requirement" || key == "text" || key == "wornBrief";
+}
 
 // One value of the document, edited in place. Returns true when it changed.
 //
@@ -162,6 +175,20 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
   }
 
   if (depth == 1 && key == "sprite" && value.is_string() &&
+      options.surfaceSprites != nullptr && options.resources != nullptr &&
+      options.surfaceSpriteFilter != nullptr) {
+    const std::string current = value.get<std::string>();
+    const std::optional<std::string> selected = SurfaceSpritePicker::Draw(
+        *options.surfaceSprites, *options.resources, current,
+        "##content-surface-sprite", *options.surfaceSpriteFilter);
+    if (selected.has_value()) {
+      value = *selected;
+      return true;
+    }
+    return false;
+  }
+
+  if (depth == 1 && key == "sprite" && value.is_string() &&
       options.actorSprites != nullptr && options.resources != nullptr &&
       options.actorSpriteFilter != nullptr &&
       options.showActorSpritesWithoutArt != nullptr) {
@@ -174,6 +201,48 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
       value = *selected;
       return true;
     }
+    return false;
+  }
+
+  if (depth == 1 && key == "style" && value.is_string() &&
+      options.artStyles != nullptr) {
+    const std::string current = value.get<std::string>();
+    const ArtStyleDef *selectedStyle = options.artStyles->Get(current);
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::BeginCombo("##art-style",
+                          selectedStyle != nullptr
+                              ? selectedStyle->name.c_str()
+                              : "Default (family style)")) {
+      if (ImGui::Selectable("Default (family style)", current.empty())) {
+        value = "";
+        return true;
+      }
+      for (const ArtStyleDef *style : options.artStyles->GetAll()) {
+        if (ImGui::Selectable(style->name.c_str(), current == style->id)) {
+          value = style->id;
+          return true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::NewLine();
+    ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x);
+    if (selectedStyle != nullptr) {
+      if (!selectedStyle->description.empty()) {
+        ImGui::TextDisabled("%s", selectedStyle->description.c_str());
+      }
+      if (!selectedStyle->positive.empty()) {
+        ImGui::TextWrapped("%s", selectedStyle->positive.c_str());
+      }
+      if (!selectedStyle->negative.empty()) {
+        ImGui::TextDisabled("Avoid: %s", selectedStyle->negative.c_str());
+      }
+    } else {
+      ImGui::TextDisabled(
+          "Uses the family default style. Choose a profile to make this asset "
+          "explicit.");
+    }
+    ImGui::PopTextWrapPos();
     return false;
   }
 
@@ -208,7 +277,20 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     // mistake rather than a limitation worth streaming for.
     char buffer[2048];
     std::snprintf(buffer, sizeof(buffer), "%s", value.get<std::string>().c_str());
-    if (ImGui::InputText("##string", buffer, sizeof(buffer))) {
+    // Top-level prose fields (descriptions, art-style positive/negative text,
+    // prompts) are the ones long enough to need wrapping. Nested strings, such
+    // as one row of ASCII art, stay single-line so a list of lines remains a list.
+    ImGui::SetNextItemWidth(-1.0f);
+    const std::string stringValue = value.get<std::string>();
+    if (depth <= 1 || IsProseKey(key) || stringValue.size() > 120) {
+      const float height = ImGui::GetTextLineHeight() * 4.0f;
+      if (ImGui::InputTextMultiline("##string", buffer, sizeof(buffer),
+                                    ImVec2(-1.0f, height),
+                                    ImGuiInputTextFlags_AllowTabInput)) {
+        value = std::string(buffer);
+        changed = true;
+      }
+    } else if (ImGui::InputText("##string", buffer, sizeof(buffer))) {
       value = std::string(buffer);
       changed = true;
     }
@@ -275,6 +357,7 @@ SpriteKinds::Kind SpriteKindOf(const ContentKinds::Kind &kind) {
   if (kind.id == "objects") return SpriteKinds::Kind::Object;
   if (kind.id == "actors") return SpriteKinds::Kind::Actor;
   if (kind.id == "icons") return SpriteKinds::Kind::Icon;
+  if (kind.id == "surface_sprites") return SpriteKinds::Kind::Surface;
   return SpriteKinds::Kind::Tile;
 }
 
@@ -291,7 +374,10 @@ ContentKinds::World ContentEditorWindow::World_() {
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
       game->iconRegistry, game->rigRegistry, game->itemRegistry,
       game->skillRegistry, game->npcTemplateRegistry,
-      game->brainTemplateRegistry, game->debugLog.get(),
+      game->brainTemplateRegistry, game->surfaceSpriteRegistry,
+      game->surfaceRegistry, game->statusEffectRegistry, game->effectRegistry,
+      game->resourceRegistry, game->artStyleRegistry,
+      game->bodySilhouetteRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }
 
@@ -320,7 +406,10 @@ void ContentEditorWindow::ReloadDocument() {
 void ContentEditorWindow::Save() {
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr || game == nullptr) return;
-  if (entryId.empty() && kind->id != "icons") return;
+  const bool newable = kind->id == "icons" || kind->id == "surfaces" ||
+                       kind->id == "status_effects" || kind->id == "effects" ||
+                       kind->id == "resources";
+  if (entryId.empty() && !newable) return;
 
   const std::string directory =
       (std::filesystem::path(Settings().content.editor) / kind->id).string();
@@ -374,10 +463,8 @@ void ContentEditorWindow::Save() {
   // Skills may have been normalized by the apply (a type default filled in, an
   // activation added), so show the live document. Other kinds keep the form on
   // the authored copy, as before.
-  if (kind->id == "skills" || kind->id == "icons") {
-    if (kind->id == "icons") {
-      entryId = kind->fileName(saveDocument);
-    }
+  if (kind->id == "skills" || newable) {
+    entryId = kind->fileName(saveDocument);
     ReloadDocument();
   }
   status = "saved " + path.string() +
@@ -422,7 +509,82 @@ void ContentEditorWindow::DrawKindAndList() {
       statusIsError = false;
     }
   }
+  if (kind->id == "surfaces") {
+    if (ImGui::Button("New surface")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Surface";
+      document["description"] = std::string();
+      document["sprite"] = std::string();
+      document["permanent"] = false;
+      document["duration"] = 10.0f;
+      document["layer"] = 0;
+      document["alpha"] = 0.85f;
+      document["tags"] = nlohmann::json::array();
+      document["enter"] = nlohmann::json::array();
+      document["stay"] = nlohmann::json{{"every", 1.0f},
+                                        {"effects", nlohmann::json::array()}};
+      document["exit"] = nlohmann::json::array();
+      document["reactions"] = nlohmann::json::array();
+      entryId.clear();
+      dirty = true;
+      status = "Name the surface, pick a sprite, then add enter/stay effects and Save.";
+      statusIsError = false;
+    }
+  }
+  if (kind->id == "status_effects") {
+    if (ImGui::Button("New status")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Status";
+      document["description"] = std::string();
+      document["icon"] = std::string();
+      document["tags"] = nlohmann::json::array();
+      document["duration"] = 5.0f;
+      document["tickSeconds"] = 1.0f;
+      document["stacking"] = "refresh";
+      document["maxStacks"] = 1;
+      document["onApply"] = nlohmann::json::array();
+      document["onExpire"] = nlohmann::json::array();
+      document["tick"] = nlohmann::json::array();
+      entryId.clear();
+      dirty = true;
+      status = "Name the status and Save. Surfaces can then apply it by id.";
+      statusIsError = false;
+    }
+  }
 
+  if (kind->id == "resources") {
+    if (ImGui::Button("New resource")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Resource";
+      document["description"] = std::string();
+      document["icon"] = std::string();
+      document["color"] = "#cccccc";
+      document["baseMax"] = 100.0f;
+      document["canBeVital"] = true;
+      document["canBeSpendable"] = true;
+      document["shield"] = false;
+      document["hidden"] = false;
+      document["displayOrder"] = 30;
+      entryId.clear();
+      dirty = true;
+      status = "Name the resource. Races/templates choose whether it is vital and primary.";
+      statusIsError = false;
+    }
+  }
+  if (kind->id == "effects") {
+    if (ImGui::Button("New effect")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Effect";
+      document["description"] = std::string();
+      document["kind"] = "damage";
+      document["base"] = 4.0f;
+      document["tags"] = nlohmann::json::array();
+      entryId.clear();
+      dirty = true;
+      status = "Name the effect and choose its kind. Surfaces and statuses reference it by id.";
+      statusIsError = false;
+    }
+  }
   ImGui::BeginChild("content_list", ImVec2(0, 0), true);
   for (const ContentKinds::Entry &entry : entries) {
     if (!lowered.empty()) {
@@ -799,7 +961,8 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
     // icon would exist on disk and never appear. Point the marker at the generated
     // file before the async job lands; until it exists, resolution still falls back
     // to the pack.
-    if (spriteKind == SpriteKinds::Kind::Icon) {
+    if (spriteKind == SpriteKinds::Kind::Icon ||
+        spriteKind == SpriteKinds::Kind::Surface) {
       const std::string markerPath = GeneratedSpriteMarkerPath(convention);
       if (!markerPath.empty()) {
         std::ofstream marker(markerPath);
@@ -917,6 +1080,109 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
   }
 }
 
+void ContentEditorWindow::DrawBodySilhouettePreview() {
+  if (game == nullptr) return;
+  ImGui::Separator();
+  ImGui::TextDisabled("Slot anchors");
+  ImGui::TextWrapped(
+      "Drag a slot marker onto the body image. Coordinates are normalised to "
+      "the silhouette canvas and are saved with this definition.");
+
+  const std::string iconId =
+      document.is_object() && document.contains("icon") &&
+              document["icon"].is_string()
+          ? document["icon"].get<std::string>()
+          : entryId;
+  const Texture2D *texture = IconPaths::ResolveIconTexture(
+      game->iconRegistry, game->resourceManager, iconId,
+      game->debugLog.get());
+  if (texture == nullptr) {
+    ImGui::TextDisabled(
+        "No silhouette art resolves for icon '%s'. Set the icon field to an "
+        "IconRegistry id.",
+        iconId.c_str());
+  }
+
+  const float maxWidth = std::min(260.0f, ImGui::GetContentRegionAvail().x);
+  const float aspect =
+      texture != nullptr && texture->height > 0
+          ? static_cast<float>(texture->width) /
+                static_cast<float>(texture->height)
+          : 2.0f / 3.0f;
+  const ImVec2 canvasSize(maxWidth, maxWidth / aspect);
+  const ImVec2 origin = ImGui::GetCursorScreenPos();
+  ImDrawList *draw = ImGui::GetWindowDrawList();
+  draw->AddRectFilled(origin, origin + canvasSize, IM_COL32(22, 24, 28, 220),
+                      4.0f);
+  if (texture != nullptr) {
+    draw->AddImage(static_cast<ImTextureID>(
+                       static_cast<intptr_t>(texture->id)),
+                   origin, origin + canvasSize, ImVec2(0, 0), ImVec2(1, 1),
+                   IM_COL32(255, 255, 255, 190));
+  }
+  draw->AddRect(origin, origin + canvasSize, IM_COL32(110, 116, 128, 220),
+                4.0f);
+  ImGui::Dummy(canvasSize);
+
+  if (document.contains("anchors") && document["anchors"].is_array()) {
+    for (size_t i = 0; i < document["anchors"].size(); ++i) {
+      auto &anchor = document["anchors"][i];
+      if (!anchor.is_object() || !anchor.contains("slot") ||
+          !anchor["slot"].is_string()) {
+        continue;
+      }
+      const std::string slot = anchor["slot"].get<std::string>();
+      float x = anchor.value("x", 0.5f);
+      float y = anchor.value("y", 0.5f);
+      const float size = anchor.value("size", 0.15f);
+      const ImVec2 center(origin.x + canvasSize.x * x,
+                          origin.y + canvasSize.y * y);
+      const float radius = std::max(7.0f, canvasSize.x * size * 0.5f);
+      draw->AddCircleFilled(center, radius, IM_COL32(70, 150, 220, 70));
+      draw->AddCircle(center, radius, IM_COL32(130, 200, 255, 230), 0, 1.5f);
+      draw->AddText(ImVec2(center.x + radius + 3, center.y - 6),
+                    IM_COL32(220, 235, 255, 255), slot.c_str());
+
+      ImGui::PushID(static_cast<int>(i));
+      ImGui::SetCursorScreenPos(ImVec2(center.x - 9, center.y - 9));
+      ImGui::InvisibleButton("##anchor_drag", ImVec2(18, 18));
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s\nx %.3f  y %.3f\nDrag to move", slot.c_str(),
+                          x, y);
+      }
+      if (ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        const ImVec2 mouse = ImGui::GetIO().MousePos;
+        x = std::clamp((mouse.x - origin.x) / canvasSize.x, 0.0f, 1.0f);
+        y = std::clamp((mouse.y - origin.y) / canvasSize.y, 0.0f, 1.0f);
+        anchor["x"] = x;
+        anchor["y"] = y;
+        dirty = true;
+      }
+      ImGui::PopID();
+    }
+  }
+
+  ImGui::SetCursorScreenPos(
+      ImVec2(origin.x, origin.y + canvasSize.y + 8.0f));
+  ImGui::Separator();
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputTextWithHint("##anchor_slot", "new slot id", anchorSlotBuffer,
+                           sizeof(anchorSlotBuffer));
+  ImGui::SameLine();
+  if (ImGui::Button("Add anchor") && anchorSlotBuffer[0] != '\0') {
+    if (!document.contains("anchors") || !document["anchors"].is_array()) {
+      document["anchors"] = nlohmann::json::array();
+    }
+    document["anchors"].push_back(
+        {{"slot", std::string(anchorSlotBuffer)},
+         {"x", 0.5f},
+         {"y", 0.5f},
+         {"size", 0.15f}});
+    anchorSlotBuffer[0] = '\0';
+    dirty = true;
+  }
+}
+
 void ContentEditorWindow::DrawItemPreviewPane() {
   if (entryId.empty() || game == nullptr) return;
   const ItemDef *item = game->itemRegistry.Get(entryId);
@@ -946,6 +1212,18 @@ void ContentEditorWindow::DrawItemPreviewPane() {
       tags += tag;
     }
     ImGui::TextDisabled("tags: %s", tags.c_str());
+  }
+
+  if (ImGui::Button("Give to player inventory")) {
+    std::string message;
+    const bool ok = game->GiveItemToPlayer(entryId, message);
+    status = message;
+    statusIsError = !ok;
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Spawn one object from this equipment definition and place it in the "
+        "player's inventory. It is not equipped.");
   }
 
   if (item->wornSprite.empty()) {
@@ -1101,7 +1379,11 @@ void ContentEditorWindow::DrawRigPreviewPane() {
 void ContentEditorWindow::DrawDocumentPane() {
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr) return;
-  if (entryId.empty() && kind->id != "icons") {
+  const bool newablePane = kind->id == "icons" || kind->id == "surfaces" ||
+                           kind->id == "status_effects" ||
+                           kind->id == "effects" ||
+                           kind->id == "resources";
+  if (entryId.empty() && !newablePane) {
     ImGui::TextWrapped(
         "Pick an entry on the left. The document is shown as a form generated from its "
         "own JSON, so a kind added to the registry table is editable without a new "
@@ -1109,7 +1391,7 @@ void ContentEditorWindow::DrawDocumentPane() {
     return;
   }
   if (entryId.empty()) {
-    ImGui::TextDisabled("icons / new entry (not saved yet)");
+    ImGui::TextDisabled("%s / new entry (not saved yet)", kind->id.c_str());
   } else {
     ImGui::TextDisabled("%s / %s", kind->id.c_str(), entryId.c_str());
   }
@@ -1146,6 +1428,7 @@ void ContentEditorWindow::DrawDocumentPane() {
   // One form for the whole document: the fields are whatever the file has, and the
   // registry's own validator is what decides whether the result is usable.
   JsonFormOptions options;
+  options.artStyles = &game->artStyleRegistry;
   if (kind->id == "npcs") {
     options.actorSprites = &game->actorSpriteRegistry;
     options.resources = &game->resourceManager;
@@ -1153,14 +1436,23 @@ void ContentEditorWindow::DrawDocumentPane() {
     options.showActorSpritesWithoutArt = &showActorSpritesWithoutArt;
     options.combatStrategies = &game->combatStrategyRegistry;
   }
-  if (kind->id == "skills") {
+  if (kind->id == "skills" || kind->id == "status_effects" ||
+      kind->id == "resources" || kind->id == "body_silhouettes") {
     options.icons = &game->iconRegistry;
     options.resources = &game->resourceManager;
     options.iconFilter = &skillIconFilter;
     options.debugLog = game->debugLog.get();
   }
+  if (kind->id == "surfaces") {
+    options.surfaceSprites = &game->surfaceSpriteRegistry;
+    options.resources = &game->resourceManager;
+    options.surfaceSpriteFilter = &surfaceSpriteFilter;
+  }
   if (DrawJsonValue(document, std::string(), false, options)) {
     dirty = true;
+  }
+  if (kind->id == "body_silhouettes") {
+    DrawBodySilhouettePreview();
   }
   ImGui::EndChild();
 

@@ -14,6 +14,7 @@
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "IconPaths.hpp"
+#include "ResourceSystem.h"
 #include "SkillshotPath.hpp"
 #include "GapLog.h"
 #include "LogPaths.h"
@@ -458,6 +459,40 @@ void StopPlayerMovement(flecs::entity actor) {
   }
 }
 
+// Environmental damage uses the same death path as combat damage but not the
+// attack fold: standing in fire does not miss, and armour is not a second
+// surface resistance stat. The source is still carried for retaliation and future
+// kill credit.
+void ApplyEffectDamage(flecs::entity source, flecs::entity target, float amount,
+                       const std::string &label) {
+  (void)label;
+  if (!target.is_alive() || amount <= 0.0f) return;
+  Resources::EnsureInitialized(target);
+  if (!Resources::IsDamageable(target)) return;
+  Resources::Damage(source, target, amount, label);
+  SpawnFloatingDamage(target, std::max(1, static_cast<int>(std::lround(amount))));
+
+  if (Resources::IsAlive(target) && target.has<Retaliates>() &&
+      source.is_alive() && source.has<PlayerControlled>()) {
+    NpcDisposition *disposition = target.get_mut<NpcDisposition>();
+    if (disposition != nullptr && disposition->value == Disposition::Neutral) {
+      disposition->value = Disposition::Aggressive;
+    }
+  }
+
+  if (!Resources::IsAlive(target)) {
+    if (target.has<TrainingDummy>()) {
+      for (ResourcePool &pool : target.get_mut<ResourcePools>()->pools) {
+        if (pool.vital) Resources::Set(target, pool.id, Resources::Max(target, pool.id));
+      }
+    } else if (target.has<PlayerControlled>()) {
+      for (ResourcePool &pool : target.get_mut<ResourcePools>()->pools) {
+        if (pool.vital) Resources::Set(target, pool.id, Resources::Max(target, pool.id));
+      }
+    }
+  }
+}
+
 // Applies one resolved hit: fold, armour, floating text, the dummy/player reset,
 // and an optional interrupt.
 //
@@ -467,7 +502,9 @@ void StopPlayerMovement(flecs::entity actor) {
 std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage,
                      const std::string &subjectId, const std::string &label,
                      bool secondPerson, bool interrupts) {
-  if (!target.is_alive() || !target.has<Vitals>()) {
+  if (!target.is_alive()) return "There is nothing there to hit.";
+  Resources::EnsureInitialized(target);
+  if (!Resources::IsDamageable(target)) {
     return "There is nothing there to hit.";
   }
 
@@ -490,8 +527,7 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
       secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
   const std::string targetLabel = EntityLabel(target, "the target");
 
-  Vitals *targetVitals = target.get_mut<Vitals>();
-  targetVitals->health -= static_cast<float>(points);
+  Resources::Damage(actor, target, static_cast<float>(points), label);
   SpawnFloatingDamage(target, points);
 
   std::string message = actorLabel + (secondPerson ? " hit " : " hits ") +
@@ -503,10 +539,7 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
   }
   message += ".";
 
-  // Neutral + Retaliates is the defensive case: the first player hit flips the
-  // stance, and the existing melee controller starts using the profile it was
-  // spawned with. Neutral without the tag stays out of the fight.
-  if (targetVitals->health > 0.0f && target.has<Retaliates>() &&
+  if (Resources::IsAlive(target) && target.has<Retaliates>() &&
       actor.has<PlayerControlled>()) {
     if (NpcDisposition *disposition = target.get_mut<NpcDisposition>();
         disposition != nullptr &&
@@ -516,19 +549,18 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
     }
   }
 
-  if (targetVitals->health <= 0.0f) {
+  if (!Resources::IsAlive(target)) {
     if (target.has<TrainingDummy>()) {
-      // A dummy exists to be hit forever; resetting is what "immortal" means.
-      targetVitals->health = targetVitals->maxHealth;
+      for (ResourcePool &pool : target.get_mut<ResourcePools>()->pools) {
+        if (pool.vital) Resources::Set(target, pool.id, Resources::Max(target, pool.id));
+      }
       message += " The dummy shrugs it off.";
     } else if (target.has<PlayerControlled>()) {
-      // No death system yet. Knocking the player out and restoring them keeps a
-      // test session from ending in a corpse with no way to continue; a real
-      // death and recovery loop is a later slice.
-      targetVitals->health = targetVitals->maxHealth;
+      for (ResourcePool &pool : target.get_mut<ResourcePools>()->pools) {
+        if (pool.vital) Resources::Set(target, pool.id, Resources::Max(target, pool.id));
+      }
       message += " You are knocked out and recover.";
     } else {
-      targetVitals->health = 0.0f;
       message += " " + targetLabel + " falls.";
     }
   }
@@ -635,6 +667,9 @@ bool SpawnSkillProjectile(flecs::entity actor, flecs::entity target,
   projectile.size = projectileDef->size;
   projectile.playerCast = playerCast;
   projectile.interrupts = def.activation.interrupts;
+  projectile.surfaceId = def.activation.surface;
+  projectile.surfaceDuration = def.activation.surfaceDuration;
+  projectile.surfaceRadius = def.activation.surfaceRadius;
 
   const Vector2 start = ScreenCenterOf(actor);
   ScreenPosition startPosition;
@@ -704,9 +739,9 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                          flecs::entity target, bool secondPerson,
                          bool announce, Vector2 direction) {
   SkillUseOutcome outcome;
-  if (!actor.is_alive() || !actor.has<Vitals>()) {
-    return outcome;
-  }
+  if (!actor.is_alive()) return outcome;
+  Resources::EnsureInitialized(actor);
+  if (!Resources::IsDamageable(actor)) return outcome;
 
   const SkillDef *def = FindSkillDef(actor.world(), skillId);
   if (def == nullptr) {
@@ -715,6 +750,10 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   }
   if (!SkillIsActivatable(def->type)) {
     outcome.message = def->name + " is a passive skill and has no button.";
+    return outcome;
+  }
+  if (def->activation.held.enabled) {
+    outcome.message = "Hold Left Shift to run.";
     return outcome;
   }
 
@@ -750,7 +789,8 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
       outcome.message = "You cannot use " + def->name + " on yourself.";
       return outcome;
     }
-    if (!target.has<Vitals>()) {
+    Resources::EnsureInitialized(target);
+    if (!Resources::IsDamageable(target)) {
       outcome.message = "That is not something you can attack.";
       return outcome;
     }
@@ -758,6 +798,14 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
       outcome.message = "You are too far away to use " + def->name + ".";
       return outcome;
     }
+  }
+
+  if (!def->activation.costResource.empty() &&
+      !Resources::CanPay(actor, def->activation.costResource,
+                         def->activation.costAmount)) {
+    outcome.message = "You do not have enough " +
+                      def->activation.costResource + " to use " + def->name + ".";
+    return outcome;
   }
 
   const ResolutionInputs inputs = MakeResolutionInputs(actor.world());
@@ -788,6 +836,14 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
       return outcome;
     }
     cooldownSeconds = duration.fold.value;
+  }
+
+  if (!def->activation.costResource.empty() &&
+      !Resources::Spend(actor, def->activation.costResource,
+                        def->activation.costAmount)) {
+    outcome.message = "You do not have enough " +
+                      def->activation.costResource + " to use " + def->name + ".";
+    return outcome;
   }
 
   // The cooldown starts now for both paths. A cast that is interrupted has still
@@ -838,6 +894,9 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                           def->activation.interruptible, secondPerson, aim};
     committed.requiresTarget = def->activation.requiresTarget;
     committed.rangeTiles = def->activation.rangeTiles;
+    committed.surfaceId = def->activation.surface;
+    committed.surfaceDuration = def->activation.surfaceDuration;
+    committed.surfaceRadius = def->activation.surfaceRadius;
     flecs::entity action =
         actor.world()
             .entity()
@@ -849,12 +908,15 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     }
     const bool movementLocked =
         !def->activation.canCastWhileMoving && actor.has<PlayerControlled>();
-    if (movementLocked) {
+    const bool allowSliding =
+        movementLocked && def->activation.allowSliding;
+    const bool movementHeld = InputHandler::MovementInputDown();
+    if (movementLocked && !allowSliding) {
       StopPlayerMovement(actor);
     }
     actor.set<Casting>(
         {action, skillId, def->name, def->activation.interruptible,
-         movementLocked});
+         movementLocked, allowSliding, !movementHeld});
     actor.set<Busy>({action});
 
     outcome.used = true;
@@ -905,6 +967,15 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   } else {
     outcome.message =
         actorLabel + (secondPerson ? " use " : " uses ") + def->name + ".";
+  }
+  if (!def->activation.surface.empty()) {
+    flecs::entity surfaceAt = target.is_alive() ? target : actor;
+    if (surfaceAt.has<GamePosition>()) {
+      AddSurfaceAt(actor.world(), *surfaceAt.get<GamePosition>(),
+                   def->activation.surface, actor,
+                   def->activation.surfaceDuration,
+                   def->activation.surfaceRadius);
+    }
   }
   outcome.message += FinalizeSkillUse(actor, *def);
 
@@ -972,15 +1043,19 @@ void Game::SetPlayerTarget(flecs::entity target) {
   playerEntity.set<LockedTarget>({target});
 
   const std::string name = EntityLabel(target, "target");
-  if (const Vitals *vitals = target.get<Vitals>()) {
+  Resources::EnsureInitialized(target);
+  const std::string vital = Resources::PrimaryVital(target);
+  if (!vital.empty()) {
     if (debugLog) {
       debugLog->LogCombat(
           "Targeting " + name + " (" +
-          std::to_string(static_cast<int>(std::ceil(vitals->health))) + "/" +
-          std::to_string(static_cast<int>(std::ceil(vitals->maxHealth))) + ").");
+          std::to_string(static_cast<int>(std::ceil(
+              Resources::Current(target, vital)))) + "/" +
+          std::to_string(static_cast<int>(std::ceil(
+              Resources::Max(target, vital)))) + ").");
     }
   } else if (debugLog) {
-    debugLog->LogCombat("Targeting " + name + " (it has no health to show).");
+    debugLog->LogCombat("Targeting " + name + " (it has no vital resource).");
   }
 }
 
@@ -996,11 +1071,11 @@ void Game::CyclePlayerTarget() {
   // Anything with health is a candidate. Distance decides the order, and the
   // cap keeps a target across the map from being selected by a Tab press.
   std::vector<std::pair<int, flecs::entity>> candidates;
-  ecs.filter<GamePosition, Vitals>().each(
-      [&](flecs::entity entity, const GamePosition &pos, Vitals &) {
-        if (entity == playerEntity) {
-          return;
-        }
+  ecs.filter<GamePosition, ResourcePools>().each(
+      [&](flecs::entity entity, const GamePosition &pos, ResourcePools &) {
+        if (entity == playerEntity) return;
+        Resources::EnsureInitialized(entity);
+        if (!Resources::IsDamageable(entity)) return;
         const int dx = pos.x - playerPos->x;
         const int dy = pos.y - playerPos->y;
         const int distance = dx * dx + dy * dy;
@@ -1100,8 +1175,9 @@ int Game::RunCombatSelfCheck() {
   // The plain dummy, not the sparring one: the check drives the player, so the
   // opponent must not be acting on its own.
   flecs::entity dummy = flecs::entity::null();
-  ecs.filter<GamePosition, Vitals>().each(
-      [&](flecs::entity entity, const GamePosition &, Vitals &) {
+  ecs.filter<GamePosition, ResourcePools>().each(
+      [&](flecs::entity entity, const GamePosition &, ResourcePools &) {
+        Resources::EnsureInitialized(entity);
         if (!dummy.is_alive() && entity.has<TrainingDummy>() &&
             !entity.has<Aggressive>()) {
           dummy = entity;
@@ -1153,14 +1229,19 @@ int Game::RunCombatSelfCheck() {
   const int kickSlot = slotOf("kick");
   const int fireballSlot = slotOf("fireball");
   const int iceSlot = slotOf("ice_lance");
+  const int waterBallSlot = slotOf("water_ball");
   if (attackSlot < 0) {
     std::cout << "combat-check: the bar has no attack skill\n";
     return 1;
   }
 
-  const float healthBefore = dummy.get<Vitals>()->health;
+  const std::string dummyVital =
+      dummy.is_alive() ? Resources::PrimaryVital(dummy) : std::string();
+  const float healthBefore =
+      dummyVital.empty() ? 0.0f : Resources::Current(dummy, dummyVital);
   const bool first = ActivatePlayerSkill(attackSlot);
-  const float healthAfter = dummy.get<Vitals>()->health;
+  const float healthAfter =
+      dummyVital.empty() ? 0.0f : Resources::Current(dummy, dummyVital);
   const bool second = ActivatePlayerSkill(attackSlot);
 
   // The check is the only place that can drive a cast to completion without a
@@ -1191,7 +1272,8 @@ int Game::RunCombatSelfCheck() {
                          indicator->movementArea &&
                          indicator->target == dummy;
   }
-  const float healthBeforeCast = dummy.get<Vitals>()->health;
+  const float healthBeforeCast =
+      dummyVital.empty() ? 0.0f : Resources::Current(dummy, dummyVital);
   bool castResolved = false;
   if (const Casting *casting = playerEntity.get<Casting>()) {
     flecs::entity castAction = casting->actionEntity;
@@ -1201,7 +1283,8 @@ int Game::RunCombatSelfCheck() {
       }
       castAction.add<ActionCompleted>();
       ecs.progress();
-      castResolved = dummy.get<Vitals>()->health < healthBeforeCast;
+      castResolved = !dummyVital.empty() &&
+                     Resources::Current(dummy, dummyVital) < healthBeforeCast;
     }
   }
 
@@ -1250,6 +1333,26 @@ int Game::RunCombatSelfCheck() {
     playerEntity.set<Velocity>({0.0f, 0.0f});
   }
 
+  // A sliding movement-locked cast must tolerate existing velocity. Only new
+  // movement input or a clicked path cancels it.
+  bool slidingSurvives = false;
+  {
+    flecs::entity action =
+        ecs.entity()
+            .set<ActionTimer>({1.0f})
+            .set<ActionActor>({playerEntity})
+            .set<CastAction>({std::string(), "Slide Test", 1.0f, true, false});
+    playerEntity.set<Casting>(
+        {action, std::string(), "Slide Test", true, true, true, true});
+    playerEntity.set<Velocity>({10.0f, 0.0f});
+    ecs.progress();
+    slidingSurvives = playerEntity.has<Casting>();
+    playerEntity.set<Velocity>({0.0f, 0.0f});
+    playerEntity.remove<Casting>();
+    playerEntity.remove<Busy>();
+    action.destruct();
+  }
+
   // Interrupt: put a cast on the dummy and kick it apart. The kick is instant and
   // flagged `interrupts`, so this exercises the same path an agent will use.
   clearCooldowns();
@@ -1276,7 +1379,8 @@ int Game::RunCombatSelfCheck() {
   bool fireballUsed = false;
   bool fireballHit = false;
   if (fireballSlot >= 0) {
-    const float beforeFireball = dummy.get<Vitals>()->health;
+    const float beforeFireball =
+        dummyVital.empty() ? 0.0f : Resources::Current(dummy, dummyVital);
     fireballUsed = ActivatePlayerSkill(fireballSlot);
 
     flecs::entity projectile = flecs::entity::null();
@@ -1293,7 +1397,8 @@ int Game::RunCombatSelfCheck() {
         position->y = center.y;
       }
       ecs.progress();
-      fireballHit = dummy.get<Vitals>()->health < beforeFireball;
+      fireballHit = !dummyVital.empty() &&
+                    Resources::Current(dummy, dummyVital) < beforeFireball;
     }
   }
 
@@ -1303,7 +1408,8 @@ int Game::RunCombatSelfCheck() {
   bool iceUsed = false;
   bool iceHit = false;
   if (iceSlot >= 0) {
-    const float beforeIce = dummy.get<Vitals>()->health;
+    const float beforeIce =
+        dummyVital.empty() ? 0.0f : Resources::Current(dummy, dummyVital);
     iceUsed = ActivatePlayerSkill(iceSlot);
 
     flecs::entity skillshot = flecs::entity::null();
@@ -1321,7 +1427,8 @@ int Game::RunCombatSelfCheck() {
         shot->distanceTraveled = std::sqrt(dx * dx + dy * dy);
       }
       ecs.progress();
-      iceHit = dummy.get<Vitals>()->health < beforeIce;
+      iceHit = !dummyVital.empty() &&
+               Resources::Current(dummy, dummyVital) < beforeIce;
     }
   }
 
@@ -1383,7 +1490,7 @@ int Game::RunCombatSelfCheck() {
     data.retaliates = true;
     flecs::entity npc = SpawnNpc(data);
     if (npc.is_alive()) {
-      npcSpawned = npc.has<Vitals>() && npc.has<MaxSpeed>() &&
+      npcSpawned = Resources::IsDamageable(npc) && npc.has<MaxSpeed>() &&
                    npc.has<NpcDisposition>() && npc.has<Retaliates>() &&
                    npc.has<Aggressive>();
       npcBrainless = !npc.has<AgentBrainWrapper>();
@@ -1394,12 +1501,12 @@ int Game::RunCombatSelfCheck() {
       npcEntityInfoWindow =
           clickWindow != nullptr &&
           clickWindow->type == WindowType::EntityInfoWindowType;
-      if (npc.has<Vitals>()) {
-        const float before = npc.get<Vitals>()->health;
+      if (Resources::IsDamageable(npc)) {
+        const std::string vital = Resources::PrimaryVital(npc);
+        const float before = Resources::Current(npc, vital);
         ApplyHit(playerEntity, npc, 1, "", "Test", true, false);
-        const Vitals *after = npc.get<Vitals>();
         const NpcDisposition *stance = npc.get<NpcDisposition>();
-        npcRetaliated = after != nullptr && after->health < before &&
+        npcRetaliated = Resources::Current(npc, vital) < before &&
                         stance != nullptr &&
                         stance->value == Disposition::Aggressive;
       }
@@ -1466,7 +1573,8 @@ int Game::RunCombatSelfCheck() {
     data.retaliates = false;
     flecs::entity npc = SpawnNpc(data);
     if (npc.is_alive()) {
-      npcBrainDriven = npc.has<AgentBrainWrapper>() && npc.has<Vitals>();
+      npcBrainDriven = npc.has<AgentBrainWrapper>() &&
+                       Resources::IsDamageable(npc);
       const WindowOnClick *clickWindow = npc.get<WindowOnClick>();
       npcBrainContextWindow =
           clickWindow != nullptr &&
@@ -1531,8 +1639,8 @@ int Game::RunCombatSelfCheck() {
     data.inventory.push_back({"bread", 1});
     flecs::entity victim = SpawnNpc(data);
     if (victim.is_alive()) {
-      if (Vitals *vitals = victim.get_mut<Vitals>()) {
-        vitals->health = 0.0f;
+      if (const std::string vital = Resources::PrimaryVital(victim); !vital.empty()) {
+        Resources::Set(victim, vital, 0.0f);
       }
       ecs.progress();
 
@@ -1590,6 +1698,108 @@ int Game::RunCombatSelfCheck() {
                    missingOk && missingPath.find("unknown") != std::string::npos;
   }
 
+
+  const SkillDef *fireballDef = FindSkillDef(playerEntity.world(), "fireball");
+  const SkillDef *waterBallDef = FindSkillDef(playerEntity.world(), "water_ball");
+  const bool surfaceAbilities =
+      fireballDef != nullptr && fireballDef->activation.surface == "fire" &&
+      waterBallDef != nullptr && waterBallDef->activation.surface == "water";
+
+  bool waterBallUsed = false;
+  bool waterBallSurface = !surfaceAbilities || waterBallSlot < 0;
+  if (waterBallSlot >= 0 && waterBallDef != nullptr) {
+    clearCooldowns();
+    SetPlayerTarget(dummy);
+    waterBallUsed = ActivatePlayerSkill(waterBallSlot);
+    flecs::entity bolt = flecs::entity::null();
+    ecs.filter<Projectile>().each([&](flecs::entity entity, Projectile &shot) {
+      if (!bolt.is_alive() && shot.skillId == "water_ball") bolt = entity;
+    });
+    if (bolt.is_alive()) {
+      if (ScreenPosition *position = bolt.get_mut<ScreenPosition>()) {
+        const Vector2 center = ScreenCenterOf(dummy);
+        position->x = center.x;
+        position->y = center.y;
+      }
+      ecs.progress();
+      waterBallSurface = CellHasSurfaceTag(dummyPos, "water");
+      RemoveSurface(dummyPos, "water");
+    }
+  }
+
+  // Surface layer: enter/stay triggers, statuses, timers and the fire/water
+  // reaction. This is deliberately driven through the same public API the debug
+  // window and abilities use, not through the systems' internals.
+  bool surfaceSpritesReady = surfaceSpriteRegistry.Get("surface_fire") != nullptr &&
+                             surfaceSpriteRegistry.Get("surface_water") != nullptr;
+  bool surfaceDefinitionsReady = surfaceRegistry.Get("fire") != nullptr &&
+                                 surfaceRegistry.Get("water") != nullptr &&
+                                 statusEffectRegistry.Get("burning") != nullptr &&
+                                 statusEffectRegistry.Get("wet") != nullptr;
+  bool surfaceEnterDamage = false;
+  bool surfaceStayDamage = false;
+  bool surfaceAppliedStatus = false;
+  bool surfaceReaction = false;
+  bool surfaceWaterStatus = false;
+  bool surfaceExpired = false;
+  bool surfaceMultiple = false;
+  bool surfaceTileTransition = false;
+  const auto surfaceOrigin = [&](const std::string &surfaceId) {
+    const SurfaceDef *definition = surfaceRegistry.Get(surfaceId);
+    return MakeEffectOrigin(playerEntity, surfaceId,
+                            definition != nullptr ? definition->tags
+                                                  : std::vector<std::string>());
+  };
+  {
+    const std::string playerVital = Resources::PrimaryVital(playerEntity);
+    const float healthBefore = Resources::Current(playerEntity, playerVital);
+    AddSurface(beside, "fire", surfaceOrigin("fire"), 0.0f, 0);
+    playerEntity.set<LastTile>({{beside.x - 1, beside.y}, true});
+    ecs.progress();
+    surfaceTileTransition = Resources::Current(playerEntity, playerVital) < healthBefore &&
+                            playerEntity.has<StatusEffects>() &&
+                            playerEntity.get<StatusEffects>()->Has("burning");
+    pendingSurfaceTransitions.clear();
+    surfaceEnterDamage = surfaceTileTransition;
+    surfaceAppliedStatus =
+        playerEntity.has<StatusEffects>() &&
+        playerEntity.get<StatusEffects>()->Has("burning");
+
+    const float healthAfterEnter = Resources::Current(playerEntity, playerVital);
+    UpdateSurfaces(1.1f);
+    surfaceStayDamage = Resources::Current(playerEntity, playerVital) < healthAfterEnter;
+
+    // Water is permanent, removes the fire by tag reaction, and its enter trigger
+    // removes Burning and applies Wet.
+    AddSurface(beside, "water", surfaceOrigin("water"), 0.0f, 0);
+    surfaceReaction = !CellHasSurfaceTag(beside, "fire") &&
+                      CellHasSurfaceTag(beside, "water");
+    pendingSurfaceTransitions.push_back(
+        {playerEntity, {beside.x - 1, beside.y}, beside});
+    ProcessSurfaceTransitions();
+    surfaceWaterStatus =
+        playerEntity.has<StatusEffects>() &&
+        playerEntity.get<StatusEffects>()->Has("wet") &&
+        !playerEntity.get<StatusEffects>()->Has("burning");
+
+    GamePosition timerCell{beside.x + 2, beside.y};
+    if (map != nullptr &&
+        !map->IsInBounds(static_cast<float>(timerCell.x),
+                         static_cast<float>(timerCell.y))) {
+      timerCell = {beside.x - 2, beside.y};
+    }
+    AddSurface(timerCell, "fire", surfaceOrigin("fire"), 0.2f, 0);
+    const bool fireBeforeExpiry = CellHasSurfaceTag(timerCell, "fire");
+    UpdateSurfaces(0.3f);
+    surfaceExpired = fireBeforeExpiry && !CellHasSurfaceTag(timerCell, "fire");
+
+    AddSurface(beside, "water", surfaceOrigin("water"), 0.0f, 0);
+    AddSurface(beside, "fire", surfaceOrigin("fire"), 0.0f, 0);
+    surfaceMultiple = CellHasSurfaceTag(beside, "water") &&
+                      !CellHasSurfaceTag(beside, "fire");
+    RemoveSurface(beside);
+  }
+
   // Print the combat lines the two calls produced, so the output shows the same
   // text a player would read in the Log window.
   if (debugLog) {
@@ -1620,7 +1830,8 @@ int Game::RunCombatSelfCheck() {
   }
   std::cout << "combat-check: first swing used=" << first
             << " damage=" << (healthBefore - healthAfter)
-            << " dummy=" << healthAfter << "/" << dummy.get<Vitals>()->maxHealth
+            << " dummy=" << healthAfter << "/"
+            << (dummyVital.empty() ? 0.0f : Resources::Max(dummy, dummyVital))
             << "\n";
   std::cout << "combat-check: immediate second swing used=" << second
             << " (expected 0: cooldown)\n";
@@ -1629,7 +1840,8 @@ int Game::RunCombatSelfCheck() {
             << " range-indicator=" << castRangeIndicator
             << " range-cancel-started=" << castRangeStarted
             << " range-canceled=" << castRangeCanceled
-            << " movement-canceled=" << movementCanceled << "\n";
+            << " movement-canceled=" << movementCanceled
+            << " slide-survives=" << slidingSurvives << "\n";
   std::cout << "combat-check: kick used=" << kickUsed
             << " interrupted=" << interrupted << "\n";
   std::cout << "combat-check: fireball used=" << fireballUsed
@@ -1655,11 +1867,24 @@ int Game::RunCombatSelfCheck() {
             << " death-icon-switch=" << deathIconSwitch
             << " icons=" << iconRegistryReady
             << " icon-fallback=" << iconFallback << "\n";
+  std::cout << "combat-check: water-ball used=" << waterBallUsed
+            << " surface=" << waterBallSurface
+            << " abilities=" << surfaceAbilities << "\n";
+  std::cout << "combat-check: surfaces loaded=" << surfaceDefinitionsReady
+            << " sprites=" << surfaceSpritesReady
+            << " enter-damage=" << surfaceEnterDamage
+            << " stay-damage=" << surfaceStayDamage
+            << " status=" << surfaceAppliedStatus
+            << " reaction=" << surfaceReaction
+            << " water-status=" << surfaceWaterStatus
+            << " expired=" << surfaceExpired
+            << " multiple=" << surfaceMultiple
+            << " walk-transition=" << surfaceTileTransition << "\n";
 
   const bool ok = first && !second && healthAfter < healthBefore &&
                   castStarted && castResolved && !playerEntity.has<Casting>() &&
                   castRangeIndicator && castRangeStarted && castRangeCanceled &&
-                  movementCanceled && kickUsed && interrupted &&
+                  movementCanceled && slidingSurvives && kickUsed && interrupted &&
                   fireballUsed && fireballHit && iceUsed && iceHit &&
                   iceCooldownClear && npcSpawned && npcRetaliated &&
                   npcBrainless && npcBrainDriven && npcPendingSpawn &&
@@ -1667,7 +1892,12 @@ int Game::RunCombatSelfCheck() {
                   npcEntityInfoWindow && npcBrainContextWindow && npcChase &&
                   corpseSpawned && corpseNonInteractable && corpseHoldsLoot &&
                   corpseHasDeathSprite && deathIconSwitch &&
-                  iconRegistryReady && iconFallback;
+                  iconRegistryReady && iconFallback &&
+                  surfaceDefinitionsReady && surfaceSpritesReady &&
+                  surfaceEnterDamage && surfaceStayDamage &&
+                  surfaceAppliedStatus && surfaceReaction &&
+                  surfaceWaterStatus && surfaceExpired && surfaceMultiple &&
+                  surfaceTileTransition && surfaceAbilities && waterBallSurface;
   std::cout << (ok ? "combat-check: OK\n" : "combat-check: FAILED\n");
   return ok ? 0 : 1;
 }

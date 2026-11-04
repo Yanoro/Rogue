@@ -1,5 +1,7 @@
 #include "ContentKinds.h"
 
+#include <mutex>
+
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +15,11 @@
 #include "IconRegistry.h"
 #include "ObjectFactory.h"
 #include "SkillRegistry.h"
+#include "SurfaceRegistry.h"
+#include "SurfaceSpriteRegistry.h"
+#include "StatusEffectRegistry.h"
+#include "EffectRegistry.h"
+#include "ResourceRegistry.h"
 #include "SpritePaths.hpp"
 #include "TileDesigner.hpp"
 #include "TileRegistry.h"
@@ -81,7 +88,10 @@ nlohmann::json ReadObject(const World &world, const std::string &id) {
   const auto &templates = world.objects.GetTemplates();
   const auto found = templates.find(id);
   if (found == templates.end()) return nlohmann::json::object();
-  return found->second;
+  nlohmann::json document = found->second;
+  // Always offer the art-style field, even when the template predates styles.
+  if (!document.contains("style")) document["style"] = "";
+  return document;
 }
 
 bool ApplyObject(const World &world, const nlohmann::json &document, std::string *error,
@@ -102,6 +112,187 @@ std::string ObjectFileName(const nlohmann::json &document) {
 }
 
 std::string ObjectSprite(const std::string &id) { return id; }
+
+// ---- surface sprites / surfaces / statuses --------------------------------
+
+std::vector<Entry> ListSurfaceSprites(const World &world) {
+  std::vector<Entry> out;
+  for (const SurfaceSpriteDef *definition : world.surfaceSprites.GetAll()) {
+    out.push_back({definition->id, definition->name, "surface sprite registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadSurfaceSprite(const World &world, const std::string &id) {
+  const SurfaceSpriteDef *definition = world.surfaceSprites.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.surfaceSprites.ToJson(*definition);
+}
+
+bool ApplySurfaceSprite(const World &world, const nlohmann::json &document,
+                        std::string *error, std::vector<std::string> *warnings) {
+  return world.surfaceSprites.AddOrReplace(document, "(content editor)", error,
+                                           warnings);
+}
+
+std::string SurfaceSpriteFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(document.value("name", std::string()));
+}
+
+std::string SurfaceSpriteSprite(const std::string &id) { return id; }
+
+std::vector<Entry> ListSurfaces(const World &world) {
+  std::vector<Entry> out;
+  for (const SurfaceDef *definition : world.surfaces.GetAll()) {
+    out.push_back({definition->id, definition->name, "surface registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadSurface(const World &world, const std::string &id) {
+  const SurfaceDef *definition = world.surfaces.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.surfaces.ToJson(*definition);
+}
+
+bool ApplySurface(const World &world, const nlohmann::json &document,
+                  std::string *error, std::vector<std::string> *warnings) {
+  return world.surfaces.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string SurfaceFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(document.value("name", std::string()));
+}
+
+std::vector<Entry> ListStatusEffects(const World &world) {
+  std::vector<Entry> out;
+  for (const StatusEffectDef *definition : world.statusEffects.GetAll()) {
+    out.push_back({definition->id, definition->name, "status registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadStatusEffect(const World &world, const std::string &id) {
+  const StatusEffectDef *definition = world.statusEffects.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.statusEffects.ToJson(*definition);
+}
+
+bool ApplyStatusEffect(const World &world, const nlohmann::json &document,
+                       std::string *error, std::vector<std::string> *warnings) {
+  return world.statusEffects.AddOrReplace(document, "(content editor)", error,
+                                          warnings);
+}
+
+std::string StatusEffectFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(document.value("name", std::string()));
+}
+
+// ---- resources -------------------------------------------------------------
+
+std::vector<Entry> ListResources(const World &world) {
+  std::vector<Entry> out;
+  for (const ResourceDef *definition : world.resources.GetAll()) {
+    out.push_back({definition->id, definition->name, "resource registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadResource(const World &world, const std::string &id) {
+  const ResourceDef *definition = world.resources.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.resources.ToJson(*definition);
+}
+
+bool ApplyResource(const World &world, const nlohmann::json &document,
+                   std::string *error, std::vector<std::string> *warnings) {
+  return world.resources.AddOrReplace(document, "(content editor)", error,
+                                      warnings);
+}
+
+std::string ResourceFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(document.value("name", std::string()));
+}
+
+// ---- art styles -------------------------------------------------------------
+
+std::vector<Entry> ListArtStyles(const World &world) {
+  std::vector<Entry> out;
+  for (const ArtStyleDef *definition : world.artStyles.GetAll()) {
+    out.push_back({definition->id, definition->name, "art style registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadArtStyle(const World &world, const std::string &id) {
+  const ArtStyleDef *definition = world.artStyles.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.artStyles.ToJson(*definition);
+}
+
+bool ApplyArtStyle(const World &world, const nlohmann::json &document,
+                   std::string *error, std::vector<std::string> *warnings) {
+  return world.artStyles.AddOrReplace(document, "(content editor)", error,
+                                      warnings);
+}
+
+std::string ArtStyleFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(
+      document.value("id", document.value("name", std::string())));
+}
+
+// ---- body silhouettes --------------------------------------------------------
+
+std::vector<Entry> ListBodySilhouettes(const World &world) {
+  std::vector<Entry> out;
+  for (const BodySilhouetteDef *definition : world.bodySilhouettes.GetAll()) {
+    out.push_back({definition->id, definition->name, "body silhouette registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadBodySilhouette(const World &world, const std::string &id) {
+  const BodySilhouetteDef *definition = world.bodySilhouettes.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.bodySilhouettes.ToJson(*definition);
+}
+
+bool ApplyBodySilhouette(const World &world, const nlohmann::json &document,
+                         std::string *error,
+                         std::vector<std::string> *warnings) {
+  return world.bodySilhouettes.AddOrReplace(document, "(content editor)", error,
+                                            warnings);
+}
+
+std::string BodySilhouetteFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(
+      document.value("id", document.value("name", std::string())));
+}
+
+// ---- effects ---------------------------------------------------------------
+
+std::vector<Entry> ListEffects(const World &world) {
+  std::vector<Entry> out;
+  for (const EffectDef *definition : world.effects.GetAll()) {
+    out.push_back({definition->id, definition->name, "effect registry"});
+  }
+  return out;
+}
+
+nlohmann::json ReadEffect(const World &world, const std::string &id) {
+  const EffectDef *definition = world.effects.Get(id);
+  if (definition == nullptr) return nlohmann::json::object();
+  return world.effects.ToJson(*definition);
+}
+
+bool ApplyEffect(const World &world, const nlohmann::json &document,
+                 std::string *error, std::vector<std::string> *warnings) {
+  return world.effects.AddOrReplace(document, "(content editor)", error, warnings);
+}
+
+std::string EffectFileName(const nlohmann::json &document) {
+  return TileDesigner::SlugifyFileName(document.value("name", std::string()));
+}
 
 // ---- icons -----------------------------------------------------------------
 
@@ -360,9 +551,16 @@ bool WriteOverrideFile(const Kind &kind, const std::string &root,
   return true;
 }
 
-const std::vector<Kind> &All() {
-  static const std::vector<Kind> kinds = {
-      {
+namespace {
+KindRegistry &Registry() {
+  static KindRegistry registry;
+  return registry;
+}
+
+void RegisterBuiltinKinds() {
+  static std::once_flag once;
+  std::call_once(once, [] {
+    Registry().Register({
           "tiles",
           "Tiles",
           /*hasSprites=*/true,
@@ -371,8 +569,8 @@ const std::vector<Kind> &All() {
           &ApplyTile,
           &TileFileName,
           &TileSprite,
-      },
-      {
+    });
+    Registry().Register({
           "objects",
           "Objects",
           /*hasSprites=*/true,
@@ -381,8 +579,8 @@ const std::vector<Kind> &All() {
           &ApplyObject,
           &ObjectFileName,
           &ObjectSprite,
-      },
-      {
+    });
+    Registry().Register({
           "actors",
           "Actor sprites",
           /*hasSprites=*/true,
@@ -391,8 +589,8 @@ const std::vector<Kind> &All() {
           &ApplyActorSprite,
           &ActorSpriteFileName,
           &ActorSpriteSprite,
-      },
-      {
+    });
+    Registry().Register({
           "icons",
           "Icons",
           /*hasSprites=*/true,
@@ -401,8 +599,30 @@ const std::vector<Kind> &All() {
           &ApplyIcon,
           &IconFileName,
           &IconSprite,
-      },
-      {
+    });
+    Registry().Register({
+          "art_styles",
+          "Art styles",
+          /*hasSprites=*/false,
+          &ListArtStyles,
+          &ReadArtStyle,
+          &ApplyArtStyle,
+          &ArtStyleFileName,
+          nullptr,
+          "id",
+    });
+    Registry().Register({
+          "body_silhouettes",
+          "Body silhouettes",
+          /*hasSprites=*/false,
+          &ListBodySilhouettes,
+          &ReadBodySilhouette,
+          &ApplyBodySilhouette,
+          &BodySilhouetteFileName,
+          nullptr,
+          "id",
+    });
+    Registry().Register({
           "skills",
           "Skills",
           /*hasSprites=*/false,
@@ -413,8 +633,8 @@ const std::vector<Kind> &All() {
           nullptr,
           "id",
           &PrepareSkillDocument,
-      },
-      {
+    });
+    Registry().Register({
           "items",
           "Equipment",
           /*hasSprites=*/false,
@@ -424,8 +644,8 @@ const std::vector<Kind> &All() {
           &ItemFileName,
           nullptr,
           /*fixedIdKey=*/"id",
-      },
-      {
+    });
+    Registry().Register({
           "rigs",
           "Actor rigs",
           /*hasSprites=*/false,
@@ -434,8 +654,58 @@ const std::vector<Kind> &All() {
           &ApplyRig,
           &RigFileName,
           nullptr,
-      },
-      {
+    });
+    Registry().Register({
+          "surface_sprites",
+          "Surface sprites",
+          /*hasSprites=*/true,
+          &ListSurfaceSprites,
+          &ReadSurfaceSprite,
+          &ApplySurfaceSprite,
+          &SurfaceSpriteFileName,
+          &SurfaceSpriteSprite,
+    });
+    Registry().Register({
+          "surfaces",
+          "Surfaces",
+          /*hasSprites=*/false,
+          &ListSurfaces,
+          &ReadSurface,
+          &ApplySurface,
+          &SurfaceFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "resources",
+          "Resources",
+          /*hasSprites=*/false,
+          &ListResources,
+          &ReadResource,
+          &ApplyResource,
+          &ResourceFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "effects",
+          "Effects",
+          /*hasSprites=*/false,
+          &ListEffects,
+          &ReadEffect,
+          &ApplyEffect,
+          &EffectFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "status_effects",
+          "Status effects",
+          /*hasSprites=*/false,
+          &ListStatusEffects,
+          &ReadStatusEffect,
+          &ApplyStatusEffect,
+          &StatusEffectFileName,
+          nullptr,
+    });
+    Registry().Register({
           "npcs",
           "NPC templates",
           /*hasSprites=*/false,
@@ -444,8 +714,8 @@ const std::vector<Kind> &All() {
           &ApplyNpc,
           &NpcFileName,
           nullptr,
-      },
-      {
+    });
+    Registry().Register({
           "brains",
           "Brains",
           /*hasSprites=*/false,
@@ -454,16 +724,43 @@ const std::vector<Kind> &All() {
           &ApplyBrain,
           &BrainFileName,
           nullptr,
-      },
-  };
-  return kinds;
+    });
+  });
 }
 
-const Kind *For(const std::string &id) {
-  for (const Kind &kind : All()) {
+}  // namespace
+
+bool KindRegistry::Register(Kind kind) {
+  if (kind.id.empty()) return false;
+  for (Kind &existing : kinds) {
+    if (existing.id == kind.id) {
+      existing = std::move(kind);
+      return true;
+    }
+  }
+  kinds.push_back(std::move(kind));
+  return true;
+}
+
+const Kind *KindRegistry::For(const std::string &id) const {
+  for (const Kind &kind : kinds) {
     if (kind.id == id) return &kind;
   }
   return nullptr;
+}
+
+KindRegistry &MutableRegistry() {
+  RegisterBuiltinKinds();
+  return Registry();
+}
+
+const std::vector<Kind> &All() {
+  RegisterBuiltinKinds();
+  return Registry().All();
+}
+
+const Kind *For(const std::string &id) {
+  return MutableRegistry().For(id);
 }
 
 }  // namespace ContentKinds

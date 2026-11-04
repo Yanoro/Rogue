@@ -45,6 +45,9 @@ enum class Domain {
   // identity; this domain exists so the Designer can create the art and the
   // registry entry together.
   Icon,
+  // A reusable terrain overlay sprite. Like an actor sprite it has no definition
+  // turn; the SurfaceRegistry definition names it later.
+  SurfaceSprite,
 };
 
 struct Descriptor {

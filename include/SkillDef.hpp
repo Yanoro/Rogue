@@ -80,6 +80,18 @@ inline bool SkillHasAlwaysOnEffects(SkillType type) {
 // The numbers are deliberately sparse: a combat skill names its damage and its
 // cadence, and everything else (stats, weapon, skill level) reaches the result
 // through the ordinary fold. Nothing here duplicates a stat's value.
+// A sustained skill held down rather than pressed once. Running is the first
+// user; the data is generic so a future "channel" or "sprint" can share it.
+struct HeldSkillData {
+  bool enabled = false;
+  std::string resource = "stamina";
+  float speedMultiplier = 1.6f;
+  float drainPerSecond = 10.0f;
+  float regenPerSecond = 6.0f;
+  float regenDelaySeconds = 1.0f;
+  float minResource = 10.0f;
+};
+
 struct SkillActivation {
   // Take base damage and the swing time from the equipped weapon. The basic
   // attack is the reason this exists: its numbers are the weapon's, not the
@@ -123,9 +135,15 @@ struct SkillActivation {
 
   // Whether the player may start this cast while already walking. The default
   // keeps the historical behaviour: free movement during the cast. False means
-  // activating it forces the player to a stop, and any movement during the cast
+  // activating it forces the player to a stop, and movement during the cast
   // cancels it. Only meaningful for cast-time skills.
   bool canCastWhileMoving = true;
+
+  // Only meaningful when canCastWhileMoving is false. Preserve the movement the
+  // character already had and let it slide to a stop; the cast is canceled by
+  // movement *input* (or a clicked path), not by the slide itself. Held input
+  // from before the cast is ignored until it returns to neutral.
+  bool allowSliding = false;
 
   // Seconds of wind-up before the effect lands. 0 is instant.
   //
@@ -162,6 +180,19 @@ struct SkillActivation {
   // different satisfactions (hit the thing vs. hit the place) instead of one
   // union field with a "does this need a target" flag.
   std::string skillshot;
+
+  // One-time resource cost paid when the skill actually commits. Empty means no
+  // cost. Held skills use their sustained drain instead.
+  std::string costResource;
+  float costAmount = 0.0f;
+
+  HeldSkillData held;
+
+  // SurfaceRegistry id created at the impact tile, if any. The surface owns its
+  // own triggers and lifetime; the skill only says where it is born.
+  std::string surface;
+  float surfaceDuration = 0.0f;
+  int surfaceRadius = 0;
 };
 
 // Definition of one improvable skill, loaded from data/skills/<id>.json.

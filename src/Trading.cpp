@@ -28,7 +28,7 @@ bool CollectItems(flecs::entity holder, const std::vector<ItemStack> &wanted,
     std::vector<flecs::entity> found;
     int available = 0;
     holder.each<Holds>([&](flecs::entity child) {
-      if (!child.is_alive()) return;
+      if (!child.is_alive() || child.has<Equipped>()) return;
       if (std::find(out.begin(), out.end(), child) != out.end()) return;
       const DisplayName *name = child.get<DisplayName>();
       if (!name || !TradeGrammar::ItemNameMatches(name->name, stack.item)) return;
@@ -154,7 +154,8 @@ std::string DescribeInventory(flecs::entity holder) {
   // Shares the stacking rules with the inventory and examine text.
   std::vector<std::string> names;
   holder.each<Holds>([&](flecs::entity child) {
-    if (!child.is_alive() || !child.has<DisplayName>()) return;
+    if (!child.is_alive() || child.has<Equipped>() ||
+        !child.has<DisplayName>()) return;
     names.push_back(child.get<DisplayName>()->name);
   });
 

@@ -10,6 +10,12 @@ InputHandler::InputHandler(raylib::Camera2D &gameCamera,
     : camera(&gameCamera), cameraMode(&cameraMode), mapWidthPx(mapWidthPx),
       mapHeightPx(mapHeightPx) {};
 
+bool InputHandler::MovementInputDown() {
+  if (ImGui::GetIO().WantCaptureKeyboard) return false;
+  return IsKeyDown(KEY_W) || IsKeyDown(KEY_A) || IsKeyDown(KEY_S) ||
+         IsKeyDown(KEY_D);
+}
+
 std::vector<Command *> InputHandler::handleInput() {
   std::vector<Command *> commands;
 

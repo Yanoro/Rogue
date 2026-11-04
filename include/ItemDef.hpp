@@ -48,6 +48,14 @@ struct ItemDef {
   // activity because its data says so, not because of which slot it sits in or
   // which effects happened to fire.
   std::vector<std::string> consumedBy;
+  // Inventory stacking. Equipment is normally individual even when two pieces
+  // share an id; only definitions that opt in share a cell. `maxStack` is also
+  // the point where a stack splits into another cell.
+  bool stackable = false;
+  int maxStack = 1;
+  // Optional ArtStyleRegistry override for worn/world art.
+  std::string style;
+
   // The magnitude the item's links scale by. See the class comment.
   float tier = 1.0f;
   // Effective units per tier, so a coefficient stays readable if a future item

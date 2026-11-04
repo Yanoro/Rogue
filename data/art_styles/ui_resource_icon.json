@@ -1,0 +1,8 @@
+{
+  "id": "ui_resource_icon",
+  "name": "Resource Icons",
+  "description": "Small monochrome resource symbols for the player portrait.",
+  "appliesTo": ["resource_icon"],
+  "positive": "A single bold resource symbol at 32x32, monochrome with a consistent dark outline, transparent background, high contrast at small size, same visual family as the inventory slot icons.",
+  "negative": "Do not use text, numbers, backgrounds, gradients, or fine detail that disappears below 24 pixels."
+}

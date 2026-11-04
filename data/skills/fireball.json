@@ -30,6 +30,11 @@
     "gcd": true,
     "autoCast": false,
     "xpPerUse": 8,
-    "projectile": "fireball"
+    "projectile": "fireball",
+    "surface": {
+      "id": "fire",
+      "duration": 20,
+      "radius": 0
+    }
   }
 }

@@ -58,6 +58,20 @@ const std::vector<Descriptor> kAll = {
         "",
         "",
     },
+    {
+        Kind::Surface,
+        "surface",
+        "Surface",
+        "surface",
+        // Surfaces are sprite-only, like icons/actors: the SurfaceRegistry is the
+        // definition, so there is no definition prompt or generated overlay.
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    },
 };
 
 }  // namespace
@@ -89,7 +103,7 @@ std::string ConventionIdFor(Kind kind, const std::string &name) {
   // The object key is derived from a definition, so it is wrapped and unwrapped here
   // rather than duplicating the slug rule. One extra JSON object per call, on a path that
   // runs once per accepted definition -- not per frame.
-  if (kind == Kind::Actor || kind == Kind::Icon) {
+  if (kind == Kind::Actor || kind == Kind::Icon || kind == Kind::Surface) {
     // The actor/icon registry keys entries by the slug of their name, so the id *is*
     // the convention id -- no wrapper, no second slug rule.
     return name;

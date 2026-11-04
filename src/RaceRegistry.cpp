@@ -62,6 +62,8 @@ void RaceRegistry::LoadRaces(const std::string& directoryPath) {
         }
       }
 
+      def.silhouetteIcon =
+          j.value("silhouette", j.value("bodySilhouette", def.silhouetteIcon));
       if (j.contains("slots")) {
         if (!j["slots"].is_array()) {
           warn("Warning: Race '" + def.id +
@@ -117,6 +119,12 @@ void RaceRegistry::LoadRaces(const std::string& directoryPath) {
         }
       }
 
+      if (j.contains("resources")) {
+        std::vector<std::string> warnings;
+        ParseResourceSpecs(j["resources"], def.resources, "Race '" + def.id + "'",
+                           &warnings);
+        for (const std::string &warning : warnings) warn(warning);
+      }
       races[def.id] = std::move(def);
     } catch (const std::exception& e) {
       warn("Failed to parse race " + entry.path().string() + ": " +

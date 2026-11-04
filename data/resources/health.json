@@ -1,0 +1,10 @@
+{
+  "name": "Health",
+  "description": "Physical integrity. For most bodies, reaching zero means death.",
+  "icon": "resource_health",
+  "color": "#c0392b",
+  "baseMax": 60,
+  "canBeVital": true,
+  "canBeSpendable": true,
+  "displayOrder": 0
+}

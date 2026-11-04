@@ -1,0 +1,8 @@
+{
+  "id": "portrait",
+  "name": "Character Portraits",
+  "description": "Larger portrait art for the player and NPC panels.",
+  "appliesTo": ["portrait"],
+  "positive": "Character portrait with a consistent painted pixel style, clear face and shoulders, warm limited palette, dark outline, transparent or simple neutral backdrop, readable at HUD size.",
+  "negative": "Do not use text, multiple characters, busy scenery, or a different rendering style from the world sprites."
+}

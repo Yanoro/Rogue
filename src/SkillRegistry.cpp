@@ -79,6 +79,7 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
           a.contains("gcdSeconds") ? a.value("gcdSeconds", 0.0f) : -1.0f;
       def.activation.autoCast = a.value("autoCast", false);
       def.activation.canCastWhileMoving = a.value("canCastWhileMoving", true);
+      def.activation.allowSliding = a.value("allowSliding", false);
       def.activation.xpPerUse = a.value("xpPerUse", 0);
       def.activation.requiresTarget = a.value("requiresTarget", true);
       def.activation.castSeconds = a.value("cast", 0.0f);
@@ -86,6 +87,42 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
       def.activation.interrupts = a.value("interrupts", false);
       def.activation.projectile = a.value("projectile", std::string());
       def.activation.skillshot = a.value("skillshot", std::string());
+      if (a.contains("cost") && a["cost"].is_object()) {
+        const auto &cost = a["cost"];
+        def.activation.costResource = cost.value("resource", std::string());
+        def.activation.costAmount = cost.value("amount", 0.0f);
+      }
+      if (a.contains("held")) {
+        if (a["held"].is_boolean()) {
+          def.activation.held.enabled = a["held"].get<bool>();
+        } else if (a["held"].is_object()) {
+          const auto &held = a["held"];
+          def.activation.held.enabled = true;
+          def.activation.held.resource =
+              held.value("resource", def.activation.held.resource);
+          def.activation.held.speedMultiplier =
+              held.value("speedMultiplier", def.activation.held.speedMultiplier);
+          def.activation.held.drainPerSecond =
+              held.value("drainPerSecond", def.activation.held.drainPerSecond);
+          def.activation.held.regenPerSecond =
+              held.value("regenPerSecond", def.activation.held.regenPerSecond);
+          def.activation.held.regenDelaySeconds =
+              held.value("regenDelaySeconds",
+                         def.activation.held.regenDelaySeconds);
+          def.activation.held.minResource =
+              held.value("minResource", def.activation.held.minResource);
+        }
+      }
+      if (a.contains("surface")) {
+        if (a["surface"].is_object()) {
+          const auto& surface = a["surface"];
+          def.activation.surface = surface.value("id", std::string());
+          def.activation.surfaceDuration = surface.value("duration", 0.0f);
+          def.activation.surfaceRadius = surface.value("radius", 0);
+        } else if (a["surface"].is_string()) {
+          def.activation.surface = a["surface"].get<std::string>();
+        }
+      }
     }
   }
 
@@ -368,6 +405,9 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
     }
     activation["autoCast"] = def->activation.autoCast;
     activation["canCastWhileMoving"] = def->activation.canCastWhileMoving;
+    // Always emitted, including false: the Content Editor's generic form can
+    // only show a field the document actually carries.
+    activation["allowSliding"] = def->activation.allowSliding;
     activation["xpPerUse"] = def->activation.xpPerUse;
     activation["requiresTarget"] = def->activation.requiresTarget;
     activation["cast"] = def->activation.castSeconds;
@@ -375,6 +415,25 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
     activation["interrupts"] = def->activation.interrupts;
     activation["projectile"] = def->activation.projectile;
     activation["skillshot"] = def->activation.skillshot;
+    if (!def->activation.surface.empty()) {
+      activation["surface"] = {{"id", def->activation.surface},
+                               {"duration", def->activation.surfaceDuration},
+                               {"radius", def->activation.surfaceRadius}};
+    }
+    if (!def->activation.costResource.empty()) {
+      activation["cost"] = {{"resource", def->activation.costResource},
+                             {"amount", def->activation.costAmount}};
+    }
+    if (def->activation.held.enabled) {
+      activation["held"] = {
+          {"resource", def->activation.held.resource},
+          {"speedMultiplier", def->activation.held.speedMultiplier},
+          {"drainPerSecond", def->activation.held.drainPerSecond},
+          {"regenPerSecond", def->activation.held.regenPerSecond},
+          {"regenDelaySeconds", def->activation.held.regenDelaySeconds},
+          {"minResource", def->activation.held.minResource},
+      };
+    }
     j["activation"] = std::move(activation);
   } else {
     // A passive skill with an activation block is ignored by the loader; the

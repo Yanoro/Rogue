@@ -29,6 +29,9 @@ bool ItemRegistry::ParseAndStore(const nlohmann::json& j, const std::string& id,
   def.name = j.value("name", "");
   def.slot = j.value("slot", "");
   def.occupies = j.value("occupies", 1);
+  def.style = j.value("style", std::string());
+  def.stackable = j.value("stackable", false);
+  def.maxStack = std::max(1, j.value("maxStack", 1));
   def.tier = j.value("tier", 1.0f);
   def.scale = j.value("scale", 1.0f);
   def.baseline = j.value("baseline", 0.0f);
@@ -241,6 +244,11 @@ nlohmann::json ItemRegistry::ToJson(const ItemDef& definition) const {
   nlohmann::json document = nlohmann::json::object();
   if (!definition.name.empty()) document["name"] = definition.name;
   document["slot"] = definition.slot;
+  // Always present so the Content Editor can turn stacking on without adding
+  // a raw key by hand.
+  document["stackable"] = definition.stackable;
+  document["maxStack"] = definition.maxStack;
+  document["style"] = definition.style;
   if (definition.occupies != 1) document["occupies"] = definition.occupies;
   document["tier"] = definition.tier;
   if (definition.scale != 1.0f) document["scale"] = definition.scale;

@@ -505,6 +505,10 @@ void DesignerWindow::SendUserMessage(const std::string &prompt) {
     SendIconRequest(prompt);
     return;
   }
+  if (mode == DesignerDomains::Domain::SurfaceSprite) {
+    SendSurfaceSpriteRequest(prompt);
+    return;
+  }
 
   // A new request restarts the attempt budget: the cap is per request, not per
   // session, or the third tile of a session could never be retried.
@@ -569,6 +573,119 @@ void DesignerWindow::AskForSpriteArt(const std::string &name,
                         requirement, redesign);
 }
 
+void DesignerWindow::QueueIconStyleBatch(const std::string &styleId) {
+  artBatch.clear();
+  artBatchStyle = styleId;
+  artBatchStarted = false;
+  artBatchWaitingForInspection = false;
+  if (game == nullptr || styleId.empty()) return;
+  for (const IconDef *icon : game->iconRegistry.GetAll()) {
+    if (icon != nullptr && icon->style == styleId) {
+      artBatch.emplace_back(icon->id, SpriteKinds::Kind::Icon);
+    }
+  }
+  for (const ActorSpriteDef *actor : game->actorSpriteRegistry.GetAll()) {
+    if (actor != nullptr && actor->style == styleId) {
+      artBatch.emplace_back(actor->id, SpriteKinds::Kind::Actor);
+    }
+  }
+  for (const SurfaceSpriteDef *surface : game->surfaceSpriteRegistry.GetAll()) {
+    if (surface != nullptr && surface->style == styleId) {
+      artBatch.emplace_back(surface->id, SpriteKinds::Kind::Surface);
+    }
+  }
+  for (const ItemDef *item : game->itemRegistry.GetAll()) {
+    if (item != nullptr && item->style == styleId) {
+      artBatch.emplace_back(item->id, SpriteKinds::Kind::Object);
+    }
+  }
+  if (artBatch.empty()) {
+    statusIsError = true;
+    statusLine = "No icons use the art style '" + styleId + "'.";
+    return;
+  }
+  statusIsError = false;
+  statusLine = "Queued " + std::to_string(artBatch.size()) +
+               " icon(s) for style '" + styleId + "'.";
+  PumpArtBatch();
+}
+
+void DesignerWindow::PumpArtBatch() {
+  if (artBatch.empty() || session == nullptr || session->IsBusy() ||
+      artBatchWaitingForInspection) {
+    return;
+  }
+  if (!session->HasBackend()) {
+    statusIsError = true;
+    statusLine = "No designer backend is configured; the art style batch cannot run.";
+    artBatch.clear();
+    return;
+  }
+  const auto next = artBatch.front();
+  artBatch.pop_front();
+  artBatchStarted = true;
+  statusIsError = false;
+  statusLine = "Regenerating '" + next.first + "' for style '" + artBatchStyle +
+               "' (" + std::to_string(artBatch.size()) + " remaining).";
+  const size_t exchangeCountBefore = session->Size();
+  artBatchWaitingForInspection = true;
+  RequestSpriteDocument(next.first, next.second, /*replaceGenerated=*/true,
+                        std::string(), std::string(), /*redesign=*/false);
+  // A request refused before it reached the backend (no generated layer, no
+  // backend) never produces an exchange to inspect. Do not leave the queue
+  // permanently blocked on it. A fast response is still an exchange, so it must
+  // stay blocked until InspectFinishedArtDocument consumes the brief.
+  if (session->Size() == exchangeCountBefore) {
+    artBatchWaitingForInspection = false;
+    statusIsError = true;
+    statusLine = "The art style batch stopped before '" + next.first +
+                 "' could be requested.";
+    artBatch.clear();
+  }
+}
+
+void DesignerWindow::DrawStyleBatch() {
+  if (game == nullptr) return;
+  const auto styles = game->artStyleRegistry.GetAll();
+  if (styles.empty()) {
+    ImGui::Separator();
+    ImGui::TextDisabled(
+        "No art styles loaded. Check content.artStyles in settings.");
+    return;
+  }
+  ImGui::Separator();
+  ImGui::TextDisabled("Art style batch");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(220.0f);
+  if (batchStyleIndex < 0 ||
+      batchStyleIndex >= static_cast<int>(styles.size())) {
+    batchStyleIndex = 0;
+  }
+  if (ImGui::BeginCombo("##style_batch", styles[batchStyleIndex]->name.c_str())) {
+    for (size_t i = 0; i < styles.size(); ++i) {
+      const bool selected = static_cast<int>(i) == batchStyleIndex;
+      if (ImGui::Selectable(styles[i]->name.c_str(), selected)) {
+        batchStyleIndex = static_cast<int>(i);
+      }
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Regenerate all assets in style")) {
+    QueueIconStyleBatch(styles[batchStyleIndex]->id);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Queues every icon, actor sprite, surface sprite and equipment item whose "
+        "'style' matches this profile. Requests run one at a time, and this window "
+        "must stay open for replies to be processed.");
+  }
+  if (!artBatch.empty() || artBatchStarted) {
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu remaining", artBatch.size());
+  }
+}
+
 void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
                                                bool replaceGenerated,
@@ -596,6 +713,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   // request would produce an object or a tile.
   if (kind == SpriteKinds::Kind::Icon) {
     mode = DesignerDomains::Domain::Icon;
+  } else if (kind == SpriteKinds::Kind::Surface) {
+    mode = DesignerDomains::Domain::SurfaceSprite;
   } else if (kind == SpriteKinds::Kind::Object) {
     mode = DesignerDomains::Domain::Object;
   } else if (kind == SpriteKinds::Kind::Tile) {
@@ -663,12 +782,67 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     if (const IconDef *icon = game->iconRegistry.Get(name)) {
       artBrief.description = icon->description;
     }
+  } else if (kind == SpriteKinds::Kind::Surface) {
+    if (const SurfaceSpriteDef *surface = game->surfaceSpriteRegistry.Get(name)) {
+      artBrief.description = surface->description;
+    }
   } else if (ObjectFactory *objects = Objects()) {
     const auto &templates = objects->GetTemplates();
     const auto found = templates.find(conventionId);
     if (found != templates.end()) {
       artBrief.description = found->second.value("description", std::string());
     }
+  }
+
+  // Pick the prose style before the requirement override: the asset definition
+  // supplies its family/override, and the style registry supplies the words. The
+  // request is still the newest statement of the subject, not of the style.
+  std::string family = "item";
+  std::string requestedStyle;
+  if (kind == SpriteKinds::Kind::Tile) {
+    family = "tile";
+  } else if (kind == SpriteKinds::Kind::Actor) {
+    family = "actor_sprite";
+    if (const ActorSpriteDef *actor = game->actorSpriteRegistry.Get(name)) {
+      requestedStyle = actor->style;
+    }
+  } else if (kind == SpriteKinds::Kind::Surface) {
+    family = "surface_sprite";
+    if (const SurfaceSpriteDef *surface =
+            game->surfaceSpriteRegistry.Get(name)) {
+      requestedStyle = surface->style;
+    }
+  } else if (kind == SpriteKinds::Kind::Icon) {
+    family = "slot_icon";
+    if (const IconDef *icon = game->iconRegistry.Get(name)) {
+      requestedStyle = icon->style;
+    }
+  } else if (kind == SpriteKinds::Kind::Object) {
+    family = "item";
+    if (ObjectFactory *objects = Objects()) {
+      const auto &templates = objects->GetTemplates();
+      const auto found = templates.find(conventionId);
+      if (found != templates.end()) {
+        requestedStyle = found->second.value("style", std::string());
+      }
+    }
+    if (requestedStyle.empty()) {
+      if (const ItemDef *item = game->itemRegistry.Get(conventionId)) {
+        requestedStyle = item->style;
+      }
+    }
+  }
+  const ArtStyleDef *style = nullptr;
+  if (!requestedStyle.empty()) {
+    style = game->artStyleRegistry.Get(requestedStyle);
+  }
+  if (style == nullptr) {
+    style = game->artStyleRegistry.DefaultFor(family);
+  }
+  if (style != nullptr) {
+    artBrief.styleId = style->id;
+    artBrief.stylePrompt = style->positive;
+    artBrief.styleNegative = style->negative;
   }
 
   // The designer's own description wins over the catalog's. A requested asset is not in
@@ -704,7 +878,9 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                          ? "actor"
                                          : kind == SpriteKinds::Kind::Icon
                                                ? "icon"
-                                               : "object";
+                                               : kind == SpriteKinds::Kind::Surface
+                                                     ? "surface sprite"
+                                                     : "object";
   statusLine = "Asking for a sprite document for the " + kindWord + " '" + name +
                "'. It will be compiled before anything is written.";
   session->LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + kindWord + ", " +
@@ -741,6 +917,20 @@ void DesignerWindow::InspectFinishedArtDocument(
       exchange.artNote = note;
     });
   };
+
+  // Only a final outcome releases the bulk queue. A compiler refusal that sends
+  // another attempt must keep the queue blocked, or the retry's shared artBrief
+  // can be replaced by the next icon before the retry is inspected.
+  bool retrying = false;
+  struct BatchWaitGuard {
+    bool *waiting;
+    bool *retrying;
+    ~BatchWaitGuard() {
+      if (waiting != nullptr && !*retrying) *waiting = false;
+    }
+  } batchWaitGuard{this->artBatchWaitingForInspection ? &artBatchWaitingForInspection
+                                                     : nullptr,
+                   &retrying};
 
   if (finished.failed) {
     session->PushTurn(kArtConversation, finished.prompt, "");
@@ -787,6 +977,7 @@ void DesignerWindow::InspectFinishedArtDocument(
     statusLine = "Document refused; asking again (attempt " +
                  std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
                  std::to_string(budget) + ").";
+    retrying = true;
     SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, artVerdict));
     return;
   }
@@ -862,6 +1053,8 @@ static const char *ArtifactNoun(DesignerDomains::Domain domain) {
       return "tile";
     case DesignerDomains::Domain::Icon:
       return "icon";
+    case DesignerDomains::Domain::SurfaceSprite:
+      return "surface sprite";
     case DesignerDomains::Domain::ActorSprite:
       return "sprite";
     case DesignerDomains::Domain::Map:
@@ -1152,6 +1345,7 @@ void DesignerWindow::ShowViewed(size_t index) {
       editedObjectOverlayPath = entry.objectOverlayPath;
       break;
     case DesignerDomains::Domain::Icon:
+    case DesignerDomains::Domain::SurfaceSprite:
     case DesignerDomains::Domain::ActorSprite:
       // Sprite-only domains have no editable definition; the viewed pane is just the
       // request/response transcript and the sprite preview.
@@ -2026,6 +2220,53 @@ void DesignerWindow::SendIconRequest(const std::string &description) {
 
   RequestSpriteDocument(name, SpriteKinds::Kind::Icon, /*replaceGenerated=*/true,
                         std::string(), description);
+}
+
+void DesignerWindow::SendSurfaceSpriteRequest(const std::string &description) {
+  if (game == nullptr) return;
+
+  nlohmann::json named = nlohmann::json::object();
+  named["name"] = std::string(surfaceSpriteNameBuffer);
+  const std::string name = SurfaceSpriteRegistry::IdFor(named);
+  if (name.empty()) {
+    statusIsError = true;
+    statusLine = "Give the surface sprite a name first: the box beside the mode is "
+                 "the filename and the SurfaceSpriteRegistry id.";
+    return;
+  }
+
+  nlohmann::json entry = nlohmann::json::object();
+  entry["name"] = std::string(surfaceSpriteNameBuffer);
+  if (!description.empty()) entry["description"] = description;
+  const std::filesystem::path directory = Settings().content.surfaceSprites;
+  std::error_code ec;
+  std::filesystem::create_directories(directory, ec);
+  const std::filesystem::path path = directory / (name + ".json");
+  std::ofstream out(path);
+  std::string error;
+  std::vector<std::string> warnings;
+  if (!out.is_open()) {
+    statusIsError = true;
+    statusLine = "Could not write the surface sprite entry to " + path.string();
+    return;
+  }
+  out << entry.dump(2) << "\n";
+  out.close();
+  game->surfaceSpriteRegistry.AddOrReplace(entry, path.string(), &error, &warnings);
+  session->LogEvent("SURFACE SPRITE ENTRY WRITTEN: " + path.string());
+
+  const std::string markerPath = GeneratedSpriteMarkerPath(name);
+  if (!markerPath.empty()) {
+    std::ofstream marker(markerPath);
+    if (marker.is_open()) {
+      nlohmann::json choice = nlohmann::json::object();
+      choice["sprite"] = name + ".png";
+      marker << choice.dump(2) << "\n";
+    }
+  }
+
+  RequestSpriteDocument(name, SpriteKinds::Kind::Surface,
+                        /*replaceGenerated=*/true, std::string(), description);
 }
 
 void DesignerWindow::RequestRoute(const std::string &text, bool automatic) {
@@ -4082,6 +4323,8 @@ void DesignerWindow::Draw() {
   // The automatic run advances here rather than on a timer: this is the only place the
   // window's own state (busy, or idle with a queue) is meaningful.
   PumpAutoArt();
+  PumpArtBatch();
+  DrawStyleBatch();
 
   // What is being designed, and who decided. The dropdown is the correction path for the
   // router: a wrong classification costs one decision call, and switching it here before
@@ -4109,17 +4352,21 @@ void DesignerWindow::Draw() {
     // place it can be asked for. Only drawn in this mode: a name box beside "Building"
     // would be a control with nothing to name.
     if (mode == DesignerDomains::Domain::ActorSprite ||
-        mode == DesignerDomains::Domain::Icon) {
+        mode == DesignerDomains::Domain::Icon ||
+        mode == DesignerDomains::Domain::SurfaceSprite) {
+      const bool surface = mode == DesignerDomains::Domain::SurfaceSprite;
+      const bool icon = mode == DesignerDomains::Domain::Icon;
       ImGui::SameLine();
       ImGui::TextDisabled("as");
       ImGui::SameLine();
       ImGui::SetNextItemWidth(140.0f);
       ImGui::InputTextWithHint(
-          mode == DesignerDomains::Domain::Icon ? "##iconName" : "##actorSpriteName",
-          mode == DesignerDomains::Domain::Icon ? "name (skull)" : "name (baker)",
-          mode == DesignerDomains::Domain::Icon ? iconNameBuffer
-                                                : actorSpriteNameBuffer,
-          sizeof(actorSpriteNameBuffer));
+          surface ? "##surfaceSpriteName" : icon ? "##iconName" : "##actorSpriteName",
+          surface ? "name (surface_fire)" : icon ? "name (skull)" : "name (baker)",
+          surface ? surfaceSpriteNameBuffer
+                  : icon ? iconNameBuffer : actorSpriteNameBuffer,
+          surface ? sizeof(surfaceSpriteNameBuffer)
+                  : icon ? sizeof(iconNameBuffer) : sizeof(actorSpriteNameBuffer));
     }
 
     // Single or set. The router proposes it, but a person can ask for one without a

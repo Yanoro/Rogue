@@ -1,0 +1,11 @@
+{
+  "name": "Mana",
+  "description": "Magical capacity. For some beings, this is life itself.",
+  "icon": "resource_mana",
+  "color": "#3b82f6",
+  "baseMax": 50,
+  "canBeVital": true,
+  "canBeSpendable": true,
+  "displayOrder": 10,
+  "regenPerSecond": 1.0
+}

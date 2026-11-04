@@ -1,0 +1,6 @@
+{
+  "name": "Resource Stamina",
+  "description": "A boot for the Stamina resource.",
+  "sprite": "",
+  "style": "ui_resource_icon"
+}

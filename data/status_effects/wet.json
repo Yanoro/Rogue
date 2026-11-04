@@ -1,0 +1,11 @@
+{
+  "name": "Wet",
+  "description": "Soaked through. Water drips from the target and fire struggles to catch.",
+  "tags": [
+    "water",
+    "wet"
+  ],
+  "duration": 10,
+  "icon": "status_wet",
+  "tick": []
+}

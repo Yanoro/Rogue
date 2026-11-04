@@ -155,6 +155,10 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
   if (document.contains("stats")) {
     ParseStats(document["stats"], out.name, out.startingStats, warnings);
   }
+  if (document.contains("resources")) {
+    ParseResourceSpecs(document["resources"], out.resources,
+                       "Template '" + out.name + "'", warnings);
+  }
   if (document.contains("equipped")) {
     if (!document["equipped"].is_array()) {
       Warn("Template '" + out.name +
@@ -294,5 +298,8 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
     document["stats"] = std::move(stats);
   }
   if (!definition.equipped.empty()) document["equipped"] = definition.equipped;
+  if (!definition.resources.empty()) {
+    document["resources"] = ResourceSpecsJson(definition.resources);
+  }
   return document;
 }

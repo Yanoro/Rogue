@@ -1,0 +1,8 @@
+{
+  "id": "actor_sprite",
+  "name": "Actor Sprites",
+  "description": "Characters and creatures drawn in the world.",
+  "appliesTo": ["actor_sprite", "actor"],
+  "positive": "Front-facing 32x32 character sprite, clear head-and-body silhouette, warm limited palette, one-pixel dark outline, transparent background, simple readable clothing shapes, feet aligned to the bottom of the canvas.",
+  "negative": "Do not use text, scenery, floor tiles, multiple characters, or extreme perspective."
+}

@@ -1,5 +1,6 @@
 {
   "name": "Death",
   "description": "The skull-and-bones mark left where an NPC dies.",
-  "sprite": "data/sprites/corpse.png"
+  "sprite": "data/sprites/corpse.png",
+  "style": "ui_skill_icon"
 }

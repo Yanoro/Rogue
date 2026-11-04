@@ -98,6 +98,16 @@ const std::vector<Descriptor> &All() {
           "",
           &SpriteKinds::For(SpriteKinds::Kind::Icon),
       },
+      {
+          Domain::SurfaceSprite,
+          "surface_sprite",
+          "Surface sprite",
+          "a surface sprite",
+          // Sprite-only: the SurfaceRegistry owns the mechanics and names this art.
+          "",
+          "",
+          &SpriteKinds::For(SpriteKinds::Kind::Surface),
+      },
   };
   return kAll;
 }

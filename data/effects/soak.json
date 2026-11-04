@@ -1,0 +1,7 @@
+{
+  "name": "Soak",
+  "description": "Soaks the target through.",
+  "kind": "apply_status",
+  "status": "wet",
+  "duration": 10
+}

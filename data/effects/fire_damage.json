@@ -1,0 +1,8 @@
+{
+  "name": "Fire Damage",
+  "description": "The intrinsic damage of touching fire.",
+  "kind": "damage",
+  "base": 4,
+  "damageType": "fire",
+  "tags": ["fire", "damage"]
+}

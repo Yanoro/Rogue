@@ -85,6 +85,7 @@ bool ActorSpriteRegistry::AddOrReplace(const nlohmann::json& document,
   }
   definition.name = document.value("name", definition.id);
   definition.description = document.value("description", std::string());
+  definition.style = document.value("style", std::string());
   sprites[definition.id] = std::move(definition);
   return true;
 }
@@ -108,5 +109,6 @@ nlohmann::json ActorSpriteRegistry::ToJson(const ActorSpriteDef& definition) con
   nlohmann::json document = nlohmann::json::object();
   document["name"] = definition.name;
   if (!definition.description.empty()) document["description"] = definition.description;
+  document["style"] = definition.style;
   return document;
 }

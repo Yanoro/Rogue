@@ -1,4 +1,6 @@
 #include "Game.h"
+#include "InventoryWindow.h"
+#include "ResourceSystem.h"
 
 #include "MemoryDigest.hpp"
 #include "AIChatWindow.h"
@@ -516,6 +518,43 @@ bool Game::CastSkillshotAim() {
 }
 
 void Game::UpdateGUI() {
+  // Surface painting is a debug tool, but it uses the same world-click priority as
+  // the NPC spawner so a paint click cannot also target or cast.
+  if (pendingSurfacePaint.active) {
+    if (map == nullptr) {
+      pendingSurfacePaint.active = false;
+      return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      pendingSurfacePaint.active = false;
+      return;
+    }
+    if (IsKeyPressed(KEY_ESCAPE)) {
+      pendingSurfacePaint.active = false;
+      return;
+    }
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+        !ImGui::GetIO().WantCaptureMouse) {
+      const Vector2 mouseWorld = GetScreenToWorld2D(GetMousePosition(), camera);
+      const GamePosition position =
+          map->ScreenCoordsToGameCoords(mouseWorld.x, mouseWorld.y);
+      if (pendingSurfacePaint.erase) {
+        RemoveSurface(position, pendingSurfacePaint.surfaceId);
+      } else {
+        const SurfaceDef *definition =
+            surfaceRegistry.Get(pendingSurfacePaint.surfaceId);
+        const std::vector<std::string> tags =
+            definition != nullptr ? definition->tags : std::vector<std::string>();
+        AddSurface(position, pendingSurfacePaint.surfaceId,
+                   MakeEffectOrigin(playerEntity, pendingSurfacePaint.surfaceId,
+                                    tags),
+                   pendingSurfacePaint.duration, pendingSurfacePaint.radius);
+      }
+      return;
+    }
+  }
+
   // A pending NPC spawn owns the next world click. It runs before aim and before
   // normal targeting so a placement click cannot also lock a target or cast.
   if (pendingNpcSpawn.active) {
@@ -684,11 +723,13 @@ void Game::UpdateGUI() {
     // valid target, and locking it must not depend on whether the creature also
     // carries a click-window component.
     flecs::entity clickedTarget = flecs::entity::null();
-    ecs.filter<GamePosition, Vitals>().each(
-        [&](flecs::entity entity, const GamePosition &pos, Vitals &) {
+    ecs.filter<GamePosition, ResourcePools>().each(
+        [&](flecs::entity entity, const GamePosition &pos, ResourcePools &) {
           if (clickedTarget.is_alive() || entity == playerEntity) {
             return;
           }
+          Resources::EnsureInitialized(entity);
+          if (!Resources::IsDamageable(entity)) return;
           bool hit = false;
           if (const ScreenPosition *screen = entity.get<ScreenPosition>()) {
             if (const Hitbox *box = entity.get<Hitbox>()) {
@@ -1035,9 +1076,18 @@ void Game::handleInput() {
   }
 
   std::vector<Command *> commands = inputHandler->handleInput();
-  for (Command *cmd : commands) {
-    if (cmd) {
-      cmd->execute(playerEntity);
+  // A movement-locked cast that started while the player was already moving
+  // waits for that held input to return to neutral. Suppress the movement
+  // commands during that wait so the character actually remains still.
+  bool suppressMovement = false;
+  if (const Casting *casting = playerEntity.get<Casting>()) {
+    suppressMovement = casting->movementLocked && !casting->movementInputArmed;
+  }
+  if (!suppressMovement) {
+    for (Command *cmd : commands) {
+      if (cmd) {
+        cmd->execute(playerEntity);
+      }
     }
   }
 
@@ -1093,6 +1143,14 @@ void Game::handleInput() {
   // window has focus (it is a global key), but not while a text field is consuming
   // keys -- otherwise it would be impossible to type "F11" into the console's own
   // input, or into any other field.
+  if (!ImGui::GetIO().WantTextInput && IsKeyPressed(KEY_I)) {
+    if (inventoryWindowEntity.has<ActiveWindow>()) {
+      inventoryWindowEntity.remove<ActiveWindow>();
+    } else {
+      inventoryWindowEntity.set<ActiveWindow>(
+          {std::make_shared<InventoryWindow>(this)});
+    }
+  }
   if (!ImGui::GetIO().WantTextInput && IsKeyPressed(KEY_F11)) {
     if (debugConsoleWindowEntity.has<ActiveWindow>()) {
       debugConsoleWindowEntity.remove<ActiveWindow>();
@@ -1475,6 +1533,13 @@ void Game::LoadContentOverrides() {
   loadRegistryOverrides(root / "npcs", "npc template", npcTemplateRegistry);
   loadRegistryOverrides(root / "brains", "brain", brainTemplateRegistry);
   loadRegistryOverrides(root / "icons", "icon", iconRegistry);
+  loadRegistryOverrides(root / "surface_sprites", "surface sprite",
+                        surfaceSpriteRegistry);
+  loadRegistryOverrides(root / "surfaces", "surface", surfaceRegistry);
+  loadRegistryOverrides(root / "status_effects", "status effect",
+                        statusEffectRegistry);
+  loadRegistryOverrides(root / "effects", "effect", effectRegistry);
+  loadRegistryOverrides(root / "resources", "resource", resourceRegistry);
   loadRegistryOverrides(root / "rigs", "actor rig", rigRegistry);
   loadRegistryOverrides(root / "items", "item", itemRegistry);
 }
@@ -1572,7 +1637,8 @@ std::string Game::BuildDesignerPrompt(DesignerDomains::Domain domain,
   // document's. Without this the header (and `--designer-prompt actor_sprite`) reported
   // the *blueprint* prompt for a mode that never produces a blueprint.
   if (domain == DesignerDomains::Domain::ActorSprite ||
-      domain == DesignerDomains::Domain::Icon) {
+      domain == DesignerDomains::Domain::Icon ||
+      domain == DesignerDomains::Domain::SurfaceSprite) {
     return TileDesigner::BuildSpriteDocumentSystemPrompt(
         Settings().content.spriteDSLPromptFile, PixelDSL::Config{}.rampsPath);
   }
@@ -2264,7 +2330,8 @@ size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // drawing the old image over the new file.
   size_t updated = 0;
   if (job.kind == SpriteKinds::Kind::Actor ||
-      job.kind == SpriteKinds::Kind::Icon) {
+      job.kind == SpriteKinds::Kind::Icon ||
+      job.kind == SpriteKinds::Kind::Surface) {
     ForgetSpriteMemo(std::string(), job.conventionId);
   } else if (job.kind == SpriteKinds::Kind::Object) {
     updated = RefreshObjectVisuals(job.conventionId);
@@ -2277,12 +2344,14 @@ size_t Game::HandleTileArtGenerated(const TileArtQueue::Job &job) {
   // between "the swap failed" and "there was nothing to swap yet". Said in the log because
   // otherwise both look identical from outside.
   const char *unit = (job.kind == SpriteKinds::Kind::Actor ||
-                      job.kind == SpriteKinds::Kind::Icon)
+                      job.kind == SpriteKinds::Kind::Icon ||
+                      job.kind == SpriteKinds::Kind::Surface)
                          ? " sprite(s)"
                          : (job.kind == SpriteKinds::Kind::Object ? " entity(ies)"
                                                                  : " cell(s)");
   const char *unplaced = (job.kind == SpriteKinds::Kind::Actor ||
-                          job.kind == SpriteKinds::Kind::Icon)
+                          job.kind == SpriteKinds::Kind::Icon ||
+                          job.kind == SpriteKinds::Kind::Surface)
                              ? " (no spawned entities; the sprite is re-resolved)"
                              : (job.kind == SpriteKinds::Kind::Object
                                     ? " (nothing spawned from it yet)"
@@ -2402,6 +2471,10 @@ SpriteKinds::Kind Game::KindForSpriteName(const std::string &name) const {
   if (actorSpriteRegistry.Get(name) != nullptr) return SpriteKinds::Kind::Actor;
   for (const ActorSpriteDef *definition : actorSpriteRegistry.GetAll()) {
     if (definition->name == name) return SpriteKinds::Kind::Actor;
+  }
+  if (surfaceSpriteRegistry.Get(name) != nullptr) return SpriteKinds::Kind::Surface;
+  for (const SurfaceSpriteDef *definition : surfaceSpriteRegistry.GetAll()) {
+    if (definition->name == name) return SpriteKinds::Kind::Surface;
   }
 
   // Neither: a name nobody has defined yet, which is the common case for a request made

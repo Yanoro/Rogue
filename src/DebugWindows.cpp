@@ -2,6 +2,7 @@
 
 #include "Settings.h"
 #include "Game.h"
+#include "ResourceSystem.h"
 #include "AgentBrain.h"
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
@@ -261,6 +262,19 @@ void DebugConsoleWindow::Draw() {
           {std::make_shared<NpcSpawnerWindow>(game)});
     } else {
       game->npcSpawnerWindowEntity.remove<ActiveWindow>();
+    }
+  }
+
+  // Its own row: the rows above already fill the console width, and a clipped
+  // checkbox is indistinguishable from a missing feature.
+  bool showSurfaces = game->surfaceWindowEntity.has<ActiveWindow>();
+  if (ImGui::Checkbox("Surfaces", &showSurfaces)) {
+    if (showSurfaces) {
+      game->surfaceWindowEntity.set<ActiveWindow>(
+          {std::make_shared<SurfaceWindow>(game)});
+    } else {
+      game->surfaceWindowEntity.remove<ActiveWindow>();
+      game->pendingSurfacePaint.active = false;
     }
   }
 
@@ -3171,6 +3185,106 @@ TaskBoardWindow::TaskBoardWindow(Game* game) : game(game) {}
 
 NpcSpawnerWindow::NpcSpawnerWindow(Game* game) : game(game) {}
 
+SurfaceWindow::SurfaceWindow(Game* game) : game(game) {}
+
+void SurfaceWindow::Draw() {
+  bool open = true;
+  ImGui::SetNextWindowSize(ImVec2(420, 360), ImGuiCond_FirstUseEver);
+  if (!ImGui::Begin("Surfaces", &open)) {
+    ImGui::End();
+    return;
+  }
+  if (!open) {
+    if (game != nullptr) {
+      game->pendingSurfacePaint.active = false;
+      game->surfaceWindowEntity.remove<ActiveWindow>();
+    }
+    ImGui::End();
+    return;
+  }
+  if (game == nullptr) {
+    ImGui::TextWrapped("The window has no game to read from.");
+    ImGui::End();
+    return;
+  }
+
+  const std::vector<const SurfaceDef *> surfaces = game->surfaceRegistry.GetAll();
+  if (surfaces.empty()) {
+    ImGui::TextWrapped("No surfaces are loaded. Add JSON under content.surfaces.");
+    ImGui::End();
+    return;
+  }
+  if (selectedSurface.empty() || game->surfaceRegistry.Get(selectedSurface) == nullptr) {
+    selectedSurface = surfaces.front()->id;
+  }
+  const SurfaceDef *selected = game->surfaceRegistry.Get(selectedSurface);
+  if (selected == nullptr) selected = surfaces.front();
+
+  ImGui::TextDisabled("Paint or erase the surface layer. The tile underneath is untouched.");
+  ImGui::Separator();
+
+  ImGui::SetNextItemWidth(260.0f);
+  if (ImGui::BeginCombo("Surface", selected->name.c_str())) {
+    for (const SurfaceDef *candidate : surfaces) {
+      const bool isSelected = candidate->id == selectedSurface;
+      if (ImGui::Selectable(candidate->name.c_str(), isSelected)) {
+        selectedSurface = candidate->id;
+      }
+      if (isSelected) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+  if (!selected->description.empty()) ImGui::TextWrapped("%s", selected->description.c_str());
+  ImGui::TextDisabled("id: %s", selected->id.c_str());
+  ImGui::TextDisabled("sprite: %s", selected->sprite.c_str());
+  ImGui::TextDisabled("lifetime: %s", selected->permanent
+                                          ? "permanent"
+                                          : (std::to_string(static_cast<int>(selected->durationSeconds)) +
+                                             "s"));
+
+  ImGui::Checkbox("Erase instead", &erase);
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::SliderInt("Radius", &radius, 0, 6);
+  ImGui::SetNextItemWidth(180.0f);
+  ImGui::InputFloat("Duration override (s, 0 = definition)", &duration, 1.0f,
+                    5.0f, "%.1f");
+  if (duration < 0.0f) duration = 0.0f;
+
+  if (ImGui::Button("Paint on map")) {
+    game->pendingSurfacePaint.active = true;
+    game->pendingSurfacePaint.erase = erase;
+    game->pendingSurfacePaint.surfaceId = selectedSurface;
+    game->pendingSurfacePaint.radius = radius;
+    game->pendingSurfacePaint.duration = duration;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Cancel painting")) {
+    game->pendingSurfacePaint.active = false;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Clear all surfaces")) {
+    game->surfaceGrid.Clear();
+    game->pendingSurfacePaint.active = false;
+  }
+
+  if (game->pendingSurfacePaint.active) {
+    ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f),
+                       "%s '%s' on the map; right-click or Escape cancels.",
+                       game->pendingSurfacePaint.erase ? "Erasing" : "Painting",
+                       game->pendingSurfacePaint.surfaceId.c_str());
+  } else {
+    ImGui::TextDisabled("Press Paint, then click a tile.");
+  }
+
+  ImGui::Separator();
+  size_t instances = 0;
+  for (const auto &cell : game->surfaceGrid.cells) instances += cell.second.size();
+  ImGui::TextDisabled("%zu surface cell(s), %zu instance(s).", game->surfaceGrid.CellCount(),
+                      instances);
+
+  ImGui::End();
+}
+
 void NpcSpawnerWindow::Draw() {
   bool open = true;
   ImGui::SetNextWindowSize(ImVec2(980, 680), ImGuiCond_FirstUseEver);
@@ -3402,9 +3516,12 @@ void NpcSpawnerWindow::Draw() {
     bool retaliates = false;
   };
   std::vector<ActorRow> rows;
-  game->ecs.filter<Actor, Vitals>().each(
-      [&](flecs::entity entity, const Actor&, Vitals& vitals) {
+  game->ecs.filter<Actor, ResourcePools>().each(
+      [&](flecs::entity entity, const Actor&, ResourcePools&) {
         if (entity == game->playerEntity) return;
+        Resources::EnsureInitialized(entity);
+        const std::string vital = Resources::PrimaryVital(entity);
+        if (vital.empty()) return;
         std::string name = "Actor " + std::to_string(entity.id());
         if (const DisplayName* displayName = entity.get<DisplayName>()) {
           name = displayName->name;
@@ -3415,8 +3532,9 @@ void NpcSpawnerWindow::Draw() {
               disposition->value == Disposition::Aggressive ? "Aggressive"
                                                             : "Neutral";
         }
-        rows.push_back({entity, name, vitals.health, vitals.maxHealth,
-                        stanceLabel, entity.has<Retaliates>()});
+        rows.push_back({entity, name, Resources::Current(entity, vital),
+                        Resources::Max(entity, vital), stanceLabel,
+                        entity.has<Retaliates>()});
       });
   std::sort(rows.begin(), rows.end(),
             [](const ActorRow& a, const ActorRow& b) { return a.name < b.name; });
@@ -3493,8 +3611,10 @@ void NpcSpawnerWindow::Draw() {
 
   if (selectedActor.is_alive()) {
     flecs::entity entity = selectedActor;
-    Vitals* vitals = entity.get_mut<Vitals>();
-    if (vitals == nullptr) {
+    Resources::EnsureInitialized(entity);
+    const std::string vital = Resources::PrimaryVital(entity);
+    ResourcePool* pool = vital.empty() ? nullptr : Resources::Find(entity, vital);
+    if (pool == nullptr) {
       selectedActor = flecs::entity::null();
     } else {
       ImGui::SeparatorText("Selected instance (live edits; template unchanged)");
@@ -3505,18 +3625,20 @@ void NpcSpawnerWindow::Draw() {
       ImGui::Text("%s  (id %llu)", name.c_str(),
                   static_cast<unsigned long long>(entity.id()));
 
-      float maxHealth = vitals->maxHealth;
-      float health = vitals->health;
+      float maxHealth = Resources::Max(entity, vital);
+      float health = pool->current;
       ImGui::SetNextItemWidth(160.0f);
       if (ImGui::InputFloat("Instance max HP", &maxHealth, 0.0f, 0.0f, "%.0f")) {
-        vitals->maxHealth = std::max(1.0f, maxHealth);
+        pool->maxOverride = std::max(1.0f, maxHealth);
       }
       ImGui::SameLine();
       ImGui::SetNextItemWidth(160.0f);
       if (ImGui::InputFloat("Instance HP", &health, 0.0f, 0.0f, "%.0f")) {
-        vitals->health = std::clamp(health, 0.0f, vitals->maxHealth);
+        pool->current = std::clamp(health, 0.0f, Resources::Max(entity, vital));
       }
-      if (vitals->health > vitals->maxHealth) vitals->health = vitals->maxHealth;
+      if (pool->current > Resources::Max(entity, vital)) {
+        pool->current = Resources::Max(entity, vital);
+      }
 
       MaxSpeed* speed = entity.get_mut<MaxSpeed>();
       if (speed == nullptr) {

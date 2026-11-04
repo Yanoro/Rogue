@@ -5,6 +5,7 @@
 
 #include "AsciiArtTypes.hpp"
 #include "EquipmentTypes.h"
+#include "ResourceRegistry.h"
 
 // Definition of one people, loaded from data/races/<id>.json.
 //
@@ -38,4 +39,11 @@ struct RaceDef {
   // authored portrait wins; this is only the fallback, so a race can ship a
   // shared emblem without pinning every member to it.
   std::string portrait;
+  // IconRegistry id for the transparent body silhouette used by the inventory
+  // paper-doll. Empty falls back to body_human.
+  std::string silhouetteIcon = "body_human";
+  // Which resource pools this people is born with. Empty means the default
+  // Health pool, so a race file written before resources existed still works.
+  // Vitality is per-spec: a ghost can make Mana vital and omit Health entirely.
+  std::vector<ResourceSpec> resources;
 };

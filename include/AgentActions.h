@@ -5001,10 +5001,12 @@ private:
           // the annotation is what makes "the equipped scythe" distinguishable
           // from "a second scythe in the pack" (which stacks as its own entry).
           std::vector<std::string> itemNames;
+          // Equipment is worn, not inventory. It lives on the body panel; the
+          // Inventory window and this list both exclude it.
           entity.each<Holds>([&](flecs::entity child) {
-            if (child.is_alive() && child.has<DisplayName>()) {
-              itemNames.push_back(child.get<DisplayName>()->name +
-                                  EquippedSuffix(child));
+            if (child.is_alive() && !child.has<Equipped>() &&
+                child.has<DisplayName>()) {
+              itemNames.push_back(child.get<DisplayName>()->name);
             }
           });
 

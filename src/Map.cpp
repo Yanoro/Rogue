@@ -340,6 +340,13 @@ Map::Map(flecs::entity mapEntity, std::string jsonPath, DebugLog* debugLog,
         // malformed slot is a spawn warning rather than a map-load failure.
         data.race = npcJson.value("race", "");
 
+        if (npcJson.contains("resources")) {
+          std::vector<std::string> warnings;
+          ParseResourceSpecs(npcJson["resources"], data.resources,
+                             "NPC '" + data.name + "'", &warnings);
+          for (const std::string &warning : warnings) warn(warning + "\n");
+        }
+
         if (npcJson.contains("slots")) {
           if (!npcJson["slots"].is_array()) {
             warn("Warning: NPC '" + data.name +
@@ -748,6 +755,9 @@ nlohmann::json Map::BuildMapJson() const {
       // document.
       if (!npc.race.empty()) {
         npcJson["race"] = npc.race;
+      }
+      if (!npc.resources.empty()) {
+        npcJson["resources"] = ResourceSpecsJson(npc.resources);
       }
       if (!npc.slots.empty()) {
         nlohmann::json slots = nlohmann::json::array();

@@ -22,6 +22,8 @@ struct IconDef {
   // Explicit path or sprite convention id. Empty means "use this icon's id as
   // the convention id", which is what lets the Content Editor generate `<id>.png`.
   std::string sprite;
+  // Optional ArtStyleRegistry id. Empty means the sprite-kind default.
+  std::string style;
 };
 
 class IconRegistry {

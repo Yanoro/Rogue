@@ -1,0 +1,7 @@
+{
+  "name": "Ignite",
+  "description": "Sets the target alight.",
+  "kind": "apply_status",
+  "status": "burning",
+  "duration": 5
+}

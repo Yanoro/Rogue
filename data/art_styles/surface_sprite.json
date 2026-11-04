@@ -1,0 +1,8 @@
+{
+  "id": "surface_sprite",
+  "name": "Surface Overlays",
+  "description": "Transparent overlays for fire, water and other surfaces.",
+  "appliesTo": ["surface_sprite", "surface"],
+  "positive": "Transparent tile overlay at 32x32, shape fills the cell without a hard border, readable colour and silhouette, edges feather into transparency, same limited palette as the world sprites.",
+  "negative": "Do not use text, opaque backgrounds, rectangular frames, or hard cell borders."
+}

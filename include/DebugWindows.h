@@ -259,6 +259,21 @@ private:
   std::string lastTemplate;
 };
 
+// Paint/inspect the surface layer. A developer tool: surfaces are content, but
+// placing them by hand is the fastest way to test a trigger/timer without first
+// authoring an ability.
+class SurfaceWindow : public Window {
+public:
+  explicit SurfaceWindow(Game* game);
+  void Draw() override;
+private:
+  Game* game;
+  std::string selectedSurface;
+  bool erase = false;
+  int radius = 0;
+  float duration = 0.0f;
+};
+
 class TaskBoardWindow : public Window {
 public:
   explicit TaskBoardWindow(Game* game);

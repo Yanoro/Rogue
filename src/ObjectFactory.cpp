@@ -208,6 +208,17 @@ void ObjectFactory::RegisterDefaultComponents() {
       vitals.health = vitals.maxHealth;
     }
     obj.set<Vitals>(vitals);
+    // A training dummy authored before resources becomes a real Health pool at
+    // spawn; the legacy Vitals component remains only as the template seed.
+    ResourcePools pools;
+    ResourcePool health;
+    health.id = "health";
+    health.current = vitals.health;
+    health.vital = true;
+    health.primary = true;
+    health.maxOverride = vitals.maxHealth;
+    pools.pools.push_back(health);
+    obj.set<ResourcePools>(std::move(pools));
   });
   RegisterComponent<Actor>("Actor", [](flecs::entity obj, const nlohmann::json&) { obj.add<Actor>(); });
   RegisterComponent<TrainingDummy>("TrainingDummy", [](flecs::entity obj, const nlohmann::json&) {

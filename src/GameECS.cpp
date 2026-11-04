@@ -15,6 +15,8 @@
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "IconPaths.hpp"
+#include "ResourceSystem.h"
+#include "InventoryView.hpp"
 #include "SkillshotPath.hpp"
 #include "GapLog.h"
 #include "LogPaths.h"
@@ -321,6 +323,7 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       }
       if (data.startingStats.empty()) data.startingStats = definition->startingStats;
       if (data.equipped.empty()) data.equipped = definition->equipped;
+      if (data.resources.empty()) data.resources = definition->resources;
       if (!data.suppressBrain && data.brain.empty()) {
         data.brain = definition->brain;
       }
@@ -372,6 +375,47 @@ bool Game::ApplyPlayerMaxSpeed(float maxSpeed, std::string &message) {
   return true;
 }
 
+bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  const ItemDef *definition = itemRegistry.Get(itemId);
+  if (definition == nullptr) {
+    message = "No equipment definition is named '" + itemId + "'.";
+    return false;
+  }
+  auto factoryRes = ecs.get<ObjectFactoryResource>();
+  if (!factoryRes || factoryRes->factory == nullptr) {
+    message = "The object factory is not available.";
+    return false;
+  }
+  const auto &templates = factoryRes->factory->GetTemplates();
+  if (templates.find(itemId) == templates.end()) {
+    message = "Equipment '" + itemId +
+              "' has no object template, so it cannot be spawned.";
+    return false;
+  }
+  const int capacity = InventoryCapacity(
+      playerEntity, Settings().player.inventorySlots);
+  if (!InventoryCanAdd(playerEntity, definition, &itemRegistry, capacity)) {
+    message = "The player's inventory is full.";
+    return false;
+  }
+  flecs::entity item = factoryRes->factory->SpawnObject(
+      ecs, playerEntity, map.get(), itemId);
+  if (!item.is_alive()) {
+    message = "The object factory could not spawn '" + itemId + "'.";
+    return false;
+  }
+  playerEntity.add<Holds>(item);
+  message = "Added one " +
+            (definition->name.empty() ? itemId : definition->name) +
+            " to the player's inventory.";
+  return true;
+}
+
 bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
   message.clear();
   if (!playerEntity.is_alive()) {
@@ -409,6 +453,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
       ecs.entity()
           .set<ScreenPosition>(map->GameCoordsToScreenCoords(pos.x, pos.y))
           .set<GamePosition>(pos)
+          .set<LastTile>({pos, true})
           .set<Hitbox>(
               {DEFAULT_ENTITY_HITBOX_WIDTH, DEFAULT_ENTITY_HITBOX_HEIGHT})
           // Tile-sized, because an actor occupies a tile like any object and
@@ -491,13 +536,18 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
   }
 
-  // Combat state. NPCs used to be bodies with stats but no health; the debug
-  // spawner and real hostility need the same Vitals the player resolves.
+  // Resource pools are the character's vitals. A race can choose a different
+  // vital resource (a ghost's Mana) or omit Health entirely; an empty profile
+  // falls back to the default Health pool.
   {
-    const ResolutionInputs inputs = MakeResolutionInputs(entity.world());
-    const FoldResult maxHealth = ResolveMaxHealth(entity, inputs.definitions);
-    const float ceiling = std::max(1.0f, maxHealth.value);
-    entity.set<Vitals>({ceiling, ceiling});
+    std::vector<ResourceSpec> specs = data.resources;
+    if (specs.empty()) {
+      const std::string raceId = data.race.empty() ? "human" : data.race;
+      if (const RaceDef *race = raceRegistry.Get(raceId)) {
+        specs = race->resources;
+      }
+    }
+    Resources::Initialize(entity, specs, true);
   }
   entity.set<MaxSpeed>({DEFAULT_MAXSPEED});
 
@@ -679,9 +729,13 @@ void Game::SpawnPendingNpcAt(GamePosition position) {
   pendingNpcSpawn.active = false;
 
   if (request.health > 0.0f) {
-    if (Vitals *vitals = npc.get_mut<Vitals>()) {
-      vitals->maxHealth = request.health;
-      vitals->health = request.health;
+    Resources::EnsureInitialized(npc);
+    const std::string vital = Resources::PrimaryVital(npc);
+    if (!vital.empty()) {
+      if (ResourcePool *pool = Resources::Find(npc, vital)) {
+        pool->maxOverride = request.health;
+        pool->current = request.health;
+      }
     }
   }
   if (request.speed > 0.0f) {
@@ -781,6 +835,12 @@ void Game::ECSInitRenderSystems() {
                    const ScreenPosition screenPos) {
         DrawEntityVisual(e, ascii, screenPos);
       });
+
+  // Surfaces sit between the tile and actor layers: the tile keeps its own art,
+  // and an actor standing in fire is drawn above the flames.
+  ecs.system<LastTile>("SurfaceLayerRender")
+      .kind<Render>()
+      .iter([this](flecs::iter &) { DrawSurfaces(); });
 
   ecs.system<DrawAscii, ScreenPosition>("DrawEntityLayer")
       .without<MapTileVisual>()
@@ -1187,8 +1247,12 @@ void Game::ECSInitPhysicsSystems() {
       });
 
   ecs.system<Velocity, const MaxSpeed>().each(
-      [](Velocity &vel, const MaxSpeed &maxSpeed) {
-        vel = vel.Clamp(0.0f, maxSpeed.value);
+      [](flecs::entity entity, Velocity &vel, const MaxSpeed &maxSpeed) {
+        float multiplier = 1.0f;
+        if (const SpeedMultiplier *speed = entity.get<SpeedMultiplier>()) {
+          multiplier = std::max(0.0f, speed->value);
+        }
+        vel = vel.Clamp(0.0f, maxSpeed.value * multiplier);
       });
 
   // Collision system
@@ -1274,6 +1338,113 @@ void Game::ECSInitLogicSystems() {
         }
       });
 
+  // Object templates still author Vitals for training dummies. Convert that
+  // legacy seed into the health resource before any resource consumer runs.
+  ecs.system<Vitals>("LegacyVitalsInitSystem")
+      .each([](flecs::entity entity, const Vitals &) {
+        Resources::EnsureInitialized(entity);
+      });
+
+  // The single tile-transition source. Walking, path movement and teleports all
+  // end up here because they all end up changing GamePosition. Surfaces are
+  // triggered from the queued transition, not from each movement implementation.
+  ecs.system<GamePosition, LastTile>("TileTransitionSystem")
+      .with<Actor>()
+      .each([this](flecs::entity entity, const GamePosition &position,
+                   LastTile &last) {
+        if (!last.initialized) {
+          last.position = position;
+          last.initialized = true;
+          return;
+        }
+        if (last.position == position) return;
+        pendingSurfaceTransitions.push_back(
+            {entity, last.position, position});
+        last.position = position;
+      });
+
+  // One trigger pass after every actor has settled this frame.
+  ecs.system<LastTile>("SurfaceTriggerSystem")
+      .iter([this](flecs::iter &) { ProcessSurfaceTransitions(); });
+
+  ecs.system<LastTile>("SurfaceUpdateSystem")
+      .iter([this](flecs::iter &it) { UpdateSurfaces(it.delta_time()); });
+
+  // Hold-to-sprint. The held skill is data, not a hardcoded "running" branch:
+  // Running is the first definition with a `held` block, and a future channel
+  // skill can reuse the same state.
+  ecs.system<PlayerControlled, SkillBlock, Velocity>("HeldSkillSystem")
+      .each([this](flecs::entity entity, PlayerControlled, SkillBlock &block,
+                   Velocity &velocity) {
+        const SkillDef *held = nullptr;
+        for (const SkillValue &value : block.values) {
+          const SkillDef *definition = FindSkillDef(entity.world(), value.id);
+          if (definition != nullptr && definition->activation.held.enabled) {
+            held = definition;
+            break;
+          }
+        }
+
+        HeldSkillState *state = entity.get_mut<HeldSkillState>();
+        if (state == nullptr) {
+          entity.set<HeldSkillState>({});
+          state = entity.get_mut<HeldSkillState>();
+        }
+        if (state == nullptr) return;
+        SpeedMultiplier *speed = entity.get_mut<SpeedMultiplier>();
+        if (speed == nullptr) {
+          entity.set<SpeedMultiplier>({});
+          speed = entity.get_mut<SpeedMultiplier>();
+        }
+        if (speed == nullptr) return;
+
+        if (held == nullptr) {
+          state->active = false;
+          speed->value = 1.0f;
+          return;
+        }
+
+        Resources::EnsureInitialized(entity);
+        const std::string &resource = held->activation.held.resource;
+        if (!Resources::Has(entity, resource)) {
+          state->active = false;
+          speed->value = 1.0f;
+          return;
+        }
+
+        const float dt = GetFrameTime();
+        const bool keyDown =
+            IsKeyDown(KEY_LEFT_SHIFT) && !ImGui::GetIO().WantCaptureKeyboard;
+        const float available = Resources::Current(entity, resource);
+        const bool moving =
+            entity.has<MOVE_THROUGH_PATH_ACTION>() ||
+            velocity.Length() > 0.1f;
+        const bool active = keyDown &&
+                            available >= held->activation.held.minResource;
+
+        state->skillId = held->id;
+        state->active = active;
+        speed->value = active ? held->activation.held.speedMultiplier : 1.0f;
+
+        if (active && moving) {
+          Resources::Change(entity, resource,
+                            -held->activation.held.drainPerSecond * dt);
+          state->regenDelay = held->activation.held.regenDelaySeconds;
+          if (Resources::Current(entity, resource) <= 0.0f) {
+            state->active = false;
+            speed->value = 1.0f;
+          }
+        } else {
+          state->regenDelay =
+              std::max(0.0f, state->regenDelay - dt);
+          if (state->regenDelay <= 0.0f) {
+            Resources::Heal(entity, resource,
+                            held->activation.held.regenPerSecond * dt);
+          }
+        }
+      });
+
+  // Floating change numbers. Ages them out and keeps their anchor pinned to the
   // Floating change numbers. Ages them out and keeps their anchor pinned to the
   // target, so a living character drags its number along and a dead one leaves
   // it where it fell. Advance-then-test means a number is always drawn at least
@@ -1295,6 +1466,9 @@ void Game::ECSInitLogicSystems() {
 }
 
 void Game::LoadMap(std::string mapPath, bool spawnNPCs) {
+  // Surfaces belong to the map they were placed on; a reload starts clean.
+  surfaceGrid.Clear();
+  pendingSurfaceTransitions.clear();
   hasClicked = false;
   validTileSelected = false;
   mapFilePath = mapPath;

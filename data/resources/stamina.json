@@ -1,0 +1,10 @@
+{
+  "name": "Stamina",
+  "description": "Physical exertion. Spent by strenuous actions and restored by rest.",
+  "icon": "resource_stamina",
+  "color": "#84cc16",
+  "baseMax": 100,
+  "canBeVital": false,
+  "canBeSpendable": true,
+  "displayOrder": 20
+}

@@ -1,0 +1,8 @@
+{
+  "id": "tile_sprite",
+  "name": "Ground Tiles",
+  "description": "Top-down ground tiles that fill one map cell.",
+  "appliesTo": ["tile"],
+  "positive": "Top-down 32x32 ground material, fills the whole canvas edge to edge, warm limited palette, subtle small-scale texture, low contrast so entities read over it, no strong object silhouette.",
+  "negative": "Do not use text, props, walls, characters, large highlights, or transparent edges."
+}

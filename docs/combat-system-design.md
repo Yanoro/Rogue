@@ -1153,3 +1153,7 @@ both paths draw and refresh the same way.
 Build verified with `--combat-check`. The Settings/Content Editor pickers, the
 Designer Icon send, and the Icons kind's creation flow are UI paths not driven
 headlessly.
+
+## Movement-locked casting
+
+See [cast-movement-lock.md](cast-movement-lock.md): a cast started while moving ignores the already-held movement key until it returns to neutral, then new movement cancels it.

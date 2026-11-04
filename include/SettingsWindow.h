@@ -30,6 +30,7 @@ public:
 private:
   void DrawTree(int &index);
   void DrawFieldsFor(const std::string &sectionKey);
+  void DrawPortraitEditor();
   void DrawProfiles();
   void DrawAIProfiles();
   void DrawAIProfileField(const SettingsSchema::AIProfileFieldSpec &field,

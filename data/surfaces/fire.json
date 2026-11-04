@@ -1,0 +1,29 @@
+{
+  "name": "Fire",
+  "description": "Flames cling to the ground, burning anything that walks through them.",
+  "sprite": "surface_fire",
+  "duration": 20,
+  "layer": 10,
+  "alpha": 0.9,
+  "tags": [
+    "fire",
+    "hot",
+    "hazard"
+  ],
+  "enter": [
+    "fire_damage",
+    "ignite"
+  ],
+  "stay": {
+    "every": 1.0,
+    "effects": [
+      "fire_damage"
+    ]
+  },
+  "reactions": [
+    {
+      "withTag": "water",
+      "removeSelf": true
+    }
+  ]
+}

@@ -39,6 +39,10 @@ enum class Kind {
   // UI icons: no definition turn, like Actor. The icon registry is the definition;
   // this kind exists so the Designer knows it is drawing an icon rather than a being.
   Icon,
+  // A reusable terrain overlay: fire, water, smoke, blood. Like an icon it is
+  // art with no definition turn behind it; unlike an icon it is drawn over a
+  // tile rather than in a HUD slot.
+  Surface,
 };
 
 struct Descriptor {

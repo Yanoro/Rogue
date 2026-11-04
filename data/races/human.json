@@ -1,26 +1,59 @@
 {
   "name": "Human",
   "art": [
-    "(õ_õ)",
+    "(\u00f5_\u00f5)",
     "/ | \\",
     "| | |",
     " / \\ ",
     "(   )"
   ],
   "palette": {
-    "õ": [222, 184, 135, 255],
-    "_": [222, 184, 135, 255]
+    "\u00f5": [
+      222,
+      184,
+      135,
+      255
+    ],
+    "_": [
+      222,
+      184,
+      135,
+      255
+    ]
   },
   "slots": [
     "head",
     "torso",
     "legs",
     "feet",
-    { "id": "main_hand", "accepts": "hand" },
-    { "id": "off_hand", "accepts": "hand" },
-    { "id": "ring_1", "accepts": "ring" },
-    { "id": "ring_2", "accepts": "ring" },
+    {
+      "id": "main_hand",
+      "accepts": "hand"
+    },
+    {
+      "id": "off_hand",
+      "accepts": "hand"
+    },
+    {
+      "id": "ring_1",
+      "accepts": "ring"
+    },
+    {
+      "id": "ring_2",
+      "accepts": "ring"
+    },
     "neck",
     "back"
-  ]
+  ],
+  "resources": [
+    {
+      "id": "health",
+      "vital": true,
+      "primary": true
+    },
+    {
+      "id": "stamina"
+    }
+  ],
+  "silhouette": "body_human"
 }

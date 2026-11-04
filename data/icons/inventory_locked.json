@@ -1,0 +1,6 @@
+{
+  "name": "Inventory Locked",
+  "description": "Crossed-out cell shown for inventory slots the character does not have.",
+  "sprite": "",
+  "style": "ui_slot_icon"
+}

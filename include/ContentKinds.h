@@ -17,6 +17,13 @@ class RigRegistry;
 class SkillRegistry;
 class NpcTemplateRegistry;
 class BrainTemplateRegistry;
+class SurfaceSpriteRegistry;
+class SurfaceRegistry;
+class StatusEffectRegistry;
+class EffectRegistry;
+class ResourceRegistry;
+class ArtStyleRegistry;
+class BodySilhouetteRegistry;
 
 // The kinds of content the Content Editor can open: one row per registry.
 //
@@ -50,6 +57,13 @@ struct World {
   SkillRegistry &skills;
   NpcTemplateRegistry &npcs;
   BrainTemplateRegistry &brains;
+  SurfaceSpriteRegistry &surfaceSprites;
+  SurfaceRegistry &surfaces;
+  StatusEffectRegistry &statusEffects;
+  EffectRegistry &effects;
+  ResourceRegistry &resources;
+  ArtStyleRegistry &artStyles;
+  BodySilhouetteRegistry &bodySilhouettes;
   DebugLog *log = nullptr;
   // Called after a kind has successfully replaced its live definition. The
   // skills kind uses it to rebuild the player's ability bar immediately; kinds
@@ -121,7 +135,24 @@ bool WriteOverrideFile(const Kind &kind, const std::string &root,
                        const nlohmann::json &document, std::string *path,
                        std::string *error);
 
-// Every kind the editor offers, in dropdown order.
+// The editor's kind table is a registry, not a compile-time vector. Registries
+// can add their kind during startup; the built-in set is registered on first use
+// only for compatibility with callers that ask before startup registration runs.
+class KindRegistry {
+public:
+  // Replaces an existing entry with the same id, preserving the first insertion
+  // position. Returns false only for an empty id.
+  bool Register(Kind kind);
+  const std::vector<Kind> &All() const { return kinds; }
+  const Kind *For(const std::string &id) const;
+
+private:
+  std::vector<Kind> kinds;
+};
+
+KindRegistry &MutableRegistry();
+
+// Every registered kind, in registration order.
 const std::vector<Kind> &All();
 
 // The kind for an id ("tiles"), or null.

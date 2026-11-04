@@ -85,6 +85,7 @@ bool IconRegistry::AddOrReplace(const nlohmann::json &document,
   definition.name = document.value("name", definition.id);
   definition.description = document.value("description", std::string());
   definition.sprite = document.value("sprite", std::string());
+  definition.style = document.value("style", std::string());
   icons[definition.id] = std::move(definition);
   return true;
 }
@@ -113,5 +114,6 @@ nlohmann::json IconRegistry::ToJson(const IconDef &definition) const {
   if (!definition.sprite.empty()) {
     document["sprite"] = definition.sprite;
   }
+  document["style"] = definition.style;
   return document;
 }

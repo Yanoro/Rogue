@@ -78,6 +78,7 @@
 #include "VisionQuery.hpp"
 
 #include "GameECSInternals.h"
+#include "ResourceSystem.h"
 
 namespace {
 
@@ -364,6 +365,7 @@ static std::unique_ptr<AI> BuildAIBackend(
 }
 
 void Game::ECSInit() {
+  ecs.set<GameRuntimeResource>({this});
   // Everything the run starts from comes out of the settings file; see
   // Settings.h. Held by reference so there is one source of truth.
   const GameSettings &settings = Settings();
@@ -472,49 +474,87 @@ void Game::ECSInit() {
 
   iconRegistry.SetDebugLog(debugLog.get());
   iconRegistry.Load(settings.content.icons);
+  artStyleRegistry.Load(settings.content.artStyles);
+  bodySilhouetteRegistry.Load(settings.content.bodySilhouettes);
 
-  // A template naming content the game does not have would fail one character at
-  // a time at spawn. Report it once, here, where the template's id is still in
-  // hand -- the same reason the projectile check below exists.
-  {
-    auto warn = [this](const std::string& message) {
-      if (debugLog) debugLog->LogWarning(message);
-      else std::cerr << message << std::endl;
+  // Surface visuals are their own reusable registry, exactly like actor sprites:
+  // a surface definition names a sprite id, and the Designer can create more.
+  surfaceSpriteRegistry.SetDebugLog(debugLog.get());
+  surfaceSpriteRegistry.Load(settings.content.surfaceSprites);
+  surfaceRegistry.SetDebugLog(debugLog.get());
+  surfaceRegistry.Load(settings.content.surfaces);
+  statusEffectRegistry.SetDebugLog(debugLog.get());
+  statusEffectRegistry.Load(settings.content.statusEffects);
+  effectRegistry.SetDebugLog(debugLog.get());
+  effectRegistry.Load(settings.content.effects);
+  resourceRegistry.SetDebugLog(debugLog.get());
+  resourceRegistry.Load(settings.content.resources);
+  ecs.set<ResourceRegistryResource>({&resourceRegistry});
+
+  // Every surface/status effect id must resolve. Report once at load instead of
+  // failing one trigger at a time.
+  const auto warnEffect = [this](const std::string &message) {
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
+  };
+  for (const SurfaceDef *surface : surfaceRegistry.GetAll()) {
+    const auto checkEffects = [&](const std::vector<std::string> &ids,
+                                  const char *trigger) {
+      for (const std::string &id : ids) {
+        if (effectRegistry.Get(id) == nullptr) {
+          warnEffect("Warning: surface '" + surface->id + "' " + trigger +
+                     " names unknown effect '" + id + "'");
+        }
+      }
     };
-    for (const NpcTemplate* definition : npcTemplateRegistry.GetAll()) {
-      if (!definition->race.empty() &&
-          raceRegistry.Get(definition->race) == nullptr) {
-        warn("Warning: NPC template '" + definition->id +
-             "' names unknown race '" + definition->race + "'");
-      }
-      if (!definition->sprite.empty() &&
-          actorSpriteRegistry.Get(definition->sprite) == nullptr) {
-        warn("Warning: NPC template '" + definition->id +
-             "' names unknown actor sprite '" + definition->sprite + "'");
-      }
-      if (!definition->portrait.empty() &&
-          portraitRegistry.Get(definition->portrait) == nullptr) {
-        warn("Warning: NPC template '" + definition->id +
-             "' names unknown portrait '" + definition->portrait + "'");
-      }
-      if (!definition->brain.empty() &&
-          brainTemplateRegistry.Get(definition->brain) == nullptr) {
-        warn("Warning: NPC template '" + definition->id +
-             "' names unknown brain '" + definition->brain + "'");
-      }
-      if (!definition->combatStrategy.empty() &&
-          combatStrategyRegistry.Get(definition->combatStrategy) == nullptr) {
-        warn("Warning: NPC template '" + definition->id +
-             "' names unknown combat strategy '" +
-             definition->combatStrategy + "'");
+    checkEffects(surface->onEnter, "enter");
+    checkEffects(surface->onStay, "stay");
+    checkEffects(surface->onExit, "exit");
+  }
+  for (const StatusEffectDef *status : statusEffectRegistry.GetAll()) {
+    for (const std::string &id : status->tickEffects) {
+      if (effectRegistry.Get(id) == nullptr) {
+        warnEffect("Warning: status '" + status->id +
+                   "' tick names unknown effect '" + id + "'");
       }
     }
-    for (const BrainTemplate* brain : brainTemplateRegistry.GetAll()) {
-      if (!brain->modelProfile.empty() &&
-          Settings().ai.profiles.count(brain->modelProfile) == 0) {
-        warn("Warning: brain '" + brain->id + "' names unknown ai profile '" +
-             brain->modelProfile + "'");
+    for (const std::string &id : status->onApplyEffects) {
+      if (effectRegistry.Get(id) == nullptr) {
+        warnEffect("Warning: status '" + status->id +
+                   "' onApply names unknown effect '" + id + "'");
       }
+    }
+    for (const std::string &id : status->onExpireEffects) {
+      if (effectRegistry.Get(id) == nullptr) {
+        warnEffect("Warning: status '" + status->id +
+                   "' onExpire names unknown effect '" + id + "'");
+      }
+    }
+  }
+  for (const EffectDef *effect : effectRegistry.GetAll()) {
+    if (effect->kind == EffectKind::ApplyStatus ||
+        effect->kind == EffectKind::RemoveStatus) {
+      if (statusEffectRegistry.Get(effect->statusId) == nullptr) {
+        warnEffect("Warning: effect '" + effect->id +
+                   "' names unknown status '" + effect->statusId + "'");
+      }
+    }
+    if ((effect->kind == EffectKind::CreateSurface ||
+         effect->kind == EffectKind::RemoveSurface) &&
+        !effect->surfaceId.empty() &&
+        surfaceRegistry.Get(effect->surfaceId) == nullptr) {
+      warnEffect("Warning: effect '" + effect->id +
+                 "' names unknown surface '" + effect->surfaceId + "'");
+    }
+  }
+  for (const SurfaceDef *surface : surfaceRegistry.GetAll()) {
+    if (!surface->sprite.empty() &&
+        surfaceSpriteRegistry.Get(surface->sprite) == nullptr) {
+      const std::string message = "Warning: surface '" + surface->id +
+                                  "' names unknown surface sprite '" +
+                                  surface->sprite + "'";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
     }
   }
 
@@ -957,7 +997,7 @@ void Game::ECSInit() {
       return [](flecs::entity) { return std::make_unique<InventoryAction>(); };
     },
     .help = {
-      .description = "List what you are carrying, one line per distinct item, with a count when you hold more than one. Worn items are marked rather than hidden, so an equipped tool stays distinguishable from a spare in your pack.",
+      .description = "List what you are carrying, one line per distinct item, with a count when you hold more than one. Worn items are not inventory and are omitted; use [EQUIPMENT] to see what you are wearing.",
       .examples = {"[INVENTORY]"},
       .usage = {"Takes no arguments."},
       .notes = {"Use [EXAMINE_ITEM $ITEM_NAME] on a listed name to see what that item can do."}
@@ -1965,10 +2005,12 @@ void Game::ECSInit() {
           : GamePosition{settings.player.startX, settings.player.startY};
   playerEntity = ecs.entity(settings.player.name.c_str());
   playerEntity.set<GamePosition>(startPlayerPos);
+  playerEntity.set<LastTile>({startPlayerPos, true});
 
   playerEntity.set<ScreenPosition>(
       map->GameCoordsToScreenCoords(startPlayerPos.x, startPlayerPos.y));
   playerEntity.set<MaxSpeed>({settings.player.maxSpeed});
+  playerEntity.set<InventorySlots>({settings.player.inventorySlots});
   playerEntity.set<Friction>({DEFAULT_PLAYER_FRICTION});
   playerEntity.set<Velocity>({0, 0});
   // The facing system derives from Velocity but never adds the component, so the
@@ -2072,14 +2114,30 @@ void Game::ECSInit() {
     }
   }
 
-  // Health is resolved from the same sources everything else uses, so
-  // Constitution (and later a race or a class) raises the ceiling through data.
+  // Resource pools are the player's vitals, chosen by race. A human gets
+  // Health; a future ghost can grant only Mana and make it primary.
   {
-    const ResolutionInputs inputs = MakeResolutionInputs(playerEntity.world());
-    const FoldResult maxHealth =
-        ResolveMaxHealth(playerEntity, inputs.definitions);
-    const float ceiling = std::max(1.0f, maxHealth.value);
-    playerEntity.set<Vitals>({ceiling, ceiling});
+    const RaceDef *race = raceRegistry.Get(settings.player.race);
+    std::vector<ResourceSpec> specs =
+        race ? race->resources : std::vector<ResourceSpec>{};
+    if (specs.empty()) {
+      ResourceSpec health;
+      health.id = "health";
+      health.vital = true;
+      health.primary = true;
+      specs.push_back(health);
+    }
+    // Every player has Stamina, even if a future race forgets to list it.
+    if (std::none_of(specs.begin(), specs.end(), [](const ResourceSpec &spec) {
+          return spec.id == "stamina";
+        })) {
+      ResourceSpec stamina;
+      stamina.id = "stamina";
+      specs.push_back(stamina);
+    }
+    Resources::Initialize(playerEntity, specs, true);
+    playerEntity.set<HeldSkillState>({});
+    playerEntity.set<SpeedMultiplier>({});
   }
 
   // The map may author a starting weapon. It is spawned as a real held item and
@@ -2123,6 +2181,8 @@ void Game::ECSInit() {
   aiMenuWindowEntity = ecs.entity("AI Menu Window");
   npcMenuWindowEntity = ecs.entity("NPC Menu Window");
   npcSpawnerWindowEntity = ecs.entity("NPC Spawner Window");
+  surfaceWindowEntity = ecs.entity("Surface Window");
+  inventoryWindowEntity = ecs.entity("Inventory Window");
   taskBoardWindowEntity = ecs.entity("Task Board Window");
   systemOneWindowEntity = ecs.entity("System 1 Overview Window");
   visionDebugWindowEntity = ecs.entity("Vision Debug Window");

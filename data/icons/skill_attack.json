@@ -1,5 +1,6 @@
 {
   "name": "Skill Attack",
   "description": "The basic weapon swing.",
-  "sprite": ""
+  "sprite": "",
+  "style": "ui_skill_icon"
 }

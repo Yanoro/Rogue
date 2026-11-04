@@ -662,6 +662,9 @@ struct GameSettings {
     // the player settles at walking, not how quickly they get there. 0 is a
     // deliberate "cannot move"; negative is treated as a mistake.
     float maxSpeed = DEFAULT_MAXSPEED;
+    // Total inventory cell capacity. The window shows 30 cells per page; values
+    // above 30 create more pages, values below 30 cross out the remainder.
+    int inventorySlots = 30;
   } player;
 
   struct CombatSection {
@@ -676,6 +679,21 @@ struct GameSettings {
     // icon system, so existing corpses change with the setting.
     std::string deathIcon = "death";
   } combat;
+
+  // Player portrait layout. Resources are referenced by id, so a race that later
+  // grants Mana or a shield can be added without schema churn.
+  struct HudSection {
+    struct PortraitSection {
+      bool showIcons = true;
+      bool showValues = true;
+      bool showNames = true;
+      bool compact = false;
+      float barHeight = 12.0f;
+      // Array of {"id","visible","showIcon"} in display order. Empty means
+      // "every current resource, in registry order".
+      nlohmann::json resources = nlohmann::json::array();
+    } portrait;
+  } hud;
 
   struct WorldSection {
     // 0 seeds from the clock, so every run differs. Any other value makes the run
@@ -701,9 +719,19 @@ struct GameSettings {
     std::string brains = "data/brains";
     std::string portraits = "data/portraits";
     std::string icons = "data/icons";
+    // Prose style profiles for generated art. Families are selected by the
+    // sprite kind or by an asset's own optional style id.
+    std::string artStyles = "data/art_styles";
+    // Authored body paper-doll silhouettes: icon + normalised slot anchors.
+    std::string bodySilhouettes = "data/body_silhouettes";
     std::string projectiles = "data/projectiles";
     std::string skillshots = "data/skillshots";
     std::string combatStrategies = "data/combat_strategies";
+    std::string surfaceSprites = "data/surface_sprites";
+    std::string surfaces = "data/surfaces";
+    std::string statusEffects = "data/status_effects";
+    std::string effects = "data/effects";
+    std::string resources = "data/resources";
     // The place taxonomy (docs/place-derivation-design.md section 4): which
     // categories form places, their seed thresholds, link radii and split rule.
     // A file rather than a directory, because it is one vocabulary, not a catalog.

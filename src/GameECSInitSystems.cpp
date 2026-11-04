@@ -17,6 +17,7 @@
 #include "GapLog.h"
 #include "LogPaths.h"
 #include "Components.h"
+#include "ResourceSystem.h"
 #include "DebugLog.h"
 #include "DebugWindows.h"
 #include "Defaults.h"
@@ -261,13 +262,15 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   // This is what lets a fight continue while the player is deciding, and it is
   // the same mechanism an agent will use later, so it is written against
   // components rather than against the player entity.
-  ecs.system<LockedTarget, Vitals, SkillCooldowns, GlobalCooldown,
+  ecs.system<LockedTarget, ResourcePools, SkillCooldowns, GlobalCooldown,
              AutoCastSkills, SkillBar>("CombatAutoCastSystem")
-      .each([this](flecs::entity entity, LockedTarget& lock, Vitals&,
+      .each([this](flecs::entity entity, LockedTarget& lock, ResourcePools&,
                    SkillCooldowns& cooldowns, GlobalCooldown& globalCooldown,
                    AutoCastSkills& autoCast, SkillBar& bar) {
         flecs::entity target = lock.target;
-        if (!target.is_alive() || target == entity || !target.has<Vitals>()) {
+        if (target.is_alive()) Resources::EnsureInitialized(target);
+        if (!target.is_alive() || target == entity ||
+            !Resources::IsDamageable(target)) {
           // A dead or destroyed target is a normal end of a lock, not an error:
           // drop it instead of holding a dangling handle.
           if (!target.is_alive()) {
@@ -378,19 +381,37 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         }
       });
 
-  // A movement-locked cast is canceled by resuming either movement source.
+  // A movement-locked cast stops the player at activation. If a movement key
+  // was already held at that moment, it is ignored until it returns to neutral;
+  // otherwise casting while walking would cancel itself on the next frame. Once
+  // neutral, any new movement input (or a clicked path) cancels the cast.
   ecs.system<Casting>("CastMovementCancelSystem")
       .each([this](flecs::entity actor, Casting& casting) {
         if (!casting.movementLocked || !actor.has<PlayerControlled>()) {
           return;
         }
-        const Velocity* velocity = actor.get<Velocity>();
-        const bool moving =
-            actor.has<MOVE_THROUGH_PATH_ACTION>() ||
-            (velocity != nullptr &&
-             (std::abs(velocity->x) > DEFAULT_MOVEMENT_EPSILON ||
-              std::abs(velocity->y) > DEFAULT_MOVEMENT_EPSILON));
-        if (!moving) {
+        const bool input = InputHandler::MovementInputDown();
+        const bool path = actor.has<MOVE_THROUGH_PATH_ACTION>();
+        const Velocity *velocity = actor.get<Velocity>();
+        const bool actualMovement =
+            velocity != nullptr &&
+            (std::abs(velocity->x) > DEFAULT_MOVEMENT_EPSILON ||
+             std::abs(velocity->y) > DEFAULT_MOVEMENT_EPSILON);
+        if (!casting.movementInputArmed) {
+          if (path) {
+            // A clicked path is always a new movement instruction, even while a
+            // held key from before the cast is still down.
+          } else if (input) {
+            return;
+          } else {
+            casting.movementInputArmed = true;
+            return;
+          }
+        } else if (casting.allowSliding) {
+          // A slide is not movement input. Only a new request cancels; the
+          // velocity itself is allowed to carry through the cast.
+          if (!input && !path) return;
+        } else if (!input && !path && !actualMovement) {
           return;
         }
         if (!CancelCast(actor, "Movement!")) {
@@ -417,11 +438,11 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
 
   // Non-LLM positioning. Only brainless Aggressive bodies execute a strategy;
   // an LLM's agent owns its own movement.
-  ecs.system<CombatStrategy, Aggressive, GamePosition, Vitals>(
+  ecs.system<CombatStrategy, Aggressive, GamePosition, ResourcePools>(
       "CombatStrategySystem")
       .without<AgentBrainWrapper>()
       .iter([this](flecs::iter& it, CombatStrategy* strategies,
-                   Aggressive*, GamePosition* positions, Vitals* vitals) {
+                   Aggressive*, GamePosition* positions, ResourcePools*) {
         if (!playerEntity.is_alive()) {
           return;
         }
@@ -436,7 +457,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           flecs::entity entity = it.entity(i);
           CombatStrategy& strategy = strategies[i];
 
-          if (vitals[i].health <= 0.0f || entity.has<Casting>()) {
+          if (!Resources::IsAlive(entity) || entity.has<Casting>()) {
             entity.remove<MOVE_THROUGH_PATH_ACTION>();
             continue;
           }
@@ -494,15 +515,75 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         }
       });
 
+  // Reusable actor statuses. Surfaces only apply ids; this is the one place
+  // duration, periodic damage and expiry are handled.
+  ecs.system<StatusEffects>("StatusEffectSystem")
+      .iter([this](flecs::iter &it, StatusEffects *statuses) {
+        const float dt = it.delta_time();
+        struct PendingEffects {
+          flecs::entity actor;
+          EffectOrigin origin;
+          std::vector<std::string> effects;
+          GamePosition position;
+        };
+        std::vector<PendingEffects> pending;
+        for (auto i : it) {
+          flecs::entity actor = it.entity(i);
+          const GamePosition *position = actor.get<GamePosition>();
+          std::vector<StatusEffectInstance> &effects = statuses[i].effects;
+          for (size_t e = 0; e < effects.size();) {
+            StatusEffectInstance &status = effects[e];
+            const StatusEffectDef *definition =
+                statusEffectRegistry.Get(status.id);
+            if (definition == nullptr) {
+              effects.erase(effects.begin() + e);
+              continue;
+            }
+            status.remaining -= dt;
+            if (status.remaining <= 0.0f) {
+              if (position != nullptr && !definition->onExpireEffects.empty()) {
+                pending.push_back({actor, status.origin,
+                                   definition->onExpireEffects, *position});
+              }
+              effects.erase(effects.begin() + e);
+              continue;
+            }
+            if (!definition->tickEffects.empty()) {
+              status.tickTimer -= dt;
+              if (status.tickTimer <= 0.0f) {
+                status.tickTimer += definition->tickSeconds;
+                if (position != nullptr) {
+                  pending.push_back({actor, status.origin,
+                                     definition->tickEffects, *position});
+                }
+              }
+            }
+            ++e;
+          }
+        }
+        // Apply after the status vectors stop being iterated: a tick effect may
+        // apply another status to the same actor, which would otherwise reallocate
+        // the vector underneath its own loop.
+        for (const PendingEffects &entry : pending) {
+          if (!entry.actor.is_alive()) continue;
+          for (const std::string &effectId : entry.effects) {
+            ApplyEffectAt(entry.actor.world(), entry.origin, effectId,
+                          entry.actor, entry.position);
+          }
+        }
+      });
+
   // Death lifecycle: NPCs only. The player has a knockout/reset path and training
-  // dummies are immortal; objects with Vitals are not corpses yet.
-  ecs.system<Vitals>("DeathSystem")
+  // Death lifecycle: any character whose vital resources have all failed. The
+  // player has a knockout/reset path and training dummies are immortal; this is
+  // deliberately not an "is Health at zero" check.
+  ecs.system<ResourcePools>("DeathSystem")
       .with<Actor>()
       .without<PlayerControlled>()
       .without<TrainingDummy>()
       .without<Dead>()
-      .each([this](flecs::entity entity, Vitals& vitals) {
-        if (vitals.health > 0.0f) {
+      .each([this](flecs::entity entity, ResourcePools&) {
+        if (Resources::IsAlive(entity)) {
           return;
         }
         entity.add<Dead>();
@@ -512,8 +593,8 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   // The smallest hostile controller: a timer, a range, and one telegraphed
   // strike. It exists so incoming damage and interrupts are testable without the
   // LLM path; a real hostile agent will not carry this component.
-  ecs.system<Aggressive, Vitals, GamePosition>("AggressiveCombatSystem")
-      .iter([this](flecs::iter& it, Aggressive* aggressive, Vitals* vitals,
+  ecs.system<Aggressive, ResourcePools, GamePosition>("AggressiveCombatSystem")
+      .iter([this](flecs::iter& it, Aggressive* aggressive, ResourcePools*,
                    GamePosition* positions) {
         if (!playerEntity.is_alive()) {
           return;
@@ -525,7 +606,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         const float dt = it.delta_time();
         for (auto i : it) {
           flecs::entity entity = it.entity(i);
-          if (vitals[i].health <= 0.0f || entity.has<Casting>()) {
+          if (!Resources::IsAlive(entity) || entity.has<Casting>()) {
             continue;
           }
           if (const NpcDisposition *disposition = entity.get<NpcDisposition>();
@@ -653,7 +734,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
               message += FinalizeSkillUse(actor, *def);
               landed = true;
             }
-          } else if (target.is_alive() && target.has<Vitals>()) {
+          } else if (target.is_alive() && Resources::IsDamageable(target)) {
             message = ApplyHit(actor, target, cast.baseDamage, "", cast.label,
                                false, false);
             landed = true;
@@ -664,6 +745,17 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           // A completed cast says its name over the caster, the same call-out an
           // instant use gives, so a landed cast is legible without reading the
           // log. A fizzle deliberately says nothing: no name, no reward.
+          if (landed && !cast.surfaceId.empty() && target.is_alive() &&
+              target.has<GamePosition>()) {
+            const SurfaceDef *surface = surfaceRegistry.Get(cast.surfaceId);
+            AddSurface(*target.get<GamePosition>(), cast.surfaceId,
+                       MakeEffectOrigin(actor, cast.surfaceId,
+                                        surface != nullptr
+                                            ? surface->tags
+                                            : std::vector<std::string>()),
+                       cast.surfaceDuration, cast.surfaceRadius);
+          }
+
           if (landed) {
             SpawnFloatingCallout(actor, cast.label,
                                  DEFAULT_ABILITY_CALL_OUT_COLOR);
@@ -719,6 +811,20 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                 projectile.owner, projectile.target, projectile.baseDamage,
                 projectile.skillId, projectile.label, projectile.playerCast,
                 projectile.interrupts);
+            if (!projectile.surfaceId.empty()) {
+              if (const GamePosition *impact =
+                      projectile.target.get<GamePosition>()) {
+                const SurfaceDef *surface =
+                    surfaceRegistry.Get(projectile.surfaceId);
+                AddSurface(*impact, projectile.surfaceId,
+                           MakeEffectOrigin(projectile.owner, projectile.surfaceId,
+                                            surface != nullptr
+                                                ? surface->tags
+                                                : std::vector<std::string>()),
+                           projectile.surfaceDuration,
+                           projectile.surfaceRadius);
+              }
+            }
             if (debugLog) {
               debugLog->LogCombat(message);
             }
@@ -741,9 +847,12 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         const float dt = it.delta_time();
 
         std::vector<flecs::entity> targets;
-        ecs.filter<Actor, Vitals, ScreenPosition>().each(
-            [&](flecs::entity target, const Actor&, Vitals&,
-                const ScreenPosition&) { targets.push_back(target); });
+        ecs.filter<Actor, ResourcePools, ScreenPosition>().each(
+            [&](flecs::entity target, const Actor&, ResourcePools&,
+                const ScreenPosition&) {
+              Resources::EnsureInitialized(target);
+              if (Resources::IsAlive(target)) targets.push_back(target);
+            });
 
         for (auto i : it) {
           flecs::entity entity = it.entity(i);
@@ -769,8 +878,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
             if (target == skillshot.owner || !target.is_alive()) {
               continue;
             }
-            const Vitals *vitals = target.get<Vitals>();
-            if (vitals == nullptr || vitals->health <= 0.0f) {
+            if (!Resources::IsAlive(target)) {
               continue;
             }
             float t = 0.0f;

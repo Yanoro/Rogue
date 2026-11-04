@@ -3,6 +3,7 @@
 #include "EquipmentTypes.h"
 #include "ItemStack.hpp"
 #include "StartingSkills.hpp"
+#include "ResourceRegistry.h"
 #include "StatTypes.h"
 
 #include <map>
@@ -62,6 +63,9 @@ struct NpcTemplate {
   // registry's baseline (see GiveDefaultStats).
   std::vector<StatValue> startingStats;
   std::vector<std::string> equipped;
+  // Resource pools this template grants. Empty falls through to the race's
+  // resources, and then to the default Health pool.
+  std::vector<ResourceSpec> resources;
 };
 
 // The NPC-template catalogue, loaded from data/npcs/<id>.json.

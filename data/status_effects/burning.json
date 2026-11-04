@@ -1,0 +1,14 @@
+{
+  "name": "Burning",
+  "description": "Fire clings to the target, dealing damage over time.",
+  "tags": [
+    "fire",
+    "burning"
+  ],
+  "duration": 5,
+  "tickSeconds": 1,
+  "icon": "status_burning",
+  "tick": [
+    "burning_damage"
+  ]
+}

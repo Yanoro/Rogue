@@ -1,0 +1,8 @@
+{
+  "id": "body_silhouette",
+  "name": "Body Silhouettes",
+  "description": "Transparent body outlines for the inventory paper-doll.",
+  "appliesTo": ["body_silhouette"],
+  "positive": "Front-facing transparent body outline, thin consistent monochrome line, head at top and feet at bottom, symmetrical readable silhouette, no clothing or equipment, generous empty margin, 64x96 canvas.",
+  "negative": "Do not use text, fill colour, shading, clothing, background, or equipment."
+}

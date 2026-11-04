@@ -19,6 +19,8 @@
 #include "ResourceManager.h"
 #include "Rng.hpp"
 #include "SkillRegistry.h"
+#include "SkillTraining.hpp"
+#include "StartingSkills.hpp"
 #include "StatRegistry.h"
 
 // --- Character setup helpers, defined in GameECS.cpp --------------------------
@@ -111,6 +113,17 @@ bool CancelCast(flecs::entity target, const std::string &callout);
 // Stops both movement sources (held direction and clicked path) before a
 // movement-locked cast begins.
 void StopPlayerMovement(flecs::entity actor);
+// Free-function surface entry points for skill/projectile resolution, which has
+// no Game pointer. They resolve the GameRuntimeResource and delegate to Game.
+void AddSurfaceAt(flecs::world world, GamePosition position,
+                  const std::string &surfaceId, flecs::entity source,
+                  float durationOverride = 0.0f, int radius = 0);
+void RemoveSurfaceAt(flecs::world world, GamePosition position,
+                     const std::string &surfaceId = std::string());
+// Environmental damage bypasses armour/fold but still carries the origin source
+// for retaliation, floating text and the normal death system.
+void ApplyEffectDamage(flecs::entity source, flecs::entity target, float amount,
+                       const std::string &label = std::string());
 std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage,
                      const std::string &subjectId, const std::string &label,
                      bool secondPerson, bool interrupts);

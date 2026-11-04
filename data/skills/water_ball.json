@@ -1,0 +1,40 @@
+{
+  "name": "Water Ball",
+  "description": "A heavy sphere of water that bursts on impact, soaking the ground and putting out fire.",
+  "icon": "skill_water_ball",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "baseline": 0,
+  "scale": 9,
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 8,
+    "cooldown": 5.0,
+    "range": 8,
+    "gcd": true,
+    "autoCast": false,
+    "xpPerUse": 8,
+    "projectile": "water_ball",
+    "surface": {
+      "id": "water",
+      "duration": 0,
+      "radius": 0
+    }
+  }
+}

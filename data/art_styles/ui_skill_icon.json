@@ -1,0 +1,8 @@
+{
+  "id": "ui_skill_icon",
+  "name": "Skill Icons",
+  "description": "Compact flat-colour skill icons for the ability bar.",
+  "appliesTo": ["skill_icon"],
+  "positive": "One centred subject at 32x32, flat two-tone colour with a dark outline, readable silhouette, transparent background, consistent warm palette, simple motion or impact cue only when the skill needs it.",
+  "negative": "Do not use text, frames, busy backgrounds, photographic detail, gradients, or more than one focal object."
+}

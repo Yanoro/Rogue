@@ -1,0 +1,6 @@
+{
+  "name": "Douse",
+  "description": "Puts out burning.",
+  "kind": "remove_status",
+  "status": "burning"
+}

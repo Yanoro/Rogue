@@ -139,6 +139,11 @@ struct SpriteDocumentBrief {
   std::string name;
   std::string description;
   bool blocksTile = false;
+  // Prose from the ArtStyleRegistry. Empty means the family has no style or the
+  // asset's override is missing; the request then omits the paragraph entirely.
+  std::string styleId;
+  std::string stylePrompt;
+  std::string styleNegative;
   // What the art around the sprite looks like, as prose. Empty when nothing looked:
   // a standalone request from the window has no building to read, and an empty field
   // must stay a supported state rather than a prompt that says "the surroundings are:

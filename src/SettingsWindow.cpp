@@ -6,6 +6,9 @@
 #include "SpriteDraw.hpp"
 #include "ActorSpritePicker.hpp"
 #include "IconPicker.hpp"
+#include "PortraitResources.hpp"
+#include "IconPaths.hpp"
+#include "ResourceSystem.h"
 #include "SpritePaths.hpp"
 #include "imgui.h"
 #include "imgui_stdlib.h"
@@ -154,6 +157,11 @@ void SettingsWindow::Commit(const SettingsSchema::FieldSpec &field,
       message += (message.empty() ? "" : " ") + applied;
     }
     Report(live, message);
+  }
+  if (ok && field.path == "player.inventorySlots" && value.is_number() &&
+      game->playerEntity.is_alive()) {
+    game->playerEntity.set<InventorySlots>(
+        {std::max(0, value.get<int>())});
   }
 }
 
@@ -321,6 +329,10 @@ void SettingsWindow::DrawTree(int &index) {
 }
 
 void SettingsWindow::DrawFieldsFor(const std::string &sectionKey) {
+  if (sectionKey == "hud.portrait") {
+    DrawPortraitEditor();
+    return;
+  }
   if (sectionKey == "ai.profiles") {
     const SettingsSchema::SectionSpec *section =
         SettingsSchema::FindAISection();
@@ -361,8 +373,152 @@ void SettingsWindow::DrawFieldsFor(const std::string &sectionKey) {
   }
 }
 
+void SettingsWindow::DrawPortraitEditor() {
+  const SettingsSchema::SectionSpec *section =
+      SettingsSchema::FindSection("hud.portrait");
+  if (section != nullptr) {
+    ImGui::TextDisabled("`%s`", section->title.c_str());
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextWrapped("%s", section->doc.c_str());
+    ImGui::PopTextWrapPos();
+  }
+  ImGui::Separator();
+
+  for (const SettingsSchema::FieldSpec &field : SettingsSchema::Fields()) {
+    if (field.section != "hud.portrait" ||
+        field.path == "hud.portrait.resources") {
+      continue;
+    }
+    DrawField(field);
+  }
+
+  const SettingsSchema::FieldSpec *resourcesField =
+      SettingsSchema::FindField("hud.portrait.resources");
+  if (resourcesField == nullptr) return;
+
+  ImGui::SeparatorText("Resources in the portrait");
+  if (!game->playerEntity.is_alive()) {
+    ImGui::TextDisabled("The player entity does not exist yet.");
+    return;
+  }
+  Resources::EnsureInitialized(game->playerEntity);
+  const ResourcePools *pools = game->playerEntity.get<ResourcePools>();
+  if (pools == nullptr) {
+    ImGui::TextDisabled("The player has no resource pools.");
+    return;
+  }
+
+  GameSettings &settings = MutableSettings();
+  std::vector<PortraitResourceEntry> entries = PortraitResources::Build(
+      pools, settings.hud.portrait.resources);
+  bool changed = false;
+
+  ImGui::TextDisabled(
+      "Arrow buttons change order. A hidden row is left out of the player portrait.");
+  for (size_t i = 0; i < entries.size(); ++i) {
+    PortraitResourceEntry &entry = entries[i];
+    ImGui::PushID(entry.id.c_str());
+    ImGui::BeginDisabled(i == 0);
+    if (ImGui::ArrowButton("##up", ImGuiDir_Up)) {
+      std::swap(entries[i], entries[i - 1]);
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(i + 1 >= entries.size());
+    if (ImGui::ArrowButton("##down", ImGuiDir_Down)) {
+      std::swap(entries[i], entries[i + 1]);
+      changed = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Checkbox("Shown", &entry.visible)) changed = true;
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!settings.hud.portrait.showIcons);
+    if (ImGui::Checkbox("Icon", &entry.showIcon)) changed = true;
+    ImGui::EndDisabled();
+
+    const ResourceDef *definition = game->resourceRegistry.Get(entry.id);
+    const std::string label =
+        definition != nullptr ? definition->name : entry.id;
+    if (settings.hud.portrait.showIcons && entry.showIcon &&
+        definition != nullptr && !definition->icon.empty()) {
+      const Texture2D *texture = IconPaths::ResolveIconTexture(
+          game->iconRegistry, game->resourceManager, definition->icon,
+          game->debugLog.get());
+      if (texture != nullptr) {
+        ImGui::SameLine();
+        ImGui::Image(static_cast<ImTextureID>(
+                         static_cast<intptr_t>(texture->id)),
+                     ImVec2(18.0f, 18.0f));
+      }
+    }
+    ImGui::SameLine();
+    ImGui::TextUnformatted(label.c_str());
+    ImGui::PopID();
+  }
+
+  if (changed) {
+    settings.hud.portrait.resources = PortraitResources::ToJson(entries);
+    Commit(*resourcesField, settings.hud.portrait.resources);
+  }
+
+  ImGui::SameLine();
+  if (ImGui::Button("Reset order")) {
+    settings.hud.portrait.resources = nlohmann::json::array();
+    Commit(*resourcesField, settings.hud.portrait.resources);
+  }
+
+  // A compact live preview. It uses the same visibility/order/icon settings the
+  // HUD reads, so a row that looks wrong here is wrong in the portrait too.
+  ImGui::SeparatorText("Preview");
+  for (const PortraitResourceEntry &entry : entries) {
+    if (!entry.visible) continue;
+    const ResourceDef *definition = game->resourceRegistry.Get(entry.id);
+    const std::string label =
+        definition != nullptr ? definition->name : entry.id;
+    if (settings.hud.portrait.showIcons && entry.showIcon &&
+        definition != nullptr && !definition->icon.empty()) {
+      const Texture2D *texture = IconPaths::ResolveIconTexture(
+          game->iconRegistry, game->resourceManager, definition->icon,
+          game->debugLog.get());
+      if (texture != nullptr) {
+        ImGui::Image(static_cast<ImTextureID>(
+                         static_cast<intptr_t>(texture->id)),
+                     ImVec2(18.0f, 18.0f));
+        ImGui::SameLine();
+      }
+    }
+    const float current = Resources::Current(game->playerEntity, entry.id);
+    const float maximum = Resources::Max(game->playerEntity, entry.id);
+    const float ratio = maximum > 0.0f ? std::clamp(current / maximum, 0.0f, 1.0f)
+                                       : 0.0f;
+    std::string barLabel;
+    if (settings.hud.portrait.showNames) barLabel = label;
+    if (settings.hud.portrait.showValues) {
+      char numbers[48];
+      std::snprintf(numbers, sizeof(numbers), "%.0f / %.0f", current, maximum);
+      if (!barLabel.empty()) barLabel += "  ";
+      barLabel += numbers;
+    }
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                          ImVec4(0.55f, 0.18f, 0.16f, 1.0f));
+    ImGui::ProgressBar(ratio, ImVec2(180.0f, settings.hud.portrait.barHeight),
+                       barLabel.empty() ? nullptr : barLabel.c_str());
+    ImGui::PopStyleColor();
+  }
+  if (entries.empty()) {
+    ImGui::TextDisabled("No resources to preview.");
+  }
+}
+
 void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
   GameSettings &settings = MutableSettings();
+  if (field.path == "hud.portrait.resources") {
+    ImGui::TextDisabled(
+        "Edit the resource order and visibility in the Player portrait section.");
+    return;
+  }
   if (!field.persisted) {
     ImGui::PushID(field.path.c_str());
     ImGui::TextDisabled("%s", field.Label().c_str());
@@ -1054,6 +1210,10 @@ void SettingsWindow::RefreshPlayerSettings() {
   std::string message;
   game->ApplyPlayerActorSprite(Settings().player.actorSprite, message);
   game->ApplyPlayerMaxSpeed(Settings().player.maxSpeed, message);
+  if (game->playerEntity.is_alive()) {
+    game->playerEntity.set<InventorySlots>(
+        {std::max(0, Settings().player.inventorySlots)});
+  }
 }
 
 void SettingsWindow::SelectActorSprite(

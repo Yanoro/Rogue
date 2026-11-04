@@ -31,9 +31,18 @@
 #include "RecipeRegistry.h"
 #include "PortraitRegistry.h"
 #include "IconRegistry.h"
+#include "ArtStyleRegistry.h"
+#include "BodySilhouetteRegistry.h"
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
 #include "CombatStrategyRegistry.h"
+#include "SurfaceSystem.h"
+#include "EffectSystem.h"
+#include "StatusEffectRegistry.h"
+#include "EffectRegistry.h"
+#include "ResourceRegistry.h"
+#include "SurfaceRegistry.h"
+#include "SurfaceSpriteRegistry.h"
 #include "ResourceManager.h"
 #include "SkillRegistry.h"
 #include "SpriteGapOffer.hpp"
@@ -194,6 +203,9 @@ public:
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
   bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
+  // Content-editor developer action: spawn one object from `itemId` and place it
+  // in the player's inventory. Does not equip it and respects capacity/stacking.
+  bool GiveItemToPlayer(const std::string &itemId, std::string &message);
 
   bool shouldClose() const;
 
@@ -295,6 +307,15 @@ private:
   RaceRegistry raceRegistry;
   PortraitRegistry portraitRegistry;
   IconRegistry iconRegistry;
+  ArtStyleRegistry artStyleRegistry;
+  BodySilhouetteRegistry bodySilhouetteRegistry;
+  SurfaceSpriteRegistry surfaceSpriteRegistry;
+  SurfaceRegistry surfaceRegistry;
+  StatusEffectRegistry statusEffectRegistry;
+  EffectRegistry effectRegistry;
+  ResourceRegistry resourceRegistry;
+  SurfaceGrid surfaceGrid;
+  std::vector<SurfaceTransition> pendingSurfaceTransitions;
   ProjectileRegistry projectileRegistry;
   SkillshotRegistry skillshotRegistry;
   CombatStrategyRegistry combatStrategyRegistry;
@@ -485,6 +506,8 @@ private:
   flecs::entity aiMenuWindowEntity;
   flecs::entity npcMenuWindowEntity;
   flecs::entity npcSpawnerWindowEntity;
+  flecs::entity surfaceWindowEntity;
+  flecs::entity inventoryWindowEntity;
   flecs::entity taskBoardWindowEntity;
   flecs::entity systemOneWindowEntity;
   // Stage 0 of docs/spatial-memory-design.md: holds the facing-marker checkbox
@@ -551,6 +574,15 @@ private:
   };
 
   PendingNpcSpawn pendingNpcSpawn;
+
+  struct PendingSurfacePaint {
+    bool active = false;
+    bool erase = false;
+    std::string surfaceId;
+    int radius = 0;
+    float duration = 0.0f;
+  };
+  PendingSurfacePaint pendingSurfacePaint;
   std::string npcSpawnerStatus;
 
   // The one gap-to-sprite request in flight (see SpriteGapOffer.hpp). Null when nothing
@@ -629,6 +661,16 @@ private:
   friend class AIMenuWindow;
   friend class NPCMenuWindow;
   friend class NpcSpawnerWindow;
+  friend class SurfaceWindow;
+  friend class InventoryWindow;
+  friend void AddSurfaceAt(flecs::world world, GamePosition position,
+                           const std::string &surfaceId, flecs::entity source,
+                           float durationOverride, int radius);
+  friend void RemoveSurfaceAt(flecs::world world, GamePosition position,
+                              const std::string &surfaceId);
+  friend void ApplyEffectAt(flecs::world world, const EffectOrigin &origin,
+                            const std::string &effectId, flecs::entity target,
+                            GamePosition position);
   friend class TaskBoardWindow;
   friend class SystemOneWindow;
   friend class VisionChatWindow;
@@ -775,6 +817,22 @@ private:
   // Spawns the corpse, transfers held items, and destroys the body. Used by the
   // death system and the debug kill control; the entity must be an NPC.
   void KillEntity(flecs::entity entity);
+
+  // Surface layer and status effects. Public because systems in the GameECS split
+  // and the debug surface window both drive them.
+  void AddSurface(GamePosition position, const std::string &surfaceId,
+                  const EffectOrigin &origin,
+                  float durationOverride = 0.0f, int radius = 0);
+  void RemoveSurface(GamePosition position, const std::string &surfaceId = "");
+  bool CellHasSurfaceTag(GamePosition position, const std::string &tag) const;
+  void ApplyStatus(flecs::entity target, const std::string &statusId,
+                   const EffectOrigin &origin,
+                   float durationOverride = 0.0f);
+  void RemoveStatus(flecs::entity target, const std::string &statusId);
+  bool HasStatusTag(flecs::entity target, const std::string &tag) const;
+  void ProcessSurfaceTransitions();
+  void UpdateSurfaces(float dt);
+  void DrawSurfaces();
   void ECSInitRenderSystems();
 
   // The render systems that draw over the tile and entity layers (name tags and

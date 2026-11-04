@@ -702,11 +702,21 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
                                   ? "the actor"
                                   : brief.kind == SpriteKinds::Kind::Icon
                                         ? "the icon"
-                                        : "the object";
+                                        : brief.kind == SpriteKinds::Kind::Surface
+                                              ? "the surface"
+                                              : "the object";
   out << "Design the sprite document for " << subject << " \"" << brief.name
       << "\".\n";
   if (!brief.description.empty()) {
     out << "Its description: " << brief.description << "\n";
+  }
+  if (!brief.stylePrompt.empty()) {
+    out << "\nArt style (follow this consistently; do not restate it as prose in "
+           "the document):\n"
+        << brief.stylePrompt << "\n";
+  }
+  if (!brief.styleNegative.empty()) {
+    out << "Do not: " << brief.styleNegative << "\n";
   }
   if (brief.kind == SpriteKinds::Kind::Tile) {
     out << "It " << (brief.blocksTile ? "blocks movement." : "can be walked on.")

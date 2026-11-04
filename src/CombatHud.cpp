@@ -4,6 +4,9 @@
 
 #include "Components.h"
 #include "CombatResolver.hpp"
+#include "ResourceSystem.h"
+#include "PortraitResources.hpp"
+#include "IconPaths.hpp"
 #include "Defaults.h"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
@@ -275,6 +278,50 @@ void Game::DrawCombatHud() {
            y <= visibleHeight - 40.0f;
   };
 
+  auto drawResourceRow = [&](flecs::entity entity, const std::string &id,
+                             bool showIcon, bool showName, bool showValue,
+                             float barHeight, bool compact) {
+    const ResourceDef *definition = resourceRegistry.Get(id);
+    if (definition == nullptr || definition->hidden) return;
+    const float maximum = Resources::Max(entity, id);
+    if (maximum <= 0.0f) return;
+    const float current = Resources::Current(entity, id);
+    const float ratio = std::clamp(current / maximum, 0.0f, 1.0f);
+    const std::string labelText = definition->name.empty() ? id : definition->name;
+
+    if (showIcon && !definition->icon.empty()) {
+      if (const Texture2D *icon = IconPaths::ResolveIconTexture(
+              iconRegistry, resourceManager, definition->icon,
+              debugLog.get())) {
+        ImGui::Image(static_cast<ImTextureID>(
+                         static_cast<intptr_t>(icon->id)),
+                     ImVec2(compact ? 14.0f : 18.0f,
+                            compact ? 14.0f : 18.0f));
+        ImGui::SameLine();
+      }
+    }
+
+    std::string barLabel;
+    if (showName) barLabel = labelText;
+    if (showValue) {
+      char numbers[48];
+      std::snprintf(numbers, sizeof(numbers), "%.0f / %.0f", current, maximum);
+      if (!barLabel.empty()) barLabel += "  ";
+      barLabel += numbers;
+    }
+    ImGui::PushStyleColor(ImGuiCol_FrameBg,
+                          ImVec4(0.06f, 0.06f, 0.08f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
+                          definition->shield
+                              ? ImVec4(0.55f, 0.42f, 0.85f, 1.0f)
+                              : (id == "health"
+                                     ? ImVec4(0.68f, 0.14f, 0.14f, 1.0f)
+                                     : ImVec4(0.25f, 0.48f, 0.82f, 1.0f)));
+    ImGui::ProgressBar(ratio, ImVec2(compact ? 130.0f : 150.0f, barHeight),
+                       barLabel.empty() ? nullptr : barLabel.c_str());
+    ImGui::PopStyleColor(2);
+  };
+
   auto drawPortraitPanel = [&](const char *windowId, flecs::entity entity,
                                bool hostile, float &x, float &y,
                                ImVec2 fallback) {
@@ -312,21 +359,33 @@ void Game::DrawCombatHud() {
       ImGui::SameLine();
       ImGui::BeginGroup();
       ImGui::TextUnformatted(EntityName(entity).c_str());
-      if (const Vitals *vitals = entity.get<Vitals>()) {
-        const float ratio = vitals->maxHealth > 0.0f
-                                ? std::clamp(vitals->health / vitals->maxHealth,
-                                             0.0f, 1.0f)
-                                : 0.0f;
-        char label[48];
-        std::snprintf(label, sizeof(label), "%d / %d",
-                      static_cast<int>(std::lround(vitals->health)),
-                      static_cast<int>(std::lround(vitals->maxHealth)));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg,
-                              ImVec4(0.08f, 0.06f, 0.06f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_PlotHistogram,
-                              ImVec4(0.68f, 0.14f, 0.14f, 1.0f));
-        ImGui::ProgressBar(ratio, ImVec2(150.0f, 14.0f), label);
-        ImGui::PopStyleColor(2);
+      Resources::EnsureInitialized(entity);
+      if (entity == playerEntity) {
+        const GameSettings::HudSection::PortraitSection &portrait =
+            Settings().hud.portrait;
+        const ResourcePools *pools = entity.get<ResourcePools>();
+        const std::vector<PortraitResourceEntry> entries =
+            PortraitResources::Build(pools, portrait.resources);
+        for (const PortraitResourceEntry &entry : entries) {
+          if (!entry.visible) continue;
+          drawResourceRow(entity, entry.id, portrait.showIcons && entry.showIcon,
+                          portrait.showNames, portrait.showValues,
+                          portrait.compact ? std::max(6.0f, portrait.barHeight - 2.0f)
+                                           : portrait.barHeight,
+                          portrait.compact);
+        }
+      } else {
+        const std::string vital = Resources::PrimaryVital(entity);
+        if (!vital.empty()) {
+          drawResourceRow(entity, vital, false, false, true, 14.0f, false);
+        }
+        if (const ResourcePools *pools = entity.get<ResourcePools>()) {
+          for (const ResourcePool &pool : pools->pools) {
+            if (pool.id == vital) continue;
+            if (pool.current <= 0.0f && !pool.shield) continue;
+            drawResourceRow(entity, pool.id, false, true, true, 11.0f, true);
+          }
+        }
       }
 
       // A cast is the decision window: the player needs to see their own
@@ -380,7 +439,8 @@ void Game::DrawCombatHud() {
   if (const LockedTarget *lock = playerEntity.get<LockedTarget>()) {
     target = lock->target;
   }
-  if (target.is_alive() && target != playerEntity && target.has<Vitals>()) {
+  if (target.is_alive() && target != playerEntity &&
+      Resources::IsDamageable(target)) {
     drawPortraitPanel("##TargetPortrait", target, true, targetHudX, targetHudY,
                       ImVec2((visibleWidth - 250.0f) * 0.5f, 24.0f));
   }
@@ -454,6 +514,13 @@ void Game::DrawCombatHud() {
                 : 0.0f;
 
         DrawSlotFrame(draw, a, b, style, def != nullptr, hovered, ready);
+
+        // A held skill is visibly held rather than merely off cooldown.
+        if (const HeldSkillState *held = playerEntity.get<HeldSkillState>()) {
+          if (held->active && held->skillId == skillId) {
+            draw->AddRect(a, b, IM_COL32(120, 225, 130, 255), 3.0f, 0, 2.5f);
+          }
+        }
 
         // Keybind. Slots 11 and 12 have none: the handled keys are 1-9 and 0.
         const std::string key =

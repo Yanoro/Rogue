@@ -688,3 +688,35 @@ Two related files are *not* settings:
 - `debug_windows_state.json` is runtime state (which windows are open),
   written by the game. Only its **path** is configurable.
 - `openrouter_debug.log` is AI debug output, not configuration.
+
+## Surface content paths
+
+- `content.surfaceSprites` (default `data/surface_sprites`)
+- `content.surfaces` (default `data/surfaces`)
+- `content.statusEffects` (default `data/status_effects`)
+
+## Resource content paths
+
+- `content.resources` (default `data/resources`)
+
+## Player portrait resources
+
+- `hud.portrait.showIcons`
+- `hud.portrait.showValues`
+- `hud.portrait.showNames`
+- `hud.portrait.compact`
+- `hud.portrait.barHeight`
+- `hud.portrait.resources` (ordered `{id, visible, showIcon}` array)
+
+## Inventory
+
+- `player.inventorySlots` (default 30; every 30 cells form a page; unused tail cells are crossed out)
+
+## Art styles
+
+- `content.artStyles` (default `data/art_styles`): prose profiles for generated sprite families.
+- Icons can set `"style": "<style id>"`; other sprite kinds use their family default.
+
+## Body silhouettes
+
+- `content.bodySilhouettes` (default `data/body_silhouettes`): silhouette icons and normalised slot anchors for the inventory paper-doll.

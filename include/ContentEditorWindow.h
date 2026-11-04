@@ -73,6 +73,8 @@ private:
   // The equipment preview: the item's numbers and, when it has worn art, the layer on a
   // chosen rig. A worn item with no body to wear it is only half an item.
   void DrawItemPreviewPane();
+  // Interactive paper-doll anchor overlay for the body-silhouette kind.
+  void DrawBodySilhouettePreview();
 
   // Sprite variants. The convention file (`<id>.png`) is always the active one, because
   // that is what the world resolves; regenerating first copies it aside as `<id>.vN.png`,
@@ -113,6 +115,7 @@ private:
   // save, so a half-typed document never reaches the world.
   nlohmann::json document;
   bool dirty = false;
+  char anchorSlotBuffer[64] = "";
 
   std::string status;
   bool statusIsError = false;
@@ -122,6 +125,7 @@ private:
   std::string npcSpriteFilter;
   bool showActorSpritesWithoutArt = false;
   std::string skillIconFilter;
+  std::string surfaceSpriteFilter;
 
   // A filter, because both catalogs are the whole world's vocabulary and a list of a few
   // hundred rows is not a list. A plain buffer rather than std::string so ImGui can edit
