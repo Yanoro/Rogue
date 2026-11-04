@@ -31,6 +31,7 @@
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "RigRender.hpp"
+#include "RigGripDraw.hpp"
 #include "TileArtQueue.hpp"
 #include "TimeUtils.hpp"
 #include "RaylibException.hpp"
@@ -2980,8 +2981,14 @@ void DesignerWindow::DrawRigPreview() {
   }
   renderRig.clips = draft.clips;
   std::vector<RigRender::WornLayer> worn;
+  std::vector<const ItemDef *> previewHandItems;
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (item->wornSprite.empty() || rigPreviewWorn.count(item->id) == 0) continue;
+    if (item->slot == "hand") {
+      // The grip path draws these after the body, as the world does.
+      previewHandItems.push_back(item);
+      continue;
+    }
     RigRender::WornLayer layer;
     layer.label = item->id;
     layer.texture =
@@ -3020,8 +3027,40 @@ void DesignerWindow::DrawRigPreview() {
   RigRender::AnimationState animation;
   animation.clip = selectedClip;
   animation.time = rigAnimTime;
+  const ImVec2 previewTopLeft = ImGui::GetCursorScreenPos();
   RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f,
                   selectedClip != nullptr ? &animation : nullptr);
+  if (!previewHandItems.empty() && selectedClip != nullptr) {
+    std::string armSprite;
+    for (const RigPart &part : renderRig.parts) {
+      if (part.id != "arm_right") continue;
+      armSprite = part.sprite;
+      const int frame = RigRender::FrameIndex(*selectedClip, rigAnimTime);
+      for (const RigPartClip &partClip : part.clips) {
+        if (partClip.clip != selectedClip->id || partClip.frames.empty()) continue;
+        const int index = std::min(frame, static_cast<int>(partClip.frames.size()) - 1);
+        armSprite = partClip.frames[static_cast<size_t>(index)];
+      }
+      break;
+    }
+    const Texture2D *armTexture =
+        armSprite.empty() ? nullptr
+                          : RigRender::ResolveRigSprite(armSprite,
+                                                        game->resourceManager);
+    const RigGrip::ArmGrip arm =
+        armTexture != nullptr ? RigGrip::AnalyzeArm(*armTexture)
+                              : RigGrip::ArmGrip{};
+    if (arm.ok) {
+      ImDrawList *draw = ImGui::GetWindowDrawList();
+      for (const ItemDef *item : previewHandItems) {
+        const Texture2D *weapon =
+            RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+        if (weapon == nullptr) continue;
+        RigGrip::DrawWeapon(draw, *weapon, *item, arm, previewTopLeft, 200.0f,
+                            RigGrip::WeaponAngle(arm, *item));
+      }
+    }
+  }
   ImGui::Separator();
 
   // Playback controls. The clip spec itself (frames, fps, poses) is edited below, beside

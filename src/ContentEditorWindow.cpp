@@ -1183,6 +1183,7 @@ void ContentEditorWindow::DrawRigPreviewPane() {
       game->itemRegistry.GetAll().size());
 
   std::vector<RigRender::WornLayer> worn;
+  std::vector<const ItemDef *> previewHandItems;
   int column = 0;
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (item->wornSprite.empty()) continue;
@@ -1196,6 +1197,11 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     }
     if (++column % 3 != 0) ImGui::SameLine();
     if (on) {
+      if (item->slot == "hand") {
+        // Drawn after the body on the grip path so the preview matches the world.
+        previewHandItems.push_back(item);
+        continue;
+      }
       RigRender::WornLayer layer;
       layer.label = item->id;
       layer.texture =
@@ -1207,8 +1213,40 @@ void ContentEditorWindow::DrawRigPreviewPane() {
   }
   ImGui::NewLine();
 
+  const ImVec2 previewTopLeft = ImGui::GetCursorScreenPos();
   RigRender::Draw(*rig, game->resourceManager, worn, 224.0f,
                   rigClip != nullptr ? &animation : nullptr);
+  if (!previewHandItems.empty() && rigClip != nullptr) {
+    std::string armSprite;
+    for (const RigPart &part : rig->parts) {
+      if (part.id != "arm_right") continue;
+      armSprite = part.sprite;
+      const int frame = RigRender::FrameIndex(*rigClip, rigClipTime);
+      for (const RigPartClip &partClip : part.clips) {
+        if (partClip.clip != rigClip->id || partClip.frames.empty()) continue;
+        const int index = std::min(frame, static_cast<int>(partClip.frames.size()) - 1);
+        armSprite = partClip.frames[static_cast<size_t>(index)];
+      }
+      break;
+    }
+    const Texture2D *armTexture =
+        armSprite.empty() ? nullptr
+                          : RigRender::ResolveRigSprite(armSprite,
+                                                        game->resourceManager);
+    const RigGrip::ArmGrip arm =
+        armTexture != nullptr ? RigGrip::AnalyzeArm(*armTexture)
+                              : RigGrip::ArmGrip{};
+    if (arm.ok) {
+      ImDrawList *draw = ImGui::GetWindowDrawList();
+      for (const ItemDef *item : previewHandItems) {
+        const Texture2D *weapon =
+            RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+        if (weapon == nullptr) continue;
+        RigGrip::DrawWeapon(draw, *weapon, *item, arm, previewTopLeft, 224.0f,
+                            RigGrip::WeaponAngle(arm, *item));
+      }
+    }
+  }
   ImGui::SameLine();
   ImGui::BeginGroup();
   ImGui::TextDisabled("Draw order (back to front):");
@@ -1224,6 +1262,10 @@ void ContentEditorWindow::DrawRigPreviewPane() {
   }
   for (const std::string &part : hidden) {
     ImGui::TextDisabled("hidden: %s", part.c_str());
+  }
+  if (!previewHandItems.empty()) {
+    ImGui::TextDisabled(
+        "hand item(s): drawn on the grip path after the body, matching the world");
   }
   if (missingArt > 0) {
     ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f),

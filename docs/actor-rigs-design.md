@@ -176,10 +176,10 @@ Fields: `category`, `description` (the whole-body motion the part requests are c
 movement that names participants animates only those; the rest keep their static sprite,
 which is how "a kick does not animate the hair" is expressed.
 
-`requires` is a gate, not a hint. The Designer refuses to generate an entry whose
-requirements the current rig cannot meet, so a sword swing cannot silently produce an arm
-moving under a stationary blade. The entries are still authored and nameable, which is what
-lets skills reference them before worn equipment animates.
+`requires` is a gate for a capability the rig cannot supply. The grip path now draws the
+equipped hand item, so `sword_swing` and `spell_cast` no longer declare `weapon`/`focus`;
+they generate like any other clip and the weapon follows the arm on the grip path. A
+movement that still declares a requirement is refused until that requirement exists.
 
 ### Clips
 
@@ -213,8 +213,9 @@ art pump as every other layer:
 4. A part can be redrawn alone with **Animate walk** in the layer list.
 
 The preview plays the selected clip at its fps with Play/Pause, and the base sprites show
-through wherever a part has no frames. Playback is the Designer's clock only: nothing in
-the world reads a rig yet, so this is an authoring preview, not a game animation system.
+through wherever a part has no frames. The world now plays the same clips through the rig
+renderer; the preview is the authoring view of them, with the manual outfit standing in
+for live equipment.
 
 Limits, stated rather than hidden:
 
@@ -222,7 +223,9 @@ Limits, stated rather than hidden:
   frame; the compiler cannot measure joint drift. The preview is how you catch it.
 - **No motion validation.** The compiler checks frame count/names and each frame's pixels;
   it cannot tell a walk from a shuffle.
-- **Worn equipment is static.** A helmet or sword keeps its z and does not follow the part
+- **Hand items follow the grip path; other worn equipment is static.** A sword or focus is
+  drawn at the hand read from the arm frame; a helmet or cuirass keeps its z and does not
+  follow the part
   it sits on.
 - **The clip spec and the movement text are separate copies.** Editing a movement changes
   what new clips are created with; existing clips keep their own brief and poses (the
@@ -263,8 +266,9 @@ shirtless while the animation invented leather armour; the model starts from the
 art rather than from the brief. Generated rigs keep their source beside the sprite; a
 hand-authored rig like the villager falls back to `data/rigs/<rig>/<part>.sprite`. There is
 **no automatic palette guard yet** -- a disobedient reply can still drift, and the base
-document costs prompt tokens per part. The movement's `requires` gate still applies:
-sword/cast clips are refused until worn equipment follows the body.
+document costs prompt tokens per part. The movement's `requires` gate still applies to any
+movement that declares one; the shipped weapon/cast movements no longer do, because the
+grip path draws the hand item.
 
 A throwaway **Cutout spike** debug window (Debug Console -> Cutout spike) evaluates the
 segmented-animation route before it becomes production work. The first version was a stress
@@ -357,14 +361,19 @@ NPC template's `equipped` list appear as worn layers.
 
 ## What this slice does not do
 
-- **No anchors.** Worn equipment does not follow an animated part: the sword stays where it
-  is while the arm swings, because the rig has no per-frame attachment. This is the
-  anchors/worn-frames slice, and it is the reason `sword_swing` and `spell_cast` are gated.
+- **Hand items have a grip, not authored hand anchors.** The grip path reads the hand from
+  the arm frame, so a sword or focus follows the arm through a swing or cast. It is a
+  heuristic; other worn equipment (helmets, armour) still has no per-frame attachment. A
+  hand point per arm frame is the upgrade if a clip puts the hand where the heuristic does
+  not expect it.
 - **No directional art.** Rigs are drawn front-facing; there is no mirroring or
   four-direction vocabulary, so a character walking left looks like one walking right.
 - **Skill playback is a one-shot at activation.** `UseSkill` starts the skill's movement
   clip on the actor's rig (after the target/range/cooldown checks pass), and the animation
-  system plays it once and returns to locomotion. It requires the actor to be rigged and
+  system plays it once and returns to locomotion. The weapon skills now name their clips:
+  Attack, Heavy Swing and Power Strike play `sword_swing`; Fireball and Ice Lance play
+  `spell_cast`. The equipped hand item follows on the grip path, so the clip only has to
+  contain the body and arms. It requires the actor to be rigged and
   its rig to have that clip; an actor with no rig, or a rig without the clip, still uses
   the skill -- it simply has no animation for that body. Cast-time skills start the
   animation at activation, not when the effect lands, so the visual is not synced to the
@@ -378,9 +387,11 @@ NPC template's `equipped` list appear as worn layers.
 
 ## Next, in order
 
-1. Anchors or per-frame worn frames, so equipment moves with the part it sits on; then
-   `sword_swing` and `spell_cast` can generate.
+1. Per-frame hand anchors (the grip path's arm-frame heuristic is the current stand-in) or
+   directional weapon art for large swings; `sword_swing` and `spell_cast` already generate
+   and play with the grip path.
 2. Directional rig art, or at least a horizontal flip, and the facing wiring.
-3. The previews read the live equipment lookup instead of a manual outfit.
+3. The previews read the live equipment lookup instead of a manual outfit; the rig previews
+   now draw equipped hand items on the grip path.
 4. Cast-time skills could hold their cast clip until the cast completes, instead of the
    one-shot starting at activation.

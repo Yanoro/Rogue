@@ -11,9 +11,6 @@
     "arm_right",
     "head"
   ],
-  "requires": [
-    "focus"
-  ],
   "poses": [
     "gather: hands drawn together in front of the chest, elbows bent, chin down",
     "charge: hands apart slightly, body coiling, head coming up",
