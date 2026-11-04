@@ -1,0 +1,57 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = #2d451b
+  orc_mid = #456b23
+  orc_light = #618f33
+  wrap_dark = soil.1
+  wrap_mid = soil.2
+  wrap_light = soil.3
+  ink = ink.base
+}
+
+// Bounding box strictly within (7,12)-(10,23)
+// Silhouette outline
+rect (7,12) (10,23) color=ink
+
+// Upper arm / bicep bulge (12-14)
+rect (8,12) (10,14) color=orc_mid
+pixel (8,12) color=orc_light
+pixel (8,13) color=orc_light
+pixel (9,12) color=orc_light
+pixel (10,14) color=orc_dark
+
+// Muscular forearm (15-18)
+rect (7,15) (10,18) color=orc_mid
+pixel (7,15) color=orc_light
+pixel (7,16) color=orc_light
+pixel (8,16) color=orc_light
+pixel (10,17) color=orc_dark
+pixel (10,18) color=orc_dark
+
+// Thick wrist wrap (18-20)
+rect (7,18) (10,20) color=wrap_mid
+line (7,18) (10,18) color=wrap_light
+line (7,20) (10,20) color=wrap_dark
+pixel (8,19) color=wrap_light
+
+// Clenched fist (21-23)
+rect (7,21) (10,23) color=orc_mid
+// Knuckles and highlights
+pixel (7,21) color=orc_light
+pixel (8,21) color=orc_light
+pixel (7,22) color=orc_light
+// Shading under the fist / fingers
+pixel (9,22) color=orc_dark
+pixel (10,22) color=ink
+pixel (8,23) color=orc_dark
+pixel (9,23) color=orc_dark
+
+// Outline / contour cleanup to give organic muscle shape
+pixel (7,12) color=#00000000
+pixel (7,13) color=#00000000
+pixel (7,14) color=#00000000
+pixel (10,23) color=#00000000
+pixel (7,23) color=ink

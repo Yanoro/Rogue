@@ -1,0 +1,38 @@
+sprite 32x32
+kind object
+material sand
+
+// Outline / Base silhouette for arm_left: (7,12) to (10,23)
+rect (7,12) (10,23) color=ink.base
+
+// Short grey sleeve (iron palette)
+rect (7,12) (10,14) color=iron.2
+line (7,12) (9,12) color=iron.3
+line (7,14) (10,14) color=iron.1
+pixel (7,13) color=iron.3
+pixel (10,13) color=iron.1
+
+// Weathered tan forearm
+rect (7,15) (10,19) color=sand.2
+line (7,15) (7,19) color=sand.3
+line (10,15) (10,19) color=sand.1
+pixel (8,17) color=sand.3
+pixel (9,18) color=sand.1
+
+// Clenched fist
+rect (7,20) (10,23) color=sand.2
+// Knuckles and highlight on outer curve
+pixel (7,20) color=sand.3
+pixel (8,20) color=sand.3
+pixel (7,21) color=sand.3
+// Inner shadow & fingers folded in
+pixel (10,20) color=sand.1
+pixel (9,21) color=sand.1
+pixel (10,21) color=sand.0
+line (8,22) (10,22) color=sand.1
+line (7,23) (10,23) color=iron.0
+pixel (7,22) color=sand.2
+
+// Fine edge definition
+pixel (10,15) color=iron.0
+pixel (10,19) color=iron.0

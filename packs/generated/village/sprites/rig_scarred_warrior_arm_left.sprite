@@ -1,0 +1,42 @@
+sprite 32x32
+kind object
+material sand
+
+// Shoulder / Upper Arm silhouette and base skin
+rect (7,12) (10,15) color=ink.base
+rect (8,12) (10,15) color=sand.2
+pixel (8,12) color=sand.3
+pixel (8,13) color=sand.3
+pixel (9,13) color=sand.2
+pixel (10,14) color=sand.1
+pixel (10,15) color=sand.1
+
+// Warrior scar across bicep
+line (8,14) (9,14) color=soil.1
+
+// Leather Bracer (Forearm)
+rect (7,16) (10,20) color=ink.base
+rect (8,16) (10,19) color=wood.1
+rect (8,16) (9,19) color=wood.base
+line (8,16) (8,19) color=wood.3
+// Leather straps and iron stud details
+pixel (9,17) color=iron.3
+pixel (9,19) color=iron.3
+pixel (8,18) color=wood.0
+pixel (10,18) color=wood.0
+
+// Fist (Hand)
+rect (7,21) (10,23) color=ink.base
+rect (8,21) (10,22) color=sand.2
+pixel (8,21) color=sand.3
+pixel (9,21) color=sand.3
+pixel (8,22) color=sand.2
+pixel (9,22) color=sand.1
+pixel (10,22) color=sand.0
+line (8,23) (9,23) color=sand.1
+pixel (10,23) color=ink.base
+
+// Subtle contouring on inner arm
+pixel (7,12) color=sand.1
+pixel (7,16) color=wood.0
+pixel (7,21) color=sand.1

@@ -1,0 +1,95 @@
+sprite 32x32
+kind object
+material wood
+
+frame "f1" {
+  // Left leg extended forward/down, right leg back
+  // Left leg (viewer's left: x=12..16)
+  rect (13,20) (16,24) color=grass.1
+  line (12,21) (12,24) color=grass.0
+  rect (12,25) (16,29) color=wood.base
+  pixel (12,25) color=wood.3
+  pixel (12,26) color=wood.3
+  line (11,30) (16,30) color=wood.1
+  line (11,31) (15,31) color=ink.base
+
+  // Right leg trailing back/raised slightly (viewer's right: x=17..21)
+  rect (17,20) (20,23) color=grass.0
+  rect (17,24) (21,28) color=wood.1
+  line (18,29) (21,29) color=wood.0
+  line (18,30) (22,30) color=ink.base
+
+  // Crotch shadow & boot cuffs
+  pixel (16,20) color=ink.base
+  line (12,25) (16,25) color=wood.3
+  line (17,24) (21,24) color=wood.2
+}
+
+frame "f2" {
+  // Passing: legs together, right leg lifting slightly, body rising
+  // Left supporting leg (straight, bearing weight)
+  rect (13,20) (16,24) color=grass.1
+  line (13,20) (13,24) color=grass.2
+  rect (13,25) (16,29) color=wood.base
+  line (13,25) (13,29) color=wood.3
+  line (12,30) (16,30) color=wood.1
+  line (12,31) (16,31) color=ink.base
+
+  // Right passing leg (lifted at knee/foot)
+  rect (17,20) (20,23) color=grass.0
+  line (18,20) (20,20) color=grass.1
+  rect (17,24) (21,27) color=wood.base
+  line (18,28) (21,28) color=wood.1
+  line (18,29) (22,29) color=ink.base
+
+  // Separation & accents
+  line (16,20) (16,25) color=ink.base
+  line (13,25) (16,25) color=wood.3
+  line (17,24) (21,24) color=wood.3
+}
+
+frame "f3" {
+  // Contact: right leg forward, left leg back, body lowest
+  // Left leg trailing back (viewer's left: x=12..16)
+  rect (13,20) (16,23) color=grass.0
+  rect (13,24) (16,28) color=wood.1
+  line (12,29) (16,29) color=wood.0
+  line (12,30) (15,30) color=ink.base
+
+  // Right leg extended forward (viewer's right: x=17..22)
+  rect (17,20) (21,24) color=grass.1
+  line (21,21) (21,24) color=grass.0
+  rect (17,25) (21,29) color=wood.base
+  pixel (17,25) color=wood.3
+  pixel (17,26) color=wood.3
+  line (17,30) (22,30) color=wood.1
+  line (17,31) (22,31) color=ink.base
+
+  // Crotch shadow & cuff rings
+  pixel (16,20) color=ink.base
+  line (13,24) (16,24) color=wood.2
+  line (17,25) (21,25) color=wood.3
+}
+
+frame "f4" {
+  // Passing: legs together, left leg lifting, body rising
+  // Left passing leg (lifted at knee/foot)
+  rect (13,20) (16,23) color=grass.0
+  line (13,20) (15,20) color=grass.1
+  rect (12,24) (16,27) color=wood.base
+  line (12,28) (15,28) color=wood.1
+  line (12,29) (16,29) color=ink.base
+
+  // Right supporting leg (straight, bearing weight)
+  rect (17,20) (20,24) color=grass.1
+  line (20,20) (20,24) color=grass.2
+  rect (17,25) (20,29) color=wood.base
+  line (20,25) (20,29) color=wood.3
+  line (17,30) (21,30) color=wood.1
+  line (17,31) (21,31) color=ink.base
+
+  // Separation & accents
+  line (16,20) (16,25) color=ink.base
+  line (12,24) (16,24) color=wood.3
+  line (17,25) (20,25) color=wood.3
+}

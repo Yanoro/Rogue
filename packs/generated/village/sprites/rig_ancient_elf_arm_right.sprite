@@ -1,0 +1,25 @@
+sprite 32x32
+kind object
+material grass
+
+// Sleeve: upper arm and forearm spanning (22,12) to (25,19)
+rect (22,12) (25,19) color=ink.base
+rect (23,12) (24,18) color=grass.1
+line (23,12) (23,18) color=grass.2
+pixel (23,12) color=grass.3
+
+// Sleeve cuff line
+line (22,19) (25,19) color=ink.base
+
+// Pale elven hand open for a grip (22,20) to (25,23)
+rect (22,20) (25,23) color=ink.base
+rect (23,20) (24,22) color=sand.3
+pixel (23,20) color=sand.4
+pixel (23,21) color=sand.3
+pixel (24,21) color=sand.2
+pixel (23,22) color=sand.2
+
+// Grip void / fingers curl definition
+pixel (22,21) color=ink.base
+pixel (25,21) color=sand.1
+pixel (24,23) color=ink.base

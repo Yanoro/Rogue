@@ -1,0 +1,132 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = grass.0
+  orc_mid = grass.1
+  orc_light = grass.2
+  leather_dark = soil.0
+  leather = soil.1
+  leather_light = soil.2
+  buckle = iron.3
+  scar = soil.2
+}
+
+frame "f1" {
+  // Torso base silhouette (bracing upright)
+  rect (10,12) (22,20) color=orc_mid
+  rect (11,11) (21,21) color=orc_mid
+
+  // Musculature & shading
+  line (10,12) (10,20) color=orc_dark
+  line (22,12) (22,20) color=orc_dark
+  rect (11,12) (15,15) color=orc_light
+  rect (17,12) (21,15) color=orc_light
+  line (16,12) (16,18) color=orc_dark
+  line (12,16) (20,16) color=orc_dark
+
+  // Leather harness with studded diagonal strap
+  line (11,12) (20,20) color=leather_dark
+  line (12,12) (21,19) color=leather
+  pixel (13,13) color=buckle
+  pixel (16,16) color=buckle
+  pixel (19,19) color=buckle
+
+  // Battle scar
+  pixel (13,14) color=scar
+  pixel (14,15) color=scar
+
+  // Waist belt - tilted up on the right side as knee lifts
+  line (10,21) (16,21) color=leather_dark
+  line (17,20) (22,20) color=leather_dark
+  line (11,22) (16,22) color=leather
+  line (17,21) (21,21) color=leather
+  pixel (16,21) color=buckle
+  pixel (15,21) color=iron.1
+
+  // Outlines
+  line (11,11) (21,11) color=ink.base
+  line (9,12) (9,21) color=ink.base
+  line (23,12) (23,20) color=ink.base
+  line (10,22) (16,22) color=ink.base
+  line (17,21) (22,21) color=ink.base
+}
+
+frame "f2" {
+  // Torso shifted back / tilted (leaning back to counterbalance kick)
+  rect (10,11) (21,19) color=orc_mid
+  rect (11,10) (20,20) color=orc_mid
+
+  // Musculature & shading under tension
+  line (10,11) (10,19) color=orc_dark
+  line (21,11) (21,19) color=orc_dark
+  rect (11,11) (15,14) color=orc_light
+  rect (16,11) (20,14) color=orc_light
+  line (15,11) (15,17) color=orc_dark
+  line (12,15) (19,15) color=orc_dark
+
+  // Leather harness pulled taut
+  line (11,11) (19,19) color=leather_dark
+  line (12,11) (20,18) color=leather
+  pixel (13,12) color=buckle
+  pixel (15,15) color=buckle
+  pixel (18,18) color=buckle
+
+  // Battle scar shifted with chest
+  pixel (13,13) color=scar
+  pixel (14,14) color=scar
+
+  // Angled belt raised higher on right hip
+  line (10,20) (15,21) color=leather_dark
+  line (16,19) (21,19) color=leather_dark
+  line (11,21) (15,22) color=leather
+  line (16,20) (20,20) color=leather
+  pixel (15,20) color=buckle
+  pixel (14,20) color=iron.1
+
+  // Outlines
+  line (11,10) (20,10) color=ink.base
+  line (9,11) (9,20) color=ink.base
+  line (22,11) (22,19) color=ink.base
+  line (10,22) (15,22) color=ink.base
+  line (16,21) (21,20) color=ink.base
+}
+
+frame "f3" {
+  // Torso returning forward over hips
+  rect (10,12) (22,21) color=orc_mid
+  rect (11,11) (21,21) color=orc_mid
+
+  // Shading & contours returning to stance
+  line (10,12) (10,21) color=orc_dark
+  line (22,12) (22,21) color=orc_dark
+  rect (11,12) (15,15) color=orc_light
+  rect (17,12) (21,15) color=orc_light
+  line (16,12) (16,18) color=orc_dark
+  line (12,16) (20,16) color=orc_dark
+
+  // Leather harness settling
+  line (11,12) (20,20) color=leather_dark
+  line (12,12) (21,19) color=leather
+  pixel (13,13) color=buckle
+  pixel (16,16) color=buckle
+  pixel (19,19) color=buckle
+
+  // Battle scar
+  pixel (13,14) color=scar
+  pixel (14,15) color=scar
+
+  // Belt level, slightly heavier recovery drop
+  rect (10,21) (22,22) color=leather_dark
+  line (11,21) (21,21) color=leather
+  pixel (16,21) color=buckle
+  pixel (15,21) color=iron.1
+  pixel (17,21) color=iron.1
+
+  // Outlines
+  line (11,11) (21,11) color=ink.base
+  line (9,12) (9,22) color=ink.base
+  line (23,12) (23,22) color=ink.base
+  line (10,22) (22,22) color=ink.base
+}

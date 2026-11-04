@@ -1,0 +1,111 @@
+sprite 32x32
+kind object
+material grass
+
+frame "f1" {
+  // Shoulder / upper bicep anchor (shifted forward & slightly low due to bob)
+  rect (22,13) (25,16) color=grass.1
+  rect (22,13) (24,15) color=grass.2
+  pixel (23,13) color=grass.3
+  pixel (22,13) color=ink.base
+  pixel (25,13) color=ink.base
+
+  // Forearm flexed forward/inward
+  rect (22,17) (25,19) color=grass.2
+  pixel (22,18) color=grass.3
+  pixel (25,18) color=grass.0
+
+  // Thick wrist wrap
+  rect (22,20) (25,21) color=wood.1
+  line (22,20) (25,20) color=wood.2
+  pixel (22,21) color=wood.0
+  pixel (25,21) color=wood.0
+
+  // Open grip hand
+  rect (22,22) (25,23) color=grass.1
+  pixel (23,22) color=grass.2
+  pixel (24,22) color=grass.2
+  pixel (23,23) color=ink.base
+  pixel (25,22) color=grass.0
+}
+
+frame "f2" {
+  // Shoulder / upper bicep anchor (body rising, neutral arm drop)
+  rect (22,12) (25,15) color=grass.1
+  rect (22,12) (24,14) color=grass.2
+  pixel (23,12) color=grass.3
+  pixel (22,12) color=ink.base
+  pixel (25,12) color=ink.base
+
+  // Muscular forearm straight down
+  rect (22,16) (25,18) color=grass.2
+  line (22,16) (22,18) color=grass.3
+  line (25,16) (25,18) color=grass.0
+
+  // Thick wrist wrap
+  rect (22,19) (25,20) color=wood.1
+  line (22,19) (25,19) color=wood.2
+  pixel (22,20) color=wood.0
+  pixel (25,20) color=wood.0
+
+  // Open grip hand
+  rect (22,21) (25,23) color=grass.1
+  pixel (23,21) color=grass.2
+  pixel (24,22) color=grass.2
+  pixel (23,23) color=ink.base
+  pixel (25,21) color=grass.0
+  pixel (25,22) color=grass.0
+}
+
+frame "f3" {
+  // Shoulder / upper bicep anchor (swung backward, body at low point)
+  rect (22,13) (25,16) color=grass.1
+  rect (23,13) (25,15) color=grass.2
+  pixel (24,13) color=grass.3
+  pixel (22,13) color=ink.base
+  pixel (25,13) color=ink.base
+
+  // Forearm trailing slightly back
+  rect (22,17) (25,19) color=grass.1
+  line (23,17) (24,18) color=grass.2
+  pixel (25,19) color=grass.0
+
+  // Thick wrist wrap
+  rect (22,20) (25,21) color=wood.1
+  line (22,20) (25,20) color=wood.2
+  pixel (25,21) color=wood.0
+
+  // Open grip hand trailing back
+  rect (23,22) (25,24) color=grass.1
+  pixel (24,22) color=grass.2
+  pixel (24,23) color=ink.base
+  pixel (25,23) color=grass.0
+}
+
+frame "f4" {
+  // Shoulder / upper bicep anchor (returning forward, body rising)
+  rect (22,12) (25,15) color=grass.1
+  rect (22,12) (24,14) color=grass.2
+  pixel (23,12) color=grass.3
+  pixel (22,12) color=ink.base
+  pixel (25,12) color=ink.base
+
+  // Forearm passing through center
+  rect (22,16) (25,18) color=grass.2
+  line (22,16) (22,18) color=grass.3
+  line (25,16) (25,18) color=grass.0
+
+  // Thick wrist wrap
+  rect (22,19) (25,20) color=wood.1
+  line (22,19) (25,19) color=wood.2
+  pixel (22,20) color=wood.0
+  pixel (25,20) color=wood.0
+
+  // Open grip hand
+  rect (22,21) (25,23) color=grass.1
+  pixel (23,21) color=grass.2
+  pixel (24,22) color=grass.2
+  pixel (23,23) color=ink.base
+  pixel (25,21) color=grass.0
+  pixel (25,22) color=grass.0
+}

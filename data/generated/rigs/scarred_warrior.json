@@ -1,0 +1,81 @@
+{
+  "description": "A tall, heavily built fighter with wild dark hair and deep facial and chest scars.",
+  "height": 32,
+  "name": "Scarred Warrior",
+  "parts": [
+    {
+      "id": "legs",
+      "sprite": "rig_scarred_warrior_legs",
+      "z": 10,
+      "clips": {
+        "kick": [
+          "rig_scarred_warrior_legs_kick_f1",
+          "rig_scarred_warrior_legs_kick_f2",
+          "rig_scarred_warrior_legs_kick_f3"
+        ]
+      }
+    },
+    {
+      "id": "body",
+      "sprite": "rig_scarred_warrior_body",
+      "z": 20,
+      "clips": {
+        "kick": [
+          "rig_scarred_warrior_body_kick_f1",
+          "rig_scarred_warrior_body_kick_f2",
+          "rig_scarred_warrior_body_kick_f3"
+        ]
+      }
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_scarred_warrior_arm_left",
+      "z": 25,
+      "clips": {
+        "kick": [
+          "rig_scarred_warrior_arm_left_kick_f1",
+          "rig_scarred_warrior_arm_left_kick_f2",
+          "rig_scarred_warrior_arm_left_kick_f3"
+        ]
+      }
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_scarred_warrior_arm_right",
+      "z": 25,
+      "clips": {
+        "kick": [
+          "rig_scarred_warrior_arm_right_kick_f1",
+          "rig_scarred_warrior_arm_right_kick_f2",
+          "rig_scarred_warrior_arm_right_kick_f3"
+        ]
+      }
+    },
+    {
+      "id": "head",
+      "sprite": "rig_scarred_warrior_head",
+      "z": 30
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_scarred_warrior_hair",
+      "z": 40
+    }
+  ],
+  "width": 32,
+  "clips": [
+    {
+      "id": "kick",
+      "movement": "kick",
+      "frames": 3,
+      "fps": 10,
+      "loop": false,
+      "brief": "A short front kick with the right leg: the knee lifts, the lower leg snaps out, then the leg returns to the stance. The arms counterbalance and the body leans back slightly on the extension.",
+      "poses": [
+        "wind up: right knee raised toward the chest, body straight, arms ready",
+        "extend: right leg snapped forward and level, body leaning back, arms out for balance",
+        "recover: right leg lowering, body coming back over the hips"
+      ]
+    }
+  ]
+}

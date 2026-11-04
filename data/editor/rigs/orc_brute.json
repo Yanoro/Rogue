@@ -1,0 +1,515 @@
+{
+  "clips": [
+    {
+      "activeVariant": "original",
+      "brief": "A relaxed humanoid walk: a small body bob, the arms swinging opposite the legs, the head and hair following the bob.",
+      "fps": 8,
+      "frames": 4,
+      "id": "walk",
+      "loop": true,
+      "movement": "walk",
+      "poses": [
+        "contact: left leg forward, right arm forward, body at its lowest",
+        "passing: legs together, right leg lifting, body rising",
+        "contact: right leg forward, left arm forward, body at its lowest",
+        "passing: legs together, left leg lifting, body rising"
+      ],
+      "variants": [
+        {
+          "id": "original",
+          "name": "Original",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_walk_f1",
+              "rig_orc_brute_arm_left_walk_f2",
+              "rig_orc_brute_arm_left_walk_f3",
+              "rig_orc_brute_arm_left_walk_f4"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_walk_f1",
+              "rig_orc_brute_arm_right_walk_f2",
+              "rig_orc_brute_arm_right_walk_f3",
+              "rig_orc_brute_arm_right_walk_f4"
+            ],
+            "body": [
+              "rig_orc_brute_body_walk_f1",
+              "rig_orc_brute_body_walk_f2",
+              "rig_orc_brute_body_walk_f3",
+              "rig_orc_brute_body_walk_f4"
+            ],
+            "hair": [
+              "rig_orc_brute_hair_walk_f1",
+              "rig_orc_brute_hair_walk_f2",
+              "rig_orc_brute_hair_walk_f3",
+              "rig_orc_brute_hair_walk_f4"
+            ],
+            "head": [
+              "rig_orc_brute_head_walk_f1",
+              "rig_orc_brute_head_walk_f2",
+              "rig_orc_brute_head_walk_f3",
+              "rig_orc_brute_head_walk_f4"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_walk_f1",
+              "rig_orc_brute_legs_walk_f2",
+              "rig_orc_brute_legs_walk_f3",
+              "rig_orc_brute_legs_walk_f4"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "activeVariant": "original",
+      "brief": "A short front kick with the right leg: the knee lifts, the lower leg snaps out, then the leg returns to the stance. The arms counterbalance and the body leans back slightly on the extension.",
+      "fps": 10,
+      "frames": 3,
+      "id": "kick",
+      "loop": false,
+      "movement": "kick",
+      "poses": [
+        "wind up: right knee raised toward the chest, body straight, arms ready",
+        "extend: right leg snapped forward and level, body leaning back, arms out for balance",
+        "recover: right leg lowering, body coming back over the hips"
+      ],
+      "variants": [
+        {
+          "id": "original",
+          "name": "Original",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_kick_f1",
+              "rig_orc_brute_arm_left_kick_f2",
+              "rig_orc_brute_arm_left_kick_f3"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_kick_f1",
+              "rig_orc_brute_arm_right_kick_f2",
+              "rig_orc_brute_arm_right_kick_f3"
+            ],
+            "body": [
+              "rig_orc_brute_body_kick_f1",
+              "rig_orc_brute_body_kick_f2",
+              "rig_orc_brute_body_kick_f3"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_kick_f1",
+              "rig_orc_brute_legs_kick_f2",
+              "rig_orc_brute_legs_kick_f3"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "activeVariant": "original",
+      "brief": "A short forward spell cast: the hands gather in front of the chest, then push out as the body leans forward, and settle back while the effect leaves the hands.",
+      "fps": 8,
+      "frames": 4,
+      "id": "spell_cast",
+      "loop": false,
+      "movement": "spell_cast",
+      "poses": [
+        "gather: hands drawn together in front of the chest, elbows bent, chin down",
+        "charge: hands apart slightly, body coiling, head coming up",
+        "release: hands pushed forward, body leaning into the cast",
+        "settle: arms lowering, body straightening, head level"
+      ],
+      "variants": [
+        {
+          "id": "original",
+          "name": "Original",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_spell_cast_f1",
+              "rig_orc_brute_arm_left_spell_cast_f2",
+              "rig_orc_brute_arm_left_spell_cast_f3",
+              "rig_orc_brute_arm_left_spell_cast_f4"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_spell_cast_f1",
+              "rig_orc_brute_arm_right_spell_cast_f2",
+              "rig_orc_brute_arm_right_spell_cast_f3",
+              "rig_orc_brute_arm_right_spell_cast_f4"
+            ],
+            "body": [
+              "rig_orc_brute_body_spell_cast_f1",
+              "rig_orc_brute_body_spell_cast_f2",
+              "rig_orc_brute_body_spell_cast_f3",
+              "rig_orc_brute_body_spell_cast_f4"
+            ],
+            "head": [
+              "rig_orc_brute_head_spell_cast_f1",
+              "rig_orc_brute_head_spell_cast_f2",
+              "rig_orc_brute_head_spell_cast_f3",
+              "rig_orc_brute_head_spell_cast_f4"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "activeVariant": "original",
+      "brief": "A single overhead-to-diagonal sword swing with the right arm: the blade is raised behind the shoulder, driven down across the body, and followed through before the guard returns.",
+      "fps": 10,
+      "frames": 4,
+      "id": "sword_swing",
+      "loop": false,
+      "movement": "sword_swing",
+      "poses": [
+        "ready: right arm raised, blade behind the shoulder, weight on the back foot",
+        "drive: right arm swinging forward, body turning into the cut",
+        "follow through: blade across the body, hips and shoulders rotated",
+        "recover: arm returning to guard, body squared again"
+      ],
+      "variants": [
+        {
+          "id": "original",
+          "name": "Original",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_sword_swing_f1",
+              "rig_orc_brute_arm_left_sword_swing_f2",
+              "rig_orc_brute_arm_left_sword_swing_f3",
+              "rig_orc_brute_arm_left_sword_swing_f4"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_sword_swing_f1",
+              "rig_orc_brute_arm_right_sword_swing_f2",
+              "rig_orc_brute_arm_right_sword_swing_f3",
+              "rig_orc_brute_arm_right_sword_swing_f4"
+            ],
+            "body": [
+              "rig_orc_brute_body_sword_swing_f1",
+              "rig_orc_brute_body_sword_swing_f2",
+              "rig_orc_brute_body_sword_swing_f3",
+              "rig_orc_brute_body_sword_swing_f4"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "activeVariant": "v1",
+      "brief": "A forward run: a longer stride than the walk, a deeper forward lean, arms bent and driving, and both feet off the ground at the flight poses.",
+      "fps": 12,
+      "frames": 6,
+      "id": "run",
+      "loop": true,
+      "movement": "run",
+      "poses": [
+        "contact: left foot lands forward, right arm driving back, body leaning in",
+        "down: weight settles onto the left leg, body at its lowest",
+        "push: left leg drives back, body rising, right knee coming forward",
+        "flight: both feet off the ground, right leg reaching forward",
+        "contact: right foot lands forward, left arm driving back",
+        "down: weight settles onto the right leg before the next push"
+      ],
+      "variants": [
+        {
+          "id": "original",
+          "name": "Original",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_run_f1",
+              "rig_orc_brute_arm_left_run_f2",
+              "rig_orc_brute_arm_left_run_f3",
+              "rig_orc_brute_arm_left_run_f4",
+              "rig_orc_brute_arm_left_run_f5",
+              "rig_orc_brute_arm_left_run_f6"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_run_f1",
+              "rig_orc_brute_arm_right_run_f2",
+              "rig_orc_brute_arm_right_run_f3",
+              "rig_orc_brute_arm_right_run_f4",
+              "rig_orc_brute_arm_right_run_f5",
+              "rig_orc_brute_arm_right_run_f6"
+            ],
+            "body": [
+              "rig_orc_brute_body_run_f1",
+              "rig_orc_brute_body_run_f2",
+              "rig_orc_brute_body_run_f3",
+              "rig_orc_brute_body_run_f4",
+              "rig_orc_brute_body_run_f5",
+              "rig_orc_brute_body_run_f6"
+            ],
+            "hair": [
+              "rig_orc_brute_hair_run_f1",
+              "rig_orc_brute_hair_run_f2",
+              "rig_orc_brute_hair_run_f3",
+              "rig_orc_brute_hair_run_f4",
+              "rig_orc_brute_hair_run_f5",
+              "rig_orc_brute_hair_run_f6"
+            ],
+            "head": [
+              "rig_orc_brute_head_run_f1",
+              "rig_orc_brute_head_run_f2",
+              "rig_orc_brute_head_run_f3",
+              "rig_orc_brute_head_run_f4",
+              "rig_orc_brute_head_run_f5",
+              "rig_orc_brute_head_run_f6"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_run_f1",
+              "rig_orc_brute_legs_run_f2",
+              "rig_orc_brute_legs_run_f3",
+              "rig_orc_brute_legs_run_f4",
+              "rig_orc_brute_legs_run_f5",
+              "rig_orc_brute_legs_run_f6"
+            ]
+          }
+        },
+        {
+          "created": "2026-11-04 19:11",
+          "id": "v1",
+          "name": "Generation 1",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_run_v1_f1",
+              "rig_orc_brute_arm_left_run_v1_f2",
+              "rig_orc_brute_arm_left_run_v1_f3",
+              "rig_orc_brute_arm_left_run_v1_f4",
+              "rig_orc_brute_arm_left_run_v1_f5",
+              "rig_orc_brute_arm_left_run_v1_f6"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_run_v1_f1",
+              "rig_orc_brute_arm_right_run_v1_f2",
+              "rig_orc_brute_arm_right_run_v1_f3",
+              "rig_orc_brute_arm_right_run_v1_f4",
+              "rig_orc_brute_arm_right_run_v1_f5",
+              "rig_orc_brute_arm_right_run_v1_f6"
+            ],
+            "body": [
+              "rig_orc_brute_body_run_v1_f1",
+              "rig_orc_brute_body_run_v1_f2",
+              "rig_orc_brute_body_run_v1_f3",
+              "rig_orc_brute_body_run_v1_f4",
+              "rig_orc_brute_body_run_v1_f5",
+              "rig_orc_brute_body_run_v1_f6"
+            ],
+            "hair": [
+              "rig_orc_brute_hair_run_v1_f1",
+              "rig_orc_brute_hair_run_v1_f2",
+              "rig_orc_brute_hair_run_v1_f3",
+              "rig_orc_brute_hair_run_v1_f4",
+              "rig_orc_brute_hair_run_v1_f5",
+              "rig_orc_brute_hair_run_v1_f6"
+            ],
+            "head": [
+              "rig_orc_brute_head_run_v1_f1",
+              "rig_orc_brute_head_run_v1_f2",
+              "rig_orc_brute_head_run_v1_f3",
+              "rig_orc_brute_head_run_v1_f4",
+              "rig_orc_brute_head_run_v1_f5",
+              "rig_orc_brute_head_run_v1_f6"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_run_v1_f1",
+              "rig_orc_brute_legs_run_v1_f2",
+              "rig_orc_brute_legs_run_v1_f3",
+              "rig_orc_brute_legs_run_v1_f4",
+              "rig_orc_brute_legs_run_v1_f5",
+              "rig_orc_brute_legs_run_v1_f6"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "description": "A hulking, broad-shouldered orc with dull olive skin, protruding tusks, and worn leather harness.",
+  "height": 32,
+  "name": "Orc Brute",
+  "parts": [
+    {
+      "clips": {
+        "kick": [
+          "rig_orc_brute_legs_kick_f1",
+          "rig_orc_brute_legs_kick_f2",
+          "rig_orc_brute_legs_kick_f3"
+        ],
+        "run": [
+          "rig_orc_brute_legs_run_v1_f1",
+          "rig_orc_brute_legs_run_v1_f2",
+          "rig_orc_brute_legs_run_v1_f3",
+          "rig_orc_brute_legs_run_v1_f4",
+          "rig_orc_brute_legs_run_v1_f5",
+          "rig_orc_brute_legs_run_v1_f6"
+        ],
+        "walk": [
+          "rig_orc_brute_legs_walk_f1",
+          "rig_orc_brute_legs_walk_f2",
+          "rig_orc_brute_legs_walk_f3",
+          "rig_orc_brute_legs_walk_f4"
+        ]
+      },
+      "id": "legs",
+      "sprite": "rig_orc_brute_legs",
+      "z": 10
+    },
+    {
+      "clips": {
+        "kick": [
+          "rig_orc_brute_body_kick_f1",
+          "rig_orc_brute_body_kick_f2",
+          "rig_orc_brute_body_kick_f3"
+        ],
+        "run": [
+          "rig_orc_brute_body_run_v1_f1",
+          "rig_orc_brute_body_run_v1_f2",
+          "rig_orc_brute_body_run_v1_f3",
+          "rig_orc_brute_body_run_v1_f4",
+          "rig_orc_brute_body_run_v1_f5",
+          "rig_orc_brute_body_run_v1_f6"
+        ],
+        "spell_cast": [
+          "rig_orc_brute_body_spell_cast_f1",
+          "rig_orc_brute_body_spell_cast_f2",
+          "rig_orc_brute_body_spell_cast_f3",
+          "rig_orc_brute_body_spell_cast_f4"
+        ],
+        "sword_swing": [
+          "rig_orc_brute_body_sword_swing_f1",
+          "rig_orc_brute_body_sword_swing_f2",
+          "rig_orc_brute_body_sword_swing_f3",
+          "rig_orc_brute_body_sword_swing_f4"
+        ],
+        "walk": [
+          "rig_orc_brute_body_walk_f1",
+          "rig_orc_brute_body_walk_f2",
+          "rig_orc_brute_body_walk_f3",
+          "rig_orc_brute_body_walk_f4"
+        ]
+      },
+      "id": "body",
+      "sprite": "rig_orc_brute_body",
+      "z": 20
+    },
+    {
+      "clips": {
+        "kick": [
+          "rig_orc_brute_arm_left_kick_f1",
+          "rig_orc_brute_arm_left_kick_f2",
+          "rig_orc_brute_arm_left_kick_f3"
+        ],
+        "run": [
+          "rig_orc_brute_arm_left_run_v1_f1",
+          "rig_orc_brute_arm_left_run_v1_f2",
+          "rig_orc_brute_arm_left_run_v1_f3",
+          "rig_orc_brute_arm_left_run_v1_f4",
+          "rig_orc_brute_arm_left_run_v1_f5",
+          "rig_orc_brute_arm_left_run_v1_f6"
+        ],
+        "spell_cast": [
+          "rig_orc_brute_arm_left_spell_cast_f1",
+          "rig_orc_brute_arm_left_spell_cast_f2",
+          "rig_orc_brute_arm_left_spell_cast_f3",
+          "rig_orc_brute_arm_left_spell_cast_f4"
+        ],
+        "sword_swing": [
+          "rig_orc_brute_arm_left_sword_swing_f1",
+          "rig_orc_brute_arm_left_sword_swing_f2",
+          "rig_orc_brute_arm_left_sword_swing_f3",
+          "rig_orc_brute_arm_left_sword_swing_f4"
+        ],
+        "walk": [
+          "rig_orc_brute_arm_left_walk_f1",
+          "rig_orc_brute_arm_left_walk_f2",
+          "rig_orc_brute_arm_left_walk_f3",
+          "rig_orc_brute_arm_left_walk_f4"
+        ]
+      },
+      "id": "arm_left",
+      "sprite": "rig_orc_brute_arm_left",
+      "z": 25
+    },
+    {
+      "clips": {
+        "kick": [
+          "rig_orc_brute_arm_right_kick_f1",
+          "rig_orc_brute_arm_right_kick_f2",
+          "rig_orc_brute_arm_right_kick_f3"
+        ],
+        "run": [
+          "rig_orc_brute_arm_right_run_v1_f1",
+          "rig_orc_brute_arm_right_run_v1_f2",
+          "rig_orc_brute_arm_right_run_v1_f3",
+          "rig_orc_brute_arm_right_run_v1_f4",
+          "rig_orc_brute_arm_right_run_v1_f5",
+          "rig_orc_brute_arm_right_run_v1_f6"
+        ],
+        "spell_cast": [
+          "rig_orc_brute_arm_right_spell_cast_f1",
+          "rig_orc_brute_arm_right_spell_cast_f2",
+          "rig_orc_brute_arm_right_spell_cast_f3",
+          "rig_orc_brute_arm_right_spell_cast_f4"
+        ],
+        "sword_swing": [
+          "rig_orc_brute_arm_right_sword_swing_f1",
+          "rig_orc_brute_arm_right_sword_swing_f2",
+          "rig_orc_brute_arm_right_sword_swing_f3",
+          "rig_orc_brute_arm_right_sword_swing_f4"
+        ],
+        "walk": [
+          "rig_orc_brute_arm_right_walk_f1",
+          "rig_orc_brute_arm_right_walk_f2",
+          "rig_orc_brute_arm_right_walk_f3",
+          "rig_orc_brute_arm_right_walk_f4"
+        ]
+      },
+      "id": "arm_right",
+      "sprite": "rig_orc_brute_arm_right",
+      "z": 25
+    },
+    {
+      "clips": {
+        "run": [
+          "rig_orc_brute_head_run_v1_f1",
+          "rig_orc_brute_head_run_v1_f2",
+          "rig_orc_brute_head_run_v1_f3",
+          "rig_orc_brute_head_run_v1_f4",
+          "rig_orc_brute_head_run_v1_f5",
+          "rig_orc_brute_head_run_v1_f6"
+        ],
+        "spell_cast": [
+          "rig_orc_brute_head_spell_cast_f1",
+          "rig_orc_brute_head_spell_cast_f2",
+          "rig_orc_brute_head_spell_cast_f3",
+          "rig_orc_brute_head_spell_cast_f4"
+        ],
+        "walk": [
+          "rig_orc_brute_head_walk_f1",
+          "rig_orc_brute_head_walk_f2",
+          "rig_orc_brute_head_walk_f3",
+          "rig_orc_brute_head_walk_f4"
+        ]
+      },
+      "id": "head",
+      "sprite": "rig_orc_brute_head",
+      "z": 30
+    },
+    {
+      "clips": {
+        "run": [
+          "rig_orc_brute_hair_run_v1_f1",
+          "rig_orc_brute_hair_run_v1_f2",
+          "rig_orc_brute_hair_run_v1_f3",
+          "rig_orc_brute_hair_run_v1_f4",
+          "rig_orc_brute_hair_run_v1_f5",
+          "rig_orc_brute_hair_run_v1_f6"
+        ],
+        "walk": [
+          "rig_orc_brute_hair_walk_f1",
+          "rig_orc_brute_hair_walk_f2",
+          "rig_orc_brute_hair_walk_f3",
+          "rig_orc_brute_hair_walk_f4"
+        ]
+      },
+      "id": "hair",
+      "sprite": "rig_orc_brute_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

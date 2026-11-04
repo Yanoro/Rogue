@@ -1,0 +1,64 @@
+sprite 32x32
+kind object
+material wood
+
+// Staff shaft outline and body passing through grip at (23,18)
+line (24,7) (23,13) color=ink.base
+line (23,13) (24,19) color=ink.base
+line (24,19) (23,28) color=ink.base
+line (23,28) (22,30) color=ink.base
+
+// Inner staff shaft
+line (23,8) (22,13) color=wood.1
+line (22,13) (23,19) color=wood.1
+line (23,19) (22,28) color=wood.1
+pixel (22,29) color=wood.0
+
+// Staff highlight / bark texture
+line (23,9) (23,12) color=wood.2
+pixel (23,17) color=wood.2
+pixel (23,18) color=wood.3
+pixel (22,22) color=wood.2
+pixel (22,25) color=wood.0
+
+// Root knots & gnarled forks
+pixel (24,14) color=wood.0
+pixel (21,21) color=wood.0
+pixel (21,22) color=ink.base
+
+// Cup / cradle branches holding the focus
+// Left prong
+line (22,9) (20,7) color=ink.base
+line (20,7) (20,5) color=ink.base
+pixel (21,7) color=wood.1
+pixel (21,6) color=wood.2
+
+// Right prong
+line (24,9) (26,7) color=ink.base
+line (26,7) (26,5) color=ink.base
+pixel (25,7) color=wood.0
+pixel (25,6) color=wood.1
+
+// Cup base
+pixel (22,8) color=wood.1
+pixel (23,8) color=wood.2
+pixel (24,8) color=wood.0
+pixel (23,9) color=ink.base
+
+// Floating purple gem above the cup (centered around (23, 4))
+// Outline / shadow of gem
+line (23,1) (21,3) color=ink.base
+line (21,3) (23,6) color=ink.base
+line (23,6) (25,3) color=ink.base
+line (25,3) (23,1) color=ink.base
+
+// Gem core (purple tones using custom hexes)
+polygon (23,2) (22,3) (23,5) (24,3) color=#7b3399
+pixel (23,3) color=#b866e6
+pixel (23,4) color=#9a42c4
+pixel (22,3) color=#d699ff
+pixel (24,3) color=#591c73
+
+// Arcane glow / sparkles
+pixel (21,2) color=#d699ff88
+pixel (25,4) color=#7b339988

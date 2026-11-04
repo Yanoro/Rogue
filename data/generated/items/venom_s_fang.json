@@ -1,0 +1,25 @@
+{
+  "damage": 8.0,
+  "durability": 65,
+  "name": "Venom's Fang",
+  "occupies": 1,
+  "slot": "hand",
+  "swingTime": 0.6000000238418579,
+  "tags": [
+    "weapon",
+    "dagger",
+    "poison",
+    "steel"
+  ],
+  "tier": 3.0,
+  "worn": {
+    "brief": "a slender curved blackened dagger with a vibrant green coated cutting edge and dark leather grip",
+    "grip": {
+      "angle": 15.0,
+      "x": 23,
+      "y": 21
+    },
+    "sprite": "worn_venom_s_fang",
+    "z": 110
+  }
+}

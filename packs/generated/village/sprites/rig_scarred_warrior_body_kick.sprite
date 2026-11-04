@@ -1,0 +1,123 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  tunic_base = #4a473b
+  tunic_dark = #323028
+  tunic_light = #5e5a4b
+  leather_dark = #3b2219
+  leather_base = #543124
+  leather_light = #6e402f
+  stud = #9a9994
+  buckle = #b1b0aa
+  ink = #181819
+}
+
+frame "f1" {
+  // Outline & base silhouette
+  rect (10,11) (22,21) color=ink
+  rect (11,12) (21,21) color=tunic_base
+
+  // Tunic undertone & shoulder shading
+  line (11,12) (21,12) color=tunic_light
+  line (11,13) (12,13) color=tunic_light
+  line (20,13) (21,13) color=tunic_dark
+  rect (11,19) (21,21) color=tunic_dark
+
+  // Hardened leather chest harness / breastplate
+  rect (12,13) (20,17) color=leather_base
+  line (12,13) (20,13) color=leather_light
+  line (12,14) (12,17) color=leather_light
+  line (20,14) (20,17) color=leather_dark
+  line (12,17) (20,17) color=leather_dark
+
+  // Diagonal baldric across chest (upper-left to lower-right)
+  line (13,12) (18,17) color=leather_dark
+  line (13,12) (17,16) color=leather_light
+  pixel (15,14) color=stud
+
+  // Broad studded belt
+  rect (11,18) (21,20) color=leather_dark
+  line (11,18) (21,18) color=leather_light
+  rect (15,18) (17,20) color=buckle
+  pixel (16,19) color=ink
+  pixel (13,19) color=stud
+  pixel (19,19) color=stud
+
+  // Battle scar across cuirass
+  pixel (14,15) color=ink
+  pixel (15,16) color=ink
+}
+
+frame "f2" {
+  // Lean back: torso shifted slightly back (left) and tilted up
+  rect (9,10) (21,20) color=ink
+  rect (10,11) (20,20) color=tunic_base
+
+  // Shoulder and collar shift
+  line (10,11) (20,11) color=tunic_light
+  line (10,12) (11,12) color=tunic_light
+  line (19,12) (20,12) color=tunic_dark
+  rect (10,18) (20,20) color=tunic_dark
+
+  // Leather chest piece angled
+  rect (11,12) (19,16) color=leather_base
+  line (11,12) (19,12) color=leather_light
+  line (11,13) (11,16) color=leather_light
+  line (19,13) (19,16) color=leather_dark
+  line (11,16) (19,16) color=leather_dark
+
+  // Stretched baldric
+  line (12,11) (17,16) color=leather_dark
+  line (12,11) (16,15) color=leather_light
+  pixel (14,13) color=stud
+
+  // Angled belt
+  rect (10,17) (20,19) color=leather_dark
+  line (10,17) (20,17) color=leather_light
+  rect (14,17) (16,19) color=buckle
+  pixel (15,18) color=ink
+  pixel (12,18) color=stud
+  pixel (18,18) color=stud
+
+  // Battle scar
+  pixel (13,14) color=ink
+  pixel (14,15) color=ink
+}
+
+frame "f3" {
+  // Recovering stance: torso returns forward and settles
+  rect (10,11) (22,22) color=ink
+  rect (11,12) (21,21) color=tunic_base
+
+  // Torso baseline shading
+  line (11,12) (21,12) color=tunic_light
+  line (11,13) (12,13) color=tunic_light
+  line (20,13) (21,13) color=tunic_dark
+  rect (11,19) (21,21) color=tunic_dark
+
+  // Cuirass
+  rect (12,13) (20,17) color=leather_base
+  line (12,13) (20,13) color=leather_light
+  line (12,14) (12,17) color=leather_light
+  line (20,14) (20,17) color=leather_dark
+  line (12,17) (20,17) color=leather_dark
+
+  // Baldric
+  line (13,12) (18,17) color=leather_dark
+  line (13,12) (17,16) color=leather_light
+  pixel (15,14) color=stud
+
+  // Heavy belt
+  rect (11,18) (21,20) color=leather_dark
+  line (11,18) (21,18) color=leather_light
+  rect (15,18) (17,20) color=buckle
+  pixel (16,19) color=ink
+  pixel (13,19) color=stud
+  pixel (19,19) color=stud
+
+  // Battle scar
+  pixel (14,15) color=ink
+  pixel (15,16) color=ink
+}

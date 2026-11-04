@@ -1,0 +1,77 @@
+sprite 32x32
+kind object
+material iron
+
+frame "f1" {
+  // Wind-up: Right arm cocked slightly back/up at shoulder, fist clenched
+  // Outline
+  rect (22,12) (25,14) color=ink.base
+  rect (23,15) (26,18) color=ink.base
+  rect (23,19) (26,22) color=ink.base
+
+  // Shoulder sleeve (tunic/leather)
+  rect (23,12) (24,14) color=soil.2
+  pixel (23,12) color=soil.3
+  pixel (24,14) color=soil.1
+
+  // Forearm & bracer
+  rect (24,15) (25,18) color=iron.2
+  pixel (24,15) color=iron.3
+  pixel (24,17) color=iron.4
+  pixel (25,18) color=iron.1
+
+  // Hand / fist
+  rect (24,19) (25,21) color=sand.2
+  pixel (24,20) color=sand.3
+  pixel (25,21) color=sand.1
+  pixel (24,22) color=ink.base
+}
+
+frame "f2" {
+  // Extend: Right arm drawn back/flared slightly out for counterbalance
+  // Outline
+  rect (23,11) (26,13) color=ink.base
+  rect (24,14) (27,17) color=ink.base
+  rect (25,18) (27,21) color=ink.base
+
+  // Shoulder sleeve
+  rect (24,11) (25,13) color=soil.2
+  pixel (24,11) color=soil.3
+  pixel (25,13) color=soil.1
+
+  // Forearm & bracer drawn back
+  rect (25,14) (26,17) color=iron.2
+  pixel (25,14) color=iron.3
+  pixel (25,16) color=iron.4
+  pixel (26,17) color=iron.1
+
+  // Clenched fist
+  rect (25,18) (26,20) color=sand.2
+  pixel (25,19) color=sand.3
+  pixel (26,20) color=sand.1
+  pixel (26,21) color=ink.base
+}
+
+frame "f3" {
+  // Recover: Arm dropping back down toward ready stance along body
+  // Outline
+  rect (22,13) (25,15) color=ink.base
+  rect (23,16) (25,19) color=ink.base
+  rect (22,20) (25,23) color=ink.base
+
+  // Shoulder sleeve
+  rect (23,13) (24,15) color=soil.2
+  pixel (23,13) color=soil.3
+  pixel (24,15) color=soil.1
+
+  // Forearm & bracer
+  rect (23,16) (24,19) color=iron.2
+  pixel (23,16) color=iron.3
+  pixel (24,17) color=iron.4
+  pixel (24,19) color=iron.1
+
+  // Hand / fist
+  rect (23,20) (24,22) color=sand.2
+  pixel (23,21) color=sand.3
+  pixel (24,22) color=sand.1
+}

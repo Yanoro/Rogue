@@ -2,55 +2,48 @@ sprite 32x32
 kind object
 material iron
 
-// Helmet dome outer shape & base fill
-rect (11,3) (21,8) color=iron.2
-rect (12,2) (20,3) color=iron.3
-rect (13,1) (19,1) color=iron.2
+rect (10,4) (21,5) color=ink.base
+rect (8,6) (23,7) color=ink.base
+rect (6,8) (25,10) color=ink.base
+rect (5,11) (26,20) color=ink.base
+rect (6,21) (13,26) color=ink.base
+rect (18,21) (25,26) color=ink.base
+rect (14,21) (17,25) color=ink.base
 
-// Ink outline along the top and outer edges
-line (13,0) (19,0) color=ink.base
-line (11,1) (12,1) color=ink.base
-line (20,1) (21,1) color=ink.base
-line (10,2) (10,9) color=ink.base
-line (22,2) (22,9) color=ink.base
+rect (11,5) (20,5) color=iron.2
+rect (9,6) (22,7) color=iron.2
+rect (7,8) (24,10) color=iron.2
+rect (6,11) (25,20) color=iron.2
+rect (7,21) (12,25) color=iron.1
+rect (19,21) (24,25) color=iron.1
+rect (15,21) (16,24) color=iron.2
 
-// Upper dome lighting & ridge
-rect (13,2) (16,3) color=iron.4
-pixel (14,1) color=iron.4
-pixel (15,1) color=iron.4
-line (16,1) (16,8) color=iron.3
-
-// Right-side shading of dome
-rect (19,3) (21,7) color=iron.1
-line (18,4) (18,7) color=iron.2
-
-// Brow band (rim reinforcement)
-rect (10,7) (22,9) color=iron.1
-line (10,7) (22,7) color=iron.3
-line (10,9) (22,9) color=ink.base
-
-// Rivets on brow band
+rect (11,6) (16,8) color=iron.3
+rect (9,9) (15,13) color=iron.3
+rect (10,7) (13,9) color=iron.4
 pixel (11,8) color=iron.4
-pixel (14,8) color=iron.4
-pixel (18,8) color=iron.4
-pixel (21,8) color=iron.3
+pixel (12,7) color=iron.4
 
-// Nasal / Nose guard extending down over the face
-rect (15,9) (17,13) color=iron.2
-line (15,9) (15,13) color=iron.3
-line (17,9) (17,13) color=iron.0
-pixel (16,14) color=ink.base
-pixel (15,14) color=iron.1
-line (14,9) (14,13) color=ink.base
-line (18,9) (18,13) color=ink.base
+rect (17,11) (24,19) color=iron.1
+rect (21,12) (24,18) color=iron.0
+rect (21,21) (23,24) color=iron.0
 
-// Cheeks / lateral edge guards
-rect (10,10) (11,11) color=iron.1
-rect (21,10) (22,11) color=iron.0
-line (10,12) (11,12) color=ink.base
-line (21,12) (22,12) color=ink.base
-line (9,7) (9,11) color=ink.base
-line (23,7) (23,11) color=ink.base
+line (15,5) (15,24) color=iron.3
+line (16,5) (16,24) color=iron.1
+line (14,5) (14,20) color=iron.4
+line (17,5) (17,20) color=iron.0
 
-// Metal texture and wear
-scatter color=iron.1,iron.3 density=0.18 seed=42 cluster=1 inside
+rect (6,15) (25,16) color=iron.3
+line (6,17) (25,17) color=iron.0
+
+rect (8,18) (13,19) color=ink.base
+rect (18,18) (23,19) color=ink.base
+
+pixel (10,10) color=iron.0
+pixel (11,10) color=iron.4
+pixel (22,14) color=iron.0
+pixel (20,9) color=iron.0
+pixel (8,23) color=iron.3
+pixel (23,24) color=ink.base
+
+scatter color=iron.0,iron.3 density=0.08 seed=42 cluster=1 inside
