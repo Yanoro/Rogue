@@ -757,8 +757,11 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
       const Vector2 hand = {fit.x + arm.handX * scale, fit.y + arm.handY * scale};
       const Vector2 origin = {definition->wornGripX * scale,
                               definition->wornGripY * scale};
+      // raylib's DrawTexturePro treats `dest` as the rotation origin's position, not the
+      // top-left: it computes the top-left as dest - origin. Passing hand - origin here
+      // subtracted the grip twice and threw the weapon up-left of the character.
       const Rectangle destination = {
-          hand.x - origin.x, hand.y - origin.y,
+          hand.x, hand.y,
           static_cast<float>(weapon->width) * scale,
           static_cast<float>(weapon->height) * scale};
       DrawTexturePro(*weapon, source, destination, origin,
