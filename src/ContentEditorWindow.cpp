@@ -1215,8 +1215,8 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     rigClipPlaying = true;
   }
 
-  // A full outfit on a first look: the point of the pane is to show what layering does,
-  // and an empty one would show only that the parts compose.
+  // A bare body on first look: equipment is opt-in through the checkboxes, so the pane
+  // shows the rig itself before any layering.
   if (rigPreviewEntry != entryId) {
     rigPreviewEntry = entryId;
     rigPreviewWorn.clear();
@@ -1224,9 +1224,9 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     rigClipTime = 0.0f;
     rigClipPlaying = true;
     rigAnimStatus.clear();
-    for (const ItemDef *item : game->itemRegistry.GetAll()) {
-      if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
-    }
+    // Start bare: the preview is the body first. Every worn layer is a checkbox below, so
+    // showing the whole catalog at once made "what does this rig look like" a pile of gear
+    // rather than a body.
   }
 
   // The selected clip, its clock, and the animation state the renderer reads.

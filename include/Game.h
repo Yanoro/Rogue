@@ -475,10 +475,6 @@ private:
 
   // Debug window entities in ECS
   flecs::entity debugConsoleWindowEntity;
-  // Throwaway cutout-animation evaluation window (CutoutSpikeWindow.h).
-  flecs::entity cutoutSpikeWindowEntity;
-  // Throwaway hybrid (body frames + worn-item frames) evaluation window.
-  flecs::entity hybridSpikeWindowEntity;
   flecs::entity tileInfoWindowEntity;
   flecs::entity astarWindowEntity;
   flecs::entity entityOverviewWindowEntity;
@@ -601,8 +597,6 @@ private:
   std::map<std::string, RigGrip::ArmGrip> rigGripCache;
 
   friend class DebugConsoleWindow;
-  friend class CutoutSpikeWindow;
-  friend class HybridSpikeWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
   friend class EntityOverviewWindow;

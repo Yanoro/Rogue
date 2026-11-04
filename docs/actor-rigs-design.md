@@ -297,45 +297,8 @@ document costs prompt tokens per part. The movement's `requires` gate still appl
 movement that declares one; the shipped weapon/cast movements no longer do, because the
 grip path draws the hand item.
 
-A throwaway **Cutout spike** debug window (Debug Console -> Cutout spike) evaluates the
-segmented-animation route before it becomes production work. The first version was a stress
-test (orc_brute's 4x12 bar arm, two straight cuts, no hand, 215 degrees of shoulder travel,
-one freely rotated sword) and it looked bad for exactly those reasons. The fair version
-uses a small synthetic **three-segment test arm** (sleeve, forearm, hand with a thumb,
-overlapping joints), the iron sword attached to the **hand** at a grip offset, the hand
-drawn over the grip, six **eased** poses over about 85 degrees of shoulder travel, joint
-caps, Play/Pause/speed/time, and a sword-angle-step control (smooth / 15 / 30 / 45 / 90
-degrees) that approximates drawing the sword at a few pre-rendered angles.
-
-It still is not a data model: the segments, pivots and poses are hardcoded for the test
-asset. It answers whether articulated pixel art with proper segment shapes reads
-acceptably, whether the hand makes the grip believable, and whether the sword needs
-pre-drawn angles. If the arm reads well but the sword only reads at coarse steps, the
-equipment needs its own directional art or per-clip worn frames before cutout can ship.
-
-The **Hybrid spike** (Debug Console -> Hybrid spike) is the cheaper experiment for that
-alternative: the body stays frame-swapped, while a hand item gets a generated frame set for
-the selected clip (`<worn sprite>_<clip>_f1..fN`) drawn at the item's z. No anchors, no
-runtime rotation. The request includes the right arm's animation document as a reference,
-so the model can put the weapon in the hand; the window composites body and weapon frames
-and plays the clip.
-
-It also compares that against the **grip path**, which is the route that avoids generating
-per weapon: the static weapon sprite is placed at the hand and angle read from the **arm
-frame's pixels** (bottom = hand, shoulder-to-hand = arm direction), with a grip-offset
-slider and angle snapping to stand in for pre-drawn angles. The window has three modes --
-static, generated frames, grip path -- and an item picker for hand items with worn art
-(the iron sword and the blood-tempered katana are the test pair, deliberately different
-blades). It now reads the item's `worn.grip` and rest angle rather than hardcoded points.
-Everything else is throwaway: the generated frames are test outputs and nothing in the item
-model knows about them.
-
-What to compare: the frame sets are the best look but cost one request per item per clip
-(per rig, because they follow that rig's arm frames); the grip path costs no generation per
-weapon but rotates one image, so check the katana's curve and the sword's straight blade at
-the same angles. If the frames read clearly better than the grip path, spend generation on
-the weapons that matter and use the grip path for the rest; if the grip path is close, the
-worn-frame model can wait.
+The segmented-cutout and per-weapon-frame experiments were throwaway debug windows and
+have been removed; the grip path below is the production result.
 
 ### Grips
 
@@ -353,8 +316,7 @@ A hand item carries `worn.grip` in its definition:
   worn-art prompt tells the painter to draw the handle at that point. The Content Editor's
   item pane has X / Y / rest-angle controls with a **live arm-frame preview** and a **Save
   grip** button, so a hold that is slightly off is corrected at runtime and written to
-  the item override. The hybrid spike reads the same item grip, so tuning and the
-  experiment cannot disagree.
+  the item override.
 
 The grip path reads the hand (bottom of the arm frame) and the arm direction
 (shoulder-to-hand) from the **arm animation frame** and places the static worn art there.

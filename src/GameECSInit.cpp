@@ -2063,8 +2063,6 @@ void Game::ECSInit() {
 
   // Initialize debug window entities
   debugConsoleWindowEntity = ecs.entity("Debug Console Window");
-  cutoutSpikeWindowEntity = ecs.entity("Cutout Spike Window");
-  hybridSpikeWindowEntity = ecs.entity("Hybrid Spike Window");
   tileInfoWindowEntity = ecs.entity("Tile Info Window");
   astarWindowEntity = ecs.entity("A* Window");
   entityOverviewWindowEntity = ecs.entity("Entity Overview Window");
