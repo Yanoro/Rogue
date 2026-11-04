@@ -192,10 +192,37 @@ movement later does not rewrite existing clips -- a new clip picks up the new te
 regenerating an existing one uses the clip's own copied intent. A part with no entry for a clip keeps its static `sprite`, which is also the
 idle pose -- there is no separate idle animation yet.
 
-Frame names are deterministic: `<part sprite>_<clip>_f1..fN`. The rig JSON declares them,
-and the animation document (requested under `<part sprite>_<clip>`) is written to those
-names, so the rig can point at frames before any art exists. The base part sprite is never
+Frame names are deterministic: `<part sprite>_<clip>_<generation>_f1..fN` for a stored
+generation (`v1`, `v2`, ...), and `<part sprite>_<clip>_f1..fN` for the original generation
+that existed before generations were kept. The rig JSON declares them, and the animation
+document (requested under `<part sprite>_<clip>_<generation>`) is written to those names,
+so the rig can point at frames before any art exists. The base part sprite is never
 overwritten.
+
+### Stored generations
+
+A clip keeps every generation it has produced. The rig JSON stores a `variants` array on
+the clip; each entry has an `id`, a display `name` (Original, Generation 1, ...), a
+`created` timestamp and a `parts` map from part id to that generation's frame list. The
+active generation is `activeVariant`; the per-part `clips.<clip>` lists mirror it, so the
+renderer, the previews and skill playback read one active set and need no new lookup.
+
+- **Generating creates a generation, it does not overwrite.** `Generate <clip> for all
+  layers` allocates the next `vN`, declares its per-part frames, appends the variant,
+  makes it active and saves. The previous generation's PNGs and `.sprite` documents stay
+  on disk.
+- **Selecting is a copy, not a regeneration.** The Content Editor and Designer clip
+  sections have a generation selector. Choosing one copies its frame lists into the
+  parts and saves (Content Editor) or updates the draft (Designer); no art requests are
+  queued.
+- **The original generation** is materialized by the rig loader from the frames that
+  existed before variants, so existing rigs gain an `Original` entry and can still be
+  selected.
+- **Animating one layer alone** (Designer layer list) forks a new generation that inherits
+  the other layers from the active one, then regenerates just that layer. The old
+  generation is untouched.
+- Skills and the world use the active generation. Switching a clip's generation changes
+  what plays in game; it does not delete anything.
 
 Generation is one request per part for the whole clip, queued behind the same one-at-a-time
 art pump as every other layer:

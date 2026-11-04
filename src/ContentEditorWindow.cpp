@@ -1052,6 +1052,18 @@ bool ContentEditorWindow::ApplyRigClip(const ActorRig &rig, const RigClip &clip,
   if (!clip.movement.empty()) entry["movement"] = clip.movement;
   if (!clip.brief.empty()) entry["brief"] = clip.brief;
   if (!clip.poses.empty()) entry["poses"] = clip.poses;
+  if (!clip.variants.empty()) {
+    nlohmann::json variants = nlohmann::json::array();
+    for (const RigClipVariant &variant : clip.variants) {
+      nlohmann::json variantEntry = {{"id", variant.id},
+                                     {"name", variant.name},
+                                     {"parts", variant.parts}};
+      if (!variant.created.empty()) variantEntry["created"] = variant.created;
+      variants.push_back(std::move(variantEntry));
+    }
+    entry["variants"] = std::move(variants);
+    if (!clip.activeVariant.empty()) entry["activeVariant"] = clip.activeVariant;
+  }
   bool replaced = false;
   for (auto &existing : clips) {
     if (existing.value("id", std::string()) == clip.id) {
@@ -1064,6 +1076,13 @@ bool ContentEditorWindow::ApplyRigClip(const ActorRig &rig, const RigClip &clip,
 
   const MovementDef *movement =
       clip.movement.empty() ? nullptr : game->movementRegistry.Get(clip.movement);
+  const RigClipVariant *activeVariant = nullptr;
+  for (const RigClipVariant &variant : clip.variants) {
+    if (variant.id == clip.activeVariant) activeVariant = &variant;
+  }
+  if (activeVariant == nullptr && !clip.variants.empty()) {
+    activeVariant = &clip.variants.front();
+  }
   for (auto &part : document["parts"]) {
     const std::string partId = part.value("id", std::string());
     const bool participates =
@@ -1072,7 +1091,16 @@ bool ContentEditorWindow::ApplyRigClip(const ActorRig &rig, const RigClip &clip,
             movement->parts.end();
     nlohmann::json partClips =
         part.contains("clips") ? part["clips"] : nlohmann::json::object();
-    if (participates) {
+    if (participates && activeVariant != nullptr) {
+      const auto frames = activeVariant->parts.find(partId);
+      if (frames != activeVariant->parts.end() && !frames->second.empty()) {
+        partClips[clip.id] = frames->second;
+      } else {
+        // A stored generation only contains the parts that generation drew. The rest
+        // keep their static sprite in this generation.
+        partClips.erase(clip.id);
+      }
+    } else if (participates) {
       nlohmann::json frames = nlohmann::json::array();
       for (int frame = 1; frame <= clip.frames; ++frame) {
         frames.push_back(
@@ -1317,6 +1345,46 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     ImGui::TextDisabled("No clips yet -- add one from a movement template.");
   }
 
+  if (rigClip != nullptr && !rigClip->variants.empty()) {
+    int activeIndex = 0;
+    std::vector<std::string> labels;
+    std::vector<const char *> labelPointers;
+    for (size_t i = 0; i < rigClip->variants.size(); ++i) {
+      std::string label = rigClip->variants[i].name.empty()
+                              ? rigClip->variants[i].id
+                              : rigClip->variants[i].name;
+      if (!rigClip->variants[i].created.empty()) {
+        label += "  (" + rigClip->variants[i].created + ")";
+      }
+      labels.push_back(std::move(label));
+      if (rigClip->variants[i].id == rigClip->activeVariant) {
+        activeIndex = static_cast<int>(i);
+      }
+    }
+    for (const std::string &label : labels) labelPointers.push_back(label.c_str());
+    ImGui::SetNextItemWidth(260.0f);
+    if (ImGui::Combo("##ce_rig_variant", &activeIndex, labelPointers.data(),
+                     static_cast<int>(labelPointers.size()))) {
+      ActorRig updatedRig = *rig;
+      RigClip updatedClip = *rigClip;
+      updatedClip.activeVariant = rigClip->variants[static_cast<size_t>(activeIndex)].id;
+      std::string error;
+      if (ApplyRigClip(updatedRig, updatedClip, &error)) {
+        Save();
+        rigAnimStatus = "Showing " + rigClip->variants[static_cast<size_t>(activeIndex)].name +
+                        "; saved the selection.";
+        rigAnimStatusIsError = false;
+      } else {
+        rigAnimStatus = error;
+        rigAnimStatusIsError = true;
+      }
+      // ApplyRigClip replaced the registry entry; the pointers above are stale.
+      return;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("stored generation; older ones stay on disk");
+  }
+
   // A clip is declared before its art exists: the frame sprites are deterministic, so the
   // document can point at them and the generation fills them in.
   if (game->movementRegistry.Count() > 0) {
@@ -1414,20 +1482,54 @@ void ContentEditorWindow::DrawRigPreviewPane() {
     const bool blocked = movement != nullptr && !movement->needs.empty();
     ImGui::BeginDisabled(blocked);
     if (ImGui::Button(("Generate " + rigClip->id + " for all layers").c_str())) {
-      std::string error;
-      if (game->designerWindow == nullptr) {
-        error = "The Designer window is not available.";
+      ActorRig updatedRig = *rig;
+      RigClip updatedClip = *rigClip;
+      RigClipVariant variant;
+      variant.id = NextClipVariantId(updatedClip);
+      int generation = 1;
+      for (const RigClipVariant &stored : updatedClip.variants) {
+        if (stored.id != "original") ++generation;
       }
-      if (error.empty() &&
-          game->designerWindow->QueueRigAnimation(*rig, *rigClip, &error)) {
-        rigAnimStatus = "Queued " + rigClip->id +
-                        " art; watch the Designer's transcript. The frames appear "
-                        "here as they land.";
+      variant.name = "Generation " + std::to_string(generation);
+      variant.created = ClipVariantCreated();
+      const std::string variantId = variant.id;
+      const std::string variantName = variant.name;
+      for (const RigPart &part : updatedRig.parts) {
+        if (movement != nullptr && !movement->parts.empty() &&
+            std::find(movement->parts.begin(), movement->parts.end(), part.id) ==
+                movement->parts.end()) {
+          continue;
+        }
+        std::vector<std::string> frames;
+        for (int frame = 1; frame <= updatedClip.frames; ++frame) {
+          frames.push_back(AnimationFrameSprite(part.sprite, updatedClip.id, frame,
+                                                variantId));
+        }
+        variant.parts[part.id] = std::move(frames);
+      }
+      updatedClip.variants.push_back(std::move(variant));
+      updatedClip.activeVariant = variantId;
+      std::string error;
+      bool queued = ApplyRigClip(updatedRig, updatedClip, &error);
+      if (queued) Save();
+      if (queued && game->designerWindow == nullptr) {
+        error = "The Designer window is not available.";
+        queued = false;
+      }
+      if (queued) {
+        queued = game->designerWindow->QueueRigAnimation(updatedRig, updatedClip,
+                                                         variantId, &error);
+      }
+      if (queued) {
+        rigAnimStatus = "Queued " + variantName + " of " + updatedClip.id +
+                        "; the previous generation stays selectable.";
         rigAnimStatusIsError = false;
       } else {
         rigAnimStatus = error;
         rigAnimStatusIsError = true;
       }
+      // ApplyRigClip replaced the registry entry; the pointers below are stale.
+      return;
     }
     ImGui::EndDisabled();
     if (blocked) {

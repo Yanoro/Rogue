@@ -170,7 +170,7 @@ public:
   // pumps the replies. Returns false, with a reason, when the movement's requirements are
   // not met or there is nothing to animate.
   bool QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
-                         std::string *error);
+                         const std::string &variantId, std::string *error);
 
   // Throwaway hybrid-spike helper: asks for a worn item's frames for one clip, with the
   // right arm's animation document as the alignment reference. The frames land as
@@ -413,9 +413,13 @@ private:
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).
-  void QueueRigClipArt(const RigClip &clip);
+  void QueueRigClipArt(RigClip &clip);
   // Queues one layer's frames for one clip; also declares them in the draft.
-  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip);
+  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip,
+                           const std::string &variantId);
+  // One layer regenerated on its own: a new stored generation that inherits the other
+  // layers from the active one, so the previous generation is untouched.
+  void QueueRigPartClipArt(RigDesigner::Part &part, RigClip &clip);
   // Copies the selected clip's brief and poses into the edit buffers.
   void SyncRigClipBuffers(const RigClip &clip);
   void QueueWornArt(const std::string &itemId);
