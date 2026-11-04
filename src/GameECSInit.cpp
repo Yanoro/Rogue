@@ -458,6 +458,31 @@ void Game::ECSInit() {
   // hand-authored body it was written over.
   rigRegistry.Load(settings.content.generatedRigs);
 
+  // Movement templates load after the rigs so the cross-check below can see both. A rig
+  // clip and a skill both name a movement by id; a typo would otherwise be a silent
+  // "nothing plays" the first time someone asks for a kick.
+  movementRegistry.SetDebugLog(debugLog.get());
+  movementRegistry.Load(settings.content.movements);
+  movementRegistry.Load(settings.content.generatedMovements);
+  if (debugLog) {
+    for (const SkillDef* skill : skillRegistry.GetAll()) {
+      if (!skill->animation.empty() &&
+          movementRegistry.Get(skill->animation) == nullptr) {
+        debugLog->LogWarning("Skills: '" + skill->id + "' names unknown movement '" +
+                             skill->animation + "'");
+      }
+    }
+    for (const ActorRig* rig : rigRegistry.GetAll()) {
+      for (const RigClip& clip : rig->clips) {
+        if (!clip.movement.empty() &&
+            movementRegistry.Get(clip.movement) == nullptr) {
+          debugLog->LogWarning("Rigs: '" + rig->id + "' clip '" + clip.id +
+                               "' names unknown movement '" + clip.movement + "'");
+        }
+      }
+    }
+  }
+
   // Named NPC definitions and the brains that drive them, loaded before the map so
   // a map entry can name one at spawn. Brains are loaded first: a template may
   // reference one.

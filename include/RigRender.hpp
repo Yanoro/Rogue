@@ -39,6 +39,44 @@ inline const Texture2D *ResolveRigSprite(const std::string &sprite,
                               std::string(), resources, nullptr);
 }
 
+// Which frame of which clip to draw. A null `clip` draws every part's static sprite,
+// which is what every preview outside the Designer wants.
+struct AnimationState {
+  const RigClip *clip = nullptr;
+  // Seconds since the clip started. The caller owns the clock, so a paused preview simply
+  // stops advancing it.
+  float time = 0.0f;
+};
+
+// The frame the clip is on at `time`. Negative time is not expected, but wrapping it is
+// cheaper than reasoning about it.
+inline int FrameIndex(const RigClip &clip, float time) {
+  if (clip.frames <= 0 || clip.fps <= 0) return 0;
+  int index = static_cast<int>(time * static_cast<float>(clip.fps));
+  if (clip.loop) {
+    index %= clip.frames;
+    if (index < 0) index += clip.frames;
+  } else {
+    index = std::clamp(index, 0, clip.frames - 1);
+  }
+  return index;
+}
+
+// The sprite a part draws for `animation`: its own frames when it has them for that clip,
+// its static sprite otherwise. Falling back rather than blanking is deliberate -- a part
+// with no frames is a static layer, not a hole in the body.
+inline std::string PartSprite(const RigPart &part, const AnimationState *animation) {
+  if (animation == nullptr || animation->clip == nullptr) return part.sprite;
+  const auto found = std::find_if(
+      part.clips.begin(), part.clips.end(),
+      [&](const RigPartClip &clip) { return clip.clip == animation->clip->id; });
+  if (found == part.clips.end() || found->frames.empty()) return part.sprite;
+  const int index =
+      std::min(FrameIndex(*animation->clip, animation->time),
+               static_cast<int>(found->frames.size()) - 1);
+  return found->frames[static_cast<size_t>(index)];
+}
+
 // A worn item's layer: art resolved by the caller, ordering and hiding here.
 struct WornLayer {
   std::string label;                 // item id, for the layer readout
@@ -59,7 +97,8 @@ struct Layer {
 // head when that is what the art needs.
 inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
                                 const std::vector<WornLayer>& worn,
-                                std::vector<std::string>* hiddenParts = nullptr) {
+                                std::vector<std::string>* hiddenParts = nullptr,
+                                const AnimationState* animation = nullptr) {
   std::vector<std::string> hidden;
   for (const WornLayer& layer : worn) {
     hidden.insert(hidden.end(), layer.hides.begin(), layer.hides.end());
@@ -72,7 +111,7 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
     }
     Layer layer;
     layer.label = part.id;
-    layer.texture = ResolveRigSprite(part.sprite, resources);
+    layer.texture = ResolveRigSprite(PartSprite(part, animation), resources);
     layer.z = part.z;
     layers.push_back(std::move(layer));
   }
@@ -95,14 +134,15 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
 // `box` is the side in pixels; the 32x32 rig is scaled up with point sampling, because
 // that is what the world will do.
 inline void Draw(const ActorRig& rig, ResourceManager& resources,
-                 const std::vector<WornLayer>& worn, float box) {
+                 const std::vector<WornLayer>& worn, float box,
+                 const AnimationState* animation = nullptr) {
   const ImVec2 topLeft = ImGui::GetCursorScreenPos();
   ImGui::Dummy(ImVec2(box, box));
   const ImVec2 bottomRight(topLeft.x + box, topLeft.y + box);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(topLeft, bottomRight, IM_COL32(26, 26, 30, 255));
 
-  for (const Layer& layer : Order(rig, resources, worn, nullptr)) {
+  for (const Layer& layer : Order(rig, resources, worn, nullptr, animation)) {
     if (layer.texture == nullptr) continue;
     SetTextureFilter(*layer.texture, TEXTURE_FILTER_POINT);
     const SpriteRect fit =

@@ -162,6 +162,18 @@ std::string BuildSystemPrompt(const std::string &promptFile) {
   return prompt;
 }
 
+void CarryAnimations(Draft &to, const Draft &from) {
+  to.clips = from.clips;
+  for (Part &part : to.parts) {
+    const auto found = std::find_if(
+        from.parts.begin(), from.parts.end(),
+        [&](const Part &candidate) { return candidate.id == part.id; });
+    if (found != from.parts.end() && found->sprite == part.sprite) {
+      part.clips = found->clips;
+    }
+  }
+}
+
 bool Save(const Draft &draft, const std::string &directory, std::string *savedPath,
           std::string *error) {
   if (savedPath != nullptr) savedPath->clear();
@@ -180,15 +192,33 @@ bool Save(const Draft &draft, const std::string &directory, std::string *savedPa
     return false;
   }
 
+  nlohmann::json clips = nlohmann::json::array();
+  for (const RigClip &clip : draft.clips) {
+    nlohmann::json entry = {{"id", clip.id}, {"frames", clip.frames},
+                            {"fps", clip.fps}, {"loop", clip.loop}};
+    if (!clip.movement.empty()) entry["movement"] = clip.movement;
+    if (!clip.brief.empty()) entry["brief"] = clip.brief;
+    if (!clip.poses.empty()) entry["poses"] = clip.poses;
+    clips.push_back(std::move(entry));
+  }
   nlohmann::json parts = nlohmann::json::array();
   for (const Part &part : draft.parts) {
-    parts.push_back({{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}});
+    nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.clips.empty()) {
+      nlohmann::json partClips = nlohmann::json::object();
+      for (const RigPartClip &partClip : part.clips) {
+        partClips[partClip.clip] = partClip.frames;
+      }
+      entry["clips"] = std::move(partClips);
+    }
+    parts.push_back(std::move(entry));
   }
   nlohmann::json document = nlohmann::json::object();
   document["name"] = draft.name;
   if (!draft.description.empty()) document["description"] = draft.description;
   document["width"] = draft.width;
   document["height"] = draft.height;
+  if (!clips.empty()) document["clips"] = std::move(clips);
   document["parts"] = std::move(parts);
 
   const std::filesystem::path path =

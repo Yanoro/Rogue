@@ -32,5 +32,6 @@
     "xpPerUse": 8,
     "cast": 1.2,
     "interruptible": true
-  }
+  },
+  "animation": "sword_swing"
 }

@@ -1287,6 +1287,12 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.generatedRigs",
             "Generated overlay for Designer-authored actor rigs. Empty means a generated rig lives for this run only.", &GameSettings::content, &ContentSection::generatedRigs))
         .Restart();
+    add(Field<ValueType::String>("content", "content.movements",
+            "Shared movement templates: what walking, running or a kick is, in words and timing. A rig's clips point at a movement and supply the frames.", &GameSettings::content, &ContentSection::movements))
+        .Restart();
+    add(Field<ValueType::String>("content", "content.generatedMovements",
+            "Generated overlay for movement definitions. Loaded after data/movements; empty means a generated movement lives for this run only.", &GameSettings::content, &ContentSection::generatedMovements))
+        .Restart();
     add(Field<ValueType::String>("content", "content.generatedItems",
             "Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only.", &GameSettings::content, &ContentSection::generatedItems))
         .Restart();

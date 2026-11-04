@@ -691,7 +691,9 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                bool replaceGenerated,
                                                const std::string &surroundings,
                                                const std::string &requirement,
-                                               bool redesign) {
+                                               bool redesign,
+                                               const std::vector<std::string> &frameNames,
+                                               const std::vector<std::string> &poses) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -701,6 +703,11 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   if (session->IsBusy()) {
     statusIsError = false;
     statusLine = "A request is already in flight; the document follows it.";
+    return;
+  }
+  if (HasUninspectedReply()) {
+    statusIsError = false;
+    statusLine = "The previous reply is still being applied; the next request follows it.";
     return;
   }
   if (game == nullptr) return;
@@ -767,6 +774,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief.kind = kind;
   artBrief.name = name;
   artBrief.redesign = redesign;
+  artBrief.frameNames = frameNames;
+  artBrief.poses = poses;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;
@@ -885,10 +894,14 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                "'. It will be compiled before anything is written.";
   session->LogEvent("SPRITE DOCUMENT REQUESTED: " + name + " (" + kindWord + ", " +
                     conventionId + ")");
-  SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""));
+  SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, ""), artBrief.name,
+              artBrief.kind, frameNames);
 }
 
-void DesignerWindow::SendArtTurn(const std::string &prompt) {
+void DesignerWindow::SendArtTurn(const std::string &prompt,
+                                 const std::string &artName,
+                                 SpriteKinds::Kind artKind,
+                                 const std::vector<std::string> &artFrames) {
   if (!session->HasBackend() || prompt.empty() || session->IsBusy()) return;
 
   // Logged in the same designer log as the definition turn: a document and the
@@ -899,7 +912,15 @@ void DesignerWindow::SendArtTurn(const std::string &prompt) {
   session->Log(prompt);
   session->Log("\n");
 
-  session->Send(prompt, kArtConversation, /*fromUser=*/true);
+  if (!session->Send(prompt, kArtConversation, /*fromUser=*/true)) return;
+  // The exchange is appended synchronously, so the one just added is the last one. Its
+  // identity must be set before the next Draw can pump it: inspection reads these fields
+  // rather than the window's current brief.
+  session->Update(session->Size() - 1, [&](DesignerSession::Exchange &exchange) {
+    exchange.artName = artName;
+    exchange.artKind = static_cast<int>(artKind);
+    exchange.artFrames = artFrames;
+  });
 }
 
 void DesignerWindow::InspectFinishedArtDocument(
@@ -943,13 +964,22 @@ void DesignerWindow::InspectFinishedArtDocument(
   // document verbatim to revise it, and the pixel DSL is what it is revising.
   session->PushTurn(kArtConversation, finished.prompt, finished.answer);
 
+  // The request this reply answers, from the exchange itself. `artBrief` may already
+  // describe a request queued behind this one.
+  const SpriteKinds::Kind artKind = finished.artKind >= 0
+                                        ? static_cast<SpriteKinds::Kind>(finished.artKind)
+                                        : artBrief.kind;
+  const std::string artName =
+      finished.artName.empty() ? artBrief.name : finished.artName;
   const std::string document = TileDesigner::ExtractSpriteDocument(finished.answer);
   PixelDSL::Config config;
   config.palettePath.clear();  // informational only; not worth a file read here
   const PixelDSL::Result result = PixelDSL::Compile(document, config);
 
-  if (!result.ok) {
-    artVerdict = PixelDSL::Describe(result);
+  // One refusal path for both kinds of "not the document that was asked for": a compile
+  // error, and a document that compiled but has the wrong frame blocks.
+  const auto refuse = [&](const std::string &verdict) {
+    artVerdict = verdict;
     const int budget = std::max(1, session->MaxAttempts(kArtConversation));
     session->LogEvent("SPRITE DOCUMENT REFUSED (attempt " +
              std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
@@ -978,11 +1008,56 @@ void DesignerWindow::InspectFinishedArtDocument(
                  std::to_string(session->Attempts(kArtConversation) + 1) + " of " +
                  std::to_string(budget) + ").";
     retrying = true;
-    SendArtTurn(TileDesigner::BuildSpriteDocumentRequest(artBrief, artVerdict));
+    // Rebuilt from the prompt this exchange was sent with, not from `artBrief`: a newer
+    // request may have replaced the brief, and the retry must correct *this* document.
+    std::string retryPrompt = finished.prompt;
+    const size_t replyAt = retryPrompt.rfind("Reply with prose");
+    const std::string refusal =
+        "The compiler refused the previous document:\n" + artVerdict +
+        "\nSend the corrected document in full -- not a diff, and keep everything that "
+        "was already accepted.\n\n";
+    if (replyAt != std::string::npos) retryPrompt.insert(replyAt, refusal);
+    else retryPrompt += "\n" + refusal;
+    SendArtTurn(retryPrompt, artName, artKind, finished.artFrames);
+  };
+
+  if (!result.ok) {
+    refuse(PixelDSL::Describe(result));
     return;
   }
 
-  const std::string destination = ArtDocumentPath(artBrief.name, artBrief.kind);
+  // An animation request named its frames, so the reply has to have exactly those blocks
+  // in that order. A document with the wrong frame count is not a slightly wrong
+  // animation: it is art for a different rig than the JSON declares.
+  if (!finished.artFrames.empty()) {
+    std::string mismatch;
+    if (result.frames.size() != finished.artFrames.size()) {
+      mismatch = "The document contains " + std::to_string(result.frames.size()) +
+                 " frame block(s), but the request asked for exactly " +
+                 std::to_string(finished.artFrames.size()) + ".";
+    } else {
+      for (size_t i = 0; i < finished.artFrames.size(); ++i) {
+        if (result.frames[i].name != finished.artFrames[i]) {
+          mismatch = "Frame block " + std::to_string(i + 1) + " is named \"" +
+                     result.frames[i].name + "\", but it must be named \"" +
+                     finished.artFrames[i] + "\".";
+          break;
+        }
+      }
+    }
+    if (!mismatch.empty()) {
+      std::string expected;
+      for (size_t i = 0; i < finished.artFrames.size(); ++i) {
+        if (i > 0) expected += ", ";
+        expected += finished.artFrames[i];
+      }
+      refuse(mismatch + " Send exactly " + std::to_string(finished.artFrames.size()) +
+             " frame block(s), named and in this order: " + expected + ".");
+      return;
+    }
+  }
+
+  const std::string destination = ArtDocumentPath(artName, artKind);
   if (destination.empty()) {
     artVerdict = PixelDSL::Describe(result);
     publish(false, "no generated layer to write the document to", "", artVerdict);
@@ -1012,6 +1087,48 @@ void DesignerWindow::InspectFinishedArtDocument(
     return;
   }
 
+  // An animation document is the source, but each frame is its own sprite convention:
+  // <base>_<frame> is what the rig's part clip lists, and naming follows the same rule the
+  // CLI uses. Writing them here keeps the document and its frames one acceptance.
+  if (!finished.artFrames.empty()) {
+    for (size_t i = 0; i < finished.artFrames.size(); ++i) {
+      const std::string frameSprite = artName + "_" + finished.artFrames[i];
+      const std::string framePath = GeneratedSpritePath(frameSprite);
+      if (framePath.empty()) {
+        publish(false, "no generated layer for " + frameSprite, "",
+                PixelDSL::Describe(result));
+        statusIsError = true;
+        statusLine = "No generated sprite layer is configured, so the frames cannot be "
+                     "written.";
+        return;
+      }
+      std::error_code frameError;
+      std::filesystem::create_directories(
+          std::filesystem::path(framePath).parent_path(), frameError);
+      if (!PixelDSL::WritePng(result.frames[i], framePath)) {
+        publish(false, "could not write " + framePath, "",
+                PixelDSL::Describe(result));
+        statusIsError = true;
+        statusLine = "Could not write " + framePath + ".";
+        return;
+      }
+      if (game != nullptr) game->ForgetSpriteMemo(std::string(), frameSprite);
+    }
+    std::string framesList;
+    for (size_t i = 0; i < finished.artFrames.size(); ++i) {
+      if (i > 0) framesList += ", ";
+      framesList += finished.artFrames[i];
+    }
+    artVerdict = PixelDSL::Describe(result);
+    publish(true, "", destination, artVerdict + "  frames: " + framesList);
+    session->LogEvent("SPRITE DOCUMENT ACCEPTED: " + destination + " (" +
+                      std::to_string(finished.artFrames.size()) + " frames)");
+    statusIsError = false;
+    statusLine = "Document accepted and saved to " + destination + "; wrote " +
+                 std::to_string(finished.artFrames.size()) + " frame(s).";
+    return;
+  }
+
   artVerdict = PixelDSL::Describe(result);
   publish(true, "", destination,
           artVerdict + "  document: " + destination);
@@ -1028,11 +1145,11 @@ void DesignerWindow::InspectFinishedArtDocument(
   // document it had just written.
   std::string reason;
   if (game != nullptr &&
-      game->RecompileSpriteArt(artBrief.kind, artBrief.name, &reason)) {
+      game->RecompileSpriteArt(artKind, artName, &reason)) {
     statusIsError = false;
     statusLine = "Document accepted and saved to " + destination +
                  "; compiling it now.";
-    session->LogEvent("SPRITE COMPILE QUEUED for " + artBrief.name);
+    session->LogEvent("SPRITE COMPILE QUEUED for " + artName);
   } else {
     statusIsError = true;
     statusLine = "Document accepted and saved, but the compile was refused: " + reason;
@@ -1368,6 +1485,10 @@ void DesignerWindow::ShowViewed(size_t index) {
       rigArtQueue.clear();
       rigArtStamps.clear();
       rigPreviewWorn.clear();
+      rigAnimTime = 0.0f;
+      rigAnimPlaying = true;
+      rigAnimClip.clear();
+      rigClipBuffersFor.clear();
       if (rigDraft.has_value()) {
         std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
                       rigDraft->name.c_str());
@@ -1706,11 +1827,19 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
       applied.notes = result.notes;
       applied.warnings = result.draft.warnings;
       if (result.ok) {
-        rigDraft = result.draft;
+        RigDesigner::Draft draft = result.draft;
+        if (rigDraft.has_value()) {
+          // A redraft replaces the definition, not the animation work already done.
+          RigDesigner::CarryAnimations(draft, *rigDraft);
+        }
+        rigDraft = std::move(draft);
         rigError.clear();
         rigArtQueue.clear();
         rigArtStamps.clear();
         rigPreviewWorn.clear();
+        rigAnimTime = 0.0f;
+        rigAnimPlaying = true;
+        rigAnimClip.clear();
         std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
                       result.draft.name.c_str());
         for (const ItemDef *item : game->itemRegistry.GetAll()) {
@@ -2563,6 +2692,27 @@ void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
                   std::to_string(rigArtQueue.size()) + " waiting).";
 }
 
+namespace {
+// The frame list a part must carry for a clip: <sprite>_<clip>_f1..fN, the exact names
+// the animation document's frames are written to. Declared before the request so the rig
+// JSON can name art that does not exist yet.
+void DeclarePartClipFrames(RigDesigner::Part &part, const RigClip &clip) {
+  RigPartClip frames;
+  frames.clip = clip.id;
+  for (int frame = 1; frame <= clip.frames; ++frame) {
+    frames.frames.push_back(AnimationFrameSprite(part.sprite, clip.id, frame));
+  }
+  const auto found = std::find_if(
+      part.clips.begin(), part.clips.end(),
+      [&](const RigPartClip &existing) { return existing.clip == clip.id; });
+  if (found != part.clips.end()) {
+    *found = std::move(frames);
+  } else {
+    part.clips.push_back(std::move(frames));
+  }
+}
+}  // namespace
+
 void DesignerWindow::QueueWornArt(const std::string &itemId) {
   if (game == nullptr) return;
   const ItemDef *item = game->itemRegistry.Get(itemId);
@@ -2591,16 +2741,106 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
                   std::to_string(rigArtQueue.size()) + " waiting).";
 }
 
+void DesignerWindow::SyncRigClipBuffers(const RigClip &clip) {
+  std::snprintf(rigClipBriefBuffer, sizeof(rigClipBriefBuffer), "%s",
+                clip.brief.c_str());
+  std::string poses;
+  for (size_t i = 0; i < clip.poses.size(); ++i) {
+    if (i > 0) poses += "\n";
+    poses += clip.poses[i];
+  }
+  std::snprintf(rigClipPosesBuffer, sizeof(rigClipPosesBuffer), "%s", poses.c_str());
+  rigClipBuffersFor = clip.id;
+}
+
+void DesignerWindow::QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip) {
+  if (game == nullptr || clip.frames < 1) return;
+  DeclarePartClipFrames(part, clip);
+  RigArtRequest request;
+  request.label = part.id + " " + clip.id;
+  request.sprite = AnimationDocumentName(part.sprite, clip.id);
+  for (int frame = 1; frame <= clip.frames; ++frame) {
+    request.frames.push_back("f" + std::to_string(frame));
+  }
+  request.poses = clip.poses;
+  const std::string motion =
+      clip.brief.empty()
+          ? ("a " + std::to_string(clip.frames) + "-frame " + clip.id + " cycle")
+          : clip.brief;
+  request.requirement =
+      RigDesigner::FrameContract() + "\n\nThis layer: " + part.id + " -- " + part.brief +
+      "\n\nAnimation: " + motion +
+      "\nEach frame is a full drawing of this layer in a different pose. Draw only this "
+      "layer in every frame; the rest of the 32x32 frame stays transparent. Keep the "
+      "layer registered to the same pixels that do not move.";
+  {
+    // The document is the thing that exists after a first generation; there is no
+    // <base>.png, so a sprite lookup alone would never notice it.
+    std::string resolved;
+    request.redesign = FindSpriteDSLDocument(request.sprite).found ||
+                       SpriteResolves(std::string(), request.sprite, &resolved);
+  }
+  rigArtQueue.push_back(std::move(request));
+  rigArtMessage = "Queued the " + part.id + " layer of the " + clip.id + " clip (" +
+                  std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+void DesignerWindow::QueueRigClipArt(const RigClip &clip) {
+  if (!rigDraft.has_value() || game == nullptr || clip.frames < 1) return;
+  const MovementDef *movement =
+      clip.movement.empty() ? nullptr : game->movementRegistry.Get(clip.movement);
+  if (movement != nullptr && !movement->needs.empty()) {
+    std::string needs;
+    for (const std::string &need : movement->needs) {
+      if (!needs.empty()) needs += ", ";
+      needs += need;
+    }
+    rigArtMessage = "This movement needs " + needs +
+                    " to follow the body, and worn equipment does not animate yet; "
+                    "nothing was queued.";
+    return;
+  }
+  int queued = 0;
+  for (RigDesigner::Part &part : rigDraft->parts) {
+    // A movement that names participants animates only those; the rest keep their static
+    // sprite in this clip, which is how "a kick does not animate the hair" is said.
+    if (movement != nullptr && !movement->parts.empty() &&
+        std::find(movement->parts.begin(), movement->parts.end(), part.id) ==
+            movement->parts.end()) {
+      continue;
+    }
+    QueueRigPartClipArt(part, clip);
+    ++queued;
+  }
+  if (queued == 0) {
+    rigArtMessage = "The rig has no layers to animate.";
+    return;
+  }
+  rigAnimClip = clip.id;
+  rigAnimTime = 0.0f;
+  rigAnimPlaying = true;
+  rigArtMessage = "Queued " + std::to_string(queued) + " layer(s) for the " + clip.id +
+                  " clip (" + std::to_string(rigArtQueue.size()) + " waiting).";
+}
+
+bool DesignerWindow::HasUninspectedReply() const {
+  if (session == nullptr) return false;
+  for (const DesignerSession::Exchange &exchange : session->Snapshot()) {
+    if (exchange.done && !exchange.inspected) return true;
+  }
+  return false;
+}
+
 void DesignerWindow::PumpRigArtQueue() {
   if (rigArtQueue.empty() || game == nullptr) return;
-  if (session == nullptr || session->IsBusy()) return;
+  if (session == nullptr || session->IsBusy() || HasUninspectedReply()) return;
   const RigArtRequest request = rigArtQueue.front();
   rigArtQueue.pop_front();
   // Kind Actor: a rig layer is an actor sprite with a fixed frame, and the sprite-document
   // prompt already knows how to talk about an actor's look.
   RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
                         /*replaceGenerated=*/true, "", request.requirement,
-                        request.redesign);
+                        request.redesign, request.frames, request.poses);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 
@@ -2620,7 +2860,12 @@ void DesignerWindow::RefreshRigArtMemo() {
     rigArtStamps[sprite] = stamp;
     game->ForgetSpriteMemo(std::string(), sprite);
   };
-  for (const RigDesigner::Part &part : rigDraft->parts) refresh(part.sprite);
+  for (const RigDesigner::Part &part : rigDraft->parts) {
+    refresh(part.sprite);
+    for (const RigPartClip &clip : part.clips) {
+      for (const std::string &frame : clip.frames) refresh(frame);
+    }
+  }
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (!item->wornSprite.empty()) refresh(item->wornSprite);
   }
@@ -2847,8 +3092,9 @@ void DesignerWindow::DrawRigPreview() {
   renderRig.width = draft.width;
   renderRig.height = draft.height;
   for (const RigDesigner::Part &part : draft.parts) {
-    renderRig.parts.push_back({part.id, part.sprite, part.z});
+    renderRig.parts.push_back({part.id, part.sprite, part.z, part.clips});
   }
+  renderRig.clips = draft.clips;
   std::vector<RigRender::WornLayer> worn;
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (item->wornSprite.empty() || rigPreviewWorn.count(item->id) == 0) continue;
@@ -2860,14 +3106,233 @@ void DesignerWindow::DrawRigPreview() {
     layer.hides = item->wornHides;
     worn.push_back(std::move(layer));
   }
+  // A clip the draft no longer has must not stay selected; the first clip is the
+  // fallback so the preview plays something as soon as there is something to play.
+  if (draft.clips.empty()) {
+    rigAnimClip.clear();
+  } else if (std::none_of(draft.clips.begin(), draft.clips.end(),
+                          [&](const RigClip &clip) { return clip.id == rigAnimClip; })) {
+    rigAnimClip = draft.clips.front().id;
+    rigAnimTime = 0.0f;
+  }
+  const RigClip *selectedClip = nullptr;
+  for (const RigClip &clip : draft.clips) {
+    if (clip.id == rigAnimClip) selectedClip = &clip;
+  }
+  if (selectedClip != nullptr && rigAnimPlaying) {
+    // Delta time can be huge after a stall; a walk that jumps half a cycle reads as a bug
+    // in the art.
+    rigAnimTime += std::min(ImGui::GetIO().DeltaTime, 0.1f);
+    if (!selectedClip->loop && selectedClip->fps > 0) {
+      rigAnimTime = std::min(
+          rigAnimTime, selectedClip->frames / static_cast<float>(selectedClip->fps));
+    }
+  }
+
   ImGui::Separator();
-  RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f);
+  RigRender::AnimationState animation;
+  animation.clip = selectedClip;
+  animation.time = rigAnimTime;
+  RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f,
+                  selectedClip != nullptr ? &animation : nullptr);
+  ImGui::Separator();
+
+  // Playback controls. The clip spec itself (frames, fps, poses) is edited below, beside
+  // the generation button, so this section is only "which clip, playing or not".
+  ImGui::TextDisabled("Animation");
+  if (draft.clips.empty()) {
+    ImGui::TextDisabled("No clips yet -- create the walk clip below.");
+  } else {
+    int selected = 0;
+    std::vector<const char *> clipIds;
+    for (size_t i = 0; i < draft.clips.size(); ++i) {
+      clipIds.push_back(draft.clips[i].id.c_str());
+      if (draft.clips[i].id == rigAnimClip) selected = static_cast<int>(i);
+    }
+    ImGui::SetNextItemWidth(120.0f);
+    if (ImGui::Combo("##rig_anim_clip", &selected, clipIds.data(),
+                     static_cast<int>(clipIds.size()))) {
+      rigAnimClip = draft.clips[static_cast<size_t>(selected)].id;
+      rigAnimTime = 0.0f;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton(rigAnimPlaying ? "Pause" : "Play")) {
+      rigAnimPlaying = !rigAnimPlaying;
+    }
+    if (selectedClip != nullptr) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("%d frame(s) at %d fps%s", selectedClip->frames,
+                          selectedClip->fps, selectedClip->loop ? "" : " (once)");
+    }
+  }
+  ImGui::Separator();
+
+  // The clip spec: what a generation asks for, and what a re-draw has to start from. It is
+  // saved with the rig, so the intent outlives the PNGs.
+  RigClip *editedClip = nullptr;
+  bool editedClipBlocked = false;
+  const auto joinList = [](const std::vector<std::string> &values) {
+    std::string out;
+    for (const std::string &value : values) {
+      if (!out.empty()) out += ", ";
+      out += value;
+    }
+    return out;
+  };
+  if (draft.clips.empty()) {
+    ImGui::TextDisabled("No clip yet. Create one from a movement template.");
+    if (game != nullptr && game->movementRegistry.Count() > 0) {
+      const auto movements = game->movementRegistry.GetAll();
+      if (game->movementRegistry.Get(rigNewMovement) == nullptr) {
+        rigNewMovement = game->movementRegistry.Get("walk") != nullptr
+                             ? "walk"
+                             : movements.front()->id;
+      }
+      int selected = 0;
+      std::vector<const char *> names;
+      for (size_t i = 0; i < movements.size(); ++i) {
+        names.push_back(movements[i]->name.c_str());
+        if (movements[i]->id == rigNewMovement) selected = static_cast<int>(i);
+      }
+      ImGui::SetNextItemWidth(200.0f);
+      if (ImGui::Combo("##rig_new_movement", &selected, names.data(),
+                       static_cast<int>(names.size()))) {
+        rigNewMovement = movements[static_cast<size_t>(selected)]->id;
+      }
+      ImGui::SameLine();
+      if (ImGui::Button(("Create " + rigNewMovement + " clip").c_str())) {
+        if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+          RigClip clip;
+          clip.id = movement->id;
+          clip.movement = movement->id;
+          clip.frames = movement->frames;
+          clip.fps = movement->fps;
+          clip.loop = movement->loop;
+          clip.brief = movement->description;
+          clip.poses = movement->poses;
+          draft.clips.push_back(clip);
+          rigAnimClip = clip.id;
+          rigAnimTime = 0.0f;
+          SyncRigClipBuffers(draft.clips.back());
+          editedClip = &draft.clips.back();
+          rigArtMessage = "Created the " + movement->name +
+                          " clip from the movement registry.";
+        }
+      }
+      if (const MovementDef *movement = game->movementRegistry.Get(rigNewMovement)) {
+        if (!movement->needs.empty()) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.4f, 1.0f));
+          ImGui::TextWrapped(
+              "Needs %s to follow the body. Worn equipment does not animate yet, so "
+              "generation stays disabled for this movement.",
+              joinList(movement->needs).c_str());
+          ImGui::PopStyleColor();
+        } else if (!movement->parts.empty()) {
+          ImGui::TextDisabled("Participating parts: %s",
+                              joinList(movement->parts).c_str());
+        }
+      }
+    } else if (ImGui::Button("Create walk clip")) {
+      // No registry loaded (a stripped content tree): keep the built-in walk so the
+      // slice is usable, but say that the template layer is missing.
+      RigClip walk;
+      walk.id = "walk";
+      walk.frames = 4;
+      walk.fps = 8;
+      walk.loop = true;
+      walk.brief =
+          "A four-frame walk cycle: the body rises and falls, the arms swing opposite "
+          "the legs, and the head and hair follow the body's bob.";
+      walk.poses = {
+          "contact: left leg forward, right arm forward, body at its lowest",
+          "passing: legs together, right leg lifting, body rising",
+          "contact: right leg forward, left arm forward, body at its lowest",
+          "passing: legs together, left leg lifting, body rising",
+      };
+      draft.clips.push_back(walk);
+      rigAnimClip = walk.id;
+      rigAnimTime = 0.0f;
+      SyncRigClipBuffers(draft.clips.back());
+      editedClip = &draft.clips.back();
+      ImGui::TextDisabled("No movement registry loaded; using the built-in walk.");
+    }
+  } else {
+    for (RigClip &clip : draft.clips) {
+      if (clip.id == rigAnimClip) editedClip = &clip;
+    }
+    if (editedClip != nullptr) {
+      if (rigClipBuffersFor != editedClip->id) SyncRigClipBuffers(*editedClip);
+      const MovementDef *movement =
+          (!editedClip->movement.empty() && game != nullptr)
+              ? game->movementRegistry.Get(editedClip->movement)
+              : nullptr;
+      editedClipBlocked = movement != nullptr && !movement->needs.empty();
+      if (movement != nullptr) {
+        ImGui::TextDisabled("Movement: %s (%s)", movement->name.c_str(),
+                            movement->category.c_str());
+        if (editedClipBlocked) {
+          ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.75f, 0.4f, 1.0f));
+          ImGui::TextWrapped(
+              "Needs %s to follow the body; generation is disabled until worn "
+              "equipment animates.",
+              joinList(movement->needs).c_str());
+          ImGui::PopStyleColor();
+        }
+      }
+      ImGui::PushID("rig_clip_spec");
+      int frames = editedClip->frames;
+      ImGui::SetNextItemWidth(80.0f);
+      if (ImGui::InputInt("Frames", &frames)) {
+        editedClip->frames = std::clamp(frames, 1, 8);
+      }
+      ImGui::SameLine();
+      int fps = editedClip->fps;
+      ImGui::SetNextItemWidth(80.0f);
+      if (ImGui::InputInt("fps", &fps)) editedClip->fps = std::clamp(fps, 1, 60);
+      ImGui::SameLine();
+      ImGui::Checkbox("Loop", &editedClip->loop);
+      ImGui::TextDisabled("Brief");
+      ImGui::InputTextMultiline("##rig_clip_brief", rigClipBriefBuffer,
+                                sizeof(rigClipBriefBuffer), ImVec2(-1.0f, 48.0f));
+      editedClip->brief = rigClipBriefBuffer;
+      ImGui::TextDisabled("Pose per frame (one line each)");
+      ImGui::InputTextMultiline("##rig_clip_poses", rigClipPosesBuffer,
+                                sizeof(rigClipPosesBuffer), ImVec2(-1.0f, 84.0f));
+      std::vector<std::string> poses;
+      std::string line;
+      for (const char c : std::string(rigClipPosesBuffer)) {
+        if (c == '\n') {
+          if (!line.empty()) poses.push_back(line);
+          line.clear();
+        } else if (c != '\r') {
+          line.push_back(c);
+        }
+      }
+      if (!line.empty()) poses.push_back(line);
+      editedClip->poses = poses;
+      ImGui::BeginDisabled(editedClipBlocked);
+      if (ImGui::Button(("Generate " + editedClip->id + " for all layers").c_str())) {
+        QueueRigClipArt(*editedClip);
+      }
+      ImGui::EndDisabled();
+      if (!rigArtQueue.empty()) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu art request(s) queued", rigArtQueue.size());
+      }
+      ImGui::TextDisabled(
+          "Frames are declared as <layer>_%s_f1..f%d; the art is written to those "
+          "names, so the rig JSON already points at them.",
+          editedClip->id.c_str(), editedClip->frames);
+      ImGui::PopID();
+    }
+  }
+
   ImGui::Separator();
 
   // The layers, each with its own draw button: a layer the model got wrong can be redrawn
   // without touching the five that are right.
   ImGui::TextDisabled("Layers");
-  for (const RigDesigner::Part &part : draft.parts) {
+  for (RigDesigner::Part &part : draft.parts) {
     ImGui::PushID(part.id.c_str());
     std::string resolved;
     const bool drawn = SpriteResolves(std::string(), part.sprite, &resolved);
@@ -2875,6 +3340,12 @@ void DesignerWindow::DrawRigPreview() {
     ImGui::SameLine();
     if (ImGui::SmallButton(drawn ? "Redraw" : "Draw")) {
       QueueRigPartArt(part);
+    }
+    if (editedClip != nullptr && !editedClipBlocked) {
+      ImGui::SameLine();
+      if (ImGui::SmallButton(("Animate " + editedClip->id).c_str())) {
+        QueueRigPartClipArt(part, *editedClip);
+      }
     }
     ImGui::TextDisabled("%s", part.brief.c_str());
     ImGui::PopID();
@@ -4622,7 +5093,6 @@ void DesignerWindow::Draw() {
 
   // The rig's art requests are one conversation at a time, so they queue; the memo refresh
   // is what makes a layer appear the moment its compiled PNG lands.
-  PumpRigArtQueue();
   RefreshRigArtMemo();
 
   ImGui::BeginChild("designer_preview", ImVec2(paneWidth, -footerHeight), true);
@@ -4797,6 +5267,11 @@ void DesignerWindow::Draw() {
   // on the worker would mean validating and writing content from a background
   // thread while the ECS is mid-frame.
   session->Pump([this](size_t i) { InspectFinishedExchange(i); });
+
+  // After inspection, never before it: a queued rig layer must not start until the reply
+  // in hand has been applied, because inspection reads the request it was made for from
+  // the window's current brief.
+  PumpRigArtQueue();
 
   if (!statusLine.empty()) {
     ImGui::PushStyleColor(ImGuiCol_Text,

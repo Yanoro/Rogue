@@ -161,6 +161,80 @@ What an equipment reply does **not** include is the world object template — th
 makes an item spawnable in a room. That format belongs to the object designer, and until it
 exists a generated item can be worn in previews but not placed by an agent.
 
+## Animation
+
+### Movements
+
+A movement is the shared half of an animation: what "walking", "running" or "a kick" is, in
+words and timing. It lives in `data/movements/<id>.json` and is listed in the Content Editor
+under **Movements**. The id is the slug of its name (`"Sword Swing"` -> `sword_swing`), and
+that id is what a skill names (`"animation": "kick"`) and what a rig clip stores.
+
+Fields: `category`, `description` (the whole-body motion the part requests are cut from),
+`frames`, `fps`, `loop`, `parts` (which rig part ids participate; empty means all),
+`requires` (capabilities such as `weapon` or `focus`), and `poses` (one line per frame). A
+movement that names participants animates only those; the rest keep their static sprite,
+which is how "a kick does not animate the hair" is expressed.
+
+`requires` is a gate, not a hint. The Designer refuses to generate an entry whose
+requirements the current rig cannot meet, so a sword swing cannot silently produce an arm
+moving under a stationary blade. The entries are still authored and nameable, which is what
+lets skills reference them before worn equipment animates.
+
+### Clips
+
+A clip is a rig-level row (`clips` in the rig JSON: id, optional `movement`, frame count,
+fps, loop, the motion brief and one pose line per frame) plus, per part, a frame list
+(`parts[].clips.<id>`) of ordinary sprite conventions. Creating a clip from a movement
+copies its frames, fps, loop, brief and poses and stores the movement id; the copy is
+editable, so a rig can override the cadence without inventing the motion again. Editing a
+movement later does not rewrite existing clips -- a new clip picks up the new text, and
+regenerating an existing one uses the clip's own copied intent. A part with no entry for a clip keeps its static `sprite`, which is also the
+idle pose -- there is no separate idle animation yet.
+
+Frame names are deterministic: `<part sprite>_<clip>_f1..fN`. The rig JSON declares them,
+and the animation document (requested under `<part sprite>_<clip>`) is written to those
+names, so the rig can point at frames before any art exists. The base part sprite is never
+overwritten.
+
+Generation is one request per part for the whole clip, queued behind the same one-at-a-time
+art pump as every other layer:
+
+1. **Create a clip** picks a movement (walk, run, idle, kick...) and copies its timing and
+   pose plan onto the draft.
+2. **Generate <movement> for all layers** declares the participating parts' frame sprites,
+   then asks the model for that part's `N`-frame document. The prompt names the frames it must produce
+   (`f1..fN`), prints the pose lines, and says every frame is a complete drawing of the
+   same layer, anchored to the same pixels that do not move.
+3. Acceptance validates the document's frame count and names, refuses a mismatch through
+   the normal retry budget, writes the `.sprite` document, and writes one PNG per frame
+   (`<base>_f1.png`..). The texture memo is forgotten per frame, so the preview picks them
+   up as they land.
+4. A part can be redrawn alone with **Animate walk** in the layer list.
+
+The preview plays the selected clip at its fps with Play/Pause, and the base sprites show
+through wherever a part has no frames. Playback is the Designer's clock only: nothing in
+the world reads a rig yet, so this is an authoring preview, not a game animation system.
+
+Limits, stated rather than hidden:
+
+- **No anchors.** Frames are kept registered by the prompt's wording and the fixed 32x32
+  frame; the compiler cannot measure joint drift. The preview is how you catch it.
+- **No motion validation.** The compiler checks frame count/names and each frame's pixels;
+  it cannot tell a walk from a shuffle.
+- **Worn equipment is static.** A helmet or sword keeps its z and does not follow the part
+  it sits on.
+- **The clip spec and the movement text are separate copies.** Editing a movement changes
+  what new clips are created with; existing clips keep their own brief and poses (the
+  movement id is kept for the participant/requirement gate). A "reapply from movement"
+  action is the obvious follow-up.
+- **Skills name a movement but nothing plays it yet.** A skill's `animation` field is
+  validated against the registry at load and shown in the Content Editor, but until the
+  world renders a rig there is no playback path; an actor whose rig lacks the clip still
+  falls back to its static look.
+- Changing a clip's frame count does not rewrite the existing per-part frame lists; the
+  next Generate does, and the registry warns on a saved mismatch.
+
 ## What this slice does not do
 
 - **No equipment lookup.** The preview is a manual outfit: it does not read `Equipped`
@@ -168,8 +242,10 @@ exists a generated item can be worn in previews but not placed by an agent.
   that lookup exists.
 - **No world rendering.** Spawned actors still draw their single `Sprite`; nothing reads
   a rig for an entity yet. The renderer is ready, the attachment is not.
-- **No animation, no anchors.** The rig has no pivots, and the DSL has no timing (see
-  `docs/pixel-dsl.md` §8). A swing needs `arm_right` and the worn sword to move together.
+- **No anchors, no world animation.** The rig has no pivots, so a part's frames must stay
+  registered by construction, and nothing plays a clip on a spawned actor: the Designer's
+  preview is the only player. A swing needs `arm_right` and the worn sword to move
+  together, which is the anchors slice.
 - **No world object for generated equipment.** An item can be worn in a preview; it
   cannot spawn in a room until its object template is made with the Object domain.
 - **No world rendering or equipment lookup** still: a saved rig is visible in the
@@ -178,8 +254,9 @@ exists a generated item can be worn in previews but not placed by an agent.
 ## Next, in order
 
 1. A component (`RigBody { rig; worn items }`) and a world render path, then choosing a
-   rig instead of an actor sprite at spawn.
+   rig instead of an actor sprite at spawn. Animation state and movement-driven clip
+   selection belong to that slice, not this one.
 2. The equipment lookup: `Equipped` slots → worn layers, live.
-3. Anchors/pivots per part, then clips whose keyframes rotate/offset parts by id.
+3. Anchors/pivots per part, so worn art and animated parts can move together.
 4. An equipment domain: item definitions (slot, armour, hides) generated beside the worn
    art.

@@ -729,6 +729,24 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
     out << "\nWhat it will sit among, read from the building it is made for:\n"
         << brief.surroundings << "\n";
   }
+  if (!brief.frameNames.empty()) {
+    out << "\nThis is an animation layer: the document must contain exactly "
+        << brief.frameNames.size() << " frame blocks, named and in this order: ";
+    for (size_t i = 0; i < brief.frameNames.size(); ++i) {
+      if (i > 0) out << ", ";
+      out << brief.frameNames[i];
+    }
+    out << ". Each frame is a complete drawing of the same layer in a different pose "
+           "-- not a change to the previous frame. Draw only this layer in every frame; "
+           "everything else stays transparent in every frame. Keep the layer registered "
+           "to the same frame in every frame, so the pixels that do not move stay put.\n";
+    if (!brief.poses.empty()) {
+      out << "Frame poses:\n";
+      for (size_t i = 0; i < brief.frameNames.size() && i < brief.poses.size(); ++i) {
+        out << "  " << brief.frameNames[i] << ": " << brief.poses[i] << "\n";
+      }
+    }
+  }
   if (brief.redesign) {
     out << "\nThis is a re-draw of an existing sprite. Produce a materially different "
            "interpretation -- vary the silhouette, the materials or the detail -- and "
@@ -740,8 +758,13 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
         << "Send the corrected document in full -- not a diff, and keep everything "
            "that was already accepted.\n";
   }
-  out << "\nReply with prose and exactly one ```sprite block holding the complete "
-         "document.\n";
+  if (brief.frameNames.empty()) {
+    out << "\nReply with prose and exactly one ```sprite block holding the complete "
+           "document.\n";
+  } else {
+    out << "\nReply with prose and exactly one ```sprite block holding the complete "
+           "document with those frame blocks.\n";
+  }
   return out.str();
 }
 

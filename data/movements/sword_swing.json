@@ -1,0 +1,22 @@
+{
+  "name": "Sword Swing",
+  "category": "attack",
+  "description": "A single overhead-to-diagonal sword swing with the right arm: the blade is raised behind the shoulder, driven down across the body, and followed through before the guard returns.",
+  "frames": 4,
+  "fps": 10,
+  "loop": false,
+  "parts": [
+    "body",
+    "arm_left",
+    "arm_right"
+  ],
+  "requires": [
+    "weapon"
+  ],
+  "poses": [
+    "ready: right arm raised, blade behind the shoulder, weight on the back foot",
+    "drive: right arm swinging forward, body turning into the cut",
+    "follow through: blade across the body, hips and shoulders rotated",
+    "recover: arm returning to guard, body squared again"
+  ]
+}

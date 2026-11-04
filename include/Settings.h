@@ -768,6 +768,13 @@ struct GameSettings {
     std::string generatedRigs = "data/generated/rigs";
     // The rig designer's instructions: the humanoid frame and the per-part reply format.
     std::string rigPromptFile = "data/rigs/RIGDESIGNER.md";
+    // Shared movement templates (data/movements): what "walking", "running" or "a kick"
+    // is, in words and timing. A rig's clips point at a movement and supply the frames;
+    // the same movement is therefore drawn differently on every body.
+    std::string movements = "data/movements";
+    // Movement definitions the Content Editor or a designer produced, loaded after the
+    // catalog so deleting one reverts to the hand-authored entry.
+    std::string generatedMovements = "data/generated/movements";
     // Item definitions the Designer produced, loaded after data/items.
     std::string generatedItems = "data/generated/items";
     // The equipment designer's instructions: the worn-item reply format and slot rules.

@@ -35,6 +35,7 @@
       "id": "fire",
       "duration": 20,
       "radius": 0
-    }
-  }
+    },
+    "animation": "spell_cast"
+}
 }

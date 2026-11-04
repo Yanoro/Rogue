@@ -1,0 +1,23 @@
+{
+  "name": "Spell Cast",
+  "category": "cast",
+  "description": "A short forward spell cast: the hands gather in front of the chest, then push out as the body leans forward, and settle back while the effect leaves the hands.",
+  "frames": 4,
+  "fps": 8,
+  "loop": false,
+  "parts": [
+    "body",
+    "arm_left",
+    "arm_right",
+    "head"
+  ],
+  "requires": [
+    "focus"
+  ],
+  "poses": [
+    "gather: hands drawn together in front of the chest, elbows bent, chin down",
+    "charge: hands apart slightly, body coiling, head coming up",
+    "release: hands pushed forward, body leaning into the cast",
+    "settle: arms lowering, body straightening, head level"
+  ]
+}

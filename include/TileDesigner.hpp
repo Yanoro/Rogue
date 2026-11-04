@@ -159,6 +159,13 @@ struct SpriteDocumentBrief {
   // rather than another pass at the same brief, which is what makes Regenerate produce
   // a new look instead of the document that is already on screen.
   bool redesign = false;
+
+  // Animation: the document must contain exactly these `frame` blocks, in order, and
+  // nothing else. Empty for a single-sprite document. The names are fixed by the caller
+  // (f1..fN) so a rig can declare its frame sprites before the art exists.
+  std::vector<std::string> frameNames;
+  // One pose line per frame; may be empty. The prompt reads them beside the frame names.
+  std::vector<std::string> poses;
 };
 
 // The system prompt for the document turn. `%SPRITE_DSL%` is substituted from
