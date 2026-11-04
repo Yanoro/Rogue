@@ -556,14 +556,30 @@ std::string DesignerWindow::ArtDocumentPath(const std::string &name,
 
 void DesignerWindow::AskForSpriteArt(const std::string &name,
                                      SpriteKinds::Kind kind,
-                                     const std::string &requirement, bool redesign) {
+                                     const std::string &requirement, bool redesign,
+                                     const std::string &editInstruction) {
+  // An edit starts from the sprite that is on screen. The archive keeps every generated
+  // version's document, and activating one restores it, so this is the selected version's
+  // document rather than whichever document happened to be written last.
+  std::string baseDocument;
+  if (!editInstruction.empty()) {
+    const SpriteDSLDocument existing =
+        FindSpriteDSLDocument(SpriteKinds::ConventionIdFor(kind, name));
+    if (existing.found && !existing.path.empty()) {
+      std::ifstream in(existing.path);
+      if (in.is_open()) {
+        baseDocument.assign(std::istreambuf_iterator<char>(in),
+                            std::istreambuf_iterator<char>());
+      }
+    }
+  }
   // `true` is the point of the button. With `false` an existing document is merely
   // *compiled*, which is instant, free and produces exactly the image that is already on
   // screen -- so "regenerate" looked like a request that completed without doing anything.
   // Only a new document can produce new art; the pack's copy is never overwritten, and the
   // compile lands in the generated layer until the Content Editor's marker chooses it.
   RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, std::string(),
-                        requirement, redesign);
+                        requirement, redesign, {}, {}, baseDocument, editInstruction);
 }
 
 void DesignerWindow::RequestSpriteDocument(const std::string &name,
@@ -574,7 +590,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                bool redesign,
                                                const std::vector<std::string> &frameNames,
                                                const std::vector<std::string> &poses,
-                                               const std::string &baseDocument) {
+                                               const std::string &baseDocument,
+                                               const std::string &editInstruction) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -653,6 +670,7 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief.frameNames = frameNames;
   artBrief.poses = poses;
   artBrief.baseDocument = baseDocument;
+  artBrief.editInstruction = editInstruction;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;

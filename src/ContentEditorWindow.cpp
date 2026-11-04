@@ -696,6 +696,57 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
   }
   ImGui::EndGroup();
 
+  // Editing the sprite that is on screen. Selecting a generated version in the archive
+  // below makes it active (its .sprite document is restored with it), so this always
+  // starts from the picture the person chose. The previous version is archived first and
+  // the edit writes a new document and image; nothing is replaced in place.
+  if (spriteEditTarget != convention) {
+    spriteEditTarget = convention;
+    spriteEditBuffer[0] = '\0';
+  }
+  ImGui::Separator();
+  ImGui::TextDisabled("Edit this sprite");
+  ImGui::InputTextMultiline("##sprite_edit", spriteEditBuffer, sizeof(spriteEditBuffer),
+                            ImVec2(-1.0f, 48.0f));
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Describe the change, e.g. \"make this staff longer and the colours darker\". "
+        "The active sprite's document is the starting point.");
+  }
+  ImGui::BeginDisabled(!unavailable.empty() || spriteEditBuffer[0] == '\0');
+  if (ImGui::Button("Send edit to the Designer")) {
+    // Keep the version on screen before the edit writes its replacement: old pictures are
+    // never destroyed by an edit, only made inactive. If the active picture is already an
+    // archived variant (the person chose one), it does not need a second copy.
+    bool alreadyArchived = false;
+    const std::string activePath = GeneratedSpritePath(convention);
+    if (!activePath.empty()) {
+      for (const std::filesystem::path &variant : SpriteVariants(convention)) {
+        if (SameContents(activePath, variant)) {
+          alreadyArchived = true;
+          break;
+        }
+      }
+    }
+    if (!alreadyArchived) ArchiveActiveSprite(convention);
+    if (game->designerWindow) {
+      game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+      game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
+                                            /*redesign=*/false, spriteEditBuffer);
+      status = "asked the Designer to edit this sprite; the previous version is in the "
+               "list below and the edited one lands as a new generated version";
+      statusIsError = false;
+    } else {
+      status = "the Designer window is not available, so the edit cannot be requested";
+      statusIsError = true;
+    }
+    spriteEditBuffer[0] = '\0';
+  }
+  ImGui::EndDisabled();
+  ImGui::TextDisabled(
+      "Edits the active sprite. Pick a generated version in the list first; the current "
+      "version is archived before the edit and can be activated again.");
+
   // The archive. One grid, shared with the settings window's actor-sprite picker:
   // which picture is right is a question about the picture, not about the index.
   const std::vector<std::filesystem::path> variants = SpriteVariants(convention);

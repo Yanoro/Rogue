@@ -719,11 +719,28 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
   if (!brief.baseDocument.empty()) {
     // Fenced with a tag rather than backticks: the reply must contain exactly one ```sprite
     // block, and a second fenced block here would compete with that instruction.
-    out << "\nThe layer's current document, verbatim:\n<base-document>\n"
-        << brief.baseDocument << "\n</base-document>\n"
-        << "Produce the animation frames by editing this document. Keep its palette and "
-           "every operation that is not part of the moving pose; change only what the "
-           "pose requires. These frames are the same character, not a new drawing of it.\n";
+    out << "\nThe current sprite's document, verbatim:\n<base-document>\n"
+        << brief.baseDocument << "\n</base-document>\n";
+    if (!brief.editInstruction.empty()) {
+      out << "\nA person asks for this change to it:\n<edit-request>\n"
+          << brief.editInstruction << "\n</edit-request>\n"
+          << "Produce the complete edited document. Start from the base document and apply "
+             "only the requested change; keep its palette, silhouette and every operation "
+             "that is not part of the change. This is the same sprite edited, not a new "
+             "drawing of it.\n";
+    } else if (!brief.frameNames.empty()) {
+      out << "Produce the animation frames by editing this document. Keep its palette and "
+             "every operation that is not part of the moving pose; change only what the "
+             "pose requires. These frames are the same character, not a new drawing of it.\n";
+    } else {
+      out << "Start from this document and keep its palette and every operation that is "
+             "not being changed; this is the same sprite, not a new drawing of it.\n";
+    }
+  } else if (!brief.editInstruction.empty()) {
+    out << "\nA person asks for this change:\n<edit-request>\n"
+        << brief.editInstruction << "\n</edit-request>\n"
+        << "There is no base document for this sprite. Use the description as the starting "
+           "point and produce a document that applies the change.\n";
   }
   if (!brief.frameNames.empty()) {
     out << "\nThis is an animation layer: the document must contain exactly "
@@ -743,7 +760,7 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
       }
     }
   }
-  if (brief.redesign) {
+  if (brief.redesign && brief.editInstruction.empty()) {
     out << "\nThis is a re-draw of an existing sprite. Produce a materially different "
            "interpretation -- vary the silhouette, the materials or the detail -- and "
            "do not repeat the previous document.\n";

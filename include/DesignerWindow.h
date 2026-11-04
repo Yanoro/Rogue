@@ -162,7 +162,8 @@ public:
   // than a first pass, so it varies the look instead of repeating the previous document.
   void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
                        const std::string &requirement = std::string(),
-                       bool redesign = true);
+                       bool redesign = true,
+                       const std::string &editInstruction = std::string());
 
   // Queues animation art for a rig that is not this window's draft (the Content Editor's
   // rig). The clip's frame declarations live in the caller's registry document; this asks
@@ -208,7 +209,8 @@ private:
                                  std::vector<std::string>(),
                              const std::vector<std::string> &poses =
                                  std::vector<std::string>(),
-                             const std::string &baseDocument = std::string());
+                             const std::string &baseDocument = std::string(),
+                             const std::string &editInstruction = std::string());
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();

@@ -118,6 +118,11 @@ private:
   std::string rigAnimStatus;
   bool rigAnimStatusIsError = false;
   std::string itemPreviewRig;
+  // The sprite-asset edit box. Shared by every asset section so a new registry that draws
+  // its sprite through DrawSpriteAsset gets the same editing for free. Cleared when the
+  // section moves to a different sprite, so an instruction never leaks across assets.
+  char spriteEditBuffer[512] = {};
+  std::string spriteEditTarget;
   // Grip editing in the item pane: the clip/frame whose arm the weapon is previewed on.
   std::string itemGripClip;
   int itemGripFrame = 0;
