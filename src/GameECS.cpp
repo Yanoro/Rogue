@@ -14,6 +14,7 @@
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
 #include "RigRender.hpp"
+#include "RigGrip.hpp"
 #include "SpritePaths.hpp"
 #include "SkillshotPath.hpp"
 #include "GapLog.h"
@@ -658,18 +659,34 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
   }
 }
 
+const RigGrip::ArmGrip &Game::RigGripFor(const std::string &sprite) {
+  const auto found = rigGripCache.find(sprite);
+  if (found != rigGripCache.end()) return found->second;
+  const Texture2D *texture = RigRender::ResolveRigSprite(sprite, resourceManager);
+  RigGrip::ArmGrip grip;
+  if (texture != nullptr) grip = RigGrip::AnalyzeArm(*texture);
+  return rigGripCache.emplace(sprite, grip).first->second;
+}
+
 bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
                          const ScreenPosition &screenPos, const DrawAscii &ascii) {
   const ActorRig *rig = rigRegistry.Get(body.rig);
   if (rig == nullptr) return false;
 
   // Worn equipment is read from the same held-item children the equipment system uses;
-  // an item that is not actually equipped (no Equipped component) is not drawn.
+  // an item that is not actually equipped (no Equipped component) is not drawn. Hand items
+  // are drawn on the grip path after the body, so they follow the arm instead of sitting
+  // at a fixed z.
   std::vector<RigRender::WornLayer> worn;
+  std::vector<const ItemDef *> gripItems;
   for (flecs::entity item : EquippedItems(e)) {
     const ItemType *type = item.get<ItemType>();
     const ItemDef *definition = type != nullptr ? itemRegistry.Get(type->id) : nullptr;
     if (definition == nullptr || definition->wornSprite.empty()) continue;
+    if (definition->slot == "hand") {
+      gripItems.push_back(definition);
+      continue;
+    }
     RigRender::WornLayer layer;
     layer.label = definition->id;
     layer.texture = RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
@@ -679,20 +696,83 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
   }
 
   RigRender::AnimationState animation;
+  const RigClip *clip = nullptr;
   if (const RigAnim *anim = e.get<RigAnim>()) {
-    for (const RigClip &clip : rig->clips) {
-      if (clip.id == anim->clip) {
-        animation.clip = &clip;
+    for (const RigClip &candidate : rig->clips) {
+      if (candidate.id == anim->clip) {
+        clip = &candidate;
         break;
       }
     }
+    animation.clip = clip;
     animation.time = anim->time;
   }
 
-  return RigRender::DrawWorld(
+  const bool drew = RigRender::DrawWorld(
       *rig, resourceManager, worn, screenPos.x, screenPos.y,
       static_cast<float>(ascii.width), static_cast<float>(ascii.height),
-      animation.clip != nullptr ? &animation : nullptr);
+      clip != nullptr ? &animation : nullptr);
+
+  if (gripItems.empty()) return drew;
+
+  // The arm frame for the current clip and frame; the hand and arm direction come from its
+  // pixels (RigGrip), which is the same analysis the preview and the spike use.
+  std::string armSprite;
+  for (const RigPart &part : rig->parts) {
+    if (part.id != "arm_right") continue;
+    armSprite = part.sprite;
+    if (clip != nullptr) {
+      const int frame = RigRender::FrameIndex(*clip, animation.time);
+      for (const RigPartClip &partClip : part.clips) {
+        if (partClip.clip != clip->id || partClip.frames.empty()) continue;
+        const int index =
+            std::min(frame, static_cast<int>(partClip.frames.size()) - 1);
+        armSprite = partClip.frames[static_cast<size_t>(index)];
+      }
+    }
+    break;
+  }
+  const Texture2D *armTexture =
+      armSprite.empty() ? nullptr
+                        : RigRender::ResolveRigSprite(armSprite, resourceManager);
+  const float boxWidth = static_cast<float>(ascii.width);
+  const float boxHeight = static_cast<float>(ascii.height);
+  SpriteRect fit;
+  if (armTexture != nullptr) {
+    fit = SpriteFitRect(*armTexture, screenPos.x, screenPos.y, boxWidth, boxHeight);
+  }
+  const RigGrip::ArmGrip arm =
+      armSprite.empty() ? RigGrip::ArmGrip{} : RigGripFor(armSprite);
+  const float scale = fit.width > 0.0f ? fit.width / 32.0f : boxWidth / 32.0f;
+
+  bool drewWeapon = false;
+  for (const ItemDef *definition : gripItems) {
+    const Texture2D *weapon =
+        RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
+    if (weapon == nullptr) continue;
+    SetTextureFilter(*weapon, TEXTURE_FILTER_POINT);
+    const Rectangle source = {0.0f, 0.0f, static_cast<float>(weapon->width),
+                              static_cast<float>(weapon->height)};
+    if (arm.ok && fit.width > 0.0f) {
+      const Vector2 hand = {fit.x + arm.handX * scale, fit.y + arm.handY * scale};
+      const Vector2 origin = {definition->wornGripX * scale,
+                              definition->wornGripY * scale};
+      const Rectangle destination = {
+          hand.x - origin.x, hand.y - origin.y,
+          static_cast<float>(weapon->width) * scale,
+          static_cast<float>(weapon->height) * scale};
+      DrawTexturePro(*weapon, source, destination, origin,
+                     RigGrip::WeaponAngle(arm, *definition), WHITE);
+    } else {
+      // No arm frame to read: keep the item visible at its layer rather than dropping it.
+      const Rectangle destination = {fit.x, fit.y,
+                                     static_cast<float>(weapon->width) * scale,
+                                     static_cast<float>(weapon->height) * scale};
+      DrawTexturePro(*weapon, source, destination, {0.0f, 0.0f}, 0.0f, WHITE);
+    }
+    drewWeapon = true;
+  }
+  return drew || drewWeapon;
 }
 
 // The render work that draws over the tile and entity layers: name tags and the

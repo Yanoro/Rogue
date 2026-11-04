@@ -118,6 +118,9 @@ private:
   std::string rigAnimStatus;
   bool rigAnimStatusIsError = false;
   std::string itemPreviewRig;
+  // Grip editing in the item pane: the clip/frame whose arm the weapon is previewed on.
+  std::string itemGripClip;
+  int itemGripFrame = 0;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

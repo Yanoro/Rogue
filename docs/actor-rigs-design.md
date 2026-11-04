@@ -295,8 +295,9 @@ frame's pixels** (bottom = hand, shoulder-to-hand = arm direction), with a grip-
 slider and angle snapping to stand in for pre-drawn angles. The window has three modes --
 static, generated frames, grip path -- and an item picker for hand items with worn art
 (the iron sword and the blood-tempered katana are the test pair, deliberately different
-blades). Everything is throwaway: the generated frames are test outputs and nothing in the
-item model knows about them.
+blades). It now reads the item's `worn.grip` and rest angle rather than hardcoded points.
+Everything else is throwaway: the generated frames are test outputs and nothing in the item
+model knows about them.
 
 What to compare: the frame sets are the best look but cost one request per item per clip
 (per rig, because they follow that rig's arm frames); the grip path costs no generation per
@@ -304,6 +305,33 @@ weapon but rotates one image, so check the katana's curve and the sword's straig
 the same angles. If the frames read clearly better than the grip path, spend generation on
 the weapons that matter and use the grip path for the rest; if the grip path is close, the
 worn-frame model can wait.
+
+### Grips
+
+A hand item carries `worn.grip` in its definition:
+
+```json
+"worn": { "sprite": "worn_iron_sword", "z": 110,
+          "grip": { "x": 24, "y": 22, "angle": 0 } }
+```
+
+- `x`/`y` are the pixel in the item's 32x32 worn canvas where the hand closes.
+- `angle` is the item's rest orientation relative to the arm; the grip path rotates by the
+  arm direction plus this angle.
+- The equipment designer **requires** the grip for `slot: hand`, validates 0..31, and the
+  worn-art prompt tells the painter to draw the handle at that point. The Content Editor's
+  item pane has X / Y / rest-angle controls with a **live arm-frame preview** and a **Save
+  grip** button, so a hold that is slightly off is corrected at runtime and written to
+  the item override. The hybrid spike reads the same item grip, so tuning and the
+  experiment cannot disagree.
+
+The grip path reads the hand (bottom of the arm frame) and the arm direction
+(shoulder-to-hand) from the **arm animation frame** and places the static worn art there.
+The world renderer now does this for equipped hand items: they follow the arm frame of the
+clip instead of sitting at a fixed z. It is a heuristic, not an authored anchor -- the next
+upgrade is a hand point per arm frame if a clip reads badly. The grip is definition-level:
+every instance of the item shares it. Helmets and other non-hand worn items have no grip
+and keep their z.
 
 ## World rendering and playback
 

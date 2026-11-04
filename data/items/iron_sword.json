@@ -15,6 +15,11 @@
   "worn": {
     "sprite": "worn_iron_sword",
     "z": 110,
-    "brief": "a short iron blade held point up in the right hand, plain guard and wrapped grip"
+    "brief": "a short iron blade held point up in the right hand, plain guard and wrapped grip",
+    "grip": {
+      "x": 24,
+      "y": 22,
+      "angle": 0
+    }
   }
 }

@@ -22,6 +22,7 @@
 #include "SpritePaths.hpp"
 #include "RigDesigner.hpp"
 #include "RigRender.hpp"
+#include "RigGripDraw.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
 
@@ -847,6 +848,11 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     }
     wornRequirement += "It hides the rig part(s): " + hides + ". ";
   }
+  if (item->slot == "hand") {
+    wornRequirement += "The hand holds it at (" + std::to_string(item->wornGripX) +
+                       "," + std::to_string(item->wornGripY) +
+                       ") in the 32x32 frame; draw the grip of the item at that point. ";
+  }
   wornRequirement += RigDesigner::FrameContract();
   DrawSpriteAsset(item->wornSprite, item->wornSprite, SpriteKinds::Kind::Actor,
                   std::string(), /*builtInFallback=*/true, wornRequirement);
@@ -857,18 +863,161 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     ImGui::Separator();
     return;
   }
-  int selected = 0;
-  std::vector<const char *> names;
-  for (size_t i = 0; i < rigs.size(); ++i) {
-    names.push_back(rigs[i]->name.c_str());
-    if (rigs[i]->id == itemPreviewRig) selected = static_cast<int>(i);
-  }
-  ImGui::SetNextItemWidth(-1.0f);
-  if (ImGui::Combo("##item_preview_rig", &selected, names.data(),
-                   static_cast<int>(names.size()))) {
-    itemPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+  {
+    int selected = 0;
+    std::vector<const char *> names;
+    for (size_t i = 0; i < rigs.size(); ++i) {
+      names.push_back(rigs[i]->name.c_str());
+      if (rigs[i]->id == itemPreviewRig) selected = static_cast<int>(i);
+    }
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::Combo("##item_preview_rig", &selected, names.data(),
+                     static_cast<int>(names.size()))) {
+      itemPreviewRig = rigs[static_cast<size_t>(selected)]->id;
+    }
   }
   const ActorRig *rig = game->rigRegistry.Get(itemPreviewRig);
+
+  // Grip: where the hand holds this item, and its rest angle. Edited against a live arm
+  // frame so a grip that is slightly off can be corrected and saved as the item override.
+  if (item->slot == "hand") {
+    ImGui::Separator();
+    ImGui::TextDisabled("Grip");
+    if (rig == nullptr) {
+      ImGui::TextDisabled("No rig to show the grip on.");
+    } else {
+      if (!document.contains("worn") || !document["worn"].is_object()) {
+        document["worn"] = nlohmann::json::object();
+      }
+      nlohmann::json grip = nlohmann::json::object();
+      if (document["worn"].contains("grip") &&
+          document["worn"]["grip"].is_object()) {
+        grip = document["worn"]["grip"];
+      }
+      int gripX = grip.value("x", item->wornGripX);
+      int gripY = grip.value("y", item->wornGripY);
+      float gripAngle = grip.value("angle", item->wornGripAngle);
+
+      const RigClip *clip = nullptr;
+      if (!rig->clips.empty()) {
+        if (itemGripClip.empty() ||
+            std::none_of(rig->clips.begin(), rig->clips.end(),
+                         [&](const RigClip &c) { return c.id == itemGripClip; })) {
+          itemGripClip = rig->clips.front().id;
+          for (const RigClip &c : rig->clips) {
+            if (c.id == "walk") itemGripClip = c.id;
+          }
+          itemGripFrame = 0;
+        }
+        for (const RigClip &c : rig->clips) {
+          if (c.id == itemGripClip) clip = &c;
+        }
+      }
+
+      ImGui::BeginGroup();
+      ImGui::SetNextItemWidth(80.0f);
+      if (ImGui::InputInt("grip x", &gripX)) {
+        gripX = std::clamp(gripX, 0, 31);
+        document["worn"]["grip"] = {{"x", gripX}, {"y", gripY}, {"angle", gripAngle}};
+        dirty = true;
+      }
+      ImGui::SetNextItemWidth(80.0f);
+      if (ImGui::InputInt("grip y", &gripY)) {
+        gripY = std::clamp(gripY, 0, 31);
+        document["worn"]["grip"] = {{"x", gripX}, {"y", gripY}, {"angle", gripAngle}};
+        dirty = true;
+      }
+      ImGui::SetNextItemWidth(120.0f);
+      if (ImGui::SliderFloat("rest angle", &gripAngle, -180.0f, 180.0f, "%.0f deg")) {
+        document["worn"]["grip"] = {{"x", gripX}, {"y", gripY}, {"angle", gripAngle}};
+        dirty = true;
+      }
+      if (clip != nullptr) {
+        int clipSelected = 0;
+        std::vector<const char *> clipIds;
+        for (size_t i = 0; i < rig->clips.size(); ++i) {
+          clipIds.push_back(rig->clips[i].id.c_str());
+          if (rig->clips[i].id == itemGripClip) clipSelected = static_cast<int>(i);
+        }
+        ImGui::SetNextItemWidth(110.0f);
+        if (ImGui::Combo("##item_grip_clip", &clipSelected, clipIds.data(),
+                         static_cast<int>(clipIds.size()))) {
+          itemGripClip = rig->clips[static_cast<size_t>(clipSelected)].id;
+          itemGripFrame = 0;
+        }
+        itemGripFrame = std::clamp(itemGripFrame, 0, clip->frames - 1);
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::SliderInt("frame", &itemGripFrame, 0, clip->frames - 1);
+      } else {
+        ImGui::TextDisabled("This rig has no clips; showing the base arm.");
+      }
+      const bool saveGrip = ImGui::Button("Save grip");
+      ImGui::SameLine();
+      ImGui::TextDisabled("writes the item override");
+      ImGui::EndGroup();
+
+      ItemDef previewItem = *item;
+      previewItem.wornGripX = gripX;
+      previewItem.wornGripY = gripY;
+      previewItem.wornGripAngle = gripAngle;
+
+      std::string armSprite;
+      for (const RigPart &part : rig->parts) {
+        if (part.id != "arm_right") continue;
+        armSprite = part.sprite;
+        if (clip != nullptr) {
+          for (const RigPartClip &partClip : part.clips) {
+            if (partClip.clip == clip->id && !partClip.frames.empty()) {
+              const int index = std::clamp(
+                  itemGripFrame, 0, static_cast<int>(partClip.frames.size()) - 1);
+              armSprite = partClip.frames[static_cast<size_t>(index)];
+            }
+          }
+        }
+        break;
+      }
+      const Texture2D *armTexture =
+          armSprite.empty() ? nullptr
+                            : RigRender::ResolveRigSprite(armSprite,
+                                                          game->resourceManager);
+      const Texture2D *weaponTexture =
+          RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
+      ImGui::SameLine();
+      const float box = 160.0f;
+      const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+      ImGui::Dummy(ImVec2(box, box));
+      ImDrawList *draw = ImGui::GetWindowDrawList();
+      draw->AddRectFilled(topLeft, ImVec2(topLeft.x + box, topLeft.y + box),
+                          IM_COL32(26, 26, 30, 255));
+      RigGrip::ArmGrip arm;
+      if (armTexture != nullptr) {
+        SetTextureFilter(*armTexture, TEXTURE_FILTER_POINT);
+        const SpriteRect fit =
+            SpriteFitRect(*armTexture, topLeft.x, topLeft.y, box, box);
+        draw->AddImage(
+            static_cast<ImTextureID>(static_cast<intptr_t>(armTexture->id)),
+            ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
+        arm = RigGrip::AnalyzeArm(*armTexture);
+      }
+      if (weaponTexture != nullptr && arm.ok) {
+        RigGrip::DrawWeapon(draw, *weaponTexture, previewItem, arm, topLeft, box,
+                            RigGrip::WeaponAngle(arm, previewItem));
+      }
+      draw->AddRect(topLeft, ImVec2(topLeft.x + box, topLeft.y + box),
+                    IM_COL32(90, 90, 96, 255));
+      ImGui::TextDisabled(
+          "The grip point is where the hand closes in the worn art; the rest angle is "
+          "how the item sits in the hand. Save applies it to the item override.");
+      if (saveGrip) {
+        // Save replaces the registry entry, so the `item` pointer above is stale from
+        // here on; the still below is redrawn next frame with the saved definition.
+        Save();
+        return;
+      }
+    }
+  }
+
+  // The item on the rig, as a still: the grip preview above is the animation-shaped view.
   if (rig != nullptr) {
     std::vector<RigRender::WornLayer> worn;
     RigRender::WornLayer layer;

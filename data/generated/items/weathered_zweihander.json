@@ -15,6 +15,11 @@
   "tier": 3.0,
   "worn": {
     "sprite": "worn_weathered_zweihander",
-    "z": 110
+    "z": 110,
+    "grip": {
+      "x": 23,
+      "y": 24,
+      "angle": 0
+    }
   }
 }

@@ -25,6 +25,7 @@
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
 #include "MovementRegistry.h"
+#include "RigGrip.hpp"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
@@ -596,6 +597,9 @@ private:
   // only in the console the game may not have been launched from.
   std::string speechUnavailableReason;
 
+  // Arm-frame grip analysis, by frame sprite; see RigGripFor.
+  std::map<std::string, RigGrip::ArmGrip> rigGripCache;
+
   friend class DebugConsoleWindow;
   friend class CutoutSpikeWindow;
   friend class HybridSpikeWindow;
@@ -772,6 +776,10 @@ private:
   // the single-image look.
   bool DrawRigEntity(flecs::entity e, const RigBody &body,
                      const ScreenPosition &screenPos, const DrawAscii &ascii);
+
+  // The hand/arm direction read from an arm frame, cached per frame sprite. The pixels do
+  // not change, and the world draw asks every frame.
+  const RigGrip::ArmGrip &RigGripFor(const std::string &sprite);
 
   // The blueprint placement path, shared by the preview and the commit so the
   // two cannot disagree: whatever the ghost tints green is exactly what a click

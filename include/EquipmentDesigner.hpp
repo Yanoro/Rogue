@@ -38,6 +38,11 @@ struct Draft {
   std::string wornBrief;
   int wornZ = 0;
   std::vector<std::string> hides;
+  // For a hand item: where the hand holds the worn art (in the 32x32 frame) and the
+  // item's rest orientation relative to the arm. The grip path uses these.
+  int gripX = 24;
+  int gripY = 22;
+  float gripAngle = 0.0f;
 
   // The weapon half, meaningful only for a hand item. Zero damage means "not a weapon",
   // which a tool can legitimately be.

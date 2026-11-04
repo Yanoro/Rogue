@@ -85,6 +85,13 @@ struct ItemDef {
   std::string wornBrief;
   int wornZ = 0;
   std::vector<std::string> wornHides;
+  // Where the hand holds the item in the worn canvas, and the item's rest orientation
+  // relative to the arm (degrees). The grip path places the art with this point at the
+  // hand and rotates it by the arm direction plus this angle. Meaningful for hand items;
+  // 24,22 is the canonical palm on the 32x32 rig frame.
+  int wornGripX = 24;
+  int wornGripY = 22;
+  float wornGripAngle = 0.0f;
 
   // The "effects" array exactly as authored. The typed definition does not model it --
   // ParseEffectEntries folds it into the registry's DeclaredEffects -- so this is kept for

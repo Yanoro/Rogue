@@ -3,6 +3,7 @@
 #include "DesignerWindow.h"
 #include "Game.h"
 #include "RigRender.hpp"
+#include "RigGripDraw.hpp"
 #include "SpritePaths.hpp"
 
 #include "imgui.h"
@@ -21,112 +22,6 @@ struct Layer {
 };
 
 constexpr float kBox = 224.0f;
-
-// Where the weapon is held in its own 32x32 image. The two test weapons have different
-// hilts; production would store this on the item.
-ImVec2 GripFor(const ItemDef &item) {
-  if (item.wornSprite == "worn_blood_tempered_katana") return ImVec2(24.0f, 24.0f);
-  return ImVec2(24.0f, 22.0f);
-}
-
-struct ArmGrip {
-  bool ok = false;
-  float handX = 0.0f;
-  float handY = 0.0f;
-  float angle = 90.0f;  // direction from shoulder to hand, screen degrees
-};
-
-// The hand is the bottom of the arm frame; the arm direction is shoulder -> hand. This is
-// the stand-in for an anchor: a few numbers read from the pixels the body frames already
-// have.
-ArmGrip AnalyzeArm(const Texture2D &texture) {
-  ArmGrip grip;
-  Image image = LoadImageFromTexture(texture);
-  if (image.data == nullptr) return grip;
-  int minY = image.height;
-  int maxY = -1;
-  for (int y = 0; y < image.height; ++y) {
-    for (int x = 0; x < image.width; ++x) {
-      if (GetImageColor(image, x, y).a > 0) {
-        minY = std::min(minY, y);
-        maxY = std::max(maxY, y);
-      }
-    }
-  }
-  if (maxY < minY) {
-    UnloadImage(image);
-    return grip;
-  }
-  const int band = std::max(1, (maxY - minY + 1) / 4);
-  const auto centroid = [&](int y0, int y1, float &cx, float &cy) {
-    float sx = 0.0f;
-    float sy = 0.0f;
-    int count = 0;
-    for (int y = y0; y <= y1; ++y) {
-      for (int x = 0; x < image.width; ++x) {
-        if (GetImageColor(image, x, y).a > 0) {
-          sx += static_cast<float>(x);
-          sy += static_cast<float>(y);
-          ++count;
-        }
-      }
-    }
-    if (count == 0) return false;
-    cx = sx / static_cast<float>(count);
-    cy = sy / static_cast<float>(count);
-    return true;
-  };
-  float shoulderX = 0.0f;
-  float shoulderY = 0.0f;
-  if (!centroid(minY, std::min(maxY, minY + band), shoulderX, shoulderY)) {
-    UnloadImage(image);
-    return grip;
-  }
-  if (!centroid(std::max(minY, maxY - band), maxY, grip.handX, grip.handY)) {
-    UnloadImage(image);
-    return grip;
-  }
-  UnloadImage(image);
-  grip.angle = std::atan2(grip.handY - shoulderY, grip.handX - shoulderX) * 57.29578f;
-  grip.ok = true;
-  return grip;
-}
-
-ImVec2 Rotate(ImVec2 v, float degrees) {
-  const float r = degrees * 3.14159265358979f / 180.0f;
-  const float c = std::cos(r);
-  const float s = std::sin(r);
-  return ImVec2(v.x * c - v.y * s, v.x * s + v.y * c);
-}
-
-// Draws a source rectangle rotated about a source-space pivot placed at `pivotScreen`.
-void DrawSegment(ImDrawList *draw, const Texture2D &texture, float srcX, float srcY,
-                 float srcW, float srcH, float pivotSrcX, float pivotSrcY,
-                 ImVec2 pivotScreen, float degrees, float scale) {
-  SetTextureFilter(texture, TEXTURE_FILTER_POINT);
-  const ImVec2 corners[4] = {
-      ImVec2(srcX - pivotSrcX, srcY - pivotSrcY),
-      ImVec2(srcX + srcW - pivotSrcX, srcY - pivotSrcY),
-      ImVec2(srcX + srcW - pivotSrcX, srcY + srcH - pivotSrcY),
-      ImVec2(srcX - pivotSrcX, srcY + srcH - pivotSrcY),
-  };
-  ImVec2 screen[4];
-  for (int i = 0; i < 4; ++i) {
-    const ImVec2 rotated = Rotate(corners[i], degrees);
-    screen[i] = ImVec2(pivotScreen.x + rotated.x * scale,
-                       pivotScreen.y + rotated.y * scale);
-  }
-  const ImVec2 uv[4] = {
-      ImVec2(srcX / texture.width, srcY / texture.height),
-      ImVec2((srcX + srcW) / texture.width, srcY / texture.height),
-      ImVec2((srcX + srcW) / texture.width, (srcY + srcH) / texture.height),
-      ImVec2(srcX / texture.width, (srcY + srcH) / texture.height),
-  };
-  draw->AddImageQuad(
-      static_cast<ImTextureID>(static_cast<intptr_t>(texture.id)),
-      screen[0], screen[1], screen[2], screen[3], uv[0], uv[1], uv[2], uv[3],
-      IM_COL32_WHITE);
-}
 
 }  // namespace
 
@@ -356,19 +251,15 @@ void HybridSpikeWindow::Draw() {
   if (gripPath && staticWorn != nullptr) {
     const Texture2D *armTexture =
         RigRender::ResolveRigSprite(armFrameSprite, game->resourceManager);
-    const ArmGrip arm = armTexture != nullptr ? AnalyzeArm(*armTexture) : ArmGrip{};
+    const RigGrip::ArmGrip arm =
+        armTexture != nullptr ? RigGrip::AnalyzeArm(*armTexture) : RigGrip::ArmGrip{};
     if (arm.ok) {
-      const ImVec2 grip = GripFor(*item);
-      float angle = arm.angle - 90.0f + gripOffset;
+      float angle = RigGrip::WeaponAngle(arm, *item) + gripOffset;
       if (gripAngleStep > 0) {
         angle = std::round(angle / static_cast<float>(gripAngleStep)) *
                 static_cast<float>(gripAngleStep);
       }
-      const ImVec2 hand(topLeft.x + arm.handX * scale, topLeft.y + arm.handY * scale);
-      DrawSegment(draw, *staticWorn, 0.0f, 0.0f,
-                  static_cast<float>(staticWorn->width),
-                  static_cast<float>(staticWorn->height), grip.x, grip.y, hand, angle,
-                  scale);
+      RigGrip::DrawWeapon(draw, *staticWorn, *item, arm, topLeft, kBox, angle);
     } else {
       missing += 1;
     }
