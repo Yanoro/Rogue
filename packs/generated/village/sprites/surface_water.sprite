@@ -1,0 +1,28 @@
+sprite 32x32
+kind object
+material water
+
+polygon (8,6) (16,4) (23,5) (27,9) (29,14) (28,20) (25,25) (18,27) (10,26) (4,21) (3,15) (5,9) color=water.0
+polygon (9,7) (16,5) (22,6) (26,10) (27,15) (26,20) (23,24) (17,25) (11,24) (6,20) (5,15) (7,10) color=water.1
+
+circle (12,14) radius=7 color=water.base
+circle (19,16) radius=6 color=water.base
+circle (20,11) radius=4 color=water.2
+circle (13,18) radius=4 color=water.2
+
+line (8,9) (14,6) color=water.3
+line (15,6) (20,6) color=water.3
+line (7,13) (10,10) color=water.3
+pixel (22,8) color=water.3
+pixel (23,9) color=water.3
+
+line (11,15) (16,15) color=water.3
+line (12,16) (15,16) color=water.2
+line (17,19) (21,19) color=water.3
+
+circle (27,6) radius=2 color=water.1
+pixel (27,6) color=water.2
+circle (5,24) radius=2 color=water.1
+pixel (5,24) color=water.2
+
+scatter color=water.1,water.2 density=0.15 seed=42 cluster=1 inside

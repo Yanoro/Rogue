@@ -1,0 +1,61 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark_outline = #2a080c
+  shadow_ruby  = #6a101b
+  base_ruby    = #a81c2b
+  mid_ruby     = #d42b3b
+  bright_ruby  = #f14c5d
+  high_ruby    = #ffa1ab
+  glint        = #ffffff
+}
+
+// Outer silhouette / outline
+polygon (15,4) (11,2) (6,3) (2,7) (2,12) (5,18) (15,28) (16,28) (26,18) (29,12) (29,7) (25,3) (20,2) (16,4) color=dark_outline
+rect (3,8) (28,14) color=dark_outline
+polygon (3,11) (15,29) (16,29) (28,11) color=dark_outline
+circle (8,8) radius=6 color=dark_outline
+circle (23,8) radius=6 color=dark_outline
+
+// Main body fill (base ruby)
+polygon (15,6) (11,4) (7,5) (4,9) (4,12) (7,17) (15,26) (16,26) (24,17) (27,12) (27,9) (24,5) (20,4) (16,6) color=base_ruby
+circle (8,9) radius=5 color=base_ruby
+circle (23,9) radius=5 color=base_ruby
+polygon (4,10) (15,26) (16,26) (27,10) color=base_ruby
+
+// Shading facets (deep right and bottom facet)
+polygon (15,14) (26,10) (26,13) (24,17) (16,26) (15,26) color=shadow_ruby
+polygon (15,14) (21,11) (26,10) (20,6) (16,7) color=shadow_ruby
+
+// Upper-left lit facets
+polygon (15,7) (11,5) (7,6) (5,10) (11,13) (15,14) color=mid_ruby
+circle (8,8) radius=3 color=mid_ruby
+polygon (6,8) (11,6) (14,10) (8,12) color=bright_ruby
+
+// Central gem facet
+polygon (15,8) (19,11) (15,22) (11,11) color=mid_ruby
+polygon (15,9) (18,12) (15,20) (12,12) color=bright_ruby
+
+// Facet seams and highlights
+line (15,8) (11,5) color=high_ruby
+line (11,5) (6,7) color=high_ruby
+line (15,8) (15,22) color=high_ruby
+line (15,8) (12,12) color=glint
+pixel (12,12) color=glint
+pixel (13,11) color=glint
+
+// Specular glints (top left lobe)
+rect (6,5) (9,6) color=glint
+pixel (10,6) color=high_ruby
+pixel (5,7) color=high_ruby
+pixel (6,8) color=high_ruby
+
+// Secondary glint on right lobe crest
+rect (21,5) (23,5) color=high_ruby
+pixel (22,5) color=glint
+
+// Sharp bottom specular edge
+line (7,17) (14,25) color=mid_ruby
+pixel (15,26) color=bright_ruby

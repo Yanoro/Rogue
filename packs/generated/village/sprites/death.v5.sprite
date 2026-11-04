@@ -1,0 +1,117 @@
+sprite 32x32
+kind object
+material stone
+
+// --- Crossed Bones (Background Layer) ---
+// Top-left to bottom-right diagonal bone
+line (5,19) (26,29) color=ink.base
+line (4,20) (25,30) color=ink.base
+line (6,18) (27,28) color=ink.base
+line (5,20) (25,29) color=stone.2
+line (6,19) (26,28) color=stone.3
+
+// Bottom-left to top-right diagonal bone
+line (5,29) (26,19) color=ink.base
+line (4,28) (25,18) color=ink.base
+line (6,30) (27,20) color=ink.base
+line (5,28) (25,19) color=stone.2
+line (6,29) (26,20) color=stone.3
+
+// Bone Knobs (Ends)
+// Top-left end
+circle (4,18) radius=2 color=ink.base
+circle (4,18) radius=1 color=stone.2
+circle (3,21) radius=2 color=ink.base
+circle (3,21) radius=1 color=stone.3
+
+// Top-right end
+circle (27,18) radius=2 color=ink.base
+circle (27,18) radius=1 color=stone.3
+circle (28,21) radius=2 color=ink.base
+circle (28,21) radius=1 color=stone.2
+
+// Bottom-left end
+circle (3,27) radius=2 color=ink.base
+circle (3,27) radius=1 color=stone.1
+circle (4,30) radius=2 color=ink.base
+circle (4,30) radius=1 color=stone.2
+
+// Bottom-right end
+circle (28,27) radius=2 color=ink.base
+circle (28,27) radius=1 color=stone.1
+circle (27,30) radius=2 color=ink.base
+circle (27,30) radius=1 color=stone.2
+
+// --- Skull Silhouette & Base Fill ---
+// Cranium base outline
+circle (15,10) radius=9 color=ink.base
+circle (15,10) radius=8 color=stone.2
+
+// Jaw outline & fill
+rect (10,14) (20,21) color=ink.base
+rect (11,14) (19,20) color=stone.2
+
+// Cranium highlight / shading (light from top-left)
+circle (14,9) radius=6 color=stone.3
+circle (13,8) radius=4 color=stone.4
+pixel (11,6) color=stone.4
+pixel (12,5) color=stone.4
+
+// Cranium bottom/right shading
+line (12,18) (19,18) color=stone.1
+pixel (19,19) color=stone.1
+pixel (20,13) color=stone.1
+pixel (21,12) color=stone.1
+
+// --- Facial Features (Cavities) ---
+// Left Eye socket
+rect (10,10) (13,14) color=ink.base
+pixel (11,9) color=ink.base
+pixel (12,9) color=ink.base
+
+// Right Eye socket
+rect (17,10) (20,14) color=ink.base
+pixel (18,9) color=ink.base
+pixel (19,9) color=ink.base
+
+// Nasal Cavity (upside-down heart / triangle)
+pixel (15,14) color=ink.base
+pixel (14,15) color=ink.base
+pixel (15,15) color=ink.base
+pixel (16,15) color=ink.base
+
+// Brow shadow
+pixel (10,10) color=stone.1
+pixel (13,10) color=stone.1
+pixel (17,10) color=stone.1
+pixel (20,10) color=stone.1
+
+// --- Teeth & Jaw Details ---
+// Teeth row background line
+line (11,17) (19,17) color=ink.base
+// Individual teeth highlights
+pixel (12,16) color=stone.4
+pixel (14,16) color=stone.4
+pixel (16,16) color=stone.4
+pixel (18,16) color=stone.4
+pixel (12,18) color=stone.3
+pixel (14,18) color=stone.3
+pixel (16,18) color=stone.3
+pixel (18,18) color=stone.3
+
+// Vertical tooth separation cuts
+pixel (13,16) color=ink.base
+pixel (15,16) color=ink.base
+pixel (17,16) color=ink.base
+pixel (13,18) color=ink.base
+pixel (15,18) color=ink.base
+pixel (17,18) color=ink.base
+
+// Small cranial crack
+pixel (17,4) color=ink.base
+pixel (16,5) color=ink.base
+pixel (16,6) color=ink.base
+pixel (15,7) color=ink.base
+
+// Weathering & bone texture
+scatter color=stone.1,stone.3 density=0.08 seed=42 cluster=1 inside

@@ -1,0 +1,38 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #242220
+  base = #8a8680
+  light = #c7c4be
+}
+
+// Outer silhouette / outline of helmet and neck guard
+polygon (11,4) (20,4) (24,8) (25,17) (23,23) (21,27) (10,27) (8,23) (6,17) (7,8) color=dark
+line (11,3) (20,3) color=dark
+line (10,28) (21,28) color=dark
+
+// Base interior fill
+fill_area (16,16) color=base
+
+// Top and left interior highlight
+rect (12,5) (19,8) color=light
+polygon (8,9) (12,5) (12,18) (8,18) color=light
+line (12,9) (15,9) color=light
+
+// Visor slit / facial opening (dark cutout)
+rect (10,13) (21,15) color=dark
+line (16,15) (16,21) color=dark
+
+// Shadow accents / lower planes
+polygon (9,23) (15,26) (9,26) color=base
+polygon (17,26) (22,23) (22,26) color=dark
+line (17,22) (21,22) color=dark
+line (22,17) (23,21) color=dark
+rect (18,17) (22,20) color=base
+
+// Nasal / brow ridge highlight
+line (13,11) (18,11) color=light
+pixel (15,12) color=light
+pixel (16,12) color=light

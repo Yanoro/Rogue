@@ -1,0 +1,53 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #1d1b19
+  mid = #99948d
+  lit = #c4c0b9
+}
+
+// Silhouette / Outline: wrist, palm, fingers, and thumb
+rect (12,23) (19,29) color=dark
+rect (9,13) (22,23) color=dark
+rect (6,15) (10,21) color=dark
+
+// Fingers (index, middle, ring, pinky)
+rect (9,5) (11,14) color=dark
+rect (12,3) (14,14) color=dark
+rect (15,4) (17,14) color=dark
+rect (18,7) (20,14) color=dark
+
+// Thumb extension and tip
+rect (6,12) (8,16) color=dark
+
+// Interior fill - base midtone
+rect (13,24) (18,29) color=mid
+rect (10,14) (21,22) color=mid
+rect (7,16) (9,20) color=mid
+rect (7,13) (8,15) color=mid
+rect (10,6) (10,13) color=mid
+rect (13,4) (13,13) color=mid
+rect (16,5) (16,13) color=mid
+rect (19,8) (19,13) color=mid
+
+// Interior highlights (top-left facing planes)
+line (10,6) (10,11) color=lit
+line (13,4) (13,10) color=lit
+line (16,5) (16,8) color=lit
+pixel (7,13) color=lit
+pixel (7,14) color=lit
+pixel (10,14) color=lit
+pixel (11,14) color=lit
+pixel (13,24) color=lit
+line (10,15) (10,20) color=lit
+
+// Finger separations (dark outline lines)
+line (11,6) (11,14) color=dark
+line (14,4) (14,15) color=dark
+line (17,5) (17,15) color=dark
+
+// Thumb cleft
+pixel (9,14) color=dark
+pixel (9,15) color=dark

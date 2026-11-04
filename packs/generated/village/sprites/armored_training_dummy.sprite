@@ -1,0 +1,99 @@
+sprite 32x32
+kind object
+material iron
+
+// --- Ground Shadow ---
+rect (8,29) (23,30) color=ink.base
+
+// --- Base Stand (Crossbeams) ---
+rect (9,27) (22,28) color=ink.base
+rect (10,27) (21,28) color=wood.1
+rect (10,27) (21,27) color=wood.2
+rect (13,26) (18,29) color=ink.base
+rect (14,26) (17,28) color=wood.2
+pixel (14,26) color=wood.3
+
+// --- Main Vertical Post (Lower) ---
+rect (13,20) (18,26) color=ink.base
+rect (14,20) (17,25) color=wood.2
+line (14,20) (14,25) color=wood.3
+line (17,20) (17,25) color=wood.1
+
+// --- Wooden Arm Crossbeam ---
+rect (4,11) (27,15) color=ink.base
+rect (5,12) (26,14) color=wood.2
+line (5,12) (26,12) color=wood.3
+line (5,14) (26,14) color=wood.1
+// Wooden post ends
+pixel (4,13) color=wood.0
+pixel (27,13) color=wood.0
+
+// --- Metal Pauldrons (Shoulder Guards) ---
+// Left pauldron
+rect (5,10) (10,14) color=ink.base
+rect (6,11) (9,13) color=iron.2
+line (6,11) (9,11) color=iron.4
+pixel (6,12) color=iron.3
+pixel (9,13) color=iron.1
+// Right pauldron
+rect (21,10) (26,14) color=ink.base
+rect (22,11) (25,13) color=iron.1
+line (22,11) (25,11) color=iron.3
+pixel (22,12) color=iron.2
+pixel (25,13) color=iron.0
+
+// --- Armored Breastplate & Fauld ---
+// Plackart / Fauld lower plates
+rect (11,18) (20,22) color=ink.base
+rect (12,18) (19,21) color=iron.2
+line (12,18) (19,18) color=iron.3
+line (12,21) (19,21) color=iron.1
+// Breastplate (Main Torso)
+rect (10,12) (21,18) color=ink.base
+rect (11,13) (20,17) color=iron.2
+// Central ridge / highlight
+line (11,13) (20,13) color=iron.4
+line (11,14) (11,17) color=iron.3
+line (15,13) (15,17) color=iron.4
+line (16,14) (16,17) color=iron.3
+line (20,14) (20,17) color=iron.1
+// Leather straps across breastplate
+pixel (11,13) color=wood.0
+pixel (20,13) color=wood.0
+pixel (11,17) color=wood.0
+pixel (20,17) color=wood.0
+// Rivets
+pixel (12,14) color=iron.0
+pixel (19,14) color=iron.0
+pixel (12,20) color=iron.0
+pixel (19,20) color=iron.0
+
+// --- Gorget / Neck ---
+rect (13,10) (18,12) color=ink.base
+rect (14,10) (17,11) color=iron.1
+line (14,10) (17,10) color=iron.3
+
+// --- Helmet / Armored Head ---
+// Base head silhouette
+rect (11,3) (20,10) color=ink.base
+rect (12,4) (19,9) color=iron.2
+// Conical top dome
+polygon (12,4) (15,2) (16,2) (19,4) color=ink.base
+polygon (13,4) (15,3) (16,3) (18,4) color=iron.3
+line (15,2) (16,2) color=iron.4
+// Helmet lighting and shading
+line (12,4) (12,9) color=iron.3
+line (13,4) (14,9) color=iron.3
+line (19,4) (19,9) color=iron.1
+// Visor slit (T-visor / Sallet style)
+line (13,6) (18,6) color=ink.base
+line (15,6) (15,9) color=ink.base
+pixel (14,7) color=iron.1
+pixel (17,7) color=iron.0
+// Brow reinforce band
+line (12,5) (19,5) color=iron.4
+pixel (12,5) color=iron.3
+pixel (19,5) color=iron.1
+
+// --- Subtle Surface Texture ---
+scatter color=iron.3,iron.1 density=0.08 seed=41 cluster=1 inside

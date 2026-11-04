@@ -1,0 +1,68 @@
+sprite 32x32
+kind object
+material water
+
+palette {
+  dark = #181819
+  trachea_base = #e2d7c5
+  trachea_hi = #ffffff
+  trachea_shadow = #9a8a78
+  lung_shadow = #244654
+  lung_base = #3c7d8a
+  lung_mid = #56a3ab
+  lung_lit = #82cdd1
+  lung_hi = #c5f4ea
+}
+
+// Trachea / windpipe foundation and branching bronchi
+rect (14,2) (17,11) color=dark
+line (13,11) (8,15) color=dark
+line (18,11) (23,15) color=dark
+
+// Main lung silhouette outlines
+polygon (13,10) (7,13) (4,18) (4,25) (7,28) (12,28) (14,25) (13,18) color=dark
+polygon (18,10) (24,13) (27,18) (27,25) (24,28) (19,28) (17,25) (18,18) color=dark
+
+// Base lung mass interior
+polygon (12,12) (8,14) (5,19) (5,24) (8,27) (11,27) (13,24) (12,18) color=lung_base
+polygon (19,12) (23,14) (26,19) (26,24) (23,27) (20,27) (18,24) (19,18) color=lung_base
+
+// Trachea fill & cartilage rings
+rect (15,3) (16,10) color=trachea_base
+pixel (15,4) color=trachea_hi
+pixel (15,6) color=trachea_hi
+pixel (15,8) color=trachea_hi
+pixel (16,3) color=trachea_shadow
+pixel (16,5) color=trachea_shadow
+pixel (16,7) color=trachea_shadow
+pixel (16,9) color=trachea_shadow
+
+// Bronchial branches
+line (14,11) (10,14) color=trachea_base
+line (17,11) (21,14) color=trachea_base
+
+// Lower lobe depth & shadows (under-volume and medial crevice)
+polygon (6,23) (8,26) (11,26) (12,24) (10,23) color=lung_shadow
+polygon (25,23) (23,26) (20,26) (19,24) (21,23) color=lung_shadow
+
+// Upper and front lobe midtones
+rect (6,17) (11,22) color=lung_mid
+rect (20,17) (25,22) color=lung_mid
+
+// Frontal volumetric highlights (lit from top-left, full of air)
+polygon (7,14) (10,14) (10,18) (6,18) color=lung_lit
+polygon (21,14) (24,14) (25,18) (21,18) color=lung_lit
+pixel (7,15) color=lung_hi
+pixel (8,15) color=lung_hi
+pixel (7,16) color=lung_hi
+pixel (22,15) color=lung_hi
+pixel (23,15) color=lung_hi
+
+// Internal bronchial feathering & alveoli texture
+pixel (10,17) color=trachea_hi
+pixel (9,19) color=trachea_hi
+pixel (21,17) color=trachea_hi
+pixel (22,19) color=trachea_hi
+
+// Organic air-pocket scatter inside the lung volume
+scatter color=lung_hi,lung_shadow density=0.18 seed=42 cluster=1 inside

@@ -1,0 +1,79 @@
+sprite 32x32
+kind object
+material stone
+
+// Crossed bones under-structure (shadows and silhouettes)
+line (4,4) (27,27) color=ink.base
+line (3,5) (26,28) color=ink.base
+line (5,3) (28,26) color=ink.base
+line (27,4) (4,27) color=ink.base
+line (28,5) (5,28) color=ink.base
+line (26,3) (3,26) color=ink.base
+
+// Bone ends (knobs/condyles) - Outlines
+rect (2,3) (5,6) color=ink.base
+rect (26,3) (29,6) color=ink.base
+rect (2,25) (5,28) color=ink.base
+rect (26,25) (29,28) color=ink.base
+
+// Crossed bones fill
+line (4,4) (27,27) color=stone.2
+line (4,5) (26,27) color=stone.1
+line (27,4) (4,27) color=stone.2
+line (27,5) (5,27) color=stone.1
+
+// Bone ends - Fill
+rect (3,4) (4,5) color=stone.3
+pixel (3,3) color=stone.4
+rect (27,4) (28,5) color=stone.3
+pixel (27,3) color=stone.4
+rect (3,26) (4,27) color=stone.2
+rect (27,26) (28,27) color=stone.2
+
+// Skull outline & base shape
+circle (15,12) radius=8 color=ink.base
+rect (10,16) (21,21) color=ink.base
+
+// Skull main cranium fill
+circle (15,12) radius=7 color=stone.3
+rect (11,16) (20,20) color=stone.2
+
+// Top-left highlight on cranium
+circle (14,11) radius=5 color=stone.4
+line (11,8) (19,8) color=stone.4
+line (10,9) (13,9) color=stone.4
+
+// Cranium shadow on bottom/right
+line (17,16) (20,16) color=stone.1
+line (18,15) (21,15) color=stone.1
+line (21,12) (21,14) color=stone.1
+
+// Eye sockets (deep hollow ink)
+rect (11,11) (13,14) color=ink.base
+rect (17,11) (19,14) color=ink.base
+pixel (12,10) color=ink.base
+pixel (18,10) color=ink.base
+
+// Nasal cavity (inverted triangle / drop)
+pixel (15,15) color=ink.base
+line (14,16) (16,16) color=ink.base
+
+// Maxilla / teeth division
+line (11,20) (20,20) color=ink.base
+pixel (13,19) color=ink.base
+pixel (15,19) color=ink.base
+pixel (17,19) color=ink.base
+pixel (12,19) color=stone.3
+pixel (14,19) color=stone.3
+pixel (16,19) color=stone.3
+pixel (18,19) color=stone.3
+pixel (19,19) color=stone.2
+
+// Cheekbone depth
+pixel (10,15) color=ink.base
+pixel (20,15) color=ink.base
+pixel (10,14) color=stone.1
+pixel (20,14) color=stone.1
+
+// Weathering / subtle bone texture
+scatter color=stone.2,stone.4 density=0.15 seed=1337 inside

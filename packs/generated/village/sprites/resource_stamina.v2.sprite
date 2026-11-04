@@ -1,0 +1,47 @@
+sprite 32x32
+kind object
+material wood
+
+// Outer silhouette / dark outline of boot & wing
+polygon (11,4) (18,4) (19,16) (28,19) (29,24) (28,27) (6,27) (6,21) (9,16) color=ink.base
+// Wing outline extension at the rear
+polygon (3,8) (11,4) (12,14) (2,13) color=ink.base
+polygon (1,12) (7,11) (8,18) (2,17) color=ink.base
+
+// Boot body (sturdy leather, mid tones)
+polygon (12,5) (17,5) (18,17) (27,20) (27,24) (8,24) (8,19) (11,15) color=wood.2
+
+// Sole / Tread
+rect (7,24) (28,26) color=iron.1
+line (7,26) (28,26) color=iron.0
+pixel (10,26) color=ink.base
+pixel (15,26) color=ink.base
+pixel (20,26) color=ink.base
+pixel (25,26) color=ink.base
+
+// Upper boot rim and cuff trim
+rect (12,5) (17,6) color=sand.3
+line (12,7) (17,7) color=wood.1
+
+// Boot shading and highlights
+polygon (12,7) (15,7) (15,17) (12,16) color=wood.3
+polygon (18,20) (26,21) (26,23) (17,23) color=wood.3
+line (22,21) (26,22) color=sand.3
+polygon (16,15) (18,15) (18,24) (16,24) color=wood.1
+polygon (24,23) (27,23) (27,24) (23,24) color=wood.1
+
+// Straps and buckle across the instep
+line (15,18) (21,21) color=soil.0
+line (15,19) (21,22) color=soil.1
+rect (17,19) (19,21) color=sand.4
+pixel (18,20) color=ink.base
+
+// Wing detail (symbolizing stamina and swiftness)
+polygon (4,9) (11,5) (11,13) (3,12) color=stone.4
+polygon (3,13) (8,12) (8,17) (3,16) color=stone.3
+line (4,10) (10,6) color=stone.4
+line (4,11) (10,12) color=stone.2
+line (3,14) (7,15) color=stone.1
+
+// Subtle texture on leather
+scatter color=wood.1,wood.3 density=0.15 seed=44 cluster=1 inside

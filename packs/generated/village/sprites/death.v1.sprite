@@ -1,0 +1,78 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  shadow = ink.base
+  shroud_dark = iron.0
+  shroud_mid = iron.1
+  shroud_light = iron.2
+  scythe_edge = iron.4
+  scythe_body = iron.3
+  pole = wood.1
+  pole_lit = wood.2
+  bone = stone.4
+  bone_shadow = stone.2
+  eye_glow = water.3
+}
+
+// Scythe staff (wood pole behind cloak)
+line (6,29) (22,4) color=pole
+line (7,29) (23,4) color=pole_lit
+
+// Cloak body outline & silhouette
+polygon (14,9) (9,16) (8,26) (10,30) (14,29) (17,30) (21,28) (24,30) (26,26) (24,16) (19,9) color=shadow
+
+// Cloak fill
+polygon (14,10) (10,16) (9,25) (11,29) (14,28) (17,29) (20,27) (23,29) (25,25) (23,16) (19,10) color=shroud_dark
+
+// Cloak folds and volume (light from upper-left)
+polygon (13,11) (10,17) (11,27) (14,27) (16,18) color=shroud_mid
+polygon (17,14) (18,27) (22,27) (22,17) color=shroud_mid
+line (12,14) (12,26) color=shroud_light
+line (18,17) (19,25) color=shroud_light
+
+// Hood & Cowl
+polygon (13,4) (18,4) (21,7) (21,12) (18,15) (13,15) (10,12) (10,7) color=shadow
+polygon (14,5) (18,5) (20,8) (20,11) (18,14) (14,14) (11,11) (11,8) color=shroud_dark
+polygon (14,5) (17,5) (19,7) (18,11) (15,11) (12,8) color=shroud_mid
+
+// Deep hood void & Skull inside
+rect (13,8) (18,12) color=shadow
+pixel (14,9) color=bone
+pixel (15,9) color=bone
+pixel (16,9) color=bone
+pixel (17,9) color=bone
+pixel (14,10) color=bone
+pixel (17,10) color=bone_shadow
+pixel (15,11) color=bone
+pixel (16,11) color=bone_shadow
+
+// Glowing spectral eyes
+pixel (15,10) color=eye_glow
+pixel (16,10) color=eye_glow
+
+// Skeletal hands gripping the scythe
+pixel (10,18) color=bone
+pixel (11,18) color=bone_shadow
+pixel (16,13) color=bone
+pixel (17,13) color=bone_shadow
+
+// Scythe Blade
+polygon (22,4) (21,2) (24,1) (28,3) (30,7) (29,11) (27,14) (26,14) (28,10) (27,6) (24,3) color=shadow
+polygon (22,3) (24,2) (27,4) (29,8) (28,11) (27,13) color=scythe_edge
+polygon (23,4) (25,4) (27,7) (27,9) (26,11) color=scythe_body
+pixel (28,6) color=iron.4
+pixel (29,8) color=iron.4
+
+// Tattered hem notches
+pixel (10,30) color=shadow
+erase pixel (9,30)
+erase pixel (12,30)
+erase pixel (15,30)
+erase pixel (19,30)
+erase pixel (22,30)
+erase pixel (25,30)
+
+// Texture the tattered cloth
+scatter color=shroud_dark,shroud_mid density=0.15 seed=66 cluster=1 inside

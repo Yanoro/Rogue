@@ -1,0 +1,37 @@
+{
+  "alpha": 0.6000000238418579,
+  "description": "A spreading pool that soaks anyone who steps in it and puts out fire.",
+  "duration": 30.0,
+  "enter": [
+    {
+      "duration": 10.0,
+      "effect": "apply_status",
+      "id": "wet"
+    },
+    {
+      "effect": "remove_status",
+      "id": "burning"
+    }
+  ],
+  "exit": [],
+  "layer": 5,
+  "name": "Water",
+  "permanent": true,
+  "reactions": [],
+  "sprite": "surface_water",
+  "stay": {
+    "effects": [
+      {
+        "duration": 10.0,
+        "effect": "apply_status",
+        "id": "wet"
+      }
+    ],
+    "every": 1.0
+  },
+  "stayInterval": 1.0,
+  "tags": [
+    "water",
+    "wet"
+  ]
+}

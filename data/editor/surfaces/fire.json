@@ -1,0 +1,44 @@
+{
+  "alpha": 0.8999999761581421,
+  "description": "Flames cling to the ground, burning anything that walks through them.",
+  "duration": 20.0,
+  "enter": [
+    {
+      "amount": 4.0,
+      "effect": "damage"
+    },
+    {
+      "duration": 5.0,
+      "effect": "apply_status",
+      "id": "burning"
+    }
+  ],
+  "exit": [],
+  "layer": 10,
+  "name": "Fire",
+  "permanent": false,
+  "reactions": [
+    {
+      "removeOther": false,
+      "removeSelf": true,
+      "result": "",
+      "withTag": "water"
+    }
+  ],
+  "sprite": "surface_fire",
+  "stay": {
+    "effects": [
+      {
+        "amount": 2.0,
+        "effect": "damage"
+      }
+    ],
+    "every": 1.0
+  },
+  "stayInterval": 1.0,
+  "tags": [
+    "fire",
+    "hot",
+    "hazard"
+  ]
+}

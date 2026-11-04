@@ -1,0 +1,60 @@
+sprite 64x64
+kind object
+material iron
+
+palette {
+  wire = iron.3
+}
+
+// Head & Neck
+circle (32,9) radius=5 color=wire
+erase circle (32,9) radius=4
+line (30,14) (30,17) color=wire
+line (34,14) (34,17) color=wire
+
+// Shoulders & Arms
+line (30,17) (21,20) color=wire
+line (34,17) (43,20) color=wire
+
+// Left Arm (viewer's left)
+line (21,20) (19,32) color=wire
+line (19,32) (17,42) color=wire
+line (17,42) (18,44) color=wire
+line (18,44) (20,42) color=wire
+line (20,42) (22,32) color=wire
+line (22,32) (25,23) color=wire
+
+// Right Arm (viewer's right)
+line (43,20) (45,32) color=wire
+line (45,32) (47,42) color=wire
+line (47,42) (46,44) color=wire
+line (46,44) (44,42) color=wire
+line (44,42) (42,32) color=wire
+line (42,32) (39,23) color=wire
+
+// Torso & Pelvis
+line (25,23) (26,30) color=wire
+line (39,23) (38,30) color=wire
+line (26,30) (25,37) color=wire
+line (38,30) (39,37) color=wire
+
+// Left Leg & Foot
+line (25,37) (24,47) color=wire
+line (24,47) (25,57) color=wire
+line (25,57) (22,59) color=wire
+line (22,59) (26,59) color=wire
+line (26,59) (27,57) color=wire
+line (27,57) (28,47) color=wire
+line (28,47) (31,39) color=wire
+
+// Right Leg & Foot
+line (39,37) (40,47) color=wire
+line (40,47) (39,57) color=wire
+line (39,57) (42,59) color=wire
+line (42,59) (38,59) color=wire
+line (38,59) (37,57) color=wire
+line (37,57) (36,47) color=wire
+line (36,47) (33,39) color=wire
+
+// Crotch junction
+line (31,39) (33,39) color=wire

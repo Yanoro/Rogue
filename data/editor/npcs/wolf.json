@@ -1,0 +1,20 @@
+{
+  "attackDamage": 8.0,
+  "attackInterval": 6.0,
+  "description": "A quick, lean animal. Spawned without a brain on purpose: it is a body, and the pack behaviour that drives it is a C++ system, not data.",
+  "disposition": "neutral",
+  "name": "Wolf",
+  "retaliates": false,
+  "skills": {
+    "attack": {
+      "level": 2
+    }
+  },
+  "sprite": "wolf",
+  "stats": {
+    "constitution": 10.0,
+    "dexterity": 14.0,
+    "strength": 12.0
+  },
+  "combatStrategy": "chase"
+}
