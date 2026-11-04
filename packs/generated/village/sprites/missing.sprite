@@ -1,0 +1,80 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #181819
+  plate_shadow = iron.0
+  plate_body = iron.1
+  plate_mid = iron.2
+  plate_hi = stone.3
+  glow_core = sand.4
+  glow_body = sand.2
+  glow_dark = soil.1
+}
+
+// Tablet backplate silhouette with rounded corners
+rect (3,2) (28,29) color=dark
+rect (2,3) (29,28) color=dark
+
+// Tablet face
+rect (4,3) (27,28) color=plate_shadow
+rect (4,3) (27,27) color=plate_body
+rect (4,3) (27,4) color=plate_hi
+rect (4,4) (5,26) color=plate_hi
+rect (26,4) (27,27) color=plate_shadow
+rect (5,26) (26,27) color=plate_shadow
+
+// Tablet surface texture and chipped wear
+scatter color=plate_mid,plate_shadow density=0.18 seed=42 cluster=2 inside
+pixel (5,3) color=plate_hi
+pixel (26,3) color=plate_mid
+pixel (4,27) color=plate_shadow
+pixel (27,28) color=dark
+
+// Question mark carving - dark outline / carved inset
+circle (16,10) radius=6 color=dark
+rect (14,14) (18,19) color=dark
+circle (16,23) radius=2 color=dark
+erase circle (16,10) radius=3
+rect (10,13) (15,16) color=plate_body
+
+// Fill carved glyph interior with warm glow tones
+circle (16,10) radius=5 color=glow_dark
+erase circle (16,10) radius=2
+rect (14,14) (17,18) color=glow_dark
+rect (10,12) (14,16) color=plate_body
+circle (16,23) radius=2 color=glow_dark
+
+// Core bright filament inside question mark
+pixel (16,5) color=glow_core
+pixel (17,5) color=glow_core
+pixel (18,6) color=glow_core
+pixel (19,7) color=glow_core
+pixel (20,8) color=glow_core
+pixel (20,9) color=glow_core
+pixel (20,10) color=glow_body
+pixel (19,11) color=glow_body
+pixel (18,12) color=glow_body
+pixel (17,13) color=glow_core
+pixel (16,14) color=glow_core
+pixel (16,15) color=glow_core
+pixel (16,16) color=glow_body
+pixel (16,17) color=glow_dark
+
+// Dot core
+pixel (16,23) color=glow_core
+pixel (15,23) color=glow_body
+pixel (16,22) color=glow_body
+
+// Highlight edges on carved stone rims (top-left lighting)
+pixel (11,8) color=plate_hi
+pixel (12,7) color=plate_hi
+pixel (13,6) color=plate_hi
+pixel (14,5) color=plate_hi
+pixel (15,4) color=plate_hi
+pixel (16,4) color=plate_hi
+pixel (14,21) color=plate_hi
+pixel (15,21) color=plate_hi
+pixel (13,18) color=plate_hi
+pixel (14,19) color=plate_hi

@@ -1,0 +1,59 @@
+sprite 32x32
+kind object
+material iron
+
+// Arc of motion / heavy windup swoosh in the background
+polygon (11,3) (25,4) (28,12) (26,13) (22,6) (10,5) color=stone.3
+polygon (24,10) (29,15) (28,24) (26,23) (27,16) (22,11) color=stone.2
+polygon (27,21) (27,28) (20,29) (21,27) (25,26) (25,22) color=stone.1
+line (13,4) (26,6) color=stone.4
+line (26,7) (28,15) color=stone.4
+line (28,16) (27,25) color=stone.3
+
+// Shaft / Haft (angled heavily downwards)
+line (4,27) (18,13) color=ink.base
+line (3,26) (17,12) color=ink.base
+line (4,26) (17,13) color=wood.1
+line (4,25) (16,13) color=wood.2
+line (5,26) (17,14) color=wood.0
+// Grip wraps
+pixel (5,25) color=sand.3
+pixel (8,22) color=sand.3
+pixel (11,19) color=sand.3
+pixel (14,16) color=sand.3
+pixel (4,27) color=iron.4
+
+// Hammer head base outline & silhouette
+polygon (13,10) (22,2) (28,8) (19,16) color=ink.base
+polygon (14,10) (22,3) (27,8) (19,15) color=iron.1
+
+// Hammer faceted faces
+// Front lit striking surface (top-facing / leading face)
+polygon (16,7) (22,4) (24,6) (18,10) color=iron.3
+line (17,6) (22,4) color=iron.4
+pixel (23,5) color=iron.4
+
+// Main impact head face (facing bottom-right)
+polygon (19,10) (24,6) (27,8) (22,13) color=iron.2
+pixel (26,8) color=iron.3
+
+// Underside / shadow plane
+polygon (14,11) (18,11) (22,14) (18,15) color=iron.0
+
+// Reinforcing iron banding / socket
+rect (14,11) (17,14) color=iron.1
+line (14,11) (15,10) color=iron.3
+line (14,13) (17,14) color=ink.base
+
+// Heavy top spike / flange
+polygon (23,2) (26,1) (25,4) color=iron.4
+pixel (26,1) color=stone.4
+line (22,2) (26,1) color=ink.base
+line (26,1) (27,4) color=ink.base
+
+// Impact / weight shock accents
+line (25,29) (29,30) color=stone.4
+line (22,28) (26,30) color=stone.3
+pixel (29,26) color=stone.4
+pixel (30,22) color=stone.3
+pixel (15,2) color=stone.3
