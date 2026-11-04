@@ -1,0 +1,44 @@
+sprite 32x32
+kind object
+material iron
+
+rect (2,2) (29,29) color=ink.base
+rect (3,3) (28,28) color=iron.0
+rect (4,4) (27,27) color=iron.1
+rect (5,5) (26,26) color=iron.0
+
+pixel (2,2) color=#00000000
+pixel (29,2) color=#00000000
+pixel (2,29) color=#00000000
+pixel (29,29) color=#00000000
+
+rect (3,3) (6,3) color=iron.3
+rect (3,4) (3,6) color=iron.3
+rect (25,3) (28,3) color=iron.3
+rect (28,4) (28,6) color=iron.2
+rect (3,25) (3,28) color=iron.2
+rect (4,28) (6,28) color=iron.1
+rect (28,25) (28,28) color=iron.1
+rect (25,28) (27,28) color=iron.1
+
+rect (6,6) (25,25) color=#141316
+
+polygon (13,8) (18,8) (21,11) (10,11) color=iron.1
+polygon (11,11) (20,11) (23,16) (8,16) color=iron.2
+polygon (9,16) (22,16) (24,24) (7,24) color=iron.1
+
+polygon (14,9) (17,9) (19,12) (12,12) color=iron.2
+line (10,16) (8,24) color=iron.0
+line (21,16) (23,24) color=iron.0
+line (15,16) (14,24) color=iron.0
+line (17,16) (18,24) color=iron.0
+
+rect (15,11) (16,13) color=stone.3
+pixel (14,12) color=stone.2
+pixel (17,12) color=stone.2
+pixel (15,12) color=stone.4
+
+line (11,13) (14,15) color=iron.3
+line (20,13) (17,15) color=iron.2
+
+scatter color=iron.0,iron.2 density=0.15 seed=42 cluster=1 inside

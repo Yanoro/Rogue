@@ -1,0 +1,36 @@
+sprite 32x32
+kind object
+material stone
+
+// Outer dark silhouette / outline of the cuirass
+polygon (12,4) (19,4) (21,7) (25,8) (26,13) (22,15) (21,21) (22,26) (10,26) (11,21) (10,15) (6,13) (7,8) (11,7) color=ink.base
+
+// Main body base fill (dark neutral stone tone)
+polygon (12,5) (19,5) (21,8) (24,9) (25,12) (21,14) (20,21) (21,25) (11,25) (12,21) (11,14) (7,12) (8,9) (11,8) color=stone.1
+
+// Neckline opening (transparent cutout)
+erase polygon (13,4) (18,4) (17,7) (14,7)
+line (13,7) (18,7) color=ink.base
+
+// Left-side lit pectoral and ab plates (upper-left light source)
+polygon (12,8) (15,8) (15,16) (12,15) (11,13) color=stone.3
+polygon (12,17) (15,17) (15,24) (12,24) color=stone.2
+polygon (8,9) (11,8) (11,12) (7,12) color=stone.2
+
+// Right-side darker shading (shadowed right chest and waist)
+polygon (16,8) (20,8) (21,13) (17,15) (16,15) color=stone.1
+polygon (16,16) (20,16) (20,24) (16,24) color=stone.0
+polygon (21,8) (24,9) (25,12) (21,14) color=stone.1
+
+// Central seam and plate separation lines
+line (15,8) (15,24) color=ink.base
+line (11,16) (21,16) color=ink.base
+line (12,21) (20,21) color=ink.base
+
+// Top collar / shoulder highlights
+pixel (12,5) color=stone.4
+pixel (13,5) color=stone.4
+pixel (18,5) color=stone.3
+pixel (19,5) color=stone.3
+pixel (9,8) color=stone.4
+pixel (10,8) color=stone.4

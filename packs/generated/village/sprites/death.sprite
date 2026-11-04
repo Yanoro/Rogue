@@ -1,0 +1,64 @@
+sprite 32x32
+kind object
+material stone
+
+// Earth mound at base
+polygon (3,28) (10,25) (21,25) (28,28) (26,30) (5,30) color=soil.0
+polygon (5,26) (12,25) (20,25) (26,27) (25,29) (6,29) color=soil.1
+scatter color=soil.2,grass.0 density=0.25 seed=40 cluster=1 inside
+
+// Base plinth outline & fill
+rect (5,23) (26,26) color=ink.base
+rect (6,24) (25,25) color=stone.1
+line (6,24) (24,24) color=stone.3
+pixel (25,24) color=stone.1
+
+// Headstone main silhouette (arched top)
+circle (16,9) radius=7 color=ink.base
+rect (8,9) (23,23) color=ink.base
+
+// Inner headstone fill (mid-tone stone)
+circle (16,9) radius=6 color=stone.2
+rect (9,9) (22,23) color=stone.2
+
+// Top-left lighting highlight
+polygon (11,4) (16,3) (16,4) (12,5) color=stone.4
+line (10,6) (10,8) color=stone.4
+line (9,9) (9,22) color=stone.3
+
+// Right and bottom shadow facet
+line (22,9) (22,23) color=stone.0
+polygon (19,4) (21,7) (20,8) (18,5) color=stone.1
+
+// Weathering chips and stone texture
+scatter color=stone.1,stone.3 density=0.18 seed=92 cluster=1 inside
+pixel (9,13) color=ink.base
+pixel (10,13) color=stone.0
+pixel (22,17) color=ink.base
+pixel (21,17) color=stone.0
+
+// Carved skull motif
+// Cranium
+rect (14,10) (17,13) color=ink.base
+pixel (13,11) color=ink.base
+pixel (13,12) color=ink.base
+pixel (18,11) color=ink.base
+pixel (18,12) color=ink.base
+// Eye sockets
+pixel (14,12) color=stone.1
+pixel (17,12) color=stone.1
+// Jaw / teeth
+rect (15,14) (16,15) color=ink.base
+pixel (15,15) color=stone.1
+
+// Fissure / crack descending from carving
+line (16,16) (15,18) color=stone.0
+line (15,18) (17,21) color=stone.0
+line (17,21) (16,23) color=stone.0
+
+// Small tufts of wilted grass at the grave base
+pixel (4,26) color=grass.1
+line (4,25) (5,27) color=grass.0
+pixel (7,24) color=grass.1
+line (27,26) (26,28) color=grass.0
+pixel (28,25) color=grass.1

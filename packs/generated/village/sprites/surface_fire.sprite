@@ -1,0 +1,55 @@
+sprite 32x32
+kind object
+
+palette {
+  ember = #4a0f07
+  dark_red = #8c1d10
+  fire_red = #d9381e
+  fire_orange = #f0781e
+  fire_yellow = #f7c844
+  fire_white = #fff5bf
+}
+
+// Low glowing embers and smoke base
+polygon (6,27) (11,28) (16,29) (22,28) (26,27) (20,30) (11,30) color=ember
+
+// Outer flame body silhouette
+polygon (6,26) (8,20) (9,16) (12,19) (14,13) (16,8) (18,13) (21,11) (22,17) (25,18) (26,26) (16,28) color=dark_red
+
+// Main mid-flame layers
+polygon (7,25) (9,21) (11,18) (13,20) (15,11) (16,9) (17,14) (20,13) (21,18) (24,20) (25,25) (16,27) color=fire_red
+
+// Secondary flame tongues
+polygon (9,25) (11,19) (13,16) (15,12) (16,10) (17,15) (19,15) (21,21) (23,24) (16,26) color=fire_orange
+polygon (8,24) (10,18) (12,21) (10,25) color=fire_orange
+polygon (20,24) (22,18) (24,22) (22,25) color=fire_orange
+
+// Bright inner heat core
+polygon (11,25) (12,20) (14,15) (16,12) (17,16) (19,17) (20,22) (21,25) (16,26) color=fire_yellow
+polygon (13,25) (14,19) (15,14) (16,13) (17,18) (18,24) color=fire_white
+
+// Flame tip highlights
+pixel (16,8) color=fire_orange
+pixel (16,9) color=fire_yellow
+pixel (21,11) color=fire_orange
+pixel (14,13) color=fire_orange
+pixel (15,12) color=fire_yellow
+pixel (15,13) color=fire_white
+pixel (9,16) color=fire_red
+pixel (25,18) color=fire_red
+
+// Flying embers and sparks
+pixel (16,5) color=fire_yellow
+pixel (15,6) color=fire_orange
+pixel (12,9) color=fire_orange
+pixel (19,8) color=fire_yellow
+pixel (18,9) color=fire_orange
+pixel (22,9) color=fire_red
+pixel (10,12) color=fire_orange
+pixel (24,14) color=fire_yellow
+pixel (7,15) color=fire_red
+pixel (13,7) color=fire_white
+pixel (20,6) color=fire_orange
+
+// Subtle core flame breakup
+scatter color=fire_yellow,fire_white density=0.08 seed=42 cluster=1 inside

@@ -1,0 +1,34 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  edge = iron.0
+  body = stone.1
+  lit  = stone.2
+}
+
+// Outer silhouette / outline of the legs
+polygon (9,5) (22,5) (24,10) (23,26) (18,26) (16,14) (13,26) (8,26) (7,10) color=edge
+
+// Base interior fill
+polygon (10,6) (21,6) (23,10) (22,25) (19,25) (16,15) (12,25) (9,25) (8,10) color=body
+
+// Inner highlights (left and lit upper planes)
+rect (10,6) (21,7) color=lit
+rect (9,8) (11,24) color=lit
+rect (17,16) (18,24) color=lit
+
+// Waistband / belt line
+line (10,8) (21,8) color=edge
+
+// Crotch inseam divider
+line (15,12) (16,15) color=edge
+
+// Knee joints / plate segments
+line (9,16) (13,16) color=edge
+line (18,16) (22,16) color=edge
+
+// Lower cuff accents
+rect (10,23) (12,24) color=lit
+rect (19,23) (21,24) color=lit

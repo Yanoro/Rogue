@@ -1,0 +1,72 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  out = ink.base
+  mid = stone.2
+  hi  = stone.3
+}
+
+// Outer chain loop silhouette
+line (9,6) (7,10) color=out
+line (7,10) (7,15) color=out
+line (7,15) (11,20) color=out
+line (11,20) (15,22) color=out
+
+line (22,6) (24,10) color=out
+line (24,10) (24,15) color=out
+line (24,15) (20,20) color=out
+line (20,20) (16,22) color=out
+
+// Pendant outline
+rect (13,21) (18,22) color=out
+line (12,23) (19,23) color=out
+line (11,24) (20,24) color=out
+line (12,25) (19,25) color=out
+line (13,26) (18,26) color=out
+line (14,27) (17,27) color=out
+line (15,28) (16,28) color=out
+
+// Chain inner edge
+line (10,7) (9,10) color=out
+line (9,10) (9,14) color=out
+line (9,14) (13,18) color=out
+line (13,18) (15,19) color=out
+
+line (21,7) (22,10) color=out
+line (22,10) (22,14) color=out
+line (22,14) (18,18) color=out
+line (18,18) (16,19) color=out
+
+// Inner chain body fill
+line (8,10) (8,14) color=hi
+line (8,8) (9,9) color=hi
+line (9,15) (10,17) color=hi
+line (11,18) (14,20) color=hi
+
+line (23,10) (23,14) color=mid
+line (22,8) (23,9) color=mid
+line (22,15) (21,17) color=mid
+line (20,18) (17,20) color=mid
+
+// Pendant fill: highlights on left/top, mid on right/bottom
+pixel (14,23) color=hi
+pixel (15,23) color=hi
+pixel (16,23) color=mid
+pixel (17,23) color=mid
+
+pixel (13,24) color=hi
+pixel (14,24) color=hi
+pixel (15,24) color=hi
+pixel (16,24) color=mid
+pixel (17,24) color=mid
+pixel (18,24) color=mid
+
+pixel (14,25) color=hi
+pixel (15,25) color=hi
+pixel (16,25) color=mid
+pixel (17,25) color=mid
+
+pixel (15,26) color=hi
+pixel (16,26) color=mid

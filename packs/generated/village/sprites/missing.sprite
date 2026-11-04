@@ -2,6 +2,7 @@ sprite 32x32
 kind object
 material stone
 
+<<<<<<< HEAD
 palette {
   dark = #181819
   plate_shadow = iron.0
@@ -78,3 +79,47 @@ pixel (14,21) color=plate_hi
 pixel (15,21) color=plate_hi
 pixel (13,18) color=plate_hi
 pixel (14,19) color=plate_hi
+=======
+rect (4,4) (27,27) color=ink.base
+
+rect (5,5) (26,26) color=stone.1
+rect (6,6) (25,25) color=stone.0
+
+line (5,5) (26,5) color=stone.3
+line (5,5) (5,26) color=stone.3
+line (26,6) (26,26) color=stone.0
+line (6,26) (26,26) color=stone.0
+
+line (7,7) (24,24) color=ink.base
+line (8,7) (24,23) color=ink.base
+line (7,8) (23,24) color=ink.base
+line (6,8) (23,25) color=ink.base
+line (8,6) (25,23) color=ink.base
+
+line (24,7) (7,24) color=ink.base
+line (23,7) (7,23) color=ink.base
+line (24,8) (8,24) color=ink.base
+line (25,8) (8,25) color=ink.base
+line (23,6) (6,23) color=ink.base
+
+line (7,7) (24,24) color=stone.2
+line (8,7) (24,23) color=stone.2
+line (7,8) (23,24) color=stone.2
+
+line (24,7) (7,24) color=stone.2
+line (23,7) (7,23) color=stone.2
+line (24,8) (8,24) color=stone.2
+
+line (7,7) (23,23) color=stone.3
+line (24,7) (8,23) color=stone.3
+
+pixel (4,4) color=#00000000
+pixel (4,27) color=#00000000
+pixel (27,4) color=#00000000
+pixel (27,27) color=#00000000
+
+pixel (5,5) color=ink.base
+pixel (26,5) color=ink.base
+pixel (5,26) color=ink.base
+pixel (26,26) color=ink.base
+>>>>>>> feature/combat-system

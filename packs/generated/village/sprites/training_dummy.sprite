@@ -1,0 +1,66 @@
+sprite 32x32
+kind object
+material sand
+
+// Base post / central wooden support
+line (15,4) (15,29) color=ink.base
+line (16,4) (16,29) color=ink.base
+line (14,14) (14,29) color=ink.base
+line (17,14) (17,29) color=ink.base
+rect (15,16) (16,29) color=wood.1
+line (15,16) (15,29) color=wood.2
+
+// Ground stand / base cross
+line (9,29) (22,29) color=ink.base
+line (10,30) (21,30) color=wood.0
+line (11,30) (20,30) color=wood.1
+
+// Horizontal arm beam
+rect (4,11) (27,14) color=ink.base
+rect (5,12) (26,13) color=wood.2
+line (5,12) (26,12) color=wood.3
+
+// Straw torso silhouette
+polygon (11,10) (20,10) (22,15) (21,22) (18,24) (13,24) (10,22) (9,15) color=ink.base
+polygon (12,11) (19,11) (21,15) (20,21) (17,23) (14,23) (11,21) (10,15) color=sand.1
+polygon (12,12) (18,12) (19,15) (18,20) (15,22) (13,21) (11,16) color=sand.2
+line (12,12) (17,12) color=sand.3
+
+// Straw head
+circle (15,6) radius=4 color=ink.base
+circle (15,6) radius=3 color=sand.2
+pixel (14,4) color=sand.3
+pixel (15,4) color=sand.4
+pixel (16,4) color=sand.3
+line (13,7) (14,7) color=ink.base
+line (16,7) (17,7) color=ink.base
+pixel (15,8) color=sand.0
+
+// Straw arm wraps / bunches at the arms
+rect (4,10) (8,15) color=ink.base
+rect (23,10) (27,15) color=ink.base
+rect (5,11) (7,14) color=sand.2
+rect (24,11) (26,14) color=sand.1
+pixel (5,11) color=sand.3
+pixel (6,11) color=sand.3
+
+// Straw fringe ends on arms
+line (3,11) (3,14) color=sand.3
+line (28,11) (28,14) color=sand.0
+
+// Rope ties around torso and neck
+line (13,9) (18,9) color=wood.0
+line (13,10) (18,10) color=wood.3
+line (11,16) (20,16) color=wood.0
+line (11,17) (20,17) color=wood.3
+line (12,21) (19,21) color=wood.0
+line (12,22) (19,22) color=wood.3
+
+// Straw skirt fringe below lower rope
+line (12,23) (12,25) color=sand.2
+line (14,23) (14,26) color=sand.3
+line (16,23) (16,25) color=sand.1
+line (18,23) (18,26) color=sand.2
+
+// Straw texture & scattered flecks
+scatter color=sand.3,sand.0 density=0.15 seed=42 cluster=1 inside

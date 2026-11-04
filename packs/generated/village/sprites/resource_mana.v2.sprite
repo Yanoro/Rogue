@@ -1,0 +1,53 @@
+sprite 32x32
+kind object
+material water
+
+palette {
+  glow = #c8f5ff
+  pure = #ffffff
+  spark_mid = #4fa8ff
+  spark_edge = #1d3570
+}
+
+// Outer magical glow aura
+circle (16,16) radius=11 color=water.0
+circle (16,16) radius=9 color=water.1
+
+// Vertical and horizontal beams of the star spark
+polygon (16,2) (18,13) (29,16) (18,19) (16,30) (14,19) (3,16) (14,13) color=ink.base
+polygon (16,4) (17,14) (27,16) (17,18) (16,28) (15,18) (5,16) (15,14) color=spark_edge
+
+// Diagonal sub-sparks
+polygon (16,8) (21,11) (24,16) (21,21) (16,24) (11,21) (8,16) (11,11) color=water.2
+polygon (16,10) (19,13) (22,16) (19,19) (16,22) (13,19) (10,16) (13,13) color=water.3
+
+// Inner luminous core
+polygon (16,6) (17,14) (25,16) (17,18) (16,26) (15,18) (7,16) (15,14) color=spark_mid
+polygon (16,9) (17,14) (22,16) (17,18) (16,23) (15,18) (10,16) (15,14) color=glow
+
+// Brilliant center flare
+circle (16,16) radius=3 color=glow
+circle (16,16) radius=2 color=pure
+
+// Central glint and beam highlights (lit from top-left)
+line (16,6) (16,14) color=pure
+line (8,16) (14,16) color=pure
+pixel (15,15) color=pure
+pixel (17,15) color=glow
+pixel (15,17) color=glow
+
+// Floating magical motes/sparks
+pixel (6,6) color=glow
+pixel (6,7) color=spark_mid
+pixel (25,7) color=spark_mid
+pixel (26,6) color=glow
+pixel (7,24) color=water.2
+pixel (24,25) color=glow
+pixel (25,26) color=water.2
+pixel (16,1) color=glow
+pixel (31,16) color=spark_mid
+pixel (16,31) color=water.2
+pixel (1,16) color=water.3
+
+// Energy texture within the aura
+scatter color=water.2,water.3 density=0.15 seed=42 cluster=1 inside

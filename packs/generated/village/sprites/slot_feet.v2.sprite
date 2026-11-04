@@ -1,0 +1,68 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  out = iron.0
+  dark = iron.1
+  mid = stone.2
+  light = stone.4
+}
+
+// Left boot outline
+rect (6,6) (12,18) color=out
+rect (4,18) (13,26) color=out
+rect (3,21) (14,26) color=out
+
+// Right boot outline
+rect (19,6) (25,18) color=out
+rect (18,18) (27,26) color=out
+rect (17,21) (28,26) color=out
+
+// Left boot fill (mid tone)
+rect (7,7) (11,17) color=mid
+rect (5,19) (12,25) color=mid
+rect (4,22) (13,25) color=mid
+
+// Right boot fill (mid tone)
+rect (20,7) (24,17) color=mid
+rect (19,19) (26,25) color=mid
+rect (18,22) (27,25) color=mid
+
+// Left boot shading & highlights
+// Top rim highlight & left light edge
+line (7,7) (11,7) color=light
+line (7,8) (7,17) color=light
+line (5,19) (5,22) color=light
+line (4,23) (4,24) color=light
+// Ankle fold & toe cap highlights
+pixel (6,19) color=light
+pixel (5,20) color=light
+pixel (4,22) color=light
+// Inner/bottom shadow
+line (11,8) (11,17) color=dark
+line (12,19) (12,24) color=dark
+line (5,25) (12,25) color=dark
+line (8,18) (11,18) color=dark
+
+// Right boot shading & highlights
+// Top rim highlight & left light edge
+line (20,7) (24,7) color=light
+line (20,8) (20,17) color=light
+line (19,19) (19,22) color=light
+line (18,23) (18,24) color=light
+// Ankle fold & toe cap highlights
+pixel (20,19) color=light
+pixel (19,20) color=light
+pixel (18,22) color=light
+// Outer/bottom shadow
+line (24,8) (24,17) color=dark
+line (26,19) (26,24) color=dark
+line (19,25) (26,25) color=dark
+line (21,18) (24,18) color=dark
+
+// Sole treads
+rect (3,26) (13,26) color=out
+rect (18,26) (28,26) color=out
+pixel (8,26) color=dark
+pixel (23,26) color=dark
