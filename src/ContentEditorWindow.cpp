@@ -1579,7 +1579,10 @@ void ContentEditorWindow::DrawRigPreviewPane() {
         rigAnimStatus = error;
         rigAnimStatusIsError = true;
       }
-      // ApplyRigClip replaced the registry entry; the pointers below are stale.
+      // ApplyRigClip replaced the registry entry; the pointers below are stale. Close the
+      // disabled scope before leaving, or the next widget in this window asserts with
+      // "Missing EndDisabled()".
+      ImGui::EndDisabled();
       return;
     }
     ImGui::EndDisabled();
