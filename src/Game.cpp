@@ -18,6 +18,7 @@
 #include "ObjectDesigner.hpp"
 #include "PathFinding.h"
 #include "Settings.h"
+#include "UiStyle.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "SkillshotPath.hpp"
@@ -325,12 +326,9 @@ void Game::Init() {
 
   rlImGuiSetup(true);
 
-  // rlImGui's bundled default style has changed between dependency revisions: the merged
-  // build lands on its grey WindowBg, while this project's windows have always been black.
-  // Set the background explicitly so the look does not move with the dependency's theme.
-  ImGuiStyle &imguiStyle = ImGui::GetStyle();
-  imguiStyle.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
-  imguiStyle.Colors[ImGuiCol_PopupBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+  // The window background colour and transparency are settings (ui.windowColor and
+  // ui.popupColor); apply them now that rlImGuiSetup has created the style.
+  ApplyImGuiStyle();
 
   // ImGui renders with its own font, which is ASCII-only, so without this the
   // windows that preview art (the map editor's object palette, inventory rows)
@@ -3574,4 +3572,8 @@ SystemOne::SystemOneProfileStatus Game::SystemOneStatusFor(const std::string &id
   const auto found = systemOneStatus.find(id);
   if (found != systemOneStatus.end()) return found->second;
   return SystemOne::SystemOneProfileStatus{};
+}
+
+void Game::ApplyImGuiStyle() {
+  UiStyle::Apply(Settings());
 }

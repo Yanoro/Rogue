@@ -5,6 +5,7 @@
 #include "Components.h"
 #include "Game.h"
 #include "Settings.h"
+#include "UiStyle.hpp"
 #include "SpriteDraw.hpp"
 #include "ActorSpritePicker.hpp"
 #include "IconPicker.hpp"
@@ -546,6 +547,10 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
 
   if (field.path == "combat.deathIcon") {
     DrawDeathIconRow(field);
+    return;
+  }
+  if (field.path == "ui.windowColor" || field.path == "ui.popupColor") {
+    DrawUiColorRow(field);
     return;
   }
   if (field.path == "player.rig") {
@@ -1340,6 +1345,34 @@ void SettingsWindow::SelectDeathIcon(
       ApplySettingValue(SettingsFilePath(), field.path, id, message);
   Report(saved, message);
   overrideCacheDirty = true;
+}
+
+void SettingsWindow::DrawUiColorRow(
+    const SettingsSchema::FieldSpec &field) {
+  GameSettings &settings = MutableSettings();
+  std::string &hex = *static_cast<std::string *>(field.access(settings));
+  ImVec4 color = UiStyle::ParseColor(hex, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+  const char *label = field.path == "ui.windowColor" ? "Window background"
+                                                     : "Popup background";
+  ImGui::PushID(field.path.c_str());
+  ImGui::TextUnformatted(label);
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip("%s\n\n%s", field.path.c_str(), field.doc.c_str());
+  }
+  ImGui::SameLine(240.0f);
+  ImGui::SetNextItemWidth(280.0f);
+  if (ImGui::ColorEdit4("##ui_color", &color.x,
+                        ImGuiColorEditFlags_AlphaBar |
+                            ImGuiColorEditFlags_AlphaPreviewHalf)) {
+    hex = UiStyle::FormatColor(color);
+    game->ApplyImGuiStyle();
+  }
+  if (ImGui::IsItemDeactivatedAfterEdit()) {
+    Commit(field, hex);
+    game->ApplyImGuiStyle();
+  }
+  ImGui::TextDisabled("RGBA; the alpha bar is the window transparency.");
+  ImGui::PopID();
 }
 
 void SettingsWindow::DrawDeathIconRow(

@@ -598,6 +598,14 @@ struct GameSettings {
     float cameraZoom = 0.0f;
   } render;
 
+  // ImGui window styling. Colors are #RRGGBB or #RRGGBBAA; the alpha is the window
+  // transparency. Strings so settings.json stays hand-editable; the Settings window shows
+  // a colour picker over the same value.
+  struct UiSection {
+    std::string windowColor = "#000000D9";
+    std::string popupColor = "#000000FF";
+  } ui;
+
   // Acquisition field for every character's Vision. Named `perception` rather
   // than `vision` because `vision` is already the independent Vision Chat AI
   // backend. The default is all-round (360 degrees) so navigation can be

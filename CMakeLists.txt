@@ -204,6 +204,7 @@ set(SOURCES
     src/SettingsSchema.cpp
     src/SettingsReference.cpp
     src/SettingsWindow.cpp
+    src/UiStyle.cpp
     src/DebugLog.cpp
     src/MapReloader.cpp
     src/MapDesigner.cpp

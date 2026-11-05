@@ -209,6 +209,10 @@ public:
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
   bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
+
+  // Re-applies ui.windowColor / ui.popupColor to the live ImGui style. Called once after
+  // rlImGuiSetup and again by the Settings window's colour picker.
+  void ApplyImGuiStyle();
   // Content-editor developer action: spawn one object from `itemId` and place it
   // in the player's inventory. Does not equip it and respects capacity/stacking.
   bool GiveItemToPlayer(const std::string &itemId, std::string &message);

@@ -31,6 +31,7 @@ using RegionsSection = GameSettings::RegionsSection;
 using ChunksSection = GameSettings::ChunksSection;
 using WindowSection = GameSettings::WindowSection;
 using RenderSection = GameSettings::RenderSection;
+using UiSection = GameSettings::UiSection;
 using PlayerSection = GameSettings::PlayerSection;
 using CombatSection = GameSettings::CombatSection;
 using HudSection = GameSettings::HudSection;
@@ -629,6 +630,7 @@ const std::vector<SectionSpec> &Sections() {
       {"chunks", "chunks", "Fixed world chunk grid and the agent-facing area card/route strip.", ""},
       {"window", "window", "Window creation.", ""},
       {"render", "render", "Font and starting camera.", ""},
+      {"ui", "ui", "ImGui window backgrounds: colour and transparency.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
       {"combat", "combat", "Aimed skills: indicator-first or instant at the cursor.", ""},
       {"hud", "HUD", "Player-facing HUD layout.", ""},
@@ -1207,6 +1209,16 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Float>("render", "render.cameraZoom",
             "0 fits the map to the window. Any other value is the starting zoom.", &GameSettings::render, &RenderSection::cameraZoom))
         .Restart();
+
+    // --- ui ---------------------------------------------------------------
+    add(Field<ValueType::String>("ui", "ui.windowColor",
+            "ImGui window background, #RRGGBB or #RRGGBBAA. Alpha is the window transparency.",
+            &GameSettings::ui, &UiSection::windowColor))
+        .Default("#000000D9");
+    add(Field<ValueType::String>("ui", "ui.popupColor",
+            "ImGui popup background, #RRGGBB or #RRGGBBAA. Alpha is the popup transparency.",
+            &GameSettings::ui, &UiSection::popupColor))
+        .Default("#000000FF");
 
     // --- player -----------------------------------------------------------
     add(Field<ValueType::String>("player", "player.name",

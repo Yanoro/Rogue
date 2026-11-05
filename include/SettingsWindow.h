@@ -48,6 +48,8 @@ private:
                          const std::string &id);
   // The corpse visual: an IconRegistry picker rather than a raw id string.
   void DrawDeathIconRow(const SettingsSchema::FieldSpec &field);
+  // ImGui window background colour plus alpha; edits apply live and persist on release.
+  void DrawUiColorRow(const SettingsSchema::FieldSpec &field);
   void SelectDeathIcon(const SettingsSchema::FieldSpec &field,
                        const std::string &id);
   // Re-applies the player settings that land in components after a reload or
