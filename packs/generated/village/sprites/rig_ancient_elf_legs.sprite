@@ -1,0 +1,55 @@
+sprite 32x32
+kind object
+material grass
+
+// Pelvis & upper trousers base
+rect (13,20) (20,22) color=grass.0
+rect (14,20) (19,21) color=grass.1
+
+// Left leg trousers (viewer left)
+rect (13,22) (16,25) color=grass.1
+line (13,22) (13,25) color=grass.0
+line (14,22) (14,24) color=grass.2
+
+// Right leg trousers (viewer right)
+rect (17,22) (20,25) color=grass.1
+line (20,22) (20,25) color=grass.0
+line (18,22) (18,24) color=grass.2
+
+// Crotch shadow seam
+line (16,21) (17,23) color=ink.base
+
+// Boot cuffs (folded leather tops)
+rect (13,25) (16,26) color=soil.0
+rect (17,25) (20,26) color=soil.0
+line (13,25) (15,25) color=wood.1
+line (17,25) (19,25) color=wood.1
+
+// Boot shafts & ankles
+rect (13,27) (16,29) color=soil.1
+rect (17,27) (20,29) color=soil.1
+line (13,27) (13,29) color=soil.0
+line (20,27) (20,29) color=soil.0
+line (14,27) (14,29) color=wood.1
+line (18,27) (18,29) color=wood.1
+
+// Feet and soles
+rect (12,30) (16,31) color=soil.1
+rect (17,30) (21,31) color=soil.1
+
+// Soles & toe outlines
+line (12,31) (16,31) color=soil.0
+line (17,31) (21,31) color=soil.0
+pixel (12,30) color=soil.0
+pixel (21,30) color=soil.0
+
+// Toe highlights
+pixel (13,30) color=wood.2
+pixel (18,30) color=wood.2
+
+// Deep shadow separating the boots
+line (16,26) (17,31) color=ink.base
+
+// Outer contour shadow accents
+pixel (12,23) color=ink.base
+pixel (21,23) color=ink.base

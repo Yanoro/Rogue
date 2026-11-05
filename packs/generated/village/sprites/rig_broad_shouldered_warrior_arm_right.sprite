@@ -1,0 +1,40 @@
+sprite 32x32
+kind object
+material iron
+
+// Short sleeve cuff (iron ramp)
+rect (22,12) (24,14) color=ink.base
+rect (22,12) (24,13) color=iron.1
+pixel (22,12) color=iron.3
+pixel (23,12) color=iron.2
+pixel (24,13) color=iron.0
+
+// Weathered tan forearm (sand and wood tones)
+// Silhouette base and outline
+rect (22,15) (25,19) color=ink.base
+rect (22,15) (24,18) color=sand.1
+pixel (25,17) color=sand.0
+pixel (25,18) color=sand.1
+
+// Forearm muscle definition & lighting
+line (22,15) (22,18) color=sand.3
+pixel (23,15) color=sand.2
+pixel (23,16) color=sand.2
+pixel (24,16) color=sand.1
+pixel (24,17) color=sand.0
+pixel (23,18) color=sand.1
+
+// Gripped fist (knuckles angled forward)
+rect (22,19) (25,22) color=ink.base
+rect (22,20) (24,22) color=sand.2
+pixel (22,20) color=sand.3
+pixel (23,20) color=sand.3
+pixel (24,21) color=sand.1
+pixel (23,22) color=sand.0
+pixel (24,22) color=ink.base
+pixel (22,22) color=sand.1
+
+// Weapon grip hollow / knuckle creases
+pixel (23,21) color=soil.0
+pixel (25,20) color=sand.1
+pixel (25,21) color=ink.base

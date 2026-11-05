@@ -166,6 +166,14 @@ struct SpriteDocumentBrief {
   std::vector<std::string> frameNames;
   // One pose line per frame; may be empty. The prompt reads them beside the frame names.
   std::vector<std::string> poses;
+  // The layer's current .sprite document, verbatim. An animation request that carries it
+  // asks the model to *edit* the existing art rather than invent a new character from the
+  // prose; no document leaves the prompt as it was. Single-sprite requests leave it empty.
+  std::string baseDocument;
+  // A person's requested change to the current sprite: "make the staff longer and the
+  // colours darker". With a base document the prompt asks for that document edited; with
+  // none, for a new document that applies the change. Empty for ordinary generation.
+  std::string editInstruction;
 };
 
 // The system prompt for the document turn. `%SPRITE_DSL%` is substituted from

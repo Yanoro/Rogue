@@ -1,0 +1,68 @@
+sprite 32x32
+kind object
+material soil
+
+// Base outline / shadows for legs in planted stance
+rect (12,20) (21,22) color=ink.base
+rect (12,22) (16,30) color=ink.base
+rect (17,22) (21,30) color=ink.base
+rect (11,29) (16,31) color=ink.base
+rect (17,29) (22,31) color=ink.base
+
+// Upper trousers / pelvis area (coarse brown wool)
+rect (13,20) (20,22) color=soil.2
+pixel (16,21) color=soil.0
+pixel (16,22) color=soil.0
+
+// Left thigh/knee trousers (x: 13-16, y: 22-25)
+rect (13,22) (15,25) color=soil.2
+line (13,22) (13,25) color=soil.3
+pixel (15,24) color=soil.1
+pixel (15,25) color=soil.1
+
+// Right thigh/knee trousers (x: 17-20, y: 22-25)
+rect (18,22) (20,25) color=soil.2
+line (18,22) (18,25) color=soil.3
+pixel (20,24) color=soil.1
+pixel (20,25) color=soil.1
+
+// Crotch shadow separation
+line (16,22) (17,24) color=ink.base
+
+// Wrapped hide boots (wood/sand ramp tones for leather & wraps)
+// Left boot shaft and wraps
+rect (13,26) (16,29) color=wood.1
+line (13,26) (13,29) color=wood.2
+// Hide wrap strappings (lighter cords)
+pixel (13,26) color=sand.2
+pixel (14,27) color=sand.2
+pixel (15,28) color=sand.2
+pixel (15,26) color=sand.1
+pixel (14,28) color=sand.1
+
+// Right boot shaft and wraps
+rect (17,26) (20,29) color=wood.1
+line (17,26) (17,29) color=wood.2
+// Hide wrap strappings
+pixel (17,26) color=sand.2
+pixel (18,27) color=sand.2
+pixel (19,28) color=sand.2
+pixel (19,26) color=sand.1
+pixel (18,28) color=sand.1
+
+// Left foot (planted, wide)
+rect (12,30) (16,30) color=wood.1
+pixel (12,29) color=wood.1
+line (12,30) (14,30) color=wood.2
+line (11,31) (16,31) color=ink.base
+pixel (11,30) color=ink.base
+
+// Right foot (planted, wide)
+rect (17,30) (21,30) color=wood.1
+pixel (21,29) color=wood.1
+line (17,30) (19,30) color=wood.2
+line (17,31) (22,31) color=ink.base
+pixel (22,30) color=ink.base
+
+// Rough wool texture on trousers
+scatter color=soil.1,soil.3 density=0.15 seed=42 cluster=1 inside

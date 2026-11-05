@@ -162,7 +162,16 @@ public:
   // than a first pass, so it varies the look instead of repeating the previous document.
   void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
                        const std::string &requirement = std::string(),
-                       bool redesign = true);
+                       bool redesign = true,
+                       const std::string &editInstruction = std::string());
+
+  // Queues animation art for a rig that is not this window's draft (the Content Editor's
+  // rig). The clip's frame declarations live in the caller's registry document; this asks
+  // for one multi-frame document per participating part and opens the window so its Draw
+  // pumps the replies. Returns false, with a reason, when the movement's requirements are
+  // not met or there is nothing to animate.
+  bool QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
+                         const std::string &variantId, std::string *error);
 
   // Bulk regeneration for every icon whose style field names `styleId`. Requests
   // run one after another; this window must be visible for replies to be pumped.
@@ -198,7 +207,9 @@ private:
                              const std::vector<std::string> &frameNames =
                                  std::vector<std::string>(),
                              const std::vector<std::string> &poses =
-                                 std::vector<std::string>());
+                                 std::vector<std::string>(),
+                             const std::string &baseDocument = std::string(),
+                             const std::string &editInstruction = std::string());
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -414,9 +425,13 @@ private:
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).
-  void QueueRigClipArt(const RigClip &clip);
+  void QueueRigClipArt(RigClip &clip);
   // Queues one layer's frames for one clip; also declares them in the draft.
-  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip);
+  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip,
+                           const std::string &variantId);
+  // One layer regenerated on its own: a new stored generation that inherits the other
+  // layers from the active one, so the previous generation is untouched.
+  void QueueRigPartClipArt(RigDesigner::Part &part, RigClip &clip);
   // Copies the selected clip's brief and poses into the edit buffers.
   void SyncRigClipBuffers(const RigClip &clip);
   void QueueWornArt(const std::string &itemId);
@@ -437,6 +452,9 @@ private:
     // poses the prompt reads. Empty for a single-sprite layer.
     std::vector<std::string> frames;
     std::vector<std::string> poses;
+    // The base layer's source document, when one exists; the prompt asks the model to edit
+    // it instead of redrawing the layer from its brief.
+    std::string baseDocument;
     // True when art already exists and this is a deliberate re-draw, so the prompt asks
     // for a different interpretation rather than a copy of the current document.
     bool redesign = false;

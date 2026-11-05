@@ -30,5 +30,6 @@
     "gcd": true,
     "autoCast": false,
     "xpPerUse": 8
-  }
+  },
+  "animation": "sword_swing"
 }

@@ -1,0 +1,74 @@
+sprite 32x32
+kind object
+material iron
+
+frame "f1" {
+  // Shoulder / upper arm guard
+  rect (7,12) (10,14) color=ink.base
+  rect (8,12) (10,13) color=iron.2
+  pixel (8,12) color=iron.3
+  pixel (7,13) color=iron.1
+
+  // Leather sleeve / under-layer
+  rect (7,15) (9,18) color=ink.base
+  rect (8,15) (9,17) color=soil.2
+  pixel (8,16) color=soil.3
+  pixel (7,17) color=soil.1
+
+  // Forearm bracer & fist
+  rect (7,19) (10,23) color=ink.base
+  rect (8,19) (9,21) color=iron.1
+  pixel (8,20) color=iron.2
+  // Hand / glove
+  rect (7,22) (9,23) color=sand.2
+  pixel (8,22) color=sand.3
+  pixel (7,23) color=sand.1
+}
+
+frame "f2" {
+  // Counterbalance: arm swings back and slightly outward
+  // Shoulder pulled back slightly
+  rect (6,13) (9,15) color=ink.base
+  rect (7,13) (9,14) color=iron.2
+  pixel (7,13) color=iron.3
+  pixel (6,14) color=iron.1
+
+  // Upper arm flared back
+  rect (5,16) (8,19) color=ink.base
+  rect (6,16) (7,18) color=soil.2
+  pixel (6,17) color=soil.3
+  pixel (5,18) color=soil.1
+
+  // Forearm & fist trailing for balance
+  rect (4,19) (7,23) color=ink.base
+  rect (5,20) (6,22) color=iron.1
+  pixel (5,20) color=iron.2
+  // Hand extended
+  rect (4,22) (6,23) color=sand.2
+  pixel (5,22) color=sand.3
+  pixel (4,23) color=sand.1
+}
+
+frame "f3" {
+  // Recovery: arm returning toward default ready stance
+  // Shoulder settling
+  rect (7,12) (10,14) color=ink.base
+  rect (8,12) (10,13) color=iron.2
+  pixel (8,12) color=iron.3
+  pixel (7,13) color=iron.1
+
+  // Upper arm
+  rect (7,15) (9,18) color=ink.base
+  rect (8,15) (9,17) color=soil.2
+  pixel (8,16) color=soil.3
+  pixel (7,17) color=soil.1
+
+  // Forearm bracer swinging back down
+  rect (6,19) (9,23) color=ink.base
+  rect (7,19) (8,21) color=iron.1
+  pixel (7,20) color=iron.2
+  // Hand returning to resting guard
+  rect (7,22) (9,23) color=sand.2
+  pixel (8,22) color=sand.3
+  pixel (7,23) color=sand.1
+}

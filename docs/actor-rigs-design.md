@@ -176,10 +176,10 @@ Fields: `category`, `description` (the whole-body motion the part requests are c
 movement that names participants animates only those; the rest keep their static sprite,
 which is how "a kick does not animate the hair" is expressed.
 
-`requires` is a gate, not a hint. The Designer refuses to generate an entry whose
-requirements the current rig cannot meet, so a sword swing cannot silently produce an arm
-moving under a stationary blade. The entries are still authored and nameable, which is what
-lets skills reference them before worn equipment animates.
+`requires` is a gate for a capability the rig cannot supply. The grip path now draws the
+equipped hand item, so `sword_swing` and `spell_cast` no longer declare `weapon`/`focus`;
+they generate like any other clip and the weapon follows the arm on the grip path. A
+movement that still declares a requirement is refused until that requirement exists.
 
 ### Clips
 
@@ -192,10 +192,37 @@ movement later does not rewrite existing clips -- a new clip picks up the new te
 regenerating an existing one uses the clip's own copied intent. A part with no entry for a clip keeps its static `sprite`, which is also the
 idle pose -- there is no separate idle animation yet.
 
-Frame names are deterministic: `<part sprite>_<clip>_f1..fN`. The rig JSON declares them,
-and the animation document (requested under `<part sprite>_<clip>`) is written to those
-names, so the rig can point at frames before any art exists. The base part sprite is never
+Frame names are deterministic: `<part sprite>_<clip>_<generation>_f1..fN` for a stored
+generation (`v1`, `v2`, ...), and `<part sprite>_<clip>_f1..fN` for the original generation
+that existed before generations were kept. The rig JSON declares them, and the animation
+document (requested under `<part sprite>_<clip>_<generation>`) is written to those names,
+so the rig can point at frames before any art exists. The base part sprite is never
 overwritten.
+
+### Stored generations
+
+A clip keeps every generation it has produced. The rig JSON stores a `variants` array on
+the clip; each entry has an `id`, a display `name` (Original, Generation 1, ...), a
+`created` timestamp and a `parts` map from part id to that generation's frame list. The
+active generation is `activeVariant`; the per-part `clips.<clip>` lists mirror it, so the
+renderer, the previews and skill playback read one active set and need no new lookup.
+
+- **Generating creates a generation, it does not overwrite.** `Generate <clip> for all
+  layers` allocates the next `vN`, declares its per-part frames, appends the variant,
+  makes it active and saves. The previous generation's PNGs and `.sprite` documents stay
+  on disk.
+- **Selecting is a copy, not a regeneration.** The Content Editor and Designer clip
+  sections have a generation selector. Choosing one copies its frame lists into the
+  parts and saves (Content Editor) or updates the draft (Designer); no art requests are
+  queued.
+- **The original generation** is materialized by the rig loader from the frames that
+  existed before variants, so existing rigs gain an `Original` entry and can still be
+  selected.
+- **Animating one layer alone** (Designer layer list) forks a new generation that inherits
+  the other layers from the active one, then regenerates just that layer. The old
+  generation is untouched.
+- Skills and the world use the active generation. Switching a clip's generation changes
+  what plays in game; it does not delete anything.
 
 Generation is one request per part for the whole clip, queued behind the same one-at-a-time
 art pump as every other layer:
@@ -213,8 +240,9 @@ art pump as every other layer:
 4. A part can be redrawn alone with **Animate walk** in the layer list.
 
 The preview plays the selected clip at its fps with Play/Pause, and the base sprites show
-through wherever a part has no frames. Playback is the Designer's clock only: nothing in
-the world reads a rig yet, so this is an authoring preview, not a game animation system.
+through wherever a part has no frames. The world now plays the same clips through the rig
+renderer; the preview is the authoring view of them, with the manual outfit standing in
+for live equipment.
 
 Limits, stated rather than hidden:
 
@@ -222,7 +250,9 @@ Limits, stated rather than hidden:
   frame; the compiler cannot measure joint drift. The preview is how you catch it.
 - **No motion validation.** The compiler checks frame count/names and each frame's pixels;
   it cannot tell a walk from a shuffle.
-- **Worn equipment is static.** A helmet or sword keeps its z and does not follow the part
+- **Hand items follow the grip path; other worn equipment is static.** A sword or focus is
+  drawn at the hand read from the arm frame; a helmet or cuirass keeps its z and does not
+  follow the part
   it sits on.
 - **The clip spec and the movement text are separate copies.** Editing a movement changes
   what new clips are created with; existing clips keep their own brief and poses (the
@@ -235,28 +265,122 @@ Limits, stated rather than hidden:
 - Changing a clip's frame count does not rewrite the existing per-part frame lists; the
   next Generate does, and the registry warns on a saved mismatch.
 
+### Animating an existing rig
+
+A rig's JSON now stores each part's `brief` (the prose it was drawn from), so a saved rig
+can be animated without re-drafting the whole body. In the Content Editor's **Actor rigs**
+pane:
+
+1. select the rig;
+2. **Animation → Add clip** picks a movement and writes the clip plus its deterministic
+   per-part frame sprites into the live registry and the editor document, then saves the
+   rig immediately -- the frames take seconds to generate and a restart between Add and a
+   later Save would leave the PNGs with no clip pointing at them;
+3. **Generate <clip> for all layers** queues one multi-frame document per participating
+   part through the Designer's art session (the Designer window opens to pump the replies);
+   the frames appear in the pane as they land, Play/Pause previews the clip, and a frame
+   scrubber inspects it. The preview **loops** one-shot clips and restarts the clock when
+   frames arrive: generation is slow relative to a 0.3s kick, so without that the first
+   thing seen is the last frame;
+4. **Save** writes the clip declarations to the Content Editor's rig override
+   (`content.editor/rigs/<id>.json`), leaving the catalog file untouched.
+
+The prompt gets the part's `brief`, the movement's description and pose plan, and -- when
+one exists -- the layer's current `.sprite` document under `<base-document>`. The model is
+told to produce the frames by **editing that document**: keep its palette and every
+operation the pose does not need to change. That is the identity fix for the base being
+shirtless while the animation invented leather armour; the model starts from the existing
+art rather than from the brief. Generated rigs keep their source beside the sprite; a
+hand-authored rig like the villager falls back to `data/rigs/<rig>/<part>.sprite`. There is
+**no automatic palette guard yet** -- a disobedient reply can still drift, and the base
+document costs prompt tokens per part. The movement's `requires` gate still applies to any
+movement that declares one; the shipped weapon/cast movements no longer do, because the
+grip path draws the hand item.
+
+The segmented-cutout and per-weapon-frame experiments were throwaway debug windows and
+have been removed; the grip path below is the production result.
+
+### Grips
+
+A hand item carries `worn.grip` in its definition:
+
+```json
+"worn": { "sprite": "worn_iron_sword", "z": 110,
+          "grip": { "x": 24, "y": 22, "angle": 0 } }
+```
+
+- `x`/`y` are the pixel in the item's 32x32 worn canvas where the hand closes.
+- `angle` is the item's rest orientation relative to the arm; the grip path rotates by the
+  arm direction plus this angle.
+- The equipment designer **requires** the grip for `slot: hand`, validates 0..31, and the
+  worn-art prompt tells the painter to draw the handle at that point. The Content Editor's
+  item pane has X / Y / rest-angle controls with a **live arm-frame preview** and a **Save
+  grip** button, so a hold that is slightly off is corrected at runtime and written to
+  the item override.
+
+The grip path reads the hand (bottom of the arm frame) and the arm direction
+(shoulder-to-hand) from the **arm animation frame** and places the static worn art there.
+The world renderer now does this for equipped hand items: they follow the arm frame of the
+clip instead of sitting at a fixed z. It is a heuristic, not an authored anchor -- the next
+upgrade is a hand point per arm frame if a clip reads badly. The grip is definition-level:
+every instance of the item shares it. Helmets and other non-hand worn items have no grip
+and keep their z.
+
+## World rendering and playback
+
+`RigBody { rig }` on an actor makes the world draw it part by part instead of as a single
+`Sprite`. It is assigned by `player.rig` (a setting; restart to apply), an NPC template's
+`"rig"`, or a map NPC's `"rig"`. An unknown id is reported at spawn and the actor keeps its
+sprite, so the fallback is visible rather than an invisible body. `DrawRigEntity` builds the
+worn layers from the items the actor actually has equipped -- `Equipped` on `Holds`
+children, `ItemType` -> `ItemDef` -> worn sprite/z/hides -- and draws through the same
+ordering and hiding the previews use.
+
+A `RigAnimationSystem` chooses the locomotion clip from the actor's real speed: `idle` when
+still, `run` at or above 60% of `MaxSpeed` (120 when the actor has none), `walk` otherwise,
+and advances the clip's clock. A rig with none of those clips -- including one with only a
+`kick` -- draws its static sprites, because a one-shot has no business being chosen by a
+speed test. The renderer only reads `RigAnim`; the clock is the game's, so a frame that
+skips the draw does not lose animation time.
+
+To try it: give the player or an NPC a rig id (`player.rig` in settings, `"rig"` on a
+template or map NPC), make sure that rig has `idle`/`walk`/`run` clips (generate them in the
+Designer and save), and move. Equipment is live: the player's map starting equipment and an
+NPC template's `equipped` list appear as worn layers.
+
 ## What this slice does not do
 
-- **No equipment lookup.** The preview is a manual outfit: it does not read `Equipped`
-  slots from an entity. Equipping a helmet in the world will not change the pane until
-  that lookup exists.
-- **No world rendering.** Spawned actors still draw their single `Sprite`; nothing reads
-  a rig for an entity yet. The renderer is ready, the attachment is not.
-- **No anchors, no world animation.** The rig has no pivots, so a part's frames must stay
-  registered by construction, and nothing plays a clip on a spawned actor: the Designer's
-  preview is the only player. A swing needs `arm_right` and the worn sword to move
-  together, which is the anchors slice.
-- **No world object for generated equipment.** An item can be worn in a preview; it
-  cannot spawn in a room until its object template is made with the Object domain.
-- **No world rendering or equipment lookup** still: a saved rig is visible in the
-  Content Editor and the Designer, not on a spawned actor.
+- **Hand items have a grip, not authored hand anchors.** The grip path reads the hand from
+  the arm frame, so a sword or focus follows the arm through a swing or cast. It is a
+  heuristic; other worn equipment (helmets, armour) still has no per-frame attachment. A
+  hand point per arm frame is the upgrade if a clip puts the hand where the heuristic does
+  not expect it.
+- **No directional art.** Rigs are drawn front-facing; there is no mirroring or
+  four-direction vocabulary, so a character walking left looks like one walking right.
+- **Skill playback is a one-shot at activation.** `UseSkill` starts the skill's movement
+  clip on the actor's rig (after the target/range/cooldown checks pass), and the animation
+  system plays it once and returns to locomotion. The weapon skills now name their clips:
+  Attack, Heavy Swing and Power Strike play `sword_swing`; Fireball and Ice Lance play
+  `spell_cast`. The equipped hand item follows on the grip path, so the clip only has to
+  contain the body and arms. It requires the actor to be rigged and
+  its rig to have that clip; an actor with no rig, or a rig without the clip, still uses
+  the skill -- it simply has no animation for that body. Cast-time skills start the
+  animation at activation, not when the effect lands, so the visual is not synced to the
+  cast bar or the hit.
+- **The previews are still a manual outfit.** The Content Editor and Designer previews do
+  not read `Equipped`; the world does. A pane showing a helmet you have not toggled is not a
+  bug, it is the preview's deliberate control.
+- **No world object for generated equipment.** An item can be worn in the world if its item
+  definition exists, but a generated item still cannot spawn in a room until its object
+  template is made with the Object domain.
 
 ## Next, in order
 
-1. A component (`RigBody { rig; worn items }`) and a world render path, then choosing a
-   rig instead of an actor sprite at spawn. Animation state and movement-driven clip
-   selection belong to that slice, not this one.
-2. The equipment lookup: `Equipped` slots → worn layers, live.
-3. Anchors/pivots per part, so worn art and animated parts can move together.
-4. An equipment domain: item definitions (slot, armour, hides) generated beside the worn
-   art.
+1. Per-frame hand anchors (the grip path's arm-frame heuristic is the current stand-in) or
+   directional weapon art for large swings; `sword_swing` and `spell_cast` already generate
+   and play with the grip path.
+2. Directional rig art, or at least a horizontal flip, and the facing wiring.
+3. The previews read the live equipment lookup instead of a manual outfit; the rig previews
+   now draw equipped hand items on the grip path.
+4. Cast-time skills could hold their cast clip until the cast completes, instead of the
+   one-shot starting at activation.

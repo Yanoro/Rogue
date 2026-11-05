@@ -514,6 +514,7 @@ The player entity and its starting tile.
 | `startY` | int | `20` | Starting tile. *Restart to apply.* |
 | `race` | string | `""` | Race the player's body slots come from. Empty means the human default. *Restart to apply.* |
 | `actorSprite` | string | `""` | Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art. |
+| `rig` | string | `""` | Actor rig the player is drawn with instead of a single sprite. Layered, so equipped items are drawn over the body and the rig's clips play as the player moves. |
 | `maxSpeed` | number | `100.0` | Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this. Must be at least 0. A value outside the range is reported and replaced. |
 | `portrait` | string | `""` | PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite. *Restart to apply.* |
 

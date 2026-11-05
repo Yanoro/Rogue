@@ -25,6 +25,7 @@
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
 #include "MovementRegistry.h"
+#include "RigGrip.hpp"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
@@ -200,6 +201,10 @@ public:
   // Used by the spawn path and by the Settings window's picker, which is why it
   // reports rather than only logging. Empty id removes the sprite.
   bool ApplyPlayerActorSprite(const std::string &id, std::string &message);
+
+  // Puts a rig on the player, or clears it back to the actor sprite / race look. Used by
+  // the spawn path and by the Settings window's rig picker; empty id removes it.
+  bool ApplyPlayerRig(const std::string &rigId, std::string &message);
 
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
@@ -644,6 +649,9 @@ private:
   // only in the console the game may not have been launched from.
   std::string speechUnavailableReason;
 
+  // Arm-frame grip analysis, by frame sprite; see RigGripFor.
+  std::map<std::string, RigGrip::ArmGrip> rigGripCache;
+
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
@@ -850,6 +858,16 @@ private:
   // layer and the entity layer cannot drift apart; see MapTileVisual.
   void DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                         const ScreenPosition &screenPos);
+
+  // Draws a rigged actor's layers and its worn equipment instead of its sprite. Returns
+  // false when the rig is unknown or nothing drew, so the caller can still fall back to
+  // the single-image look.
+  bool DrawRigEntity(flecs::entity e, const RigBody &body,
+                     const ScreenPosition &screenPos, const DrawAscii &ascii);
+
+  // The hand/arm direction read from an arm frame, cached per frame sprite. The pixels do
+  // not change, and the world draw asks every frame.
+  const RigGrip::ArmGrip &RigGripFor(const std::string &sprite);
 
   // The blueprint placement path, shared by the preview and the commit so the
   // two cannot disagree: whatever the ghost tints green is exactly what a click

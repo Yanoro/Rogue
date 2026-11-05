@@ -612,6 +612,28 @@ struct Sprite {
   std::string path;
 };
 
+// The rig an actor is drawn with, instead of its single Sprite.
+//
+// Runtime-only, like Sprite: the art lives in the rig and item registries, and the id is
+// all an entity needs. An entity with a RigBody is drawn part by part, with its equipped
+// items as worn layers. A rig id that does not resolve falls back to the sprite, so a typo
+// is a visible fallback rather than an invisible actor.
+struct RigBody {
+  std::string rig;
+};
+
+// Which clip a rigged actor is playing and how far into it. The animation system updates
+// this from movement; the renderer only reads it, which keeps a draw call from being the
+// place a clip starts.
+struct RigAnim {
+  std::string clip;
+  float time = 0.0f;
+  // A skill-driven clip plays once and then yields to locomotion. Kept on the component
+  // rather than inferred from the clip's loop flag because a preview or a locomotion clip
+  // can legitimately be non-looping too, and only the skill path owns this hand-over.
+  bool oneShot = false;
+};
+
 // Marks the map's own ground tiles, so the renderer can draw them before
 // everything that stands on them.
 //
@@ -1855,6 +1877,14 @@ struct ItemRegistryResource {
   ItemRegistry* registry;
 };
 
+class RigRegistry;
+// Actor-rig definitions, loaded once at init. UseSkill is a free function and needs the
+// rig's clips to start a skill animation; this is the same resource pattern as the item
+// and skill registries above.
+struct RigRegistryResource {
+  RigRegistry* registry;
+};
+
 class RaceRegistry;
 // Race definitions, loaded once at init from data/races/*.json (see
 // RaceRegistry.h). Supplies the body slots a character is born with, which is
@@ -2032,6 +2062,8 @@ inline void RegisterComponents(flecs::world &ecs) {
   // merely skipped, so there is nothing here a serializer needs.
   ecs.component<Vitals>().member<float>("health").member<float>("maxHealth");
   ecs.component<Portrait>().member<std::string>("id");
+  ecs.component<RigBody>().member<std::string>("rig");
+  ecs.component<RigAnim>().member<std::string>("clip").member<float>("time").member<bool>("oneShot");
   ecs.component<Armor>().member<float>("value");
   ecs.component<Aggressive>()
       .member<float>("interval")

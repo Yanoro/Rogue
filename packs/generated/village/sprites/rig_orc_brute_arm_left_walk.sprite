@@ -1,0 +1,134 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = #2d451b
+  orc_mid = #456b23
+  orc_light = #618f33
+  wrap_dark = soil.1
+  wrap_mid = soil.2
+  wrap_light = soil.3
+  ink = ink.base
+}
+
+frame "f1" {
+  // Left arm swung backward, body low
+  rect (7,13) (10,22) color=ink
+  // Bicep/shoulder
+  rect (8,13) (10,15) color=orc_mid
+  pixel (8,13) color=orc_light
+  pixel (9,13) color=orc_light
+  pixel (10,15) color=orc_dark
+  // Forearm angled back
+  rect (7,16) (10,18) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (8,16) color=orc_light
+  pixel (10,18) color=orc_dark
+  // Wrist wrap
+  rect (7,19) (10,20) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+  // Fist pulled back
+  rect (8,21) (10,22) color=orc_mid
+  pixel (8,21) color=orc_light
+  pixel (10,22) color=orc_dark
+  // Organic contour cleanup
+  erase pixel (7,13)
+  erase pixel (7,14)
+  erase pixel (7,21)
+  erase pixel (7,22)
+  pixel (8,22) color=ink
+}
+
+frame "f2" {
+  // Passing position, body rising, arm hanging straight down
+  rect (7,12) (10,23) color=ink
+  // Upper arm
+  rect (8,12) (10,15) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (8,13) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,15) color=orc_dark
+  // Muscular forearm
+  rect (7,16) (10,18) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (7,17) color=orc_light
+  pixel (8,17) color=orc_light
+  pixel (10,18) color=orc_dark
+  // Bracer wrap
+  rect (7,19) (10,20) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+  // Relaxed fist
+  rect (7,21) (10,23) color=orc_mid
+  pixel (7,21) color=orc_light
+  pixel (8,21) color=orc_light
+  pixel (9,23) color=orc_dark
+  pixel (10,22) color=orc_dark
+  // Silhouette shaping
+  erase pixel (7,12)
+  erase pixel (7,13)
+  erase pixel (10,23)
+  pixel (7,23) color=ink
+}
+
+frame "f3" {
+  // Left arm swung forward, body at lowest point
+  rect (7,13) (10,23) color=ink
+  // Upper arm pushed slightly forward
+  rect (7,13) (10,15) color=orc_mid
+  pixel (7,13) color=orc_light
+  pixel (8,13) color=orc_light
+  pixel (10,15) color=orc_dark
+  // Forearm
+  rect (7,16) (10,19) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (8,16) color=orc_light
+  pixel (7,17) color=orc_light
+  pixel (10,19) color=orc_dark
+  // Leather wrap shifted forward
+  rect (7,20) (10,21) color=wrap_mid
+  line (7,20) (10,20) color=wrap_light
+  line (7,21) (10,21) color=wrap_dark
+  // Forward clenched fist
+  rect (7,22) (10,23) color=orc_mid
+  pixel (7,22) color=orc_light
+  pixel (8,22) color=orc_light
+  pixel (9,23) color=orc_dark
+  pixel (10,23) color=orc_dark
+  // Edge cleanup
+  erase pixel (10,13)
+  erase pixel (10,23)
+}
+
+frame "f4" {
+  // Passing position returning backward, body rising
+  rect (7,12) (10,23) color=ink
+  // Upper arm
+  rect (8,12) (10,14) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+  // Muscular forearm
+  rect (7,15) (10,18) color=orc_mid
+  pixel (7,15) color=orc_light
+  pixel (8,15) color=orc_light
+  pixel (7,16) color=orc_light
+  pixel (10,18) color=orc_dark
+  // Wrist wrap
+  rect (7,19) (10,21) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,21) (10,21) color=wrap_dark
+  // Clenched fist
+  rect (7,22) (10,23) color=orc_mid
+  pixel (7,22) color=orc_light
+  pixel (8,22) color=orc_light
+  pixel (10,22) color=orc_dark
+  pixel (9,23) color=orc_dark
+  // Cleanup
+  erase pixel (7,12)
+  erase pixel (7,13)
+  erase pixel (10,23)
+  pixel (7,23) color=ink
+}

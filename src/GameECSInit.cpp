@@ -457,6 +457,7 @@ void Game::ECSInit() {
   // Agent-authored rigs load after the catalog, so deleting one reverts to the
   // hand-authored body it was written over.
   rigRegistry.Load(settings.content.generatedRigs);
+  ecs.set<RigRegistryResource>({&rigRegistry});
 
   // Movement templates load after the rigs so the cross-check below can see both. A rig
   // clip and a skill both name a movement by id; a typo would otherwise be a silent
@@ -2091,6 +2092,21 @@ void Game::ECSInit() {
           "Warning: player.actorSprite '" + settings.player.actorSprite +
           "' has no sprite art (data/sprites/" + settings.player.actorSprite +
           ".png); using the race's look.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
+
+  // The player's rig, when the settings name one. Layered art wins over the actor sprite
+  // in the renderer; an unknown id is reported and leaves the sprite in place.
+  if (!settings.player.rig.empty()) {
+    if (rigRegistry.Get(settings.player.rig) != nullptr) {
+      playerEntity.set<RigBody>({settings.player.rig});
+      playerEntity.set<RigAnim>({});
+    } else {
+      const std::string message =
+          "Warning: player.rig '" + settings.player.rig +
+          "' is not an actor rig; using the actor sprite or race look.";
       if (debugLog) debugLog->LogWarning(message);
       else std::cerr << message << std::endl;
     }

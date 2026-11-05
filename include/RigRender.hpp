@@ -92,6 +92,26 @@ struct Layer {
   bool worn = false;
 };
 
+// The clip a rigged actor should play at `speed`, for the locomotion vocabulary only:
+// idle when still, run at or above the threshold when the rig has one, walk otherwise.
+//
+// Returns null when the rig has none of the three, which is why a rig with only a kick
+// clip draws its static sprites: a one-shot has no business being chosen by a speed test.
+inline const RigClip *ChooseClip(const ActorRig &rig, float speed,
+                                 float runThreshold) {
+  const RigClip *idle = nullptr;
+  const RigClip *walk = nullptr;
+  const RigClip *run = nullptr;
+  for (const RigClip &clip : rig.clips) {
+    if (clip.id == "idle") idle = &clip;
+    else if (clip.id == "walk") walk = &clip;
+    else if (clip.id == "run") run = &clip;
+  }
+  if (speed <= 0.5f) return idle != nullptr ? idle : walk;
+  if (speed >= runThreshold && run != nullptr) return run;
+  return walk != nullptr ? walk : idle;
+}
+
 // The layers in draw order, with every part named in a worn layer's `hides` removed.
 // Worn layers keep their own z, so an item can sit in front of the body but behind the
 // head when that is what the art needs.
@@ -133,11 +153,11 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
 // Draws the composed rig into a square at the current cursor and reserves the space.
 // `box` is the side in pixels; the 32x32 rig is scaled up with point sampling, because
 // that is what the world will do.
-inline void Draw(const ActorRig& rig, ResourceManager& resources,
-                 const std::vector<WornLayer>& worn, float box,
-                 const AnimationState* animation = nullptr) {
-  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
-  ImGui::Dummy(ImVec2(box, box));
+// Draws into an already-reserved square. The picker needs this: it owns the cell's
+// hitbox, so the rig must not reserve space of its own inside it.
+inline void DrawInto(const ActorRig& rig, ResourceManager& resources,
+                     const std::vector<WornLayer>& worn, const ImVec2 &topLeft,
+                     float box, const AnimationState* animation = nullptr) {
   const ImVec2 bottomRight(topLeft.x + box, topLeft.y + box);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(topLeft, bottomRight, IM_COL32(26, 26, 30, 255));
@@ -153,6 +173,37 @@ inline void Draw(const ActorRig& rig, ResourceManager& resources,
         ImVec2(fit.x, fit.y), ImVec2(fit.x + fit.width, fit.y + fit.height));
   }
   draw->AddRect(topLeft, bottomRight, IM_COL32(90, 90, 96, 255));
+}
+
+inline void Draw(const ActorRig& rig, ResourceManager& resources,
+                 const std::vector<WornLayer>& worn, float box,
+                 const AnimationState* animation = nullptr) {
+  const ImVec2 topLeft = ImGui::GetCursorScreenPos();
+  ImGui::Dummy(ImVec2(box, box));
+  DrawInto(rig, resources, worn, topLeft, box, animation);
+}
+
+// Draws the composed rig into a world-space rectangle, in the same order and with the same
+// hiding as the preview. Returns whether any layer drew, so the caller can fall back to a
+// sprite when a rig has no art at all.
+inline bool DrawWorld(const ActorRig &rig, ResourceManager &resources,
+                      const std::vector<WornLayer> &worn, float x, float y,
+                      float width, float height,
+                      const AnimationState *animation = nullptr) {
+  bool drew = false;
+  for (const Layer &layer : Order(rig, resources, worn, nullptr, animation)) {
+    if (layer.texture == nullptr) continue;
+    SetTextureFilter(*layer.texture, TEXTURE_FILTER_POINT);
+    const SpriteRect fit = SpriteFitRect(*layer.texture, x, y, width, height);
+    if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
+    const Rectangle source = {0.0f, 0.0f,
+                              static_cast<float>(layer.texture->width),
+                              static_cast<float>(layer.texture->height)};
+    const Rectangle destination = {fit.x, fit.y, fit.width, fit.height};
+    DrawTexturePro(*layer.texture, source, destination, {0.0f, 0.0f}, 0.0f, WHITE);
+    drew = true;
+  }
+  return drew;
 }
 
 }  // namespace RigRender

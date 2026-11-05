@@ -161,6 +161,28 @@ ApplyResult ApplyReply(const std::string &text) {
     }
   }
 
+  // A hand item is placed on the hand by its grip, so the reply has to name the point.
+  // Without it the grip path would invent a hold, which is exactly the drift the editor's
+  // grip sliders exist to correct.
+  if (draft.slot == "hand") {
+    if (!worn.contains("grip") || !worn["grip"].is_object()) {
+      return fail("A hand item needs \"worn.grip\": { \"x\": 24, \"y\": 22, "
+                  "\"angle\": 0 } -- the pixel in the 32x32 canvas where the hand holds "
+                  "it, and the item's rest angle in degrees.");
+    }
+    const nlohmann::json &grip = worn["grip"];
+    draft.gripX = grip.value("x", -1);
+    draft.gripY = grip.value("y", -1);
+    draft.gripAngle = grip.value("angle", 0.0f);
+    if (draft.gripX < 0 || draft.gripX > 31 || draft.gripY < 0 ||
+        draft.gripY > 31) {
+      return fail("worn.grip x and y must be inside the 32x32 frame (0..31).");
+    }
+    if (draft.gripAngle < -180.0f || draft.gripAngle > 180.0f) {
+      return fail("worn.grip.angle must be between -180 and 180 degrees.");
+    }
+  }
+
   if (draft.slot == "hand") {
     draft.damage = reply.value("damage", 0.0f);
     draft.swingTime = reply.value("swingTime", 1.8f);
@@ -196,6 +218,11 @@ ApplyResult ApplyReply(const std::string &text) {
                                   {"brief", draft.wornBrief},
                                   {"z", draft.wornZ}};
   if (!draft.hides.empty()) wornDocument["hides"] = draft.hides;
+  if (draft.slot == "hand") {
+    wornDocument["grip"] = {{"x", draft.gripX},
+                            {"y", draft.gripY},
+                            {"angle", draft.gripAngle}};
+  }
   document["worn"] = std::move(wornDocument);
   draft.document = std::move(document);
 
@@ -238,8 +265,10 @@ std::string WornArtRequirement(const Draft &draft) {
             "worn item, not the body underneath.\n";
   }
   if (draft.slot == "hand") {
-    text += "It is held in the right hand at (22,12)-(25,23); draw it gripped there, "
-            "not lying flat.\n";
+    text += "The hand holds it at (" + std::to_string(draft.gripX) + "," +
+            std::to_string(draft.gripY) + ") in the 32x32 frame; draw the weapon's grip " +
+            "(the handle, where a hand would close) at that point, not lying flat. Its " +
+            "rest angle is " + std::to_string(draft.gripAngle) + " degrees.\n";
   }
   return text;
 }

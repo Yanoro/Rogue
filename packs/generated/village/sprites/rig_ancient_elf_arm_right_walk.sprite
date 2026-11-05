@@ -1,0 +1,137 @@
+sprite 32x32
+kind object
+material grass
+
+frame "f1" {
+  // Right arm swinging forward (body lowest)
+  // Shoulder joint
+  rect (22,12) (24,14) color=grass.1
+  line (22,12) (24,12) color=ink.base
+  pixel (25,13) color=ink.base
+  pixel (22,13) color=grass.3
+  pixel (23,13) color=grass.2
+
+  // Upper sleeve swinging forward/outward
+  rect (22,14) (25,17) color=grass.2
+  line (25,14) (25,17) color=ink.base
+  line (22,14) (22,17) color=grass.1
+  pixel (23,15) color=grass.3
+  pixel (24,15) color=grass.2
+
+  // Forearm & cuff
+  rect (23,17) (25,19) color=grass.1
+  line (25,18) (25,19) color=ink.base
+  pixel (24,18) color=grass.2
+  line (23,19) (25,19) color=ink.base
+
+  // Open pale hand positioned forward/raised
+  rect (23,20) (25,22) color=sand.3
+  pixel (23,20) color=sand.4
+  pixel (25,20) color=sand.2
+  pixel (23,21) color=sand.3
+  pixel (24,21) color=ink.base
+  pixel (25,21) color=sand.2
+  pixel (24,22) color=sand.1
+  line (23,23) (25,23) color=ink.base
+  pixel (26,21) color=ink.base
+  pixel (22,21) color=ink.base
+}
+
+frame "f2" {
+  // Passing: arm hanging down, body raised by 1px
+  // Shoulder joint
+  rect (22,11) (24,13) color=grass.1
+  line (22,11) (24,11) color=ink.base
+  pixel (25,12) color=ink.base
+  pixel (22,12) color=grass.3
+  pixel (23,12) color=grass.2
+
+  // Upper sleeve hanging vertically
+  rect (22,13) (24,16) color=grass.2
+  line (25,13) (25,16) color=ink.base
+  line (22,13) (22,16) color=grass.0
+  pixel (23,14) color=grass.3
+  pixel (24,14) color=grass.2
+
+  // Forearm & cuff
+  rect (22,17) (24,19) color=grass.1
+  line (25,17) (25,19) color=ink.base
+  line (22,17) (22,19) color=grass.0
+  pixel (23,18) color=grass.2
+  line (22,19) (24,19) color=ink.base
+
+  // Open pale hand relaxed downwards
+  rect (22,20) (24,22) color=sand.3
+  pixel (22,20) color=sand.4
+  pixel (24,20) color=sand.2
+  pixel (23,21) color=ink.base
+  pixel (24,21) color=sand.2
+  line (22,23) (24,23) color=ink.base
+  pixel (25,21) color=ink.base
+  pixel (21,21) color=ink.base
+}
+
+frame "f3" {
+  // Contact: right arm back (body lowest)
+  // Shoulder joint
+  rect (22,12) (24,14) color=grass.1
+  line (22,12) (24,12) color=ink.base
+  pixel (25,13) color=ink.base
+  pixel (22,13) color=grass.2
+  pixel (23,13) color=grass.1
+
+  // Upper sleeve trailing slightly back
+  rect (22,14) (24,16) color=grass.1
+  line (25,14) (25,16) color=ink.base
+  line (22,14) (22,16) color=grass.0
+  pixel (23,15) color=grass.2
+
+  // Forearm & cuff pulled back / up
+  rect (22,17) (24,18) color=grass.0
+  line (25,17) (25,18) color=ink.base
+  line (22,17) (22,18) color=ink.base
+  line (22,19) (24,19) color=ink.base
+
+  // Open pale hand held back
+  rect (22,20) (24,21) color=sand.2
+  pixel (22,20) color=sand.3
+  pixel (24,20) color=sand.1
+  pixel (23,21) color=sand.1
+  line (22,22) (24,22) color=ink.base
+  pixel (25,20) color=ink.base
+  pixel (21,20) color=ink.base
+}
+
+frame "f4" {
+  // Passing: arm swinging back forward, body raised by 1px
+  // Shoulder joint
+  rect (22,11) (24,13) color=grass.1
+  line (22,11) (24,11) color=ink.base
+  pixel (25,12) color=ink.base
+  pixel (22,12) color=grass.3
+  pixel (23,12) color=grass.2
+
+  // Upper sleeve
+  rect (22,13) (24,16) color=grass.2
+  line (25,13) (25,16) color=ink.base
+  line (22,13) (22,16) color=grass.1
+  pixel (23,14) color=grass.3
+  pixel (24,14) color=grass.2
+
+  // Forearm & cuff
+  rect (22,17) (24,19) color=grass.1
+  line (25,17) (25,19) color=ink.base
+  line (22,17) (22,19) color=grass.0
+  pixel (23,18) color=grass.2
+  line (22,19) (24,19) color=ink.base
+
+  // Open pale hand
+  rect (22,20) (24,22) color=sand.3
+  pixel (22,20) color=sand.4
+  pixel (24,20) color=sand.2
+  pixel (23,21) color=ink.base
+  pixel (23,22) color=sand.2
+  line (22,23) (24,23) color=ink.base
+  pixel (25,21) color=ink.base
+  pixel (21,21) color=ink.base
+}

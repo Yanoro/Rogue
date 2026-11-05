@@ -1791,3 +1791,32 @@ registries.
 - **The router's `building` classification** has not been run against the live model. It is one
   decision call: `./build/AIRogue --sprite-route "a two-bedroom cottage"` should print
   `RESULT: building`. It costs money, so it is left to the owner.
+
+---
+
+## 14. Editing an existing sprite
+
+The sprite asset section in the Content Editor (the one used by tiles, objects and worn
+equipment, and by any later registry that draws its art through `DrawSpriteAsset`) has an
+**Edit this sprite** box under the preview. The person selects a generated version in the
+archive below (activating a variant restores its `.sprite` document with it), types a small
+change -- *"make this staff longer and the colours darker"* -- and sends it.
+
+What happens:
+
+- The active picture is archived first, so the version on screen stays selectable. If the
+  active picture is already an archived variant, no duplicate is made.
+- The Designer reads the active sprite's current `.sprite` document, puts it in the request
+  as `<base-document>`, and adds the typed text as `<edit-request>`.
+- The prompt says to start from the base document and apply only the requested change,
+  preserving the palette, silhouette and every operation not being changed. The edit is
+  not a re-draw (`redesign` is false), so the model is not asked to vary the look.
+- The reply is the edited document; it compiles to a new generated PNG and `.sprite`. The
+  previous version is a variant in the archive, not a casualty of the edit.
+- With no document present (an asset that has never had a DSL source), the request says so
+  and the model writes a new document from the brief plus the requested change.
+
+Registry independence is deliberate: the edit lives on the generic asset section, the
+request field is on `SpriteDocumentBrief`, and the base-document lookup is the same
+`FindSpriteDSLDocument` every asset uses. A new content kind gets the editing by drawing
+its sprite through the same section; there is no per-registry edit path to add.

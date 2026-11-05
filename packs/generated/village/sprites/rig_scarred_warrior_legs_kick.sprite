@@ -1,0 +1,78 @@
+sprite 32x32
+kind object
+material soil
+
+frame "f1" {
+  // Left leg (standing support, (12,20)-(16,31))
+  rect (12,21) (15,26) color=soil.2
+  rect (12,26) (16,30) color=wood.1
+  line (11,31) (16,31) color=wood.0
+  line (11,21) (11,31) color=ink.base
+  line (16,21) (16,31) color=ink.base
+  line (12,27) (15,27) color=iron.2
+
+  // Right leg (lifted knee / chambered kick, (17,19)-(22,25))
+  rect (16,19) (21,22) color=soil.2
+  rect (18,22) (22,25) color=wood.1
+  line (18,23) (21,23) color=iron.2
+  line (16,18) (21,18) color=ink.base
+  line (22,19) (22,25) color=ink.base
+  line (17,26) (22,26) color=ink.base
+  line (16,22) (18,25) color=ink.base
+
+  // Shading & highlights
+  pixel (13,22) color=soil.3
+  pixel (13,27) color=wood.2
+  pixel (17,20) color=soil.3
+  pixel (19,23) color=wood.2
+}
+
+frame "f2" {
+  // Left leg (planted, braced slightly back)
+  rect (12,21) (15,26) color=soil.2
+  rect (12,26) (16,30) color=wood.1
+  line (11,31) (16,31) color=wood.0
+  line (11,21) (11,31) color=ink.base
+  line (16,21) (16,31) color=ink.base
+  line (12,27) (15,27) color=iron.2
+
+  // Right leg (extended horizontal thrust kick, (16,19)-(25,23))
+  rect (16,19) (20,22) color=soil.2
+  rect (20,19) (24,23) color=wood.1
+  rect (24,19) (25,24) color=wood.0
+  line (16,18) (24,18) color=ink.base
+  line (25,18) (26,24) color=ink.base
+  line (16,23) (25,25) color=ink.base
+  line (21,20) (21,22) color=iron.2
+
+  // Shading & highlights
+  pixel (13,22) color=soil.3
+  pixel (13,27) color=wood.2
+  line (17,19) (20,19) color=soil.3
+  line (21,19) (23,19) color=wood.2
+}
+
+frame "f3" {
+  // Left leg (planted, bearing full weight)
+  rect (12,21) (15,26) color=soil.2
+  rect (12,26) (16,30) color=wood.1
+  line (11,31) (16,31) color=wood.0
+  line (11,21) (11,31) color=ink.base
+  line (16,21) (16,31) color=ink.base
+  line (12,27) (15,27) color=iron.2
+
+  // Right leg (dropping down diagonally, recovering toward stance)
+  rect (17,21) (20,26) color=soil.2
+  rect (18,25) (22,29) color=wood.1
+  line (18,30) (22,30) color=wood.0
+  line (17,20) (21,20) color=ink.base
+  line (21,21) (22,30) color=ink.base
+  line (16,25) (17,30) color=ink.base
+  line (18,26) (21,26) color=iron.2
+
+  // Shading & highlights
+  pixel (13,22) color=soil.3
+  pixel (13,27) color=wood.2
+  pixel (18,22) color=soil.3
+  pixel (19,26) color=wood.2
+}

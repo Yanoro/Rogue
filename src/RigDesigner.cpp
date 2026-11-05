@@ -199,11 +199,24 @@ bool Save(const Draft &draft, const std::string &directory, std::string *savedPa
     if (!clip.movement.empty()) entry["movement"] = clip.movement;
     if (!clip.brief.empty()) entry["brief"] = clip.brief;
     if (!clip.poses.empty()) entry["poses"] = clip.poses;
+    if (!clip.variants.empty()) {
+      nlohmann::json variants = nlohmann::json::array();
+      for (const RigClipVariant &variant : clip.variants) {
+        nlohmann::json variantEntry = {{"id", variant.id},
+                                       {"name", variant.name},
+                                       {"parts", variant.parts}};
+        if (!variant.created.empty()) variantEntry["created"] = variant.created;
+        variants.push_back(std::move(variantEntry));
+      }
+      entry["variants"] = std::move(variants);
+      if (!clip.activeVariant.empty()) entry["activeVariant"] = clip.activeVariant;
+    }
     clips.push_back(std::move(entry));
   }
   nlohmann::json parts = nlohmann::json::array();
   for (const Part &part : draft.parts) {
     nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.brief.empty()) entry["brief"] = part.brief;
     if (!part.clips.empty()) {
       nlohmann::json partClips = nlohmann::json::object();
       for (const RigPartClip &partClip : part.clips) {

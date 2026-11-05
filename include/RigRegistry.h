@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,6 +36,11 @@ struct RigPart {
   int z = 0;
   // The clips this part draws, one frame list each.
   std::vector<RigPartClip> clips;
+  // How this layer looks, in prose. Authoring intent kept with the rig: the animation
+  // prompts are cut from it, so an existing rig can be animated without re-drafting.
+  // Empty means the caller falls back to a generic "the <id> layer" description. Last
+  // because existing aggregate initializations spell the other fields in order.
+  std::string brief;
 };
 
 // One clip the rig can play.
@@ -42,6 +49,17 @@ struct RigPart {
 // than on each part so a mismatch is detectable. The brief and pose lines are the
 // authoring intent kept with the rig: regeneration has to redraw from what was asked for,
 // not from a list of frame names.
+// One stored generation of a clip: a complete part -> frame-list set. The original
+// generation is the frames that existed before variants; each later generation is one
+// "Generate" run. Selecting a variant copies its frame lists into the parts, so the world
+// keeps drawing one active set and every older set stays on disk.
+struct RigClipVariant {
+  std::string id;       // "original", "v1", "v2", ...
+  std::string name;     // "Original", "Generation 1", ...
+  std::string created;  // display-only timestamp
+  std::unordered_map<std::string, std::vector<std::string>> parts;
+};
+
 struct RigClip {
   std::string id;
   // The movement template this clip was generated from, when it came from one. Empty
@@ -53,6 +71,9 @@ struct RigClip {
   bool loop = true;
   std::string brief;
   std::vector<std::string> poses;
+  // Stored generations, oldest first. The part `clips` lists mirror `activeVariant`.
+  std::vector<RigClipVariant> variants;
+  std::string activeVariant;
 };
 
 // The sprite convention for one frame of a part's clip: <part sprite>_<clip>_f<index>.
@@ -60,16 +81,55 @@ struct RigClip {
 // Deterministic on purpose: the rig JSON can declare its frames before the art exists, and
 // the animation document (whose frames the compiler writes to <base>_<name>) lands exactly
 // where the declaration points.
+inline std::string VariantSuffix(const std::string &variantId) {
+  return (variantId.empty() || variantId == "original") ? std::string() : variantId;
+}
+
 inline std::string AnimationFrameSprite(const std::string &partSprite,
-                                        const std::string &clipId, int frame) {
-  return partSprite + "_" + clipId + "_f" + std::to_string(frame);
+                                        const std::string &clipId, int frame,
+                                        const std::string &variantId = std::string()) {
+  std::string base = partSprite + "_" + clipId;
+  const std::string suffix = VariantSuffix(variantId);
+  if (!suffix.empty()) base += "_" + suffix;
+  return base + "_f" + std::to_string(frame);
 }
 
 // The document base an animation document is requested under. Its frames are written as
 // <base>_f1.., which is what AnimationFrameSprite names.
 inline std::string AnimationDocumentName(const std::string &partSprite,
-                                         const std::string &clipId) {
-  return partSprite + "_" + clipId;
+                                         const std::string &clipId,
+                                         const std::string &variantId = std::string()) {
+  std::string base = partSprite + "_" + clipId;
+  const std::string suffix = VariantSuffix(variantId);
+  if (!suffix.empty()) base += "_" + suffix;
+  return base;
+}
+
+// The next free generation suffix (v1, v2, ...) for a clip; "original" is not a
+// generation and does not consume a number.
+inline std::string NextClipVariantId(const RigClip &clip) {
+  int next = 1;
+  for (const RigClipVariant &variant : clip.variants) {
+    if (variant.id.size() < 2 || variant.id.front() != 'v') continue;
+    try {
+      next = std::max(next, std::stoi(variant.id.substr(1)) + 1);
+    } catch (...) {
+    }
+  }
+  return "v" + std::to_string(next);
+}
+
+inline std::string ClipVariantCreated() {
+  const std::time_t now = std::time(nullptr);
+  std::tm local{};
+#if defined(_WIN32)
+  localtime_s(&local, &now);
+#else
+  localtime_r(&now, &local);
+#endif
+  char buffer[32];
+  std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local);
+  return buffer;
 }
 
 // A rigged actor: a set of part layers over one canvas.

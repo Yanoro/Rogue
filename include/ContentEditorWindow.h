@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -9,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "RigRegistry.h"
 #include "SpriteKinds.hpp"
 #include "Window.h"
 
@@ -70,6 +72,9 @@ private:
   // one kind whose document is a *composition*, so the generic form alone cannot show
   // what it makes.
   void DrawRigPreviewPane();
+  // Writes a clip and its per-part frame declarations into the live rig registry and the
+  // editor's document. The art itself is queued through the Designer afterwards.
+  bool ApplyRigClip(const ActorRig &rig, const RigClip &clip, std::string *error);
   // The equipment preview: the item's numbers and, when it has worn art, the layer on a
   // chosen rig. A worn item with no body to wear it is only half an item.
   void DrawItemPreviewPane();
@@ -109,7 +114,24 @@ private:
   // selected rig changes so a different rig starts from a full outfit.
   std::set<std::string> rigPreviewWorn;
   std::string rigPreviewEntry;
+  // Animation in the rig pane: the selected clip, its playback clock, the movement chosen
+  // for a new clip, and the texture stamps that let generated frames appear as they land.
+  std::string rigClipId;
+  float rigClipTime = 0.0f;
+  bool rigClipPlaying = true;
+  std::string rigNewClipMovement;
+  std::map<std::string, std::filesystem::file_time_type> rigAnimStamps;
+  std::string rigAnimStatus;
+  bool rigAnimStatusIsError = false;
   std::string itemPreviewRig;
+  // The sprite-asset edit box. Shared by every asset section so a new registry that draws
+  // its sprite through DrawSpriteAsset gets the same editing for free. Cleared when the
+  // section moves to a different sprite, so an instruction never leaks across assets.
+  char spriteEditBuffer[512] = {};
+  std::string spriteEditTarget;
+  // Grip editing in the item pane: the clip/frame whose arm the weapon is previewed on.
+  std::string itemGripClip;
+  int itemGripFrame = 0;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.

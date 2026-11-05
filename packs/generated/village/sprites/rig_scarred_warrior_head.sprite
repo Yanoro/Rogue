@@ -1,0 +1,77 @@
+sprite 32x32
+kind object
+
+palette {
+  shadow = #1b130e
+  outline = #2d1d13
+  skin_dark = soil.1
+  skin_mid = sand.1
+  skin_lit = sand.2
+  scar = #ebdcd0
+  scar_core = #fbf4ee
+  scar_shadow = #542f22
+  eye_white = #dfd8cf
+  eye_pupil = ink.base
+  stubble = #4d382b
+}
+
+// Jaw and neck base shadow
+rect (14,12) (18,13) color=outline
+rect (13,11) (19,12) color=outline
+
+// Head silhouette base
+rect (11,4) (21,11) color=outline
+rect (12,5) (20,11) color=skin_dark
+
+// Main face shape
+rect (12,5) (19,10) color=skin_mid
+rect (13,11) (18,11) color=skin_mid
+
+// Forehead and lit cheekbones (light from upper-left)
+rect (12,5) (18,6) color=skin_lit
+rect (12,7) (14,9) color=skin_lit
+
+// Ears
+pixel (11,7) color=outline
+pixel (11,8) color=skin_dark
+pixel (21,7) color=outline
+pixel (21,8) color=skin_dark
+
+// Stern heavy brow
+line (13,6) (15,6) color=shadow
+line (17,6) (19,6) color=shadow
+
+// Right eye (warrior's right, canvas left) - keen, dark pupil
+pixel (13,7) color=eye_white
+pixel (14,7) color=eye_pupil
+pixel (15,7) color=eye_white
+pixel (14,8) color=skin_dark
+
+// Left eye area (warrior's left, canvas right) - blinded / scarred
+pixel (17,7) color=scar_shadow
+pixel (18,7) color=scar
+pixel (19,7) color=scar_shadow
+
+// Diagonal scar crossing from upper brow across the left eye down to cheek/jaw
+pixel (16,5) color=scar
+pixel (17,6) color=scar_core
+pixel (18,7) color=scar_core
+pixel (18,8) color=scar_core
+pixel (19,9) color=scar
+pixel (19,10) color=scar_shadow
+
+// Nose bridge & tip
+line (16,7) (16,9) color=skin_mid
+pixel (15,9) color=skin_lit
+pixel (16,9) color=shadow
+
+// Weathered beard stubble / rugged chin
+rect (13,10) (18,11) color=stubble
+pixel (14,10) color=shadow
+pixel (15,10) color=shadow
+pixel (16,10) color=shadow
+pixel (17,10) color=shadow
+
+// Stern set mouth
+line (14,10) (17,10) color=outline
+pixel (15,11) color=skin_lit

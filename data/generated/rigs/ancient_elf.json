@@ -1,0 +1,101 @@
+{
+  "clips": [
+    {
+      "brief": "A four-frame walk cycle: the body rises and falls, the arms swing opposite the legs, and the head and hair follow the body's bob.",
+      "fps": 8,
+      "frames": 4,
+      "id": "walk",
+      "loop": true,
+      "poses": [
+        "contact: left leg forward, right arm forward, body at its lowest",
+        "passing: legs together, right leg lifting, body rising",
+        "contact: right leg forward, left arm forward, body at its lowest",
+        "passing: legs together, left leg lifting, body rising"
+      ]
+    }
+  ],
+  "description": "A tall, slender elf in forest-green robes with pale straw hair.",
+  "height": 32,
+  "name": "Ancient Elf",
+  "parts": [
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_legs_walk_f1",
+          "rig_ancient_elf_legs_walk_f2",
+          "rig_ancient_elf_legs_walk_f3",
+          "rig_ancient_elf_legs_walk_f4"
+        ]
+      },
+      "id": "legs",
+      "sprite": "rig_ancient_elf_legs",
+      "z": 10
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_body_walk_f1",
+          "rig_ancient_elf_body_walk_f2",
+          "rig_ancient_elf_body_walk_f3",
+          "rig_ancient_elf_body_walk_f4"
+        ]
+      },
+      "id": "body",
+      "sprite": "rig_ancient_elf_body",
+      "z": 20
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_arm_left_walk_f1",
+          "rig_ancient_elf_arm_left_walk_f2",
+          "rig_ancient_elf_arm_left_walk_f3",
+          "rig_ancient_elf_arm_left_walk_f4"
+        ]
+      },
+      "id": "arm_left",
+      "sprite": "rig_ancient_elf_arm_left",
+      "z": 25
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_arm_right_walk_f1",
+          "rig_ancient_elf_arm_right_walk_f2",
+          "rig_ancient_elf_arm_right_walk_f3",
+          "rig_ancient_elf_arm_right_walk_f4"
+        ]
+      },
+      "id": "arm_right",
+      "sprite": "rig_ancient_elf_arm_right",
+      "z": 25
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_head_walk_f1",
+          "rig_ancient_elf_head_walk_f2",
+          "rig_ancient_elf_head_walk_f3",
+          "rig_ancient_elf_head_walk_f4"
+        ]
+      },
+      "id": "head",
+      "sprite": "rig_ancient_elf_head",
+      "z": 30
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_ancient_elf_hair_walk_f1",
+          "rig_ancient_elf_hair_walk_f2",
+          "rig_ancient_elf_hair_walk_f3",
+          "rig_ancient_elf_hair_walk_f4"
+        ]
+      },
+      "id": "hair",
+      "sprite": "rig_ancient_elf_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

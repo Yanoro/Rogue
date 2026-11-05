@@ -4,11 +4,41 @@
   "width": 32,
   "height": 32,
   "parts": [
-    { "id": "legs", "sprite": "rig_villager_legs", "z": 10 },
-    { "id": "body", "sprite": "rig_villager_body", "z": 20 },
-    { "id": "arm_left", "sprite": "rig_villager_arm_left", "z": 25 },
-    { "id": "arm_right", "sprite": "rig_villager_arm_right", "z": 25 },
-    { "id": "head", "sprite": "rig_villager_head", "z": 30 },
-    { "id": "hair", "sprite": "rig_villager_hair", "z": 40 }
+    {
+      "id": "legs",
+      "sprite": "rig_villager_legs",
+      "z": 10,
+      "brief": "two sturdy legs in dark trousers and soft leather boots, planted slightly apart"
+    },
+    {
+      "id": "body",
+      "sprite": "rig_villager_body",
+      "z": 20,
+      "brief": "a charcoal tunic over a pale shirt, a leather belt at the waist"
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_villager_arm_left",
+      "z": 25,
+      "brief": "the left arm, sleeve rolled to the elbow, hand open"
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_villager_arm_right",
+      "z": 25,
+      "brief": "the right arm, sleeve rolled to the elbow, hand relaxed"
+    },
+    {
+      "id": "head",
+      "sprite": "rig_villager_head",
+      "z": 30,
+      "brief": "a weathered face with a short brown beard and calm eyes"
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_villager_hair",
+      "z": 40,
+      "brief": "short brown hair with a side part, sitting close to the head"
+    }
   ]
 }

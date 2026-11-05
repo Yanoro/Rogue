@@ -1,0 +1,150 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = #2d451b
+  orc_mid = #456b23
+  orc_light = #618f33
+  wrap_dark = soil.1
+  wrap_mid = soil.2
+  wrap_light = soil.3
+  ink = ink.base
+}
+
+frame "f1" {
+  // gather: elbow bent, forearm and hand drawn inward toward center chest
+  // Shoulder anchor (8,12)-(10,14)
+  rect (7,12) (10,14) color=ink
+  rect (8,12) (10,13) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Forearm angled inward toward chest (8..11, 14..17)
+  rect (7,14) (11,17) color=ink
+  rect (8,14) (10,16) color=orc_mid
+  pixel (8,14) color=orc_light
+  pixel (8,15) color=orc_light
+  pixel (10,16) color=orc_dark
+
+  // Wrist wrap (9..11, 16..18)
+  rect (9,16) (12,18) color=ink
+  rect (9,17) (11,18) color=wrap_mid
+  line (9,17) (11,17) color=wrap_light
+  line (9,18) (11,18) color=wrap_dark
+
+  // Clenched / cupped hand at chest (10..12, 18..20)
+  rect (10,18) (13,20) color=ink
+  rect (10,18) (12,19) color=orc_mid
+  pixel (10,18) color=orc_light
+  pixel (11,18) color=orc_light
+  pixel (12,19) color=orc_dark
+  pixel (11,20) color=orc_dark
+}
+
+frame "f2" {
+  // charge: hands slightly apart, arm coiled and raised, ready to thrust
+  // Shoulder (7,12)-(10,14)
+  rect (7,12) (10,14) color=ink
+  rect (8,12) (10,13) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (7,13) color=orc_dark
+
+  // Forearm pulled up and cocked back (8..11, 13..16)
+  rect (7,13) (11,16) color=ink
+  rect (8,13) (10,15) color=orc_mid
+  pixel (8,13) color=orc_light
+  pixel (9,13) color=orc_light
+  pixel (10,15) color=orc_dark
+
+  // Wrist wrap (9..12, 15..17)
+  rect (8,15) (12,17) color=ink
+  rect (9,15) (11,16) color=wrap_mid
+  line (9,15) (11,15) color=wrap_light
+  line (9,16) (11,16) color=wrap_dark
+
+  // Open / charged hand crackling with energy (10..13, 16..18)
+  rect (9,16) (13,19) color=ink
+  rect (10,17) (12,18) color=orc_mid
+  pixel (10,17) color=orc_light
+  pixel (11,17) color=orc_light
+  pixel (12,17) color=orc_light
+  pixel (12,18) color=orc_dark
+  pixel (10,18) color=orc_mid
+}
+
+frame "f3" {
+  // release: arm thrusting forward, pushing power out into the cast
+  // Shoulder extends slightly forward
+  rect (7,12) (10,14) color=ink
+  rect (8,12) (10,14) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Upper arm and elbow extending forward (7..11, 14..17)
+  rect (8,14) (11,17) color=ink
+  rect (8,14) (10,16) color=orc_mid
+  pixel (8,14) color=orc_light
+  pixel (9,15) color=orc_light
+  pixel (10,16) color=orc_dark
+
+  // Wrist wrap forward (9..12, 16..18)
+  rect (9,16) (12,18) color=ink
+  rect (9,16) (11,17) color=wrap_mid
+  line (9,16) (11,16) color=wrap_light
+  line (9,17) (11,17) color=wrap_dark
+
+  // Palm thrust forward flat (10..13, 17..20)
+  rect (10,17) (13,20) color=ink
+  rect (10,17) (12,19) color=orc_mid
+  pixel (10,17) color=orc_light
+  pixel (11,17) color=orc_light
+  pixel (10,18) color=orc_light
+  pixel (12,18) color=orc_mid
+  pixel (11,19) color=orc_dark
+  pixel (12,19) color=orc_dark
+}
+
+frame "f4" {
+  // settle: arm lowering and returning toward rest position
+  // Shoulder (7,12)-(10,14)
+  rect (7,12) (10,14) color=ink
+  rect (8,12) (10,14) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (8,13) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Forearm extending down (7,15)-(10,18)
+  rect (7,15) (10,18) color=ink
+  rect (7,15) (10,18) color=orc_mid
+  pixel (7,15) color=orc_light
+  pixel (7,16) color=orc_light
+  pixel (8,16) color=orc_light
+  pixel (10,17) color=orc_dark
+  pixel (10,18) color=orc_dark
+
+  // Wrist wrap (7,18)-(10,20)
+  rect (7,18) (10,20) color=wrap_mid
+  line (7,18) (10,18) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+  pixel (8,19) color=wrap_light
+
+  // Hand beginning to reclench (7,21)-(10,23)
+  rect (7,21) (10,23) color=orc_mid
+  pixel (7,21) color=orc_light
+  pixel (8,21) color=orc_light
+  pixel (7,22) color=orc_light
+  pixel (9,22) color=orc_dark
+  pixel (10,22) color=ink
+  pixel (8,23) color=orc_dark
+  pixel (9,23) color=orc_dark
+
+  // Perimeter outlines
+  line (6,15) (6,21) color=ink
+  line (11,15) (11,21) color=ink
+  line (7,23) (9,23) color=ink
+}

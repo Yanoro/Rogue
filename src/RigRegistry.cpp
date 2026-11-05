@@ -91,6 +91,29 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
             if (pose.is_string()) clip.poses.push_back(pose.get<std::string>());
           }
         }
+        if (entry.contains("variants") && entry["variants"].is_array()) {
+          for (const auto& entryVariant : entry["variants"]) {
+            if (!entryVariant.is_object()) continue;
+            RigClipVariant variant;
+            variant.id = entryVariant.value("id", std::string());
+            if (variant.id.empty()) continue;
+            variant.name = entryVariant.value("name", variant.id);
+            variant.created = entryVariant.value("created", std::string());
+            if (entryVariant.contains("parts") && entryVariant["parts"].is_object()) {
+              for (auto it = entryVariant["parts"].begin();
+                   it != entryVariant["parts"].end(); ++it) {
+                if (!it.value().is_array()) continue;
+                std::vector<std::string> frames;
+                for (const auto& frame : it.value()) {
+                  if (frame.is_string()) frames.push_back(frame.get<std::string>());
+                }
+                variant.parts[it.key()] = std::move(frames);
+              }
+            }
+            clip.variants.push_back(std::move(variant));
+          }
+        }
+        clip.activeVariant = entry.value("activeVariant", std::string());
         if (clip.frames < 1 || clip.frames > 64) {
           if (warnings != nullptr) {
             warnings->push_back("clip '" + clip.id + "' frame count is out of range; clamped to 1..64");
@@ -124,6 +147,7 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
     }
     RigPart part;
     part.id = entry.value("id", std::string());
+    part.brief = entry.value("brief", std::string());
     part.sprite = entry.value("sprite", std::string());
     part.z = entry.value("z", 0);
     if (part.id.empty()) {
@@ -213,6 +237,39 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
                          return false;
                        }),
         part.clips.end());
+  }
+
+  // A clip that predates variants still has one generation: the frames its parts point
+  // at. Materialize it so the selector can offer it and a later generation can fork.
+  for (RigClip& clip : out.clips) {
+    if (clip.variants.empty()) {
+      RigClipVariant original;
+      original.id = "original";
+      original.name = "Original";
+      for (const RigPart& part : out.parts) {
+        for (const RigPartClip& partClip : part.clips) {
+          if (partClip.clip != clip.id || partClip.frames.empty()) continue;
+          original.parts[part.id] = partClip.frames;
+        }
+      }
+      if (!original.parts.empty()) {
+        clip.variants.push_back(std::move(original));
+        clip.activeVariant = "original";
+      }
+    }
+    if (clip.activeVariant.empty() && !clip.variants.empty()) {
+      clip.activeVariant = clip.variants.front().id;
+    }
+    const auto active = std::find_if(
+        clip.variants.begin(), clip.variants.end(),
+        [&](const RigClipVariant& variant) { return variant.id == clip.activeVariant; });
+    if (active == clip.variants.end() && !clip.variants.empty()) {
+      if (warnings != nullptr) {
+        warnings->push_back("clip '" + clip.id + "': activeVariant '" + clip.activeVariant +
+                            "' is not stored; using the first");
+      }
+      clip.activeVariant = clip.variants.front().id;
+    }
   }
   return true;
 }
@@ -309,6 +366,18 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
     if (!clip.movement.empty()) entry["movement"] = clip.movement;
     if (!clip.brief.empty()) entry["brief"] = clip.brief;
     if (!clip.poses.empty()) entry["poses"] = clip.poses;
+    if (!clip.variants.empty()) {
+      nlohmann::json variants = nlohmann::json::array();
+      for (const RigClipVariant& variant : clip.variants) {
+        nlohmann::json variantEntry = {{"id", variant.id},
+                                       {"name", variant.name},
+                                       {"parts", variant.parts}};
+        if (!variant.created.empty()) variantEntry["created"] = variant.created;
+        variants.push_back(std::move(variantEntry));
+      }
+      entry["variants"] = std::move(variants);
+      if (!clip.activeVariant.empty()) entry["activeVariant"] = clip.activeVariant;
+    }
     clips.push_back(std::move(entry));
   }
   if (!clips.empty()) document["clips"] = std::move(clips);
@@ -316,6 +385,7 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
   nlohmann::json parts = nlohmann::json::array();
   for (const RigPart& part : definition.parts) {
     nlohmann::json entry = {{"id", part.id}, {"sprite", part.sprite}, {"z", part.z}};
+    if (!part.brief.empty()) entry["brief"] = part.brief;
     if (!part.clips.empty()) {
       nlohmann::json partClips = nlohmann::json::object();
       for (const RigPartClip& partClip : part.clips) {
