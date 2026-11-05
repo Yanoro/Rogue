@@ -325,6 +325,13 @@ void Game::Init() {
 
   rlImGuiSetup(true);
 
+  // rlImGui's bundled default style has changed between dependency revisions: the merged
+  // build lands on its grey WindowBg, while this project's windows have always been black.
+  // Set the background explicitly so the look does not move with the dependency's theme.
+  ImGuiStyle &imguiStyle = ImGui::GetStyle();
+  imguiStyle.Colors[ImGuiCol_WindowBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+  imguiStyle.Colors[ImGuiCol_PopupBg] = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+
   // ImGui renders with its own font, which is ASCII-only, so without this the
   // windows that preview art (the map editor's object palette, inventory rows)
   // would show blanks wherever the art uses a block character. ImGui's built-in
