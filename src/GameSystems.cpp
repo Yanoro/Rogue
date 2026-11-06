@@ -142,19 +142,21 @@ void Game::SystemApplyCollision(Velocity &vel, const Hitbox &hitbox, const Scree
     bool nullXVector = false;
     bool nullYVector = false;
 
-    if ((newScreenPos.x < 0) ||
-        (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
+    const float baseX = newScreenPos.x + hitbox.offsetX;
+    const float baseY = newScreenPos.y + hitbox.offsetY;
+    const float previousBaseX = origScreenPos.x + hitbox.offsetX;
+    const float previousBaseY = origScreenPos.y + hitbox.offsetY;
+    if ((baseX < 0.0f) ||
+        (baseX + static_cast<float>(hitbox.width) > map->GetMapWidthPx())) {
         nullXVector = true;
     }
-    if ((newScreenPos.y < 0) ||
-        (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
+    if ((baseY < 0.0f) ||
+        (baseY + static_cast<float>(hitbox.height) > map->GetMapHeightPx())) {
         nullYVector = true;
     }
 
-    raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
-                                    hitboxSize, hitboxSize);
-    raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
-                                    hitboxSize, hitboxSize);
+    raylib::Rectangle deltaXRect(baseX, previousBaseY, hitboxSize, hitboxSize);
+    raylib::Rectangle deltaYRect(previousBaseX, baseY, hitboxSize, hitboxSize);
 
     GamePosition gamePos =
         map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
