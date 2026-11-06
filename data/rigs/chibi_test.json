@@ -1,9 +1,9 @@
 {
   "name": "Chibi Test",
   "description": "A hand-authored test rig for the style geometry: the large-head, small-body layout from the Ragnarok-like style profile. Generate its layers in the Designer with the same style, or use it as a reference for a chibi rig.",
-  "width": 64,
-  "height": 64,
-  "style": "ragnarok_online",
+  "width": 96,
+  "height": 96,
+  "style": "cheeseguy_pixel",
   "parts": [
     {
       "id": "legs",

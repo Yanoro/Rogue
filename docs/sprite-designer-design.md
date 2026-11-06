@@ -1846,3 +1846,35 @@ The sample chibi style and rig moved to 64x64 as the first test of this path: th
 eyes have room for the detail a 32x32 frame cannot hold, while the world footprint stays
 32x32. The style test and the style reference are the intended way to iterate on a new
 family style before regenerating a whole rig.
+
+---
+
+## 16. Reference image -> style draft
+
+`tools/style_from_image.py` is the deterministic half of the image-to-style pipeline. It
+takes a reference image, crops one character, keys out the flat backdrop, trims to the
+opaque bounds, scales the character to the target canvas without inventing colours
+(NEAREST), quantises to a small palette, and writes two things:
+
+- a `.sprite` document with one run per horizontal pixel run, so the DSL compiler and the
+  model read the actual pixels rather than a description;
+- an `ArtStyleDef` draft with the measured palette, rough head/body/leg boxes, the
+  measured frame size, and a starting positive/negative list.
+
+```
+nix-shell --run "python3 tools/style_from_image.py \
+    --input ref.png --crop x,y,w,h --name style_ref_<name> \
+    --style-id <style id> --size 96 --colors 24"
+```
+
+The first run used the green-haired shaman from the reference sheet:
+`packs/generated/village/sprites/style_ref_green_shaman.sprite` (96x96, 24 colours) and
+`data/art_styles/cheeseguy_pixel.json` (96x96 geometry, the reference id, a palette). The
+style test now uses the style's own frame size instead of a hardcoded 64, and the chibi
+rig moved to 96x96 on `cheeseguy_pixel`.
+
+The converter's cutout and the geometry boxes are drafts: the crop/background key need a
+human eye, and the head/body/leg split is a proportion estimate. The point is to give the
+model an exact pixel reference and the style profile a measured palette, then iterate from
+the 96px style test rather than from prose.
+

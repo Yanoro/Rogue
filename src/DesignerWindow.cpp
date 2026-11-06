@@ -692,8 +692,13 @@ void DesignerWindow::DrawStyleBatch() {
   }
   const std::string testName = "style_test_" + selectedStyle->id;
   const bool hasTest = FindSpriteDSLDocument(testName).found;
+  const int testWidth = selectedStyle->geometry ? selectedStyle->geometry->width : 64;
+  const int testHeight = selectedStyle->geometry ? selectedStyle->geometry->height : 64;
+  const std::string testLabel =
+      "Test style (" + std::to_string(testWidth) + "x" +
+      std::to_string(testHeight) + ")";
   ImGui::SameLine();
-  if (ImGui::Button("Test style (64x64)")) {
+  if (ImGui::Button(testLabel.c_str())) {
     QueueStyleTest(selectedStyle->id);
   }
   if (ImGui::IsItemHovered()) {
@@ -1092,16 +1097,20 @@ void DesignerWindow::QueueStyleTest(const std::string &styleId) {
   const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
   if (style == nullptr) return;
   game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+  const int width = style->geometry ? style->geometry->width : 64;
+  const int height = style->geometry ? style->geometry->height : 64;
   const std::string name = "style_test_" + styleId;
   const std::string requirement =
-      "A single front-facing 64x64 character style test for the '" + style->name +
-      "' style. Draw the whole chibi character -- head, hair, body, arms and legs -- in "
-      "the style's proportions, palette, outline and shading. The head is large, the body "
-      "small, and the feet sit at the bottom of the canvas. This is a style reference, "
-      "not a rig layer and not an animation frame.";
+      "A single front-facing " + std::to_string(width) + "x" +
+      std::to_string(height) + " character style test for the '" + style->name +
+      "' style. Draw the whole character -- head, hair, body, arms and legs -- in "
+      "the style's proportions, palette, outline and shading. The feet sit at the "
+      "bottom of the canvas. This is a style reference, not a rig layer and not an "
+      "animation frame.";
   RequestSpriteDocument(name, SpriteKinds::Kind::Actor, true, "", requirement,
-                        /*redesign=*/true, {}, {}, {}, {}, styleId, 64, 64);
-  rigArtMessage = "Asked for the 64x64 style test '" + name +
+                        /*redesign=*/true, {}, {}, {}, {}, styleId, width, height);
+  const std::string size = std::to_string(width) + "x" + std::to_string(height);
+  rigArtMessage = "Asked for the " + size + " style test '" + name +
                   "'; when it lands, use it as the style reference.";
   statusLine = rigArtMessage;
 }
@@ -3462,7 +3471,12 @@ void DesignerWindow::DrawRigPreview() {
   }
 
   if (!draft.style.empty()) {
-    if (ImGui::Button("Test style (64x64)")) QueueStyleTest(draft.style);
+    const int styleWidth = draft.geometry ? draft.geometry->width : 64;
+  const int styleHeight = draft.geometry ? draft.geometry->height : 64;
+  const std::string testLabel =
+      "Test style (" + std::to_string(styleWidth) + "x" +
+      std::to_string(styleHeight) + ")";
+  if (ImGui::Button(testLabel.c_str())) QueueStyleTest(draft.style);
     const std::string testName = "style_test_" + draft.style;
     if (FindSpriteDSLDocument(testName).found) {
       ImGui::SameLine();
