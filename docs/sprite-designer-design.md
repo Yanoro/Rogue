@@ -1820,3 +1820,29 @@ Registry independence is deliberate: the edit lives on the generic asset section
 request field is on `SpriteDocumentBrief`, and the base-document lookup is the same
 `FindSpriteDSLDocument` every asset uses. A new content kind gets the editing by drawing
 its sprite through the same section; there is no per-registry edit path to add.
+
+---
+
+## 15. Style references, palettes and test sheets
+
+A style profile is no longer only positive/negative prose. It can carry:
+
+- **`palette`** — a short list of hex colours and their roles (skin, hair, tunic, outline,
+  eyes, boots). It is printed beside the style prose, so the model has specific colours
+  rather than only adjectives.
+- **`ramps`** — an optional DSL ramp file for this style; empty keeps the global ramps.
+- **`reference`** — a sprite/document id of a style-test character. Its `.sprite` document
+  is included as `<style-reference>` in every part and animation request: the model is told
+  to match its proportions, palette, outline and shading, but to draw the requested
+  subject, not copy the reference.
+
+The **style test** button in the Designer's rig pane asks for one whole front-facing
+**64x64** character in the selected style (`style_test_<style id>`). It is deliberately a
+single character, not a rig layer: it is the concrete target the prose was missing. When
+it lands, **Use test as style reference** writes that id into the style's `reference`,
+so the next layer and clip generations start from a real drawing in the style.
+
+The sample chibi style and rig moved to 64x64 as the first test of this path: the head and
+eyes have room for the detail a 32x32 frame cannot hold, while the world footprint stays
+32x32. The style test and the style reference are the intended way to iterate on a new
+family style before regenerating a whole rig.

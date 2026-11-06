@@ -5,18 +5,19 @@
   "appliesTo": ["actor_sprite", "actor"],
   "positive": "Chibi proportions: a large head, a small body and short limbs. Bright saturated palette with strong warm/cool separation. Thick dark outline around the silhouette. Soft two-tone shading with one clean highlight. Large expressive eyes. Front-facing, centred, the soles of the feet at the bottom of the frame. Crisp pixel-art shapes, readable at a glance.",
   "negative": "Do not use dark muted realism, realistic adult proportions, photorealism, scenery, floor tiles, text, multiple characters, blurry anti-aliasing, or a perspective that contradicts the front-facing world.",
+  "palette": "skin #F2C79A highlight #FFE0B8 shadow #C98B60; hair #4A2A1C / #7A4A2E / #A8673E; tunic #2F5FA8 / #1C3A70 / #6EA8E8; outline #1A1210; eyes #3B6FD6 / #FFFFFF; boots #5A3A22.",
   "geometry": {
-    "width": 32,
-    "height": 32,
-    "head": [8, 2, 16, 14],
-    "hair": [7, 1, 18, 10],
-    "body": [10, 16, 12, 9],
-    "arm_left": [7, 17, 3, 8],
-    "arm_right": [22, 17, 3, 8],
-    "legs": [12, 23, 8, 8],
-    "hand": [24, 24],
-    "foot": [16, 31],
-    "base": [20, 12],
-    "pick": [28, 30]
+    "width": 64,
+    "height": 64,
+    "head": [16, 4, 32, 28],
+    "hair": [14, 2, 36, 20],
+    "body": [20, 32, 24, 18],
+    "arm_left": [14, 34, 6, 16],
+    "arm_right": [44, 34, 6, 16],
+    "legs": [24, 46, 16, 16],
+    "hand": [48, 48],
+    "foot": [32, 63],
+    "base": [40, 24],
+    "pick": [56, 60]
   }
 }

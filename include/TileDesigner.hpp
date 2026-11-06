@@ -144,6 +144,12 @@ struct SpriteDocumentBrief {
   std::string styleId;
   std::string stylePrompt;
   std::string styleNegative;
+  // Optional palette prose and style-reference document, both from the style profile.
+  std::string stylePalette;
+  std::string styleReference;
+  // The document's canvas. 32 for the ordinary sprite; the style test uses 64.
+  int width = 32;
+  int height = 32;
   // What the art around the sprite looks like, as prose. Empty when nothing looked:
   // a standalone request from the window has no building to read, and an empty field
   // must stay a supported state rather than a prompt that says "the surroundings are:

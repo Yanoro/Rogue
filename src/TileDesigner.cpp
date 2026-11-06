@@ -718,6 +718,21 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
   if (!brief.styleNegative.empty()) {
     out << "Do not: " << brief.styleNegative << "\n";
   }
+  if (!brief.stylePalette.empty()) {
+    out << "\nStyle palette (use these colours; do not drift to the default dark "
+           "palette):\n"
+        << brief.stylePalette << "\n";
+  }
+  if (!brief.styleReference.empty()) {
+    out << "\nA reference character drawn in this style. Match its proportions, "
+           "palette, outline and shading, but draw the subject described above; do not "
+           "copy the reference's subject:\n<style-reference>\n"
+        << brief.styleReference << "\n</style-reference>\n";
+  }
+  if (brief.width > 0 && brief.height > 0) {
+    out << "\nThe document canvas is " << brief.width << "x" << brief.height
+        << " pixels; declare that size in its sprite block.\n";
+  }
   if (brief.kind == SpriteKinds::Kind::Tile) {
     out << "It " << (brief.blocksTile ? "blocks movement." : "can be walked on.")
         << "\n";

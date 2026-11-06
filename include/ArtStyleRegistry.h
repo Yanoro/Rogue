@@ -25,6 +25,14 @@ struct ArtStyleDef {
   std::string positive;
   // Negative prose. Kept separate so the request can say "Do not" once.
   std::string negative;
+  // Optional palette prose/hex list. The request carries it beside the style so the model
+  // has specific colours rather than only adjectives.
+  std::string palette;
+  // Optional DSL ramp file for this style. Empty uses the global ramps.
+  std::string ramps;
+  // Optional sprite/document id of a style-test character. The request includes its
+  // .sprite document as <style-reference> so the model has a concrete target.
+  std::string reference;
   // Optional proportions. A rig that names this style and has no geometry of its own uses
   // these rectangles and anchors in its frame contract.
   std::optional<RigGeometry> geometry;

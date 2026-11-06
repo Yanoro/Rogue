@@ -211,7 +211,8 @@ private:
                                  std::vector<std::string>(),
                              const std::string &baseDocument = std::string(),
                              const std::string &editInstruction = std::string(),
-                             const std::string &styleOverride = std::string());
+                             const std::string &styleOverride = std::string(),
+                             int width = 32, int height = 32);
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -424,6 +425,10 @@ private:
   // The rig draft, the queue of art requests it still owes, and the last file time seen
   // per layer (a redraw changes the file, and the texture memo has to be told).
   void DrawRigPreview();
+
+  // The 64x64 style test: one character in the style, saved as style_test_<style id>.
+  // It becomes the style reference that the part and animation prompts carry.
+  void QueueStyleTest(const std::string &styleId);
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).
@@ -462,6 +467,9 @@ private:
     bool redesign = false;
     // ArtStyleRegistry id for this layer's family; empty uses the registry's default.
     std::string styleId;
+    // The layer's canvas; the frame contract and the request must agree.
+    int width = 32;
+    int height = 32;
   };
   std::optional<RigDesigner::Draft> rigDraft;
 

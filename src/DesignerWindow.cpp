@@ -715,7 +715,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                const std::vector<std::string> &poses,
                                                const std::string &baseDocument,
                                                const std::string &editInstruction,
-                                               const std::string &styleOverride) {
+                                               const std::string &styleOverride,
+                                               int width, int height) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -800,6 +801,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief.poses = poses;
   artBrief.baseDocument = baseDocument;
   artBrief.editInstruction = editInstruction;
+  artBrief.width = width;
+  artBrief.height = height;
   if (kind == SpriteKinds::Kind::Tile) {
     if (const TileDef *definition = game->tileRegistry.Get(name)) {
       artBrief.description = definition->description;
@@ -879,6 +882,17 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     artBrief.styleId = style->id;
     artBrief.stylePrompt = style->positive;
     artBrief.styleNegative = style->negative;
+    artBrief.stylePalette = style->palette;
+    if (!style->reference.empty()) {
+      const SpriteDSLDocument reference = FindSpriteDSLDocument(style->reference);
+      if (reference.found && !reference.path.empty()) {
+        std::ifstream in(reference.path);
+        if (in.is_open()) {
+          artBrief.styleReference.assign(std::istreambuf_iterator<char>(in),
+                                         std::istreambuf_iterator<char>());
+        }
+      }
+    }
   }
 
   // The designer's own description wins over the catalog's. A requested asset is not in
@@ -901,11 +915,13 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   session->SetMaxAttempts(kArtConversation, Settings().art.generation.dslAttempts);
   artVerdict.clear();
   session->ClearHistory(kArtConversation);
+  const std::string ramps =
+      (style != nullptr && !style->ramps.empty()) ? style->ramps
+                                                   : PixelDSL::Config{}.rampsPath;
   session->SetSystemPrompt(
       kArtConversation,
       TileDesigner::BuildSpriteDocumentSystemPrompt(
-          Settings().content.spriteDSLPromptFile,
-          PixelDSL::Config{}.rampsPath));
+          Settings().content.spriteDSLPromptFile, ramps));
 
   statusIsError = false;
   const std::string kindWord = kind == SpriteKinds::Kind::Tile
@@ -1010,6 +1026,8 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
     request.poses = clip.poses;
     request.baseDocument = BaseLayerDocument(part.sprite, rig.id, part.id);
     request.styleId = rig.style;
+    request.width = geometry.width;
+    request.height = geometry.height;
     const std::string brief =
         part.brief.empty()
             ? ("the " + part.id + " layer of the " +
@@ -1038,6 +1056,24 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
   rigArtMessage = "Queued " + std::to_string(queued) + " layer(s) for " + rig.id + "'s " +
                   clip.id + " clip.";
   return true;
+}
+
+void DesignerWindow::QueueStyleTest(const std::string &styleId) {
+  if (game == nullptr || styleId.empty()) return;
+  const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
+  if (style == nullptr) return;
+  game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
+  const std::string name = "style_test_" + styleId;
+  const std::string requirement =
+      "A single front-facing 64x64 character style test for the '" + style->name +
+      "' style. Draw the whole chibi character -- head, hair, body, arms and legs -- in "
+      "the style's proportions, palette, outline and shading. The head is large, the body "
+      "small, and the feet sit at the bottom of the canvas. This is a style reference, "
+      "not a rig layer and not an animation frame.";
+  RequestSpriteDocument(name, SpriteKinds::Kind::Actor, true, "", requirement,
+                        /*redesign=*/true, {}, {}, {}, {}, styleId, 64, 64);
+  rigArtMessage = "Asked for the 64x64 style test '" + name +
+                  "'; when it lands, use it as the style reference.";
 }
 
 void DesignerWindow::SendArtTurn(const std::string &prompt,
@@ -2841,6 +2877,10 @@ void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
       rigDraft.has_value() ? DraftGeometry(*rigDraft, game->artStyleRegistry)
                            : RigGeometry{};
   request.styleId = rigDraft.has_value() ? rigDraft->style : std::string();
+  request.width = geometry.width;
+  request.height = geometry.height;
+  request.width = geometry.width;
+  request.height = geometry.height;
   request.requirement = RigDesigner::FrameContract(geometry) + "\n\nThis layer: " +
                         part.id + " -- " + part.brief +
                         "\nDraw only this layer; the rest of the " +
@@ -2891,6 +2931,8 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
   request.sprite = item->wornSprite;
   request.styleId = item->style;
   const RigGeometry geometry = game->artStyleRegistry.GeometryForStyle(item->style);
+  request.width = geometry.width;
+  request.height = geometry.height;
   request.requirement =
       RigDesigner::FrameContract(geometry) + "\n\nThis layer is worn equipment: " + itemId +
       ". Draw it over that frame, aligned with the body it is worn on. " +
@@ -3086,7 +3128,8 @@ void DesignerWindow::PumpRigArtQueue() {
   RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
                         /*replaceGenerated=*/true, "", request.requirement,
                         request.redesign, request.frames, request.poses,
-                        request.baseDocument, std::string(), request.styleId);
+                        request.baseDocument, std::string(), request.styleId,
+                        request.width, request.height);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 
@@ -3361,6 +3404,29 @@ void DesignerWindow::DrawRigPreview() {
   if (ImGui::Combo("##rig_style", &styleIndex, styleNames.data(),
                    static_cast<int>(styleNames.size()))) {
     draft.style = styleIndex <= 0 ? std::string() : styles[styleIndex - 1]->id;
+  }
+
+  if (!draft.style.empty()) {
+    if (ImGui::Button("Test style (64x64)")) QueueStyleTest(draft.style);
+    const std::string testName = "style_test_" + draft.style;
+    if (FindSpriteDSLDocument(testName).found) {
+      ImGui::SameLine();
+      if (ImGui::Button("Use test as style reference")) {
+        if (const ArtStyleDef *style = game->artStyleRegistry.Get(draft.style)) {
+          nlohmann::json document = game->artStyleRegistry.ToJson(*style);
+          document["reference"] = testName;
+          std::string error;
+          std::vector<std::string> warnings;
+          if (game->artStyleRegistry.AddOrReplace(document, "(style test)", &error,
+                                                  &warnings)) {
+            rigArtMessage = "Style '" + draft.style + "' now uses " + testName +
+                            " as its reference; regenerate the layers to apply it.";
+          } else {
+            rigArtMessage = error;
+          }
+        }
+      }
+    }
   }
 
   // The composed body first: the look is what this slice is for.

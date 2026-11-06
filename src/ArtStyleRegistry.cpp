@@ -89,6 +89,9 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
   definition.description = document.value("description", std::string());
   definition.positive = document.value("positive", std::string());
   definition.negative = document.value("negative", std::string());
+  definition.palette = document.value("palette", std::string());
+  definition.ramps = document.value("ramps", std::string());
+  definition.reference = document.value("reference", std::string());
   if (document.contains("geometry")) {
     definition.geometry = RigGeometryFromJson(document["geometry"]);
   }
@@ -170,5 +173,8 @@ nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
   document["appliesTo"] = definition.appliesTo;
   document["positive"] = definition.positive;
   if (!definition.negative.empty()) document["negative"] = definition.negative;
+  if (!definition.palette.empty()) document["palette"] = definition.palette;
+  if (!definition.ramps.empty()) document["ramps"] = definition.ramps;
+  if (!definition.reference.empty()) document["reference"] = definition.reference;
   return document;
 }
