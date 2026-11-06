@@ -44,6 +44,9 @@ public:
   // The geometry a rig should be drawn against: its own, then its style's, then the
   // canonical 32x32 humanoid.
   RigGeometry GeometryFor(const ActorRig &rig) const;
+  // The geometry an item's worn art is authored in: its style's geometry, then the
+  // canonical humanoid.
+  RigGeometry GeometryForStyle(const std::string &styleId) const;
 
   nlohmann::json ToJson(const ArtStyleDef &definition) const;
   bool AddOrReplace(const nlohmann::json &document, const std::string &source,

@@ -2890,11 +2890,7 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
   request.label = itemId;
   request.sprite = item->wornSprite;
   request.styleId = item->style;
-  const ActorRig *previewRig =
-      equipmentPreviewRig.empty() ? nullptr : game->rigRegistry.Get(equipmentPreviewRig);
-  const RigGeometry geometry =
-      previewRig != nullptr ? game->artStyleRegistry.GeometryFor(*previewRig)
-                            : RigGeometry{};
+  const RigGeometry geometry = game->artStyleRegistry.GeometryForStyle(item->style);
   request.requirement =
       RigDesigner::FrameContract(geometry) + "\n\nThis layer is worn equipment: " + itemId +
       ". Draw it over that frame, aligned with the body it is worn on. " +
@@ -3294,8 +3290,11 @@ void DesignerWindow::DrawEquipmentPreview() {
           RigRender::ResolveRigSprite(draft.wornSprite, game->resourceManager);
       layer.z = draft.wornZ;
       layer.hides = draft.hides;
+      layer.slot = draft.slot;
+      layer.sourceGeometry = RigGeometry{};
       worn.push_back(std::move(layer));
-      RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+      const RigGeometry geometry = game->artStyleRegistry.GeometryFor(*rig);
+      RigRender::Draw(*rig, game->resourceManager, worn, 200.0f, nullptr, geometry);
     }
   }
 
@@ -3391,6 +3390,8 @@ void DesignerWindow::DrawRigPreview() {
         RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
     layer.z = item->wornZ;
     layer.hides = item->wornHides;
+    layer.slot = item->slot;
+    layer.sourceGeometry = game->artStyleRegistry.GeometryForStyle(item->style);
     worn.push_back(std::move(layer));
   }
   // A clip the draft no longer has must not stay selected; the first clip is the
@@ -3424,8 +3425,9 @@ void DesignerWindow::DrawRigPreview() {
   animation.clip = selectedClip;
   animation.time = rigAnimTime;
   const ImVec2 previewTopLeft = ImGui::GetCursorScreenPos();
+  const RigGeometry geometry = game->artStyleRegistry.GeometryFor(renderRig);
   RigRender::Draw(renderRig, game->resourceManager, worn, 200.0f,
-                  selectedClip != nullptr ? &animation : nullptr);
+                  selectedClip != nullptr ? &animation : nullptr, geometry);
   if (!previewHandItems.empty() && selectedClip != nullptr) {
     std::string armSprite;
     for (const RigPart &part : renderRig.parts) {
@@ -3453,7 +3455,8 @@ void DesignerWindow::DrawRigPreview() {
             RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
         if (weapon == nullptr) continue;
         RigGrip::DrawWeapon(draw, *weapon, *item, arm, previewTopLeft, 200.0f,
-                            RigGrip::WeaponAngle(arm, *item));
+                            RigGrip::WeaponAngle(arm, *item),
+                            200.0f / static_cast<float>(geometry.width));
       }
     }
   }

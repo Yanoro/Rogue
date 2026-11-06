@@ -15,9 +15,9 @@ namespace RigGrip {
 // expected to have been drawn into the same box already.
 inline void DrawWeapon(ImDrawList *draw, const Texture2D &weapon, const ItemDef &item,
                        const ArmGrip &arm, ImVec2 boxTopLeft, float boxSize,
-                       float angle) {
+                       float angle, float scale = 0.0f) {
   if (!arm.ok || weapon.id == 0) return;
-  const float scale = boxSize / 32.0f;
+  const float drawScale = scale > 0.0f ? scale : boxSize / 32.0f;
   const ImVec2 hand(boxTopLeft.x + arm.handX * scale,
                     boxTopLeft.y + arm.handY * scale);
   const float r = angle * 3.14159265358979f / 180.0f;
@@ -26,8 +26,8 @@ inline void DrawWeapon(ImDrawList *draw, const Texture2D &weapon, const ItemDef 
   const auto rotate = [&](float px, float py) {
     const float x = px - static_cast<float>(item.wornGripX);
     const float y = py - static_cast<float>(item.wornGripY);
-    return ImVec2(hand.x + (x * c - y * s) * scale,
-                  hand.y + (x * s + y * c) * scale);
+    return ImVec2(hand.x + (x * c - y * s) * drawScale,
+                  hand.y + (x * s + y * c) * drawScale);
   };
   const float w = static_cast<float>(weapon.width);
   const float h = static_cast<float>(weapon.height);

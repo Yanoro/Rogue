@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -83,6 +84,10 @@ struct WornLayer {
   const Texture2D* texture = nullptr;
   int z = 0;
   std::vector<std::string> hides;    // part ids this layer covers
+  // Slot id (head, torso, legs, feet) for the per-rig anchor, and the geometry the worn
+  // art was authored in. Empty/absent draws the layer into the whole frame as before.
+  std::string slot;
+  std::optional<RigGeometry> sourceGeometry;
 };
 
 struct Layer {
@@ -90,6 +95,8 @@ struct Layer {
   const Texture2D* texture = nullptr;
   int z = 0;
   bool worn = false;
+  std::string slot;
+  std::optional<RigGeometry> sourceGeometry;
 };
 
 // The clip a rigged actor should play at `speed`, for the locomotion vocabulary only:
@@ -141,6 +148,8 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
     layer.texture = wornLayer.texture;
     layer.z = wornLayer.z;
     layer.worn = true;
+    layer.slot = wornLayer.slot;
+    layer.sourceGeometry = wornLayer.sourceGeometry;
     layers.push_back(std::move(layer));
   }
   // Stable, so two parts with the same z keep the order the rig declared.
@@ -153,11 +162,45 @@ inline std::vector<Layer> Order(const ActorRig& rig, ResourceManager& resources,
 // Draws the composed rig into a square at the current cursor and reserves the space.
 // `box` is the side in pixels; the 32x32 rig is scaled up with point sampling, because
 // that is what the world will do.
+// The slot rectangle a worn layer is anchored to. Hand items are drawn by the grip path,
+// not here.
+inline const RigRect *SlotRect(const RigGeometry &geometry, const std::string &slot) {
+  if (slot == "head") return &geometry.head;
+  if (slot == "torso") return &geometry.body;
+  if (slot == "legs" || slot == "feet") return &geometry.legs;
+  return nullptr;
+}
+
+// Where a worn layer's authored full frame lands on this rig. The item art was drawn in
+// `sourceGeometry`'s slot; the rig's slot is the target. Without a slot the caller falls
+// back to fitting the whole texture.
+inline bool WornDestination(const Layer &layer, const RigGeometry &rigGeometry,
+                            float topLeftX, float topLeftY, float displayX,
+                            float displayY, SpriteRect &out) {
+  if (layer.slot.empty() || rigGeometry.width <= 0 || rigGeometry.height <= 0) {
+    return false;
+  }
+  const RigGeometry source = layer.sourceGeometry.value_or(RigGeometry{});
+  const RigRect *from = SlotRect(source, layer.slot);
+  const RigRect *to = SlotRect(rigGeometry, layer.slot);
+  if (from == nullptr || to == nullptr || from->w <= 0 || from->h <= 0) return false;
+  const float scaleX = static_cast<float>(to->w) / static_cast<float>(from->w);
+  const float scaleY = static_cast<float>(to->h) / static_cast<float>(from->h);
+  out.x = topLeftX + (static_cast<float>(to->x) -
+                      static_cast<float>(from->x) * scaleX) * displayX;
+  out.y = topLeftY + (static_cast<float>(to->y) -
+                      static_cast<float>(from->y) * scaleY) * displayY;
+  out.width = static_cast<float>(source.width) * scaleX * displayX;
+  out.height = static_cast<float>(source.height) * scaleY * displayY;
+  return out.width > 0.0f && out.height > 0.0f;
+}
+
 // Draws into an already-reserved square. The picker needs this: it owns the cell's
 // hitbox, so the rig must not reserve space of its own inside it.
 inline void DrawInto(const ActorRig& rig, ResourceManager& resources,
                      const std::vector<WornLayer>& worn, const ImVec2 &topLeft,
-                     float box, const AnimationState* animation = nullptr) {
+                     float box, const AnimationState* animation = nullptr,
+                     const RigGeometry &geometry = RigGeometry{}) {
   const ImVec2 bottomRight(topLeft.x + box, topLeft.y + box);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   draw->AddRectFilled(topLeft, bottomRight, IM_COL32(26, 26, 30, 255));
@@ -165,8 +208,12 @@ inline void DrawInto(const ActorRig& rig, ResourceManager& resources,
   for (const Layer& layer : Order(rig, resources, worn, nullptr, animation)) {
     if (layer.texture == nullptr) continue;
     SetTextureFilter(*layer.texture, TEXTURE_FILTER_POINT);
-    const SpriteRect fit =
-        SpriteFitRect(*layer.texture, topLeft.x, topLeft.y, box, box);
+    SpriteRect fit;
+    const float displayX = box / static_cast<float>(geometry.width);
+    const float displayY = box / static_cast<float>(geometry.height);
+    if (!WornDestination(layer, geometry, topLeft.x, topLeft.y, displayX, displayY, fit)) {
+      fit = SpriteFitRect(*layer.texture, topLeft.x, topLeft.y, box, box);
+    }
     if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
     draw->AddImage(
         static_cast<ImTextureID>(static_cast<intptr_t>(layer.texture->id)),
@@ -177,10 +224,11 @@ inline void DrawInto(const ActorRig& rig, ResourceManager& resources,
 
 inline void Draw(const ActorRig& rig, ResourceManager& resources,
                  const std::vector<WornLayer>& worn, float box,
-                 const AnimationState* animation = nullptr) {
+                 const AnimationState* animation = nullptr,
+                 const RigGeometry &geometry = RigGeometry{}) {
   const ImVec2 topLeft = ImGui::GetCursorScreenPos();
   ImGui::Dummy(ImVec2(box, box));
-  DrawInto(rig, resources, worn, topLeft, box, animation);
+  DrawInto(rig, resources, worn, topLeft, box, animation, geometry);
 }
 
 // Draws the composed rig into a world-space rectangle, in the same order and with the same
@@ -189,12 +237,18 @@ inline void Draw(const ActorRig& rig, ResourceManager& resources,
 inline bool DrawWorld(const ActorRig &rig, ResourceManager &resources,
                       const std::vector<WornLayer> &worn, float x, float y,
                       float width, float height,
-                      const AnimationState *animation = nullptr) {
+                      const AnimationState *animation = nullptr,
+                      const RigGeometry &geometry = RigGeometry{}) {
   bool drew = false;
   for (const Layer &layer : Order(rig, resources, worn, nullptr, animation)) {
     if (layer.texture == nullptr) continue;
     SetTextureFilter(*layer.texture, TEXTURE_FILTER_POINT);
-    const SpriteRect fit = SpriteFitRect(*layer.texture, x, y, width, height);
+    SpriteRect fit;
+    const float displayX = width / static_cast<float>(geometry.width);
+    const float displayY = height / static_cast<float>(geometry.height);
+    if (!WornDestination(layer, geometry, x, y, displayX, displayY, fit)) {
+      fit = SpriteFitRect(*layer.texture, x, y, width, height);
+    }
     if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
     const Rectangle source = {0.0f, 0.0f,
                               static_cast<float>(layer.texture->width),

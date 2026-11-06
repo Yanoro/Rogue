@@ -1309,10 +1309,10 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     }
     wornRequirement += "It hides the rig part(s): " + hides + ". ";
   }
-  const ActorRig *wornRig =
-      itemPreviewRig.empty() ? nullptr : game->rigRegistry.Get(itemPreviewRig);
+  // The item's worn art is authored in the item style's frame; the rig's slot anchor
+  // places it on a body with different proportions.
   const RigGeometry wornGeometry =
-      wornRig != nullptr ? game->artStyleRegistry.GeometryFor(*wornRig) : RigGeometry{};
+      game->artStyleRegistry.GeometryForStyle(item->style);
   if (item->slot == "hand") {
     wornRequirement += "The hand holds it at (" + std::to_string(item->wornGripX) +
                        "," + std::to_string(item->wornGripY) + ") in the " +
@@ -1468,8 +1468,12 @@ void ContentEditorWindow::DrawItemPreviewPane() {
         arm = RigGrip::AnalyzeArm(*armTexture);
       }
       if (weaponTexture != nullptr && arm.ok) {
+        const RigGeometry geometry =
+            rig != nullptr ? game->artStyleRegistry.GeometryFor(*rig)
+                           : RigGeometry{};
         RigGrip::DrawWeapon(draw, *weaponTexture, previewItem, arm, topLeft, box,
-                            RigGrip::WeaponAngle(arm, previewItem));
+                            RigGrip::WeaponAngle(arm, previewItem),
+                            box / static_cast<float>(geometry.width));
       }
       draw->AddRect(topLeft, ImVec2(topLeft.x + box, topLeft.y + box),
                     IM_COL32(90, 90, 96, 255));
@@ -1494,8 +1498,11 @@ void ContentEditorWindow::DrawItemPreviewPane() {
         RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
     layer.z = item->wornZ;
     layer.hides = item->wornHides;
+    layer.slot = item->slot;
+    layer.sourceGeometry = game->artStyleRegistry.GeometryForStyle(item->style);
     worn.push_back(std::move(layer));
-    RigRender::Draw(*rig, game->resourceManager, worn, 200.0f);
+    const RigGeometry geometry = game->artStyleRegistry.GeometryFor(*rig);
+    RigRender::Draw(*rig, game->resourceManager, worn, 200.0f, nullptr, geometry);
     if (!item->wornHides.empty()) {
       std::string hides;
       for (const std::string &part : item->wornHides) {
@@ -1704,14 +1711,17 @@ void ContentEditorWindow::DrawRigPreviewPane() {
           RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
       layer.z = item->wornZ;
       layer.hides = item->wornHides;
+      layer.slot = item->slot;
+      layer.sourceGeometry = game->artStyleRegistry.GeometryForStyle(item->style);
       worn.push_back(std::move(layer));
     }
   }
   ImGui::NewLine();
 
   const ImVec2 previewTopLeft = ImGui::GetCursorScreenPos();
+  const RigGeometry geometry = game->artStyleRegistry.GeometryFor(*rig);
   RigRender::Draw(*rig, game->resourceManager, worn, 224.0f,
-                  rigClip != nullptr ? &animation : nullptr);
+                  rigClip != nullptr ? &animation : nullptr, geometry);
   if (!previewHandItems.empty() && rigClip != nullptr) {
     std::string armSprite;
     for (const RigPart &part : rig->parts) {
@@ -1739,7 +1749,8 @@ void ContentEditorWindow::DrawRigPreviewPane() {
             RigRender::ResolveRigSprite(item->wornSprite, game->resourceManager);
         if (weapon == nullptr) continue;
         RigGrip::DrawWeapon(draw, *weapon, *item, arm, previewTopLeft, 224.0f,
-                            RigGrip::WeaponAngle(arm, *item));
+                            RigGrip::WeaponAngle(arm, *item),
+                            224.0f / static_cast<float>(geometry.width));
       }
     }
   }

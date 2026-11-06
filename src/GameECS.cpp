@@ -881,19 +881,42 @@ void Game::ECSInitRenderSystems() {
       .kind<Render>()
       .iter([this](flecs::iter &) { DrawSurfaces(); });
 
-  ecs.system<DrawAscii, ScreenPosition>("DrawEntityLayer")
-      .without<MapTileVisual>()
+  ecs.system("DrawEntityLayer")
       .kind<Render>()
-      .each([this](flecs::entity e, const DrawAscii &ascii,
-                   const ScreenPosition screenPos) {
-        DrawEntityVisual(e, ascii, screenPos);
-      });
+      .iter([this](flecs::iter &) { DrawEntitiesSorted(); });
 
   // Name tags and the rest of the render work, registered last so they land on
   // top of both layers. Kept in its own function only because DrawEntityVisual is
   // defined between this point and there; the registration order, which is what
   // the pipeline actually honours, is unchanged.
   ECSInitOverlaySystems();
+}
+
+void Game::DrawEntitiesSorted() {
+  struct Entry {
+    flecs::entity entity;
+    DrawAscii ascii;
+    ScreenPosition position;
+  };
+  std::vector<Entry> entries;
+  ecs.filter<DrawAscii, ScreenPosition>().each(
+      [&entries](flecs::entity e, const DrawAscii &ascii,
+                 const ScreenPosition &position) {
+        // Tiles are drawn by the tile layer and the overlay pass; the entity layer is
+        // only the actors and objects.
+        if (e.has<MapTileVisual>()) return;
+        entries.push_back({e, ascii, position});
+      });
+  // Feet first: a character lower on the screen is in front. Taller rigs extend above
+  // their cell, so the other order let a neighbour's cell cover their head.
+  std::stable_sort(entries.begin(), entries.end(),
+                   [](const Entry &a, const Entry &b) {
+                     return a.position.y + a.ascii.height <
+                            b.position.y + b.ascii.height;
+                   });
+  for (const Entry &entry : entries) {
+    DrawEntityVisual(entry.entity, entry.ascii, entry.position);
+  }
 }
 
 void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
@@ -988,6 +1011,10 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
     layer.texture = RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
     layer.z = definition->wornZ;
     layer.hides = definition->wornHides;
+    // The per-rig worn anchor: the slot's target rect comes from this rig's geometry, and
+    // the source rect is the frame the item's worn art was authored in.
+    layer.slot = definition->slot;
+    layer.sourceGeometry = artStyleRegistry.GeometryForStyle(definition->style);
     worn.push_back(std::move(layer));
   }
 
@@ -1004,10 +1031,17 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
     animation.time = anim->time;
   }
 
+  // Larger-than-cell rigs are drawn from the foot, not from the tile's top-left. The
+  // world cell stays the collision/selection cell; the art may extend above it.
+  const RigGeometry geometry = artStyleRegistry.GeometryFor(*rig);
+  const float footX = screenPos.x + static_cast<float>(ascii.width) * 0.5f;
+  const float footY = screenPos.y + static_cast<float>(ascii.height);
+  const float rigX = footX - static_cast<float>(geometry.footX);
+  const float rigY = footY - static_cast<float>(geometry.footY);
   const bool drew = RigRender::DrawWorld(
-      *rig, resourceManager, worn, screenPos.x, screenPos.y,
-      static_cast<float>(ascii.width), static_cast<float>(ascii.height),
-      clip != nullptr ? &animation : nullptr);
+      *rig, resourceManager, worn, rigX, rigY,
+      static_cast<float>(geometry.width), static_cast<float>(geometry.height),
+      clip != nullptr ? &animation : nullptr, geometry);
 
   if (gripItems.empty()) return drew;
 
@@ -1031,15 +1065,17 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
   const Texture2D *armTexture =
       armSprite.empty() ? nullptr
                         : RigRender::ResolveRigSprite(armSprite, resourceManager);
-  const float boxWidth = static_cast<float>(ascii.width);
-  const float boxHeight = static_cast<float>(ascii.height);
+  const float boxWidth = static_cast<float>(geometry.width);
+  const float boxHeight = static_cast<float>(geometry.height);
   SpriteRect fit;
   if (armTexture != nullptr) {
-    fit = SpriteFitRect(*armTexture, screenPos.x, screenPos.y, boxWidth, boxHeight);
+    fit = SpriteFitRect(*armTexture, rigX, rigY, boxWidth, boxHeight);
   }
   const RigGrip::ArmGrip arm =
       armSprite.empty() ? RigGrip::ArmGrip{} : RigGripFor(armSprite);
-  const float scale = fit.width > 0.0f ? fit.width / 32.0f : boxWidth / 32.0f;
+  const float scale =
+      fit.width > 0.0f ? fit.width / static_cast<float>(geometry.width)
+                       : boxWidth / static_cast<float>(geometry.width);
 
   bool drewWeapon = false;
   for (const ItemDef *definition : gripItems) {
@@ -1070,6 +1106,12 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
       DrawTexturePro(*weapon, source, destination, {0.0f, 0.0f}, 0.0f, WHITE);
     }
     drewWeapon = true;
+  }
+  if (DrawAsciiDebug::GetShowOuterRectangles()) {
+    DrawRectangleLinesEx({rigX, rigY, static_cast<float>(geometry.width),
+                          static_cast<float>(geometry.height)},
+                         1.0f, GREEN);
+    DrawCircle(static_cast<int>(footX), static_cast<int>(footY), 2.0f, YELLOW);
   }
   return drew || drewWeapon;
 }

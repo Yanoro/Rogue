@@ -146,6 +146,12 @@ const ArtStyleDef *ArtStyleRegistry::DefaultFor(const std::string &family) const
   return nullptr;
 }
 
+RigGeometry ArtStyleRegistry::GeometryForStyle(const std::string &styleId) const {
+  const ArtStyleDef *style = Get(styleId);
+  if (style != nullptr && style->geometry) return *style->geometry;
+  return RigGeometry{};
+}
+
 RigGeometry ArtStyleRegistry::GeometryFor(const ActorRig &rig) const {
   if (rig.geometry) return *rig.geometry;
   const ArtStyleDef *style = Get(rig.style);

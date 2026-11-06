@@ -316,10 +316,15 @@ every layer request for that draft. The `data/art_styles/ragnarok_online.json` s
 chibi profile (large head, small body) and `data/rigs/chibi_test.json` is the matching
 hand-authored test rig.
 
-This slice stays inside the 32x32 cell: the renderer still fits the rig into the tile, and
-the geometry is what lets a large-head chibi and its equipment prompts agree. Larger
-frames, a world draw box from the foot anchor, and per-rig worn-equipment anchors are the
-next slice.
+Slice 2 uses the geometry in the world and in the previews. `DrawRigEntity` draws from
+`RigGeometry.footX/footY`, not the cell's top-left, so a frame larger than 32x32 extends
+above the cell; the collision and selection cell stays 32. The entity pass is sorted by
+those feet, so a tall rig's head is not covered by a neighbour's cell. Worn equipment is
+placed by slot: the item's worn art is authored in its item style's frame, and the rig's
+geometry supplies the target head/torso/legs/feet rectangle; the renderer transforms the
+full worn frame between them. Hand items stay on the grip path, with the grip scaled by the
+rig's frame. The same transform runs in the Content Editor, the Designer and the world, so
+the preview and the game agree.
 
 ### Grips
 

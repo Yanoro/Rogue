@@ -869,6 +869,11 @@ private:
   bool DrawRigEntity(flecs::entity e, const RigBody &body,
                      const ScreenPosition &screenPos, const DrawAscii &ascii);
 
+  // The world's DrawEntityLayer pass: collect the drawable entities, sort by their feet,
+  // then draw. A taller-than-cell rig extends above its cell, so the creation order is
+  // not a draw order.
+  void DrawEntitiesSorted();
+
   // The hand/arm direction read from an arm frame, cached per frame sprite. The pixels do
   // not change, and the world draw asks every frame.
   const RigGrip::ArmGrip &RigGripFor(const std::string &sprite);
