@@ -6,6 +6,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "RigRegistry.h"
+
 class DebugLog;
 
 // A prose style profile for generated art. It is deliberately prompt data, not a
@@ -23,6 +25,9 @@ struct ArtStyleDef {
   std::string positive;
   // Negative prose. Kept separate so the request can say "Do not" once.
   std::string negative;
+  // Optional proportions. A rig that names this style and has no geometry of its own uses
+  // these rectangles and anchors in its frame contract.
+  std::optional<RigGeometry> geometry;
 };
 
 class ArtStyleRegistry {
@@ -35,6 +40,10 @@ public:
 
   // First registered style whose appliesTo contains `family`.
   const ArtStyleDef *DefaultFor(const std::string &family) const;
+
+  // The geometry a rig should be drawn against: its own, then its style's, then the
+  // canonical 32x32 humanoid.
+  RigGeometry GeometryFor(const ActorRig &rig) const;
 
   nlohmann::json ToJson(const ArtStyleDef &definition) const;
   bool AddOrReplace(const nlohmann::json &document, const std::string &source,

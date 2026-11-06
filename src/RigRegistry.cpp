@@ -42,6 +42,10 @@ bool ParseRig(const nlohmann::json& document, ActorRig& out, std::string* error,
   out.description = document.value("description", std::string());
   out.width = document.value("width", 32);
   out.height = document.value("height", 32);
+  out.style = document.value("style", std::string());
+  if (document.contains("geometry")) {
+    out.geometry = RigGeometryFromJson(document["geometry"]);
+  }
   if (out.width <= 0 || out.height <= 0) {
     if (error != nullptr) *error = "width and height must be positive";
     return false;
@@ -359,6 +363,8 @@ nlohmann::json RigRegistry::ToJson(const ActorRig& definition) const {
   }
   document["width"] = definition.width;
   document["height"] = definition.height;
+  if (!definition.style.empty()) document["style"] = definition.style;
+  if (definition.geometry) document["geometry"] = RigGeometryToJson(*definition.geometry);
   nlohmann::json clips = nlohmann::json::array();
   for (const RigClip& clip : definition.clips) {
     nlohmann::json entry = {{"id", clip.id}, {"frames", clip.frames},

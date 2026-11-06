@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -132,6 +133,91 @@ inline std::string ClipVariantCreated() {
   return buffer;
 }
 
+// A rectangle in the rig's source frame. The right/bottom edges are x+w / y+h, the
+// spelling the frame contract uses.
+struct RigRect {
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+};
+
+// Where a rig puts its body parts, hand and feet, in source pixels. The renderer draws
+// full-canvas layers, so this is not a skeleton: it is the contract the art prompts and
+// the equipment prompts are cut from. The default is the canonical 32x32 humanoid.
+struct RigGeometry {
+  int width = 32;
+  int height = 32;
+  RigRect head{11, 4, 10, 8};
+  RigRect hair{10, 2, 12, 7};
+  RigRect body{10, 11, 12, 11};
+  RigRect armLeft{7, 12, 3, 11};
+  RigRect armRight{22, 12, 3, 11};
+  RigRect legs{12, 20, 10, 11};
+  // The right hand (source pixels) and the soles of the feet.
+  int handX = 24;
+  int handY = 22;
+  int footX = 16;
+  int footY = 31;
+};
+
+inline nlohmann::json RigRectToJson(const RigRect &rect) {
+  return nlohmann::json::array({rect.x, rect.y, rect.w, rect.h});
+}
+
+inline RigRect RigRectFromJson(const nlohmann::json &value, const RigRect &fallback) {
+  if (!value.is_array() || value.size() != 4) return fallback;
+  for (const auto &part : value) {
+    if (!part.is_number_integer()) return fallback;
+  }
+  RigRect rect;
+  rect.x = value[0].get<int>();
+  rect.y = value[1].get<int>();
+  rect.w = value[2].get<int>();
+  rect.h = value[3].get<int>();
+  if (rect.w <= 0 || rect.h <= 0) return fallback;
+  return rect;
+}
+
+inline nlohmann::json RigGeometryToJson(const RigGeometry &geometry) {
+  nlohmann::json out = nlohmann::json::object();
+  out["width"] = geometry.width;
+  out["height"] = geometry.height;
+  out["head"] = RigRectToJson(geometry.head);
+  out["hair"] = RigRectToJson(geometry.hair);
+  out["body"] = RigRectToJson(geometry.body);
+  out["arm_left"] = RigRectToJson(geometry.armLeft);
+  out["arm_right"] = RigRectToJson(geometry.armRight);
+  out["legs"] = RigRectToJson(geometry.legs);
+  out["hand"] = nlohmann::json::array({geometry.handX, geometry.handY});
+  out["foot"] = nlohmann::json::array({geometry.footX, geometry.footY});
+  return out;
+}
+
+inline RigGeometry RigGeometryFromJson(const nlohmann::json &value) {
+  RigGeometry geometry;
+  if (!value.is_object()) return geometry;
+  geometry.width = value.value("width", geometry.width);
+  geometry.height = value.value("height", geometry.height);
+  if (geometry.width <= 0) geometry.width = 32;
+  if (geometry.height <= 0) geometry.height = 32;
+  if (value.contains("head")) geometry.head = RigRectFromJson(value["head"], geometry.head);
+  if (value.contains("hair")) geometry.hair = RigRectFromJson(value["hair"], geometry.hair);
+  if (value.contains("body")) geometry.body = RigRectFromJson(value["body"], geometry.body);
+  if (value.contains("arm_left")) geometry.armLeft = RigRectFromJson(value["arm_left"], geometry.armLeft);
+  if (value.contains("arm_right")) geometry.armRight = RigRectFromJson(value["arm_right"], geometry.armRight);
+  if (value.contains("legs")) geometry.legs = RigRectFromJson(value["legs"], geometry.legs);
+  if (value.contains("hand") && value["hand"].is_array() && value["hand"].size() == 2) {
+    geometry.handX = value["hand"][0].get<int>();
+    geometry.handY = value["hand"][1].get<int>();
+  }
+  if (value.contains("foot") && value["foot"].is_array() && value["foot"].size() == 2) {
+    geometry.footX = value["foot"][0].get<int>();
+    geometry.footY = value["foot"][1].get<int>();
+  }
+  return geometry;
+}
+
 // A rigged actor: a set of part layers over one canvas.
 //
 // This is the rigged counterpart of ActorSpriteDef, not a kind of it. An actor sprite is
@@ -146,6 +232,12 @@ struct ActorRig {
   int height = 32;
   std::vector<RigPart> parts;
   std::vector<RigClip> clips;
+  // Optional art style id. The style supplies the prose and, when the rig has no geometry
+  // of its own, the proportions.
+  std::string style;
+  // Optional geometry override for this rig. Absent means the style's geometry, then the
+  // canonical 32x32 humanoid.
+  std::optional<RigGeometry> geometry;
 };
 
 // The actor-rig catalogue, loaded from data/rigs/<id>.json.

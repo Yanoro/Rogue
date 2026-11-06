@@ -66,7 +66,8 @@ private:
   // worn equipment layer), and becomes the brief a Regenerate is redrawn from.
   void DrawSpriteAsset(const std::string &convention, const std::string &requestName,
                        SpriteKinds::Kind spriteKind, const std::string &explicitSprite,
-                       bool builtInFallback, const std::string &artRequirement);
+                       bool builtInFallback, const std::string &artRequirement,
+                       const std::string &styleId = std::string());
 
   // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
   // one kind whose document is a *composition*, so the generic form alone cannot show

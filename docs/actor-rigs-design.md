@@ -300,6 +300,27 @@ grip path draws the hand item.
 The segmented-cutout and per-weapon-frame experiments were throwaway debug windows and
 have been removed; the grip path below is the production result.
 
+### Rig geometry and style proportions
+
+A rig's proportions are no longer only prose in the part briefs. `RigGeometry` (in
+`include/RigRegistry.h`) records the frame size, the head/hair/body/arm/leg rectangles,
+the right-hand point and the foot point. The default is the canonical 32x32 humanoid, so
+existing rigs are unchanged. A rig may carry its own `"geometry"` object, or name a
+`"style"` whose `ArtStyleDef` carries one; `ArtStyleRegistry::GeometryFor` resolves
+rig -> style -> default.
+
+`RigDesigner::FrameContract(geometry)` prints the dynamic contract, and the rig part,
+animation, worn-equipment and item worn-art prompts are cut from the same geometry. The
+Designer rig pane has an **Art style** picker; picking a style with a geometry changes
+every layer request for that draft. The `data/art_styles/ragnarok_online.json` sample is a
+chibi profile (large head, small body) and `data/rigs/chibi_test.json` is the matching
+hand-authored test rig.
+
+This slice stays inside the 32x32 cell: the renderer still fits the rig into the tile, and
+the geometry is what lets a large-head chibi and its equipment prompts agree. Larger
+frames, a world draw box from the foot anchor, and per-rig worn-equipment anchors are the
+next slice.
+
 ### Grips
 
 A hand item carries `worn.grip` in its definition:

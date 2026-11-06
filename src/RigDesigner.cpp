@@ -34,19 +34,33 @@ namespace RigDesigner {
 
 std::string SlugFor(const std::string &name) { return Slugify(name); }
 
-std::string FrameContract() {
-  return "This is one layer of a 32x32 humanoid rig drawn from the front, in a 32x32 "
-         "transparent frame. Draw ONLY the layer being asked for and leave the rest of "
-         "the frame empty; the engine draws the parts on top of each other. The frame "
-         "the other layers are drawn against:\n"
-         "  head      (11,4)-(21,12)   face\n"
-         "  hair      (10,2)-(22,9)    over the head, hidden by a helmet\n"
-         "  body      (10,11)-(22,22)  tunic, belt\n"
-         "  arm_left  (7,12)-(10,23)   sleeve and hand\n"
-         "  arm_right (22,12)-(25,23)  sleeve and hand; this hand holds weapons\n"
-         "  legs      (12,20)-(22,31)  trousers and boots\n"
-         "Keep the silhouette inside those rectangles so equipment drawn over the frame "
-         "lines up.";
+std::string FrameContract() { return FrameContract(RigGeometry{}); }
+
+std::string FrameContract(const RigGeometry &geometry) {
+  std::ostringstream out;
+  out << "This is one layer of a " << geometry.width << "x" << geometry.height
+      << " humanoid rig drawn from the front, in a " << geometry.width << "x"
+      << geometry.height << " transparent frame. Draw ONLY the layer being asked for "
+      << "and leave the rest of the frame empty; the engine draws the parts on top of "
+      << "each other. The frame the other layers are drawn against:\n";
+  const auto line = [&out](const char *name, const RigRect &rect, const char *what) {
+    out << "  " << name;
+    const std::string label(name);
+    for (size_t i = label.size(); i < 10; ++i) out << ' ';
+    out << "(" << rect.x << "," << rect.y << ")-(" << rect.x + rect.w << ","
+        << rect.y + rect.h << ")   " << what << "\n";
+  };
+  line("head", geometry.head, "face");
+  line("hair", geometry.hair, "over the head, hidden by a helmet");
+  line("body", geometry.body, "tunic, belt");
+  line("arm_left", geometry.armLeft, "sleeve and hand");
+  line("arm_right", geometry.armRight, "sleeve and hand; this hand holds weapons");
+  line("legs", geometry.legs, "trousers and boots");
+  out << "The right hand holds weapons at (" << geometry.handX << ","
+      << geometry.handY << "). The soles of the feet sit at (" << geometry.footX
+      << "," << geometry.footY << "). Keep the silhouette inside those rectangles so "
+      << "equipment drawn over the frame lines up.\n";
+  return out.str();
 }
 
 ApplyResult ApplyReply(const std::string &text) {
@@ -231,6 +245,8 @@ bool Save(const Draft &draft, const std::string &directory, std::string *savedPa
   if (!draft.description.empty()) document["description"] = draft.description;
   document["width"] = draft.width;
   document["height"] = draft.height;
+  if (!draft.style.empty()) document["style"] = draft.style;
+  if (draft.geometry) document["geometry"] = RigGeometryToJson(*draft.geometry);
   if (!clips.empty()) document["clips"] = std::move(clips);
   document["parts"] = std::move(parts);
 

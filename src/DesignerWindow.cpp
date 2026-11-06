@@ -565,7 +565,8 @@ std::string DesignerWindow::ArtDocumentPath(const std::string &name,
 void DesignerWindow::AskForSpriteArt(const std::string &name,
                                      SpriteKinds::Kind kind,
                                      const std::string &requirement, bool redesign,
-                                     const std::string &editInstruction) {
+                                     const std::string &editInstruction,
+                                     const std::string &styleId) {
   // An edit starts from the sprite that is on screen. The archive keeps every generated
   // version's document, and activating one restores it, so this is the selected version's
   // document rather than whichever document happened to be written last.
@@ -587,7 +588,8 @@ void DesignerWindow::AskForSpriteArt(const std::string &name,
   // Only a new document can produce new art; the pack's copy is never overwritten, and the
   // compile lands in the generated layer until the Content Editor's marker chooses it.
   RequestSpriteDocument(name, kind, /*replaceGenerated=*/true, std::string(),
-                        requirement, redesign, {}, {}, baseDocument, editInstruction);
+                        requirement, redesign, {}, {}, baseDocument, editInstruction,
+                        styleId);
 }
 
 void DesignerWindow::QueueIconStyleBatch(const std::string &styleId) {
@@ -712,7 +714,8 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                const std::vector<std::string> &frameNames,
                                                const std::vector<std::string> &poses,
                                                const std::string &baseDocument,
-                                               const std::string &editInstruction) {
+                                               const std::string &editInstruction,
+                                               const std::string &styleOverride) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
     statusIsError = true;
@@ -863,7 +866,10 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     }
   }
   const ArtStyleDef *style = nullptr;
-  if (!requestedStyle.empty()) {
+  if (!styleOverride.empty()) {
+    style = game->artStyleRegistry.Get(styleOverride);
+  }
+  if (style == nullptr && !requestedStyle.empty()) {
     style = game->artStyleRegistry.Get(requestedStyle);
   }
   if (style == nullptr) {
@@ -981,6 +987,7 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
   // the request was started from the Content Editor.
   game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
 
+  const RigGeometry geometry = game->artStyleRegistry.GeometryFor(rig);
   const std::string motion =
       !clip.brief.empty()
           ? clip.brief
@@ -1002,18 +1009,20 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
     }
     request.poses = clip.poses;
     request.baseDocument = BaseLayerDocument(part.sprite, rig.id, part.id);
+    request.styleId = rig.style;
     const std::string brief =
         part.brief.empty()
             ? ("the " + part.id + " layer of the " +
                (rig.name.empty() ? rig.id : rig.name) + " rig")
             : part.brief;
     request.requirement =
-        RigDesigner::FrameContract() + "\n\nThis layer: " + part.id + " -- " + brief +
-        "\n\nAnimation: " + motion +
+        RigDesigner::FrameContract(geometry) + "\n\nThis layer: " + part.id + " -- " +
+        brief + "\n\nAnimation: " + motion +
         "\nEach frame is a full drawing of this layer in a different pose. Draw only this "
-        "layer; the rest of the 32x32 frame stays transparent. Match the layer described "
-        "above rather than redesigning the character, and keep the pixels that do not move "
-        "in the same place.";
+        "layer; the rest of the " + std::to_string(geometry.width) + "x" +
+        std::to_string(geometry.height) +
+        " frame stays transparent. Match the layer described above rather than redesigning "
+        "the character, and keep the pixels that do not move in the same place.";
     {
       std::string resolved;
       request.redesign = FindSpriteDSLDocument(request.sprite).found ||
@@ -2808,14 +2817,35 @@ void DesignerWindow::DrawObjectPreview() {
   }
 }
 
+namespace {
+
+// The geometry a draft's layers are drawn against: its own, then its style's, then the
+// canonical humanoid.
+RigGeometry DraftGeometry(const RigDesigner::Draft &draft,
+                          const ArtStyleRegistry &styles) {
+  if (draft.geometry) return *draft.geometry;
+  if (const ArtStyleDef *style = styles.Get(draft.style);
+      style != nullptr && style->geometry) {
+    return *style->geometry;
+  }
+  return RigGeometry{};
+}
+
+}  // namespace
+
 void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
   RigArtRequest request;
   request.label = part.id;
   request.sprite = part.sprite;
-  request.requirement = RigDesigner::FrameContract() + "\n\nThis layer: " +
+  const RigGeometry geometry =
+      rigDraft.has_value() ? DraftGeometry(*rigDraft, game->artStyleRegistry)
+                           : RigGeometry{};
+  request.styleId = rigDraft.has_value() ? rigDraft->style : std::string();
+  request.requirement = RigDesigner::FrameContract(geometry) + "\n\nThis layer: " +
                         part.id + " -- " + part.brief +
-                        "\nDraw only this layer; the rest of the 32x32 frame stays "
-                        "transparent.";
+                        "\nDraw only this layer; the rest of the " +
+                        std::to_string(geometry.width) + "x" +
+                        std::to_string(geometry.height) + " frame stays transparent.";
   {
     std::string resolved;
     request.redesign = SpriteResolves(std::string(), part.sprite, &resolved);
@@ -2859,8 +2889,14 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
   RigArtRequest request;
   request.label = itemId;
   request.sprite = item->wornSprite;
+  request.styleId = item->style;
+  const ActorRig *previewRig =
+      equipmentPreviewRig.empty() ? nullptr : game->rigRegistry.Get(equipmentPreviewRig);
+  const RigGeometry geometry =
+      previewRig != nullptr ? game->artStyleRegistry.GeometryFor(*previewRig)
+                            : RigGeometry{};
   request.requirement =
-      RigDesigner::FrameContract() + "\n\nThis layer is worn equipment: " + itemId +
+      RigDesigner::FrameContract(geometry) + "\n\nThis layer is worn equipment: " + itemId +
       ". Draw it over that frame, aligned with the body it is worn on. " +
       (hides.empty()
            ? "It hides no rig part; it is drawn in front of the body."
@@ -2901,16 +2937,22 @@ void DesignerWindow::QueueRigPartClipArt(RigDesigner::Part &part, const RigClip 
   request.baseDocument =
       BaseLayerDocument(part.sprite, rigDraft.has_value() ? rigDraft->slug : std::string(),
                         part.id);
+  const RigGeometry geometry =
+      rigDraft.has_value() ? DraftGeometry(*rigDraft, game->artStyleRegistry)
+                           : RigGeometry{};
+  request.styleId = rigDraft.has_value() ? rigDraft->style : std::string();
   const std::string motion =
       clip.brief.empty()
           ? ("a " + std::to_string(clip.frames) + "-frame " + clip.id + " cycle")
           : clip.brief;
   request.requirement =
-      RigDesigner::FrameContract() + "\n\nThis layer: " + part.id + " -- " + part.brief +
-      "\n\nAnimation: " + motion +
+      RigDesigner::FrameContract(geometry) + "\n\nThis layer: " + part.id + " -- " +
+      part.brief + "\n\nAnimation: " + motion +
       "\nEach frame is a full drawing of this layer in a different pose. Draw only this "
-      "layer in every frame; the rest of the 32x32 frame stays transparent. Keep the "
-      "layer registered to the same pixels that do not move.";
+      "layer in every frame; the rest of the " + std::to_string(geometry.width) + "x" +
+      std::to_string(geometry.height) +
+      " frame stays transparent. Keep the layer registered to the same pixels that do "
+      "not move.";
   {
     // The document is the thing that exists after a first generation; there is no
     // <base>.png, so a sprite lookup alone would never notice it.
@@ -3048,7 +3090,7 @@ void DesignerWindow::PumpRigArtQueue() {
   RequestSpriteDocument(request.sprite, SpriteKinds::Kind::Actor,
                         /*replaceGenerated=*/true, "", request.requirement,
                         request.redesign, request.frames, request.poses,
-                        request.baseDocument);
+                        request.baseDocument, std::string(), request.styleId);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 
@@ -3303,12 +3345,33 @@ void DesignerWindow::DrawRigPreview() {
     ImGui::TextDisabled("%s", draft.designerNotes.c_str());
   }
 
+  // The art style is the family voice and, when it carries one, the proportion
+  // profile. Picking it here makes every layer request below use the same geometry.
+  const std::vector<const ArtStyleDef *> styles = game->artStyleRegistry.GetAll();
+  int styleIndex = 0;
+  std::vector<const char *> styleNames;
+  styleNames.push_back("(family default)");
+  for (size_t i = 0; i < styles.size(); ++i) {
+    styleNames.push_back(styles[i]->name.empty() ? styles[i]->id.c_str()
+                                                 : styles[i]->name.c_str());
+    if (styles[i]->id == draft.style) styleIndex = static_cast<int>(i) + 1;
+  }
+  ImGui::TextDisabled("Art style");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::Combo("##rig_style", &styleIndex, styleNames.data(),
+                   static_cast<int>(styleNames.size()))) {
+    draft.style = styleIndex <= 0 ? std::string() : styles[styleIndex - 1]->id;
+  }
+
   // The composed body first: the look is what this slice is for.
   ActorRig renderRig;
   renderRig.id = draft.slug;
   renderRig.name = draft.name;
   renderRig.width = draft.width;
   renderRig.height = draft.height;
+  renderRig.style = draft.style;
+  renderRig.geometry = draft.geometry;
   for (const RigDesigner::Part &part : draft.parts) {
     renderRig.parts.push_back({part.id, part.sprite, part.z, part.clips});
   }

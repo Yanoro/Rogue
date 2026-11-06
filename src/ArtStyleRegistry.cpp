@@ -89,6 +89,9 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
   definition.description = document.value("description", std::string());
   definition.positive = document.value("positive", std::string());
   definition.negative = document.value("negative", std::string());
+  if (document.contains("geometry")) {
+    definition.geometry = RigGeometryFromJson(document["geometry"]);
+  }
   if (definition.positive.empty()) {
     if (warnings != nullptr) {
       warnings->push_back("style '" + definition.id +
@@ -143,10 +146,18 @@ const ArtStyleDef *ArtStyleRegistry::DefaultFor(const std::string &family) const
   return nullptr;
 }
 
+RigGeometry ArtStyleRegistry::GeometryFor(const ActorRig &rig) const {
+  if (rig.geometry) return *rig.geometry;
+  const ArtStyleDef *style = Get(rig.style);
+  if (style != nullptr && style->geometry) return *style->geometry;
+  return RigGeometry{};
+}
+
 nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
   nlohmann::json document = nlohmann::json::object();
   document["id"] = definition.id;
   document["name"] = definition.name;
+  if (definition.geometry) document["geometry"] = RigGeometryToJson(*definition.geometry);
   if (!definition.description.empty()) {
     document["description"] = definition.description;
   }

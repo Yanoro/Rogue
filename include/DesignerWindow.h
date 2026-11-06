@@ -163,7 +163,8 @@ public:
   void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
                        const std::string &requirement = std::string(),
                        bool redesign = true,
-                       const std::string &editInstruction = std::string());
+                       const std::string &editInstruction = std::string(),
+                       const std::string &styleId = std::string());
 
   // Queues animation art for a rig that is not this window's draft (the Content Editor's
   // rig). The clip's frame declarations live in the caller's registry document; this asks
@@ -209,7 +210,8 @@ private:
                              const std::vector<std::string> &poses =
                                  std::vector<std::string>(),
                              const std::string &baseDocument = std::string(),
-                             const std::string &editInstruction = std::string());
+                             const std::string &editInstruction = std::string(),
+                             const std::string &styleOverride = std::string());
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -458,6 +460,8 @@ private:
     // True when art already exists and this is a deliberate re-draw, so the prompt asks
     // for a different interpretation rather than a copy of the current document.
     bool redesign = false;
+    // ArtStyleRegistry id for this layer's family; empty uses the registry's default.
+    std::string styleId;
   };
   std::optional<RigDesigner::Draft> rigDraft;
 

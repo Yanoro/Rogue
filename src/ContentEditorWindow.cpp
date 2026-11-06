@@ -896,7 +896,8 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
                                           SpriteKinds::Kind spriteKind,
                                           const std::string &explicitSprite,
                                           bool builtInFallback,
-                                          const std::string &artRequirement) {
+                                          const std::string &artRequirement,
+                                          const std::string &styleId) {
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
   if (texture == nullptr && builtInFallback && explicitSprite.empty() &&
@@ -983,7 +984,7 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
-                                            /*redesign=*/true);
+                                            /*redesign=*/true, std::string(), styleId);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
@@ -1043,7 +1044,7 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
     if (game->designerWindow) {
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
-                                            /*redesign=*/false, spriteEditBuffer);
+                                            /*redesign=*/false, spriteEditBuffer, styleId);
       status = "asked the Designer to edit this sprite; the previous version is in the "
                "list below and the edited one lands as a new generated version";
       statusIsError = false;
@@ -1308,14 +1309,21 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     }
     wornRequirement += "It hides the rig part(s): " + hides + ". ";
   }
+  const ActorRig *wornRig =
+      itemPreviewRig.empty() ? nullptr : game->rigRegistry.Get(itemPreviewRig);
+  const RigGeometry wornGeometry =
+      wornRig != nullptr ? game->artStyleRegistry.GeometryFor(*wornRig) : RigGeometry{};
   if (item->slot == "hand") {
     wornRequirement += "The hand holds it at (" + std::to_string(item->wornGripX) +
-                       "," + std::to_string(item->wornGripY) +
-                       ") in the 32x32 frame; draw the grip of the item at that point. ";
+                       "," + std::to_string(item->wornGripY) + ") in the " +
+                       std::to_string(wornGeometry.width) + "x" +
+                       std::to_string(wornGeometry.height) +
+                       " frame; draw the grip of the item at that point. ";
   }
-  wornRequirement += RigDesigner::FrameContract();
+  wornRequirement += RigDesigner::FrameContract(wornGeometry);
   DrawSpriteAsset(item->wornSprite, item->wornSprite, SpriteKinds::Kind::Actor,
-                  std::string(), /*builtInFallback=*/true, wornRequirement);
+                  std::string(), /*builtInFallback=*/true, wornRequirement,
+                  item->style);
 
   const auto rigs = game->rigRegistry.GetAll();
   if (rigs.empty()) {
