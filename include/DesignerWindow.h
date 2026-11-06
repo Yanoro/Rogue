@@ -429,6 +429,7 @@ private:
   // The 64x64 style test: one character in the style, saved as style_test_<style id>.
   // It becomes the style reference that the part and animation prompts carry.
   void QueueStyleTest(const std::string &styleId);
+  void UseStyleTestAsReference(const std::string &styleId);
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).

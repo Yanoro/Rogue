@@ -673,14 +673,15 @@ void DesignerWindow::DrawStyleBatch() {
     return;
   }
   ImGui::Separator();
-  ImGui::TextDisabled("Art style batch");
+  ImGui::TextDisabled("Art style");
   ImGui::SameLine();
   ImGui::SetNextItemWidth(220.0f);
   if (batchStyleIndex < 0 ||
       batchStyleIndex >= static_cast<int>(styles.size())) {
     batchStyleIndex = 0;
   }
-  if (ImGui::BeginCombo("##style_batch", styles[batchStyleIndex]->name.c_str())) {
+  const ArtStyleDef *selectedStyle = styles[batchStyleIndex];
+  if (ImGui::BeginCombo("##style_batch", selectedStyle->name.c_str())) {
     for (size_t i = 0; i < styles.size(); ++i) {
       const bool selected = static_cast<int>(i) == batchStyleIndex;
       if (ImGui::Selectable(styles[i]->name.c_str(), selected)) {
@@ -689,9 +690,37 @@ void DesignerWindow::DrawStyleBatch() {
     }
     ImGui::EndCombo();
   }
+  const std::string testName = "style_test_" + selectedStyle->id;
+  const bool hasTest = FindSpriteDSLDocument(testName).found;
+  ImGui::SameLine();
+  if (ImGui::Button("Test style (64x64)")) {
+    QueueStyleTest(selectedStyle->id);
+  }
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Asks for one whole 64x64 character in this style. It becomes the style "
+        "reference the layer and animation prompts carry.");
+  }
+  if (hasTest) {
+    ImGui::SameLine();
+    if (ImGui::Button("Use test as style reference")) {
+      UseStyleTestAsReference(selectedStyle->id);
+    }
+  }
   ImGui::SameLine();
   if (ImGui::Button("Regenerate all assets in style")) {
-    QueueIconStyleBatch(styles[batchStyleIndex]->id);
+    QueueIconStyleBatch(selectedStyle->id);
+  }
+  if (!selectedStyle->reference.empty()) {
+    ImGui::TextDisabled("Reference: %s", selectedStyle->reference.c_str());
+  }
+  if (!selectedStyle->palette.empty()) {
+    ImGui::TextDisabled("Palette: %.96s", selectedStyle->palette.c_str());
+  }
+  if (!hasTest) {
+    ImGui::TextDisabled(
+        "No style test yet for '%s'; generate one to give the prompts a concrete target.",
+        selectedStyle->id.c_str());
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip(
@@ -1074,6 +1103,32 @@ void DesignerWindow::QueueStyleTest(const std::string &styleId) {
                         /*redesign=*/true, {}, {}, {}, {}, styleId, 64, 64);
   rigArtMessage = "Asked for the 64x64 style test '" + name +
                   "'; when it lands, use it as the style reference.";
+  statusLine = rigArtMessage;
+}
+
+void DesignerWindow::UseStyleTestAsReference(const std::string &styleId) {
+  if (game == nullptr || styleId.empty()) return;
+  const std::string testName = "style_test_" + styleId;
+  if (!FindSpriteDSLDocument(testName).found) {
+    rigArtMessage = "The style test '" + testName +
+                    "' does not exist yet; generate it first.";
+    statusLine = rigArtMessage;
+    return;
+  }
+  const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
+  if (style == nullptr) return;
+  nlohmann::json document = game->artStyleRegistry.ToJson(*style);
+  document["reference"] = testName;
+  std::string error;
+  std::vector<std::string> warnings;
+  if (game->artStyleRegistry.AddOrReplace(document, "(style test)", &error,
+                                          &warnings)) {
+    rigArtMessage = "Style '" + styleId + "' now uses " + testName +
+                    " as its reference; regenerate the layers to apply it.";
+  } else {
+    rigArtMessage = error;
+  }
+  statusLine = rigArtMessage;
 }
 
 void DesignerWindow::SendArtTurn(const std::string &prompt,
@@ -3412,19 +3467,7 @@ void DesignerWindow::DrawRigPreview() {
     if (FindSpriteDSLDocument(testName).found) {
       ImGui::SameLine();
       if (ImGui::Button("Use test as style reference")) {
-        if (const ArtStyleDef *style = game->artStyleRegistry.Get(draft.style)) {
-          nlohmann::json document = game->artStyleRegistry.ToJson(*style);
-          document["reference"] = testName;
-          std::string error;
-          std::vector<std::string> warnings;
-          if (game->artStyleRegistry.AddOrReplace(document, "(style test)", &error,
-                                                  &warnings)) {
-            rigArtMessage = "Style '" + draft.style + "' now uses " + testName +
-                            " as its reference; regenerate the layers to apply it.";
-          } else {
-            rigArtMessage = error;
-          }
-        }
+        UseStyleTestAsReference(draft.style);
       }
     }
   }
