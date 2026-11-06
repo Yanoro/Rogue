@@ -326,6 +326,24 @@ full worn frame between them. Hand items stay on the grip path, with the grip sc
 rig's frame. The same transform runs in the Content Editor, the Designer and the world, so
 the preview and the game agree.
 
+### World footprint
+
+The art frame is not the collision body. `RigGeometry` now carries two world boxes,
+anchored bottom-centre at the foot:
+
+- `base` — the collision footprint (e.g. 20x12 for the chibi). It is applied as the
+  entity's `Hitbox` with an offset, so a larger art frame still collides with a small
+  ground patch. The existing 32x32 hitboxes are the fallback when a rig has no base.
+- `pick` — the click/hover rectangle (e.g. 28x30 for the chibi). It is a separate
+  `Pickbox`; the click, target and window-on-click paths prefer it and fall back to the
+  `Hitbox` for entities without one.
+
+`Game::ApplyRigFootprint` sets both when a rig is assigned to the player or spawned on an
+NPC. The collision system, vision/facing origins and combat/visual centre use the base
+offset; debug drawing shows the cell (red), the base (blue) and the pick box (magenta).
+The sample chibi style carries the two boxes; a tall rig can have a 32x16 base and a
+48x52 pick without changing its 48x64 art frame.
+
 ### Grips
 
 A hand item carries `worn.grip` in its definition:

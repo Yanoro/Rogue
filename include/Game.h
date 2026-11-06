@@ -206,6 +206,11 @@ public:
   // the spawn path and by the Settings window's rig picker; empty id removes it.
   bool ApplyPlayerRig(const std::string &rigId, std::string &message);
 
+  // Applies a rig's world footprint to an entity: its collision base and its pick box,
+  // anchored bottom-centre at the cell. The art frame is allowed to be larger than
+  // either. A rig with no base/pick geometry keeps the entity's cell-sized hitbox.
+  void ApplyRigFootprint(flecs::entity e, const ActorRig &rig);
+
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
   bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);

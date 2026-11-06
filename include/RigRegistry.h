@@ -159,6 +159,13 @@ struct RigGeometry {
   int handY = 22;
   int footX = 16;
   int footY = 31;
+  // World footprint, in source pixels, anchored bottom-centre at the foot. Zero means
+  // the entity's cell width/height. The art frame may be larger than either: the base is
+  // what collides and the pick box is what the cursor tests.
+  int baseWidth = 0;
+  int baseHeight = 0;
+  int pickWidth = 0;
+  int pickHeight = 0;
 };
 
 inline nlohmann::json RigRectToJson(const RigRect &rect) {
@@ -191,6 +198,8 @@ inline nlohmann::json RigGeometryToJson(const RigGeometry &geometry) {
   out["legs"] = RigRectToJson(geometry.legs);
   out["hand"] = nlohmann::json::array({geometry.handX, geometry.handY});
   out["foot"] = nlohmann::json::array({geometry.footX, geometry.footY});
+  out["base"] = nlohmann::json::array({geometry.baseWidth, geometry.baseHeight});
+  out["pick"] = nlohmann::json::array({geometry.pickWidth, geometry.pickHeight});
   return out;
 }
 
@@ -214,6 +223,14 @@ inline RigGeometry RigGeometryFromJson(const nlohmann::json &value) {
   if (value.contains("foot") && value["foot"].is_array() && value["foot"].size() == 2) {
     geometry.footX = value["foot"][0].get<int>();
     geometry.footY = value["foot"][1].get<int>();
+  }
+  if (value.contains("base") && value["base"].is_array() && value["base"].size() == 2) {
+    geometry.baseWidth = value["base"][0].get<int>();
+    geometry.baseHeight = value["base"][1].get<int>();
+  }
+  if (value.contains("pick") && value["pick"].is_array() && value["pick"].size() == 2) {
+    geometry.pickWidth = value["pick"][0].get<int>();
+    geometry.pickHeight = value["pick"][1].get<int>();
   }
   return geometry;
 }

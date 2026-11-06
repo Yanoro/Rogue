@@ -420,6 +420,33 @@ bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
 }
 
 
+void Game::ApplyRigFootprint(flecs::entity e, const ActorRig &rig) {
+  const RigGeometry geometry = artStyleRegistry.GeometryFor(rig);
+  const DrawAscii *ascii = e.get<DrawAscii>();
+  const float cellWidth = ascii != nullptr ? static_cast<float>(ascii->width) : 32.0f;
+  const float cellHeight = ascii != nullptr ? static_cast<float>(ascii->height) : 32.0f;
+  const int baseWidth = geometry.baseWidth > 0 ? geometry.baseWidth
+                                               : static_cast<int>(cellWidth);
+  const int baseHeight = geometry.baseHeight > 0 ? geometry.baseHeight
+                                                 : static_cast<int>(cellHeight);
+  const int pickWidth = geometry.pickWidth > 0 ? geometry.pickWidth : baseWidth;
+  const int pickHeight = geometry.pickHeight > 0 ? geometry.pickHeight : baseHeight;
+
+  Hitbox base;
+  base.width = static_cast<size_t>(baseWidth);
+  base.height = static_cast<size_t>(baseHeight);
+  base.offsetX = (cellWidth - static_cast<float>(baseWidth)) * 0.5f;
+  base.offsetY = cellHeight - static_cast<float>(baseHeight);
+  e.set<Hitbox>(base);
+
+  Pickbox pick;
+  pick.width = static_cast<size_t>(pickWidth);
+  pick.height = static_cast<size_t>(pickHeight);
+  pick.offsetX = (cellWidth - static_cast<float>(pickWidth)) * 0.5f;
+  pick.offsetY = cellHeight - static_cast<float>(pickHeight);
+  e.set<Pickbox>(pick);
+}
+
 bool Game::ApplyPlayerRig(const std::string &rigId, std::string &message) {
   message.clear();
   if (!playerEntity.is_alive()) {
@@ -429,15 +456,20 @@ bool Game::ApplyPlayerRig(const std::string &rigId, std::string &message) {
   if (rigId.empty()) {
     playerEntity.remove<RigBody>();
     playerEntity.remove<RigAnim>();
+    playerEntity.remove<Pickbox>();
+    playerEntity.set<Hitbox>(
+        {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT, 0.0f, 0.0f});
     message = "Player uses the actor sprite or the race's look.";
     return true;
   }
-  if (rigRegistry.Get(rigId) == nullptr) {
+  const ActorRig *rig = rigRegistry.Get(rigId);
+  if (rig == nullptr) {
     message = "No actor rig is named '" + rigId + "'.";
     return false;
   }
   playerEntity.set<RigBody>({rigId});
   playerEntity.set<RigAnim>({});
+  ApplyRigFootprint(playerEntity, *rig);
   message = "Player now uses the '" + rigId + "' rig.";
   return true;
 }
@@ -514,9 +546,10 @@ flecs::entity Game::createNPC(const NPCData &data) {
   // A template or map entry naming a rig gets layered art. Resolved here rather than in
   // the renderer so an unknown id is reported once at spawn, with the NPC's name in hand.
   if (!data.rig.empty()) {
-    if (rigRegistry.Get(data.rig) != nullptr) {
+    if (const ActorRig *rig = rigRegistry.Get(data.rig)) {
       entity.set<RigBody>({data.rig});
       entity.set<RigAnim>({});
+      ApplyRigFootprint(entity, *rig);
     } else if (debugLog) {
       debugLog->LogWarning("Warning: NPC '" + name + "' names unknown rig '" +
                            data.rig + "'; using its sprite or race look.");
@@ -967,6 +1000,12 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
     raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
                                 ascii.height);
     outerRect.DrawLines(RED, 1.0f);
+    if (const Hitbox *hitbox = e.get<Hitbox>()) {
+      DrawRectangleLinesEx(HitboxRectangle(screenPos, *hitbox), 1.0f, BLUE);
+    }
+    if (const Pickbox *pick = e.get<Pickbox>()) {
+      DrawRectangleLinesEx(PickboxRectangle(screenPos, *pick), 1.0f, MAGENTA);
+    }
   }
 
   if (DrawAsciiDebug::GetShowInnerRectangles()) {
@@ -1475,19 +1514,21 @@ void Game::ECSInitPhysicsSystems() {
         bool nullXVector = false;
         bool nullYVector = false;
 
-        if ((newScreenPos.x < 0) ||
-            (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
+        const float baseX = newScreenPos.x + hitbox.offsetX;
+        const float baseY = newScreenPos.y + hitbox.offsetY;
+        const float previousBaseY = origScreenPos.y + hitbox.offsetY;
+        const float previousBaseX = origScreenPos.x + hitbox.offsetX;
+        if ((baseX < 0.0f) ||
+            (baseX + static_cast<float>(hitbox.width) > map->GetMapWidthPx())) {
           nullXVector = true;
         }
-        if ((newScreenPos.y < 0) ||
-            (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
+        if ((baseY < 0.0f) ||
+            (baseY + static_cast<float>(hitbox.height) > map->GetMapHeightPx())) {
           nullYVector = true;
         }
 
-        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
-                                     hitboxSize, hitboxSize);
-        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
-                                     hitboxSize, hitboxSize);
+        raylib::Rectangle deltaXRect(baseX, previousBaseY, hitboxSize, hitboxSize);
+        raylib::Rectangle deltaYRect(previousBaseX, baseY, hitboxSize, hitboxSize);
 
         GamePosition gamePos =
             map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
