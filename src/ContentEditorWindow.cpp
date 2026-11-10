@@ -2135,6 +2135,62 @@ void ContentEditorWindow::DrawDocumentPane() {
   }
 }
 
+void ContentEditorWindow::DrawVisualAssets(const ContentKinds::World &world) {
+  visualAssets.Refresh(world);
+  ImGui::TextDisabled(
+      "Indexed from the content kinds. %zu visual asset(s); the style is the asset's "
+      "override, otherwise the kind default applies.",
+      visualAssets.GetAll().size());
+  if (visualAssets.GetAll().empty()) {
+    ImGui::TextDisabled("No visual kinds are registered.");
+    return;
+  }
+  for (const VisualAssetDef &asset : visualAssets.GetAll()) {
+    ImGui::PushID((asset.kind + "/" + asset.id).c_str());
+    ImGui::Text("%s / %s", asset.kind.c_str(), asset.label.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%s)", asset.role.c_str());
+    ImGui::SameLine();
+    const ArtStyleDef *current = asset.styleId.empty()
+                                     ? nullptr
+                                     : game->artStyleRegistry.Get(asset.styleId);
+    ImGui::SetNextItemWidth(190.0f);
+    if (ImGui::BeginCombo("##visual_asset_style",
+                          current ? current->name.c_str() : "(kind default)")) {
+      if (ImGui::Selectable("(kind default)", asset.styleId.empty())) {
+        const ContentKinds::Kind *kind = ContentKinds::For(asset.kind);
+        if (kind != nullptr && kind->read != nullptr && kind->apply != nullptr) {
+          nlohmann::json document = kind->read(world, asset.id);
+          document["style"] = "";
+          std::string error;
+          std::vector<std::string> warnings;
+          if (!kind->apply(world, document, &error, &warnings)) {
+            status = error;
+            statusIsError = true;
+          }
+        }
+      }
+      for (const ArtStyleDef *style : game->artStyleRegistry.GetAll()) {
+        if (ImGui::Selectable(style->name.c_str(), style->id == asset.styleId)) {
+          const ContentKinds::Kind *kind = ContentKinds::For(asset.kind);
+          if (kind != nullptr && kind->read != nullptr && kind->apply != nullptr) {
+            nlohmann::json document = kind->read(world, asset.id);
+            document["style"] = style->id;
+            std::string error;
+            std::vector<std::string> warnings;
+            if (!kind->apply(world, document, &error, &warnings)) {
+              status = error;
+              statusIsError = true;
+            }
+          }
+        }
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::PopID();
+  }
+}
+
 void ContentEditorWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(980, 640), ImGuiCond_FirstUseEver);
@@ -2149,6 +2205,13 @@ void ContentEditorWindow::Draw() {
     ImGui::TextWrapped("The window has no game to read from.");
     ImGui::End();
     return;
+  }
+
+  // The visual asset registry: one index over every kind that has a visual
+  // representation. The style field is the asset's override; the kind's default style is
+  // used when it is empty.
+  if (ImGui::CollapsingHeader("Visual assets")) {
+    DrawVisualAssets(World_());
   }
 
   // The kind selector. The list of kinds is the registry table, so a new registry appears

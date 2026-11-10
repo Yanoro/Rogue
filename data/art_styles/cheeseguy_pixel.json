@@ -64,5 +64,57 @@
   },
   "positive": "Detailed Ragnarok-like pixel-art chibi, roughly four to five heads tall, long legs and a readable torso rather than a giant head. Dark near-black outline around the silhouette and interior line work. Four or five soft pixel shading bands per material (skin, hair, cloth, metal, leather), with highlight and shadow clusters rather than flat fills. Muted, slightly desaturated base colours with a few strong accents. Hair in strands and chunky locks, armor/accessories with readable plates and trim, feet planted at the bottom of the canvas. Crisp one-pixel details, no anti-aliasing.",
   "negative": "no flat single-colour fills, no missing or light outline, no one-to-one super-deformed head/body ratio, no pure black, no soft anti-aliased edges, no high-saturation candy palette, no generic blank face, no chunky 32px proportions.",
-  "reference": "style_ref_green_shaman"
+  "reference": "style_ref_green_shaman",
+  "roles": {
+    "actor": {
+      "width": 96,
+      "height": 96
+    },
+    "rig": {
+      "width": 96,
+      "height": 96
+    },
+    "icon": {
+      "positive": "Readable pixel-art game icon, centered, strong silhouette, high contrast against the dark UI, no thin lines, transparent background. Match the style palette, outline and soft shading.",
+      "negative": "no scenery, no text, no thin single-pixel details, no flat background",
+      "width": 32,
+      "height": 32
+    },
+    "item": {
+      "positive": "Pixel-art item icon, centered, readable at small size, dark outline, palette-matched metal/cloth/wood shading, transparent background.",
+      "negative": "no character, no scenery, no text",
+      "width": 32,
+      "height": 32
+    },
+    "object": {
+      "positive": "World object sprite, feet at the bottom of the canvas, dark outline, readable silhouette, palette-matched materials and soft shading.",
+      "negative": "no UI frame, no text, no huge background",
+      "width": 32,
+      "height": 32
+    },
+    "surface": {
+      "positive": "Tileable ground/surface patch, seamless at the edges, palette-matched, no obvious focal object.",
+      "negative": "no seams, no large object, no text",
+      "width": 32,
+      "height": 32
+    },
+    "effect": {
+      "positive": "Bright pixel-art effect, transparent background, high contrast, palette accents, readable at small size.",
+      "negative": "no character, no background, no text",
+      "width": 32,
+      "height": 32
+    },
+    "silhouette": {
+      "positive": "Solid body silhouette for the equipment window: a plain dark shape with a clean outline, no face, no clothing detail, palette-neutral so equipment reads over it.",
+      "negative": "no face, no interior detail, no bright colours, no background",
+      "width": 96,
+      "height": 96
+    },
+    "tile": {
+      "positive": "Tileable pixel-art ground tile, palette-matched, dark outline only where it meets an object.",
+      "negative": "no seams, no text",
+      "width": 32,
+      "height": 32
+    }
+  }
 }

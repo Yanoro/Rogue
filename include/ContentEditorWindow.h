@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "VisualAssetRegistry.h"
 #include "RigRegistry.h"
 #include "SpriteKinds.hpp"
 #include "Window.h"
@@ -50,6 +51,7 @@ private:
   void Save();
 
   void DrawKindAndList();
+  void DrawVisualAssets(const ContentKinds::World &world);
   void DrawDocumentPane();
   void DrawSpritePane();
   // The sprite asset section, shared by the sprite kinds and the equipment tab: preview,
@@ -102,7 +104,8 @@ private:
 
   const ContentKinds::Kind *Kind() const;
   // The registries, wrapped for the kind table. Built per frame; it only holds references.
-  ContentKinds::World World_() ;
+  ContentKinds::World World_();
+  VisualAssetRegistry visualAssets;
 
   Game *game = nullptr;
 

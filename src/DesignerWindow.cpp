@@ -566,7 +566,8 @@ void DesignerWindow::AskForSpriteArt(const std::string &name,
                                      SpriteKinds::Kind kind,
                                      const std::string &requirement, bool redesign,
                                      const std::string &editInstruction,
-                                     const std::string &styleId) {
+                                     const std::string &styleId,
+                                     const std::string &styleRole) {
   // An edit starts from the sprite that is on screen. The archive keeps every generated
   // version's document, and activating one restores it, so this is the selected version's
   // document rather than whichever document happened to be written last.
@@ -690,26 +691,42 @@ void DesignerWindow::DrawStyleBatch() {
     }
     ImGui::EndCombo();
   }
-  const std::string testName = "style_test_" + selectedStyle->id;
-  const bool hasTest = FindSpriteDSLDocument(testName).found;
-  const int testWidth = selectedStyle->geometry ? selectedStyle->geometry->width : 64;
-  const int testHeight = selectedStyle->geometry ? selectedStyle->geometry->height : 64;
+  const bool hasTest = true;
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(120.0f);
+  if (ImGui::BeginCombo("##style_test_role", styleTestRole.c_str())) {
+    for (const std::string &role : ArtStyleRegistry::KnownRoles()) {
+      if (ImGui::Selectable(role.c_str(), role == styleTestRole)) {
+        styleTestRole = role;
+      }
+    }
+    ImGui::EndCombo();
+  }
+  const ResolvedArtStyle resolvedTest =
+      game->artStyleRegistry.ResolveRole(*selectedStyle, styleTestRole);
+  const int testWidth = resolvedTest.width > 0
+                            ? resolvedTest.width
+                            : (selectedStyle->geometry ? selectedStyle->geometry->width : 64);
+  const int testHeight = resolvedTest.height > 0
+                             ? resolvedTest.height
+                             : (selectedStyle->geometry ? selectedStyle->geometry->height : 64);
   const std::string testLabel =
       "Test style (" + std::to_string(testWidth) + "x" +
       std::to_string(testHeight) + ")";
   ImGui::SameLine();
   if (ImGui::Button(testLabel.c_str())) {
-    QueueStyleTest(selectedStyle->id);
+    QueueStyleTest(selectedStyle->id, styleTestRole);
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip(
-        "Asks for one whole 64x64 character in this style. It becomes the style "
-        "reference the layer and animation prompts carry.");
+        "Asks for one asset in this style for the selected visual role. It becomes the "
+        "role's style reference.");
   }
-  if (hasTest) {
+  const std::string testName = "style_test_" + selectedStyle->id + "_" + styleTestRole;
+  if (hasTest && FindSpriteDSLDocument(testName).found) {
     ImGui::SameLine();
     if (ImGui::Button("Use test as style reference")) {
-      UseStyleTestAsReference(selectedStyle->id);
+      UseStyleTestAsReference(selectedStyle->id, styleTestRole);
     }
   }
   ImGui::SameLine();
@@ -739,6 +756,19 @@ void DesignerWindow::DrawStyleBatch() {
   }
 }
 
+namespace {
+std::string RoleForSpriteKind(SpriteKinds::Kind kind) {
+  switch (kind) {
+    case SpriteKinds::Kind::Tile: return "tile";
+    case SpriteKinds::Kind::Actor: return "actor";
+    case SpriteKinds::Kind::Icon: return "icon";
+    case SpriteKinds::Kind::Surface: return "surface";
+    case SpriteKinds::Kind::Object: return "object";
+  }
+  return std::string();
+}
+}  // namespace
+
 void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                SpriteKinds::Kind kind,
                                                bool replaceGenerated,
@@ -750,6 +780,7 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
                                                const std::string &baseDocument,
                                                const std::string &editInstruction,
                                                const std::string &styleOverride,
+                                               const std::string &styleRole,
                                                int width, int height) {
   if (name.empty()) return;
   if (!session->HasBackend()) {
@@ -835,6 +866,9 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   artBrief.poses = poses;
   artBrief.baseDocument = baseDocument;
   artBrief.editInstruction = editInstruction;
+  const std::string resolvedRole =
+      styleRole.empty() ? RoleForSpriteKind(kind) : styleRole;
+  artBrief.styleRole = resolvedRole;
   artBrief.width = width;
   artBrief.height = height;
   if (kind == SpriteKinds::Kind::Tile) {
@@ -913,12 +947,20 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     style = game->artStyleRegistry.DefaultFor(family);
   }
   if (style != nullptr) {
+    const ResolvedArtStyle resolved =
+        game->artStyleRegistry.ResolveRole(*style, resolvedRole);
     artBrief.styleId = style->id;
-    artBrief.stylePrompt = style->positive;
-    artBrief.styleNegative = style->negative;
-    artBrief.stylePalette = style->palette;
-    if (!style->reference.empty()) {
-      const SpriteDSLDocument reference = FindSpriteDSLDocument(style->reference);
+    artBrief.stylePrompt = resolved.positive;
+    artBrief.styleNegative = resolved.negative;
+    artBrief.stylePalette = resolved.palette;
+    if (width <= 0 && resolved.width > 0) width = resolved.width;
+    if (height <= 0 && resolved.height > 0) height = resolved.height;
+    if (width <= 0) width = 32;
+    if (height <= 0) height = 32;
+    artBrief.width = width;
+    artBrief.height = height;
+    if (!resolved.reference.empty()) {
+      const SpriteDSLDocument reference = FindSpriteDSLDocument(resolved.reference);
       if (reference.found && !reference.path.empty()) {
         std::ifstream in(reference.path);
         if (in.is_open()) {
@@ -1060,6 +1102,7 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
     request.poses = clip.poses;
     request.baseDocument = BaseLayerDocument(part.sprite, rig.id, part.id);
     request.styleId = rig.style;
+    request.styleRole = "rig";
     request.width = geometry.width;
     request.height = geometry.height;
     const std::string brief =
@@ -1092,32 +1135,50 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
   return true;
 }
 
-void DesignerWindow::QueueStyleTest(const std::string &styleId) {
+void DesignerWindow::QueueStyleTest(const std::string &styleId,
+                                    const std::string &role) {
   if (game == nullptr || styleId.empty()) return;
   const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
   if (style == nullptr) return;
   game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-  const int width = style->geometry ? style->geometry->width : 64;
-  const int height = style->geometry ? style->geometry->height : 64;
-  const std::string name = "style_test_" + styleId;
+  const ResolvedArtStyle resolved = game->artStyleRegistry.ResolveRole(*style, role);
+  const int width = resolved.width > 0
+                        ? resolved.width
+                        : (style->geometry ? style->geometry->width : 64);
+  const int height = resolved.height > 0
+                         ? resolved.height
+                         : (style->geometry ? style->geometry->height : 64);
+  const std::string name = "style_test_" + styleId + "_" + role;
   const std::string requirement =
       "A single front-facing " + std::to_string(width) + "x" +
-      std::to_string(height) + " character style test for the '" + style->name +
-      "' style. Draw the whole character -- head, hair, body, arms and legs -- in "
-      "the style's proportions, palette, outline and shading. The feet sit at the "
-      "bottom of the canvas. This is a style reference, not a rig layer and not an "
-      "animation frame.";
+      std::to_string(height) + " style test for the '" + style->name + "' style, "
+      "for the '" + role + "' visual role. Draw one whole asset: " +
+      (role == "icon" || role == "item"
+           ? "a readable icon on a transparent background"
+           : role == "object"
+                 ? "a world object with its feet at the bottom of the canvas"
+                 : role == "surface"
+                       ? "a tileable surface patch"
+                       : role == "silhouette"
+                             ? "a solid silhouette"
+                             : role == "effect"
+                                   ? "a bright effect on a transparent background"
+                                   : "a whole character with its feet at the bottom") +
+      ". Follow the role's proportions, palette, outline and shading. This is a "
+      "style reference, not a rig layer and not an animation frame.";
   RequestSpriteDocument(name, SpriteKinds::Kind::Actor, true, "", requirement,
-                        /*redesign=*/true, {}, {}, {}, {}, styleId, width, height);
+                        /*redesign=*/true, {}, {}, {}, {}, styleId, role, width,
+                        height);
   const std::string size = std::to_string(width) + "x" + std::to_string(height);
-  rigArtMessage = "Asked for the " + size + " style test '" + name +
+  rigArtMessage = "Asked for the " + size + " " + role + " style test '" + name +
                   "'; when it lands, use it as the style reference.";
   statusLine = rigArtMessage;
 }
 
-void DesignerWindow::UseStyleTestAsReference(const std::string &styleId) {
+void DesignerWindow::UseStyleTestAsReference(const std::string &styleId,
+                                             const std::string &role) {
   if (game == nullptr || styleId.empty()) return;
-  const std::string testName = "style_test_" + styleId;
+  const std::string testName = "style_test_" + styleId + "_" + role;
   if (!FindSpriteDSLDocument(testName).found) {
     rigArtMessage = "The style test '" + testName +
                     "' does not exist yet; generate it first.";
@@ -1127,13 +1188,13 @@ void DesignerWindow::UseStyleTestAsReference(const std::string &styleId) {
   const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
   if (style == nullptr) return;
   nlohmann::json document = game->artStyleRegistry.ToJson(*style);
-  document["reference"] = testName;
+  document["roles"][role]["reference"] = testName;
   std::string error;
   std::vector<std::string> warnings;
   if (game->artStyleRegistry.AddOrReplace(document, "(style test)", &error,
                                           &warnings)) {
-    rigArtMessage = "Style '" + styleId + "' now uses " + testName +
-                    " as its reference; regenerate the layers to apply it.";
+    rigArtMessage = "Style '" + styleId + "' role '" + role + "' now uses " +
+                    testName + " as its reference; regenerate that role to apply it.";
   } else {
     rigArtMessage = error;
   }
@@ -2941,6 +3002,7 @@ void DesignerWindow::QueueRigPartArt(const RigDesigner::Part &part) {
       rigDraft.has_value() ? DraftGeometry(*rigDraft, game->artStyleRegistry)
                            : RigGeometry{};
   request.styleId = rigDraft.has_value() ? rigDraft->style : std::string();
+  request.styleRole = "rig";
   request.width = geometry.width;
   request.height = geometry.height;
   request.width = geometry.width;
@@ -2994,6 +3056,7 @@ void DesignerWindow::QueueWornArt(const std::string &itemId) {
   request.label = itemId;
   request.sprite = item->wornSprite;
   request.styleId = item->style;
+  request.styleRole = "rig";
   const RigGeometry geometry = game->artStyleRegistry.GeometryForStyle(item->style);
   request.width = geometry.width;
   request.height = geometry.height;
@@ -3193,7 +3256,7 @@ void DesignerWindow::PumpRigArtQueue() {
                         /*replaceGenerated=*/true, "", request.requirement,
                         request.redesign, request.frames, request.poses,
                         request.baseDocument, std::string(), request.styleId,
-                        request.width, request.height);
+                        request.styleRole, request.width, request.height);
   rigArtMessage = "Asked the art pipeline for " + request.label + ".";
 }
 
@@ -3471,17 +3534,36 @@ void DesignerWindow::DrawRigPreview() {
   }
 
   if (!draft.style.empty()) {
-    const int styleWidth = draft.geometry ? draft.geometry->width : 64;
-  const int styleHeight = draft.geometry ? draft.geometry->height : 64;
-  const std::string testLabel =
-      "Test style (" + std::to_string(styleWidth) + "x" +
-      std::to_string(styleHeight) + ")";
-  if (ImGui::Button(testLabel.c_str())) QueueStyleTest(draft.style);
-    const std::string testName = "style_test_" + draft.style;
+    ImGui::SetNextItemWidth(120.0f);
+    if (ImGui::BeginCombo("##rig_test_role", styleTestRole.c_str())) {
+      for (const std::string &role : ArtStyleRegistry::KnownRoles()) {
+        if (ImGui::Selectable(role.c_str(), role == styleTestRole)) {
+          styleTestRole = role;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    const ArtStyleDef *testStyle = game->artStyleRegistry.Get(draft.style);
+    const ResolvedArtStyle resolvedTest =
+        testStyle != nullptr ? game->artStyleRegistry.ResolveRole(*testStyle, styleTestRole)
+                             : ResolvedArtStyle{};
+    const int styleWidth = resolvedTest.width > 0
+                               ? resolvedTest.width
+                               : (draft.geometry ? draft.geometry->width : 64);
+    const int styleHeight = resolvedTest.height > 0
+                                ? resolvedTest.height
+                                : (draft.geometry ? draft.geometry->height : 64);
+    const std::string testLabel =
+        "Test style (" + std::to_string(styleWidth) + "x" +
+        std::to_string(styleHeight) + ")";
+    if (ImGui::Button(testLabel.c_str())) {
+      QueueStyleTest(draft.style, styleTestRole);
+    }
+    const std::string testName = "style_test_" + draft.style + "_" + styleTestRole;
     if (FindSpriteDSLDocument(testName).found) {
       ImGui::SameLine();
       if (ImGui::Button("Use test as style reference")) {
-        UseStyleTestAsReference(draft.style);
+        UseStyleTestAsReference(draft.style, styleTestRole);
       }
     }
   }

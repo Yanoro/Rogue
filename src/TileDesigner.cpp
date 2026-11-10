@@ -723,6 +723,11 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
            "palette):\n"
         << brief.stylePalette << "\n";
   }
+  if (!brief.styleRole.empty()) {
+    out << "\nThis asset's visual role is '" << brief.styleRole
+        << "'; follow the style's role-specific constraints from the style reference "
+           "and palette, not only the family prose.\n";
+  }
   if (!brief.styleReference.empty()) {
     out << "\nA reference character drawn in this style. Match its proportions, "
            "palette, outline and shading, but draw the subject described above; do not "

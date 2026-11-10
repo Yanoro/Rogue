@@ -95,6 +95,35 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
   if (document.contains("geometry")) {
     definition.geometry = RigGeometryFromJson(document["geometry"]);
   }
+  if (document.contains("roles")) {
+    if (!document["roles"].is_object()) {
+      if (warnings != nullptr) {
+        warnings->push_back("style '" + definition.id +
+                            "' has a non-object 'roles'; ignoring it");
+      }
+    } else {
+      for (const auto &[role, value] : document["roles"].items()) {
+        if (!value.is_object()) {
+          if (warnings != nullptr) {
+            warnings->push_back("style '" + definition.id + "' role '" + role +
+                                "' is not an object; ignoring it");
+          }
+          continue;
+        }
+        ArtStyleRole roleDefinition;
+        roleDefinition.positive = value.value("positive", std::string());
+        roleDefinition.negative = value.value("negative", std::string());
+        roleDefinition.palette = value.value("palette", std::string());
+        roleDefinition.reference = value.value("reference", std::string());
+        roleDefinition.width = value.value("width", 0);
+        roleDefinition.height = value.value("height", 0);
+        if (value.contains("geometry")) {
+          roleDefinition.geometry = RigGeometryFromJson(value["geometry"]);
+        }
+        definition.roles[role] = std::move(roleDefinition);
+      }
+    }
+  }
   if (definition.positive.empty()) {
     if (warnings != nullptr) {
       warnings->push_back("style '" + definition.id +
@@ -149,6 +178,33 @@ const ArtStyleDef *ArtStyleRegistry::DefaultFor(const std::string &family) const
   return nullptr;
 }
 
+ResolvedArtStyle ArtStyleRegistry::ResolveRole(const ArtStyleDef &style,
+                                              const std::string &role) const {
+  ResolvedArtStyle resolved;
+  resolved.positive = style.positive;
+  resolved.negative = style.negative;
+  resolved.palette = style.palette;
+  resolved.reference = style.reference;
+  resolved.geometry = style.geometry;
+  auto found = style.roles.find(role);
+  if (found != style.roles.end()) {
+    const ArtStyleRole &value = found->second;
+    if (!value.positive.empty()) resolved.positive = value.positive;
+    if (!value.negative.empty()) resolved.negative = value.negative;
+    if (!value.palette.empty()) resolved.palette = value.palette;
+    if (!value.reference.empty()) resolved.reference = value.reference;
+    if (value.geometry) resolved.geometry = value.geometry;
+    if (value.width > 0) resolved.width = value.width;
+    if (value.height > 0) resolved.height = value.height;
+  }
+  return resolved;
+}
+
+std::vector<std::string> ArtStyleRegistry::KnownRoles() {
+  return {"actor", "rig", "icon", "item", "object", "surface", "effect",
+          "silhouette", "tile"};
+}
+
 RigGeometry ArtStyleRegistry::GeometryForStyle(const std::string &styleId) const {
   const ArtStyleDef *style = Get(styleId);
   if (style != nullptr && style->geometry) return *style->geometry;
@@ -176,5 +232,20 @@ nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
   if (!definition.palette.empty()) document["palette"] = definition.palette;
   if (!definition.ramps.empty()) document["ramps"] = definition.ramps;
   if (!definition.reference.empty()) document["reference"] = definition.reference;
+  if (!definition.roles.empty()) {
+    nlohmann::json roles = nlohmann::json::object();
+    for (const auto &[role, value] : definition.roles) {
+      nlohmann::json entry = nlohmann::json::object();
+      if (!value.positive.empty()) entry["positive"] = value.positive;
+      if (!value.negative.empty()) entry["negative"] = value.negative;
+      if (!value.palette.empty()) entry["palette"] = value.palette;
+      if (!value.reference.empty()) entry["reference"] = value.reference;
+      if (value.geometry) entry["geometry"] = RigGeometryToJson(*value.geometry);
+      if (value.width > 0) entry["width"] = value.width;
+      if (value.height > 0) entry["height"] = value.height;
+      roles[role] = std::move(entry);
+    }
+    document["roles"] = std::move(roles);
+  }
   return document;
 }

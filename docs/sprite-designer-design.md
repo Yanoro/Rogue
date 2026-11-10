@@ -1878,3 +1878,24 @@ human eye, and the head/body/leg split is a proportion estimate. The point is to
 model an exact pixel reference and the style profile a measured palette, then iterate from
 the 96px style test rather than from prose.
 
+---
+
+## 17. Visual assets and role-specific styles
+
+The visual asset registry (`include/VisualAssetRegistry.h`) is an index over the existing
+domain registries, read through the Content Editor's `ContentKinds` table. Every entry has
+a `kind`, an `id`, a `role`, an optional style override and a source. The domain registries
+remain the storage; the visual registry is the one place that can answer "what visual
+assets exist, what role are they, and which style do they use".
+
+An `ArtStyleDef` now has a base and a map of roles. A role can override the base's
+positive/negative prose, palette, reference, geometry and size; missing fields fall back.
+The prompt builder applies the asset's role before building the request, and the style
+test is asked for that role (`style_test_<style>_<role>`) at the role's size. Use test as
+style reference writes the role's `reference`, not the base, so an icon reference cannot
+replace the character reference.
+
+Roles currently understood: actor, rig, icon, item, object, surface, effect, silhouette,
+tile. A rig layer is `rig`; a body silhouette is `silhouette`; status/resource entries use
+the `icon` role; the action bar/UI layout is deliberately not part of this registry.
+

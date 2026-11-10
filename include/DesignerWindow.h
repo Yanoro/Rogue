@@ -164,7 +164,8 @@ public:
                        const std::string &requirement = std::string(),
                        bool redesign = true,
                        const std::string &editInstruction = std::string(),
-                       const std::string &styleId = std::string());
+                       const std::string &styleId = std::string(),
+                       const std::string &styleRole = std::string());
 
   // Queues animation art for a rig that is not this window's draft (the Content Editor's
   // rig). The clip's frame declarations live in the caller's registry document; this asks
@@ -212,7 +213,8 @@ private:
                              const std::string &baseDocument = std::string(),
                              const std::string &editInstruction = std::string(),
                              const std::string &styleOverride = std::string(),
-                             int width = 32, int height = 32);
+                             const std::string &styleRole = std::string(),
+                             int width = 0, int height = 0);
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -428,8 +430,10 @@ private:
 
   // The 64x64 style test: one character in the style, saved as style_test_<style id>.
   // It becomes the style reference that the part and animation prompts carry.
-  void QueueStyleTest(const std::string &styleId);
-  void UseStyleTestAsReference(const std::string &styleId);
+  void QueueStyleTest(const std::string &styleId, const std::string &role);
+  void UseStyleTestAsReference(const std::string &styleId, const std::string &role);
+  // The role the style test uses; one per style view rather than per style.
+  std::string styleTestRole = "actor";
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).
@@ -468,6 +472,8 @@ private:
     bool redesign = false;
     // ArtStyleRegistry id for this layer's family; empty uses the registry's default.
     std::string styleId;
+    // The style role: a rig layer is "rig", a body silhouette "silhouette", and so on.
+    std::string styleRole;
     // The layer's canvas; the frame contract and the request must agree.
     int width = 32;
     int height = 32;

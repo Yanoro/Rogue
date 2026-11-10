@@ -270,6 +270,7 @@ set(SOURCES
     src/ArtRequestsPanel.cpp
     src/ContentKinds.cpp
     src/ContentEditorWindow.cpp
+    src/VisualAssetRegistry.cpp
     src/DesignerSession.cpp
     src/DesignerWindow.cpp
     src/SpeechQueue.cpp

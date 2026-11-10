@@ -10,6 +10,33 @@
 
 class DebugLog;
 
+// One role's overrides on top of the style's base. A role is what the asset *is*
+// visually -- an icon, a world object, a body silhouette, a rig layer -- and each has
+// different constraints (size, readability, outline, transparency), which is why the
+// style carries role-specific instructions rather than one prompt for everything.
+struct ArtStyleRole {
+  std::string positive;
+  std::string negative;
+  std::string palette;
+  std::string reference;
+  std::optional<RigGeometry> geometry;
+  // 0 means inherit the base/asset size.
+  int width = 0;
+  int height = 0;
+};
+
+// A style after a role has been applied. Empty strings mean the role had no override
+// and the base value is in use.
+struct ResolvedArtStyle {
+  std::string positive;
+  std::string negative;
+  std::string palette;
+  std::string reference;
+  std::optional<RigGeometry> geometry;
+  int width = 0;
+  int height = 0;
+};
+
 // A prose style profile for generated art. It is deliberately prompt data, not a
 // renderer: the sprite DSL still owns the pixels. Styles are layered by the prompt
 // builder (global direction is authored in the sprite prompt; this is the family
@@ -36,6 +63,9 @@ struct ArtStyleDef {
   // Optional proportions. A rig that names this style and has no geometry of its own uses
   // these rectangles and anchors in its frame contract.
   std::optional<RigGeometry> geometry;
+  // Per-role instructions. The asset's role selects one; missing fields fall back to the
+  // base above. Known roles are in ArtStyleRegistry::KnownRoles().
+  std::unordered_map<std::string, ArtStyleRole> roles;
 };
 
 class ArtStyleRegistry {
@@ -48,6 +78,15 @@ public:
 
   // First registered style whose appliesTo contains `family`.
   const ArtStyleDef *DefaultFor(const std::string &family) const;
+
+  // Apply `role`'s overrides on top of the style's base. An unknown/empty role returns
+  // the base unchanged.
+  ResolvedArtStyle ResolveRole(const ArtStyleDef &style,
+                               const std::string &role) const;
+
+  // The roles the generator understands. Kept here so the style editor, the visual
+  // catalog and the prompt builder share one vocabulary.
+  static std::vector<std::string> KnownRoles();
 
   // The geometry a rig should be drawn against: its own, then its style's, then the
   // canonical 32x32 humanoid.
