@@ -150,7 +150,7 @@ struct SpriteDocumentBrief {
   // The document's canvas. 32 for the ordinary sprite; the style test uses 64.
   int width = 0;
   int height = 0;
-  // The visual role the style is speaking to: icon, object, surface, actor, rig...
+  // The visual section the style is speaking to: icon, object, surface, actor, rig...
   std::string styleRole;
   // What the art around the sprite looks like, as prose. Empty when nothing looked:
   // a standalone request from the window has no building to read, and an empty field

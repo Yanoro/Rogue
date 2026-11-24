@@ -4,41 +4,44 @@
 #include <vector>
 
 #include "ArtStyleRegistry.h"
-#include "ContentKinds.h"
 
-// One visual asset in the game: an icon, an object sprite, a rig, a body silhouette...
-// The visual catalog is an index over the existing domain registries, not a second copy
-// of their data. Each entry carries the role whose style instructions it follows.
+// One visual asset *type*, not one item/icon/actor. An inventory icon, a resource icon, a
+// character portrait, an actor rig and so on are the categories whose look a theme
+// describes. The individual content entries (the sword, the health potion) belong to a
+// type and inherit its theme; a content entry may override the theme as an exception.
 struct VisualAssetDef {
-  std::string kind;     // ContentKinds id: icons, objects, actors, rigs, ...
-  std::string id;       // the domain registry key
-  std::string label;    // human-readable name
-  std::string role;     // actor, rig, icon, item, object, surface, effect, silhouette, tile
-  std::string styleId;  // the asset's explicit style; empty = the kind's default
-  std::string source;   // sprite convention id / icon id / rig id
-  int width = 0;
+  std::string id;        // inventory_icon, resource_icon, skill_icon, status_icon,
+                         // portrait, actor, rig, object, surface, effect, silhouette, tile
+  std::string label;
+  std::string section;   // the theme section key (normally the same id)
+  std::string theme;     // type-level theme override; empty = the global default theme
+  std::vector<std::string> consumes;  // content kinds / sources this type covers
+  int width = 0;         // 0 means the theme section decides
   int height = 0;
 };
 
-// The visual asset registry: the one place that can answer "what visual assets exist,
-// what role are they, and which art style do they use". The actual definitions stay in
-// their domain registries; Refresh() reads them through ContentKinds.
+// The visual asset type registry. It is a registry of types, not a catalog of every
+// content entry; the Content Editor's content kinds remain the data editors.
 class VisualAssetRegistry {
 public:
-  void Refresh(const ContentKinds::World &world);
+  // Loads the type list (and each type's theme override) from `path`; uses the built-in
+  // defaults when the file is absent.
+  void Load(const std::string &path);
+  bool Save(const std::string &path) const;
 
-  const std::vector<VisualAssetDef> &GetAll() const { return assets; }
-  const VisualAssetDef *Find(const std::string &kind, const std::string &id) const;
+  const std::vector<VisualAssetDef> &GetAll() const { return types; }
+  const VisualAssetDef *Find(const std::string &id) const;
+  bool SetTheme(const std::string &id, const std::string &theme);
 
-  // The role a content kind's entries play. Empty for non-visual kinds.
-  static std::string RoleForKind(const std::string &kind);
-  // The art style family the kind defaults to (ArtStyleDef::appliesTo).
-  static std::string StyleFamilyForKind(const std::string &kind);
+  // The visual type a content kind feeds. Empty for non-visual kinds.
+  static std::string TypeForKind(const std::string &contentKind);
 
-  // The style an asset should use: its own styleId, then the kind's default family.
-  const ArtStyleDef *StyleFor(const VisualAssetDef &asset,
-                              const ArtStyleRegistry &styles) const;
+  // The theme an asset uses: content override, then type override, then the global
+  // default. The section is the type's section key.
+  const ArtStyleDef *ResolveTheme(const VisualAssetDef &type,
+                                  const std::string &contentTheme,
+                                  const ArtStyleRegistry &themes) const;
 
 private:
-  std::vector<VisualAssetDef> assets;
+  std::vector<VisualAssetDef> types;
 };

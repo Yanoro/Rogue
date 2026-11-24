@@ -1,0 +1,138 @@
+{
+  "types": [
+    {
+      "id": "inventory_icon",
+      "label": "Inventory icons",
+      "section": "inventory_icon",
+      "theme": "",
+      "consumes": [
+        "items",
+        "icons"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "resource_icon",
+      "label": "Resource icons",
+      "section": "resource_icon",
+      "theme": "",
+      "consumes": [
+        "resources"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "skill_icon",
+      "label": "Skill icons",
+      "section": "skill_icon",
+      "theme": "",
+      "consumes": [
+        "skills",
+        "icons"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "status_icon",
+      "label": "Status icons",
+      "section": "status_icon",
+      "theme": "",
+      "consumes": [
+        "status_effects"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "portrait",
+      "label": "Character portraits",
+      "section": "portrait",
+      "theme": "",
+      "consumes": [
+        "actors"
+      ],
+      "width": 96,
+      "height": 96
+    },
+    {
+      "id": "actor",
+      "label": "Actor sprites",
+      "section": "actor",
+      "theme": "",
+      "consumes": [
+        "actors"
+      ],
+      "width": 96,
+      "height": 96
+    },
+    {
+      "id": "rig",
+      "label": "Actor rigs",
+      "section": "rig",
+      "theme": "",
+      "consumes": [
+        "rigs"
+      ],
+      "width": 96,
+      "height": 96
+    },
+    {
+      "id": "object",
+      "label": "World objects",
+      "section": "object",
+      "theme": "",
+      "consumes": [
+        "objects"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "surface",
+      "label": "Surfaces",
+      "section": "surface",
+      "theme": "",
+      "consumes": [
+        "surface_sprites"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "effect",
+      "label": "Effects",
+      "section": "effect",
+      "theme": "",
+      "consumes": [
+        "effects"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "silhouette",
+      "label": "Body silhouettes",
+      "section": "silhouette",
+      "theme": "",
+      "consumes": [
+        "body_silhouettes"
+      ],
+      "width": 96,
+      "height": 96
+    },
+    {
+      "id": "tile",
+      "label": "Ground tiles",
+      "section": "tile",
+      "theme": "",
+      "consumes": [
+        "tiles"
+      ],
+      "width": 32,
+      "height": 32
+    }
+  ]
+}

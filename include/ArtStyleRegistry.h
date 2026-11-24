@@ -10,11 +10,11 @@
 
 class DebugLog;
 
-// One role's overrides on top of the style's base. A role is what the asset *is*
+// One section's overrides on top of the style's base. A section is what the asset *is*
 // visually -- an icon, a world object, a body silhouette, a rig layer -- and each has
 // different constraints (size, readability, outline, transparency), which is why the
-// style carries role-specific instructions rather than one prompt for everything.
-struct ArtStyleRole {
+// style carries section-specific instructions rather than one prompt for everything.
+struct ArtStyleSection {
   std::string positive;
   std::string negative;
   std::string palette;
@@ -25,7 +25,7 @@ struct ArtStyleRole {
   int height = 0;
 };
 
-// A style after a role has been applied. Empty strings mean the role had no override
+// A style after a section has been applied. Empty strings mean the section had no override
 // and the base value is in use.
 struct ResolvedArtStyle {
   std::string positive;
@@ -63,9 +63,12 @@ struct ArtStyleDef {
   // Optional proportions. A rig that names this style and has no geometry of its own uses
   // these rectangles and anchors in its frame contract.
   std::optional<RigGeometry> geometry;
-  // Per-role instructions. The asset's role selects one; missing fields fall back to the
-  // base above. Known roles are in ArtStyleRegistry::KnownRoles().
-  std::unordered_map<std::string, ArtStyleRole> roles;
+  // Per-section instructions, keyed by visual asset type. The asset's type selects one;
+  // missing fields fall back to the base above.
+  std::unordered_map<std::string, ArtStyleSection> sections;
+  // The global default theme. Exactly one theme should carry it; the registry falls back
+  // to the first registered theme when none does.
+  bool isDefault = false;
 };
 
 class ArtStyleRegistry {
@@ -79,14 +82,19 @@ public:
   // First registered style whose appliesTo contains `family`.
   const ArtStyleDef *DefaultFor(const std::string &family) const;
 
-  // Apply `role`'s overrides on top of the style's base. An unknown/empty role returns
+  // Apply `section`'s overrides on top of the style's base. An unknown/empty section returns
   // the base unchanged.
-  ResolvedArtStyle ResolveRole(const ArtStyleDef &style,
-                               const std::string &role) const;
+  ResolvedArtStyle ResolveSection(const ArtStyleDef &style,
+                               const std::string &section) const;
 
-  // The roles the generator understands. Kept here so the style editor, the visual
-  // catalog and the prompt builder share one vocabulary.
-  static std::vector<std::string> KnownRoles();
+  // The theme new assets use unless a visual asset type or content entry overrides it.
+  const ArtStyleDef *DefaultTheme() const;
+  std::string DefaultThemeId() const;
+  bool SetDefaultTheme(const std::string &id);
+
+  // The visual asset types the generator understands. Kept here so the theme editor,
+  // the visual asset type registry and the prompt builder share one vocabulary.
+  static std::vector<std::string> KnownSections();
 
   // The geometry a rig should be drawn against: its own, then its style's, then the
   // canonical 32x32 humanoid.

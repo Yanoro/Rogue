@@ -724,8 +724,8 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
         << brief.stylePalette << "\n";
   }
   if (!brief.styleRole.empty()) {
-    out << "\nThis asset's visual role is '" << brief.styleRole
-        << "'; follow the style's role-specific constraints from the style reference "
+    out << "\nThis asset's visual section is '" << brief.styleRole
+        << "'; follow the style's section-specific constraints from the style reference "
            "and palette, not only the family prose.\n";
   }
   if (!brief.styleReference.empty()) {

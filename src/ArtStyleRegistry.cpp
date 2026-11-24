@@ -92,25 +92,26 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
   definition.palette = document.value("palette", std::string());
   definition.ramps = document.value("ramps", std::string());
   definition.reference = document.value("reference", std::string());
+  definition.isDefault = document.value("default", false);
   if (document.contains("geometry")) {
     definition.geometry = RigGeometryFromJson(document["geometry"]);
   }
-  if (document.contains("roles")) {
-    if (!document["roles"].is_object()) {
+  if (document.contains("sections")) {
+    if (!document["sections"].is_object()) {
       if (warnings != nullptr) {
         warnings->push_back("style '" + definition.id +
-                            "' has a non-object 'roles'; ignoring it");
+                            "' has a non-object 'sections'; ignoring it");
       }
     } else {
-      for (const auto &[role, value] : document["roles"].items()) {
+      for (const auto &[section, value] : document["sections"].items()) {
         if (!value.is_object()) {
           if (warnings != nullptr) {
-            warnings->push_back("style '" + definition.id + "' role '" + role +
+            warnings->push_back("style '" + definition.id + "' section '" + section +
                                 "' is not an object; ignoring it");
           }
           continue;
         }
-        ArtStyleRole roleDefinition;
+        ArtStyleSection roleDefinition;
         roleDefinition.positive = value.value("positive", std::string());
         roleDefinition.negative = value.value("negative", std::string());
         roleDefinition.palette = value.value("palette", std::string());
@@ -120,7 +121,7 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
         if (value.contains("geometry")) {
           roleDefinition.geometry = RigGeometryFromJson(value["geometry"]);
         }
-        definition.roles[role] = std::move(roleDefinition);
+        definition.sections[section] = std::move(roleDefinition);
       }
     }
   }
@@ -178,17 +179,17 @@ const ArtStyleDef *ArtStyleRegistry::DefaultFor(const std::string &family) const
   return nullptr;
 }
 
-ResolvedArtStyle ArtStyleRegistry::ResolveRole(const ArtStyleDef &style,
-                                              const std::string &role) const {
+ResolvedArtStyle ArtStyleRegistry::ResolveSection(const ArtStyleDef &style,
+                                              const std::string &section) const {
   ResolvedArtStyle resolved;
   resolved.positive = style.positive;
   resolved.negative = style.negative;
   resolved.palette = style.palette;
   resolved.reference = style.reference;
   resolved.geometry = style.geometry;
-  auto found = style.roles.find(role);
-  if (found != style.roles.end()) {
-    const ArtStyleRole &value = found->second;
+  auto found = style.sections.find(section);
+  if (found != style.sections.end()) {
+    const ArtStyleSection &value = found->second;
     if (!value.positive.empty()) resolved.positive = value.positive;
     if (!value.negative.empty()) resolved.negative = value.negative;
     if (!value.palette.empty()) resolved.palette = value.palette;
@@ -200,9 +201,34 @@ ResolvedArtStyle ArtStyleRegistry::ResolveRole(const ArtStyleDef &style,
   return resolved;
 }
 
-std::vector<std::string> ArtStyleRegistry::KnownRoles() {
-  return {"actor", "rig", "icon", "item", "object", "surface", "effect",
-          "silhouette", "tile"};
+std::vector<std::string> ArtStyleRegistry::KnownSections() {
+  return {"inventory_icon", "resource_icon", "skill_icon", "status_icon",
+          "portrait",       "actor",         "rig",        "object",
+          "surface",        "effect",        "silhouette", "tile"};
+}
+
+const ArtStyleDef *ArtStyleRegistry::DefaultTheme() const {
+  for (const std::string &id : order) {
+    auto found = styles.find(id);
+    if (found != styles.end() && found->second.isDefault) return &found->second;
+  }
+  if (order.empty()) return nullptr;
+  auto found = styles.find(order.front());
+  return found == styles.end() ? nullptr : &found->second;
+}
+
+std::string ArtStyleRegistry::DefaultThemeId() const {
+  const ArtStyleDef *theme = DefaultTheme();
+  return theme == nullptr ? std::string() : theme->id;
+}
+
+bool ArtStyleRegistry::SetDefaultTheme(const std::string &id) {
+  auto selected = styles.find(id);
+  if (selected == styles.end()) return false;
+  for (auto &[themeId, theme] : styles) {
+    theme.isDefault = themeId == id;
+  }
+  return true;
 }
 
 RigGeometry ArtStyleRegistry::GeometryForStyle(const std::string &styleId) const {
@@ -232,9 +258,10 @@ nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
   if (!definition.palette.empty()) document["palette"] = definition.palette;
   if (!definition.ramps.empty()) document["ramps"] = definition.ramps;
   if (!definition.reference.empty()) document["reference"] = definition.reference;
-  if (!definition.roles.empty()) {
-    nlohmann::json roles = nlohmann::json::object();
-    for (const auto &[role, value] : definition.roles) {
+  if (definition.isDefault) document["default"] = true;
+  if (!definition.sections.empty()) {
+    nlohmann::json sections = nlohmann::json::object();
+    for (const auto &[section, value] : definition.sections) {
       nlohmann::json entry = nlohmann::json::object();
       if (!value.positive.empty()) entry["positive"] = value.positive;
       if (!value.negative.empty()) entry["negative"] = value.negative;
@@ -243,9 +270,9 @@ nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
       if (value.geometry) entry["geometry"] = RigGeometryToJson(*value.geometry);
       if (value.width > 0) entry["width"] = value.width;
       if (value.height > 0) entry["height"] = value.height;
-      roles[role] = std::move(entry);
+      sections[section] = std::move(entry);
     }
-    document["roles"] = std::move(roles);
+    document["sections"] = std::move(sections);
   }
   return document;
 }

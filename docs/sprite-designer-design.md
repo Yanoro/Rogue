@@ -1899,3 +1899,38 @@ Roles currently understood: actor, rig, icon, item, object, surface, effect, sil
 tile. A rig layer is `rig`; a body silhouette is `silhouette`; status/resource entries use
 the `icon` role; the action bar/UI layout is deliberately not part of this registry.
 
+---
+
+## 18. Themes, sections and visual asset types
+
+An art style is a **theme**: a coherent aesthetic (Dark Fantasy, Ragnarok-like Pixel,
+Cheeseguy Pixel) with a base palette/prose and a **section per visual asset type**.
+Sections currently are inventory_icon, resource_icon, skill_icon, status_icon, portrait,
+actor, rig, object, surface, effect, silhouette and tile. A section can override the
+base positive/negative, palette, reference, geometry and size.
+
+The **visual asset registry** (`include/VisualAssetRegistry.h`) is a registry of those
+**types**, not a catalog of every sword/icon/actor. `data/visual_assets.json` holds the
+type list and each type's optional theme override. Each type has a section and the content
+kinds it consumes. The resolution is:
+
+    content theme override -> visual type theme -> global default theme
+
+The global default theme is chosen in the Content Editor's Visual assets panel; exactly one
+theme carries `"default": true`, and the registry falls back to the first theme when none
+does. The theme's section supplies the instructions, palette, reference and size. The style
+test is per theme + section (`style_test_<theme>_<section>`); "Use test as style reference"
+writes that section's reference.
+
+The old per-family style files (actor_sprite, item_sprite, ui_skill_icon, portrait and so
+on) were migrated into the Ragnarok-like Pixel theme's sections and removed. The
+Cheeseguy Pixel theme keeps its converted reference; Dark Fantasy is a new theme. The
+Content Editor still edits the content data; a content entry's style field is a theme
+override and is an exception, not the primary selection.
+
+Remaining work before this is fully wired: the content-kind to visual-type mapping is in
+place, but the icon entries themselves still need an explicit visual type (skill/resource/
+status/inventory) and the old per-content style values need cleaning up; the
+`RequestSpriteDocument` path currently falls back to the global default theme rather than
+consulting each visual type's theme override.
+

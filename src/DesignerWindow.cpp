@@ -695,15 +695,15 @@ void DesignerWindow::DrawStyleBatch() {
   ImGui::SameLine();
   ImGui::SetNextItemWidth(120.0f);
   if (ImGui::BeginCombo("##style_test_role", styleTestRole.c_str())) {
-    for (const std::string &role : ArtStyleRegistry::KnownRoles()) {
-      if (ImGui::Selectable(role.c_str(), role == styleTestRole)) {
-        styleTestRole = role;
+    for (const std::string &section : ArtStyleRegistry::KnownSections()) {
+      if (ImGui::Selectable(section.c_str(), section == styleTestRole)) {
+        styleTestRole = section;
       }
     }
     ImGui::EndCombo();
   }
   const ResolvedArtStyle resolvedTest =
-      game->artStyleRegistry.ResolveRole(*selectedStyle, styleTestRole);
+      game->artStyleRegistry.ResolveSection(*selectedStyle, styleTestRole);
   const int testWidth = resolvedTest.width > 0
                             ? resolvedTest.width
                             : (selectedStyle->geometry ? selectedStyle->geometry->width : 64);
@@ -719,8 +719,8 @@ void DesignerWindow::DrawStyleBatch() {
   }
   if (ImGui::IsItemHovered()) {
     ImGui::SetTooltip(
-        "Asks for one asset in this style for the selected visual role. It becomes the "
-        "role's style reference.");
+        "Asks for one asset in this style for the selected visual section. It becomes the "
+        "section's style reference.");
   }
   const std::string testName = "style_test_" + selectedStyle->id + "_" + styleTestRole;
   if (hasTest && FindSpriteDSLDocument(testName).found) {
@@ -761,7 +761,7 @@ std::string RoleForSpriteKind(SpriteKinds::Kind kind) {
   switch (kind) {
     case SpriteKinds::Kind::Tile: return "tile";
     case SpriteKinds::Kind::Actor: return "actor";
-    case SpriteKinds::Kind::Icon: return "icon";
+    case SpriteKinds::Kind::Icon: return "inventory_icon";
     case SpriteKinds::Kind::Surface: return "surface";
     case SpriteKinds::Kind::Object: return "object";
   }
@@ -944,11 +944,11 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     style = game->artStyleRegistry.Get(requestedStyle);
   }
   if (style == nullptr) {
-    style = game->artStyleRegistry.DefaultFor(family);
+    style = game->artStyleRegistry.DefaultTheme();
   }
   if (style != nullptr) {
     const ResolvedArtStyle resolved =
-        game->artStyleRegistry.ResolveRole(*style, resolvedRole);
+        game->artStyleRegistry.ResolveSection(*style, resolvedRole);
     artBrief.styleId = style->id;
     artBrief.stylePrompt = resolved.positive;
     artBrief.styleNegative = resolved.negative;
@@ -1136,49 +1136,49 @@ bool DesignerWindow::QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
 }
 
 void DesignerWindow::QueueStyleTest(const std::string &styleId,
-                                    const std::string &role) {
+                                    const std::string &section) {
   if (game == nullptr || styleId.empty()) return;
   const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
   if (style == nullptr) return;
   game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-  const ResolvedArtStyle resolved = game->artStyleRegistry.ResolveRole(*style, role);
+  const ResolvedArtStyle resolved = game->artStyleRegistry.ResolveSection(*style, section);
   const int width = resolved.width > 0
                         ? resolved.width
                         : (style->geometry ? style->geometry->width : 64);
   const int height = resolved.height > 0
                          ? resolved.height
                          : (style->geometry ? style->geometry->height : 64);
-  const std::string name = "style_test_" + styleId + "_" + role;
+  const std::string name = "style_test_" + styleId + "_" + section;
   const std::string requirement =
       "A single front-facing " + std::to_string(width) + "x" +
       std::to_string(height) + " style test for the '" + style->name + "' style, "
-      "for the '" + role + "' visual role. Draw one whole asset: " +
-      (role == "icon" || role == "item"
+      "for the '" + section + "' visual section. Draw one whole asset: " +
+      (section == "icon" || section == "item"
            ? "a readable icon on a transparent background"
-           : role == "object"
+           : section == "object"
                  ? "a world object with its feet at the bottom of the canvas"
-                 : role == "surface"
+                 : section == "surface"
                        ? "a tileable surface patch"
-                       : role == "silhouette"
+                       : section == "silhouette"
                              ? "a solid silhouette"
-                             : role == "effect"
+                             : section == "effect"
                                    ? "a bright effect on a transparent background"
                                    : "a whole character with its feet at the bottom") +
-      ". Follow the role's proportions, palette, outline and shading. This is a "
+      ". Follow the section's proportions, palette, outline and shading. This is a "
       "style reference, not a rig layer and not an animation frame.";
   RequestSpriteDocument(name, SpriteKinds::Kind::Actor, true, "", requirement,
-                        /*redesign=*/true, {}, {}, {}, {}, styleId, role, width,
+                        /*redesign=*/true, {}, {}, {}, {}, styleId, section, width,
                         height);
   const std::string size = std::to_string(width) + "x" + std::to_string(height);
-  rigArtMessage = "Asked for the " + size + " " + role + " style test '" + name +
+  rigArtMessage = "Asked for the " + size + " " + section + " style test '" + name +
                   "'; when it lands, use it as the style reference.";
   statusLine = rigArtMessage;
 }
 
 void DesignerWindow::UseStyleTestAsReference(const std::string &styleId,
-                                             const std::string &role) {
+                                             const std::string &section) {
   if (game == nullptr || styleId.empty()) return;
-  const std::string testName = "style_test_" + styleId + "_" + role;
+  const std::string testName = "style_test_" + styleId + "_" + section;
   if (!FindSpriteDSLDocument(testName).found) {
     rigArtMessage = "The style test '" + testName +
                     "' does not exist yet; generate it first.";
@@ -1188,13 +1188,13 @@ void DesignerWindow::UseStyleTestAsReference(const std::string &styleId,
   const ArtStyleDef *style = game->artStyleRegistry.Get(styleId);
   if (style == nullptr) return;
   nlohmann::json document = game->artStyleRegistry.ToJson(*style);
-  document["roles"][role]["reference"] = testName;
+  document["sections"][section]["reference"] = testName;
   std::string error;
   std::vector<std::string> warnings;
   if (game->artStyleRegistry.AddOrReplace(document, "(style test)", &error,
                                           &warnings)) {
-    rigArtMessage = "Style '" + styleId + "' role '" + role + "' now uses " +
-                    testName + " as its reference; regenerate that role to apply it.";
+    rigArtMessage = "Style '" + styleId + "' section '" + section + "' now uses " +
+                    testName + " as its reference; regenerate that section to apply it.";
   } else {
     rigArtMessage = error;
   }
@@ -3536,16 +3536,16 @@ void DesignerWindow::DrawRigPreview() {
   if (!draft.style.empty()) {
     ImGui::SetNextItemWidth(120.0f);
     if (ImGui::BeginCombo("##rig_test_role", styleTestRole.c_str())) {
-      for (const std::string &role : ArtStyleRegistry::KnownRoles()) {
-        if (ImGui::Selectable(role.c_str(), role == styleTestRole)) {
-          styleTestRole = role;
+      for (const std::string &section : ArtStyleRegistry::KnownSections()) {
+        if (ImGui::Selectable(section.c_str(), section == styleTestRole)) {
+          styleTestRole = section;
         }
       }
       ImGui::EndCombo();
     }
     const ArtStyleDef *testStyle = game->artStyleRegistry.Get(draft.style);
     const ResolvedArtStyle resolvedTest =
-        testStyle != nullptr ? game->artStyleRegistry.ResolveRole(*testStyle, styleTestRole)
+        testStyle != nullptr ? game->artStyleRegistry.ResolveSection(*testStyle, styleTestRole)
                              : ResolvedArtStyle{};
     const int styleWidth = resolvedTest.width > 0
                                ? resolvedTest.width

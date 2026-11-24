@@ -1,23 +1,254 @@
 {
   "id": "ragnarok_online",
-  "name": "Ragnarok-like Chibi",
-  "description": "A bright, chibi 32x32 character style in the spirit of 2000s Korean MMORPG sprites.",
-  "appliesTo": ["actor_sprite", "actor"],
+  "name": "Ragnarok-like Pixel",
+  "description": "A detailed Ragnarok-like pixel-art theme. The actor/rig uses the chibi reference; the icon, object, surface, tile, portrait and silhouette sections carry the family instructions.",
+  "palette": "skin #F2C79A highlight #FFE0B8 shadow #C98B60; hair #4A2A1C / #7A4A2E / #A8673E; tunic #2F5FA8 / #1C3A70 / #6EA8E8; outline #1A1210; eyes #3B6FD6 / #FFFFFF; boots #5A3A22.",
   "positive": "Chibi proportions: a large head, a small body and short limbs. Bright saturated palette with strong warm/cool separation. Thick dark outline around the silhouette. Soft two-tone shading with one clean highlight. Large expressive eyes. Front-facing, centred, the soles of the feet at the bottom of the frame. Crisp pixel-art shapes, readable at a glance.",
   "negative": "Do not use dark muted realism, realistic adult proportions, photorealism, scenery, floor tiles, text, multiple characters, blurry anti-aliasing, or a perspective that contradicts the front-facing world.",
-  "palette": "skin #F2C79A highlight #FFE0B8 shadow #C98B60; hair #4A2A1C / #7A4A2E / #A8673E; tunic #2F5FA8 / #1C3A70 / #6EA8E8; outline #1A1210; eyes #3B6FD6 / #FFFFFF; boots #5A3A22.",
   "geometry": {
     "width": 64,
     "height": 64,
-    "head": [16, 4, 32, 28],
-    "hair": [14, 2, 36, 20],
-    "body": [20, 32, 24, 18],
-    "arm_left": [14, 34, 6, 16],
-    "arm_right": [44, 34, 6, 16],
-    "legs": [24, 46, 16, 16],
-    "hand": [48, 48],
-    "foot": [32, 63],
-    "base": [40, 24],
-    "pick": [56, 60]
+    "head": [
+      16,
+      4,
+      32,
+      28
+    ],
+    "hair": [
+      14,
+      2,
+      36,
+      20
+    ],
+    "body": [
+      20,
+      32,
+      24,
+      18
+    ],
+    "arm_left": [
+      14,
+      34,
+      6,
+      16
+    ],
+    "arm_right": [
+      44,
+      34,
+      6,
+      16
+    ],
+    "legs": [
+      24,
+      46,
+      16,
+      16
+    ],
+    "hand": [
+      48,
+      48
+    ],
+    "foot": [
+      32,
+      63
+    ],
+    "base": [
+      40,
+      24
+    ],
+    "pick": [
+      56,
+      60
+    ]
+  },
+  "reference": "",
+  "default": true,
+  "sections": {
+    "actor": {
+      "positive": "Chibi proportions: a large head, a small body and short limbs. Bright saturated palette with strong warm/cool separation. Thick dark outline around the silhouette. Soft two-tone shading with one clean highlight. Large expressive eyes. Front-facing, centred, the soles of the feet at the bottom of the frame. Crisp pixel-art shapes, readable at a glance.",
+      "negative": "Do not use dark muted realism, realistic adult proportions, photorealism, scenery, floor tiles, text, multiple characters, blurry anti-aliasing, or a perspective that contradicts the front-facing world.",
+      "palette": "skin #F2C79A highlight #FFE0B8 shadow #C98B60; hair #4A2A1C / #7A4A2E / #A8673E; tunic #2F5FA8 / #1C3A70 / #6EA8E8; outline #1A1210; eyes #3B6FD6 / #FFFFFF; boots #5A3A22.",
+      "geometry": {
+        "width": 64,
+        "height": 64,
+        "head": [
+          16,
+          4,
+          32,
+          28
+        ],
+        "hair": [
+          14,
+          2,
+          36,
+          20
+        ],
+        "body": [
+          20,
+          32,
+          24,
+          18
+        ],
+        "arm_left": [
+          14,
+          34,
+          6,
+          16
+        ],
+        "arm_right": [
+          44,
+          34,
+          6,
+          16
+        ],
+        "legs": [
+          24,
+          46,
+          16,
+          16
+        ],
+        "hand": [
+          48,
+          48
+        ],
+        "foot": [
+          32,
+          63
+        ],
+        "base": [
+          40,
+          24
+        ],
+        "pick": [
+          56,
+          60
+        ]
+      },
+      "width": 96,
+      "height": 96
+    },
+    "rig": {
+      "positive": "Chibi proportions: a large head, a small body and short limbs. Bright saturated palette with strong warm/cool separation. Thick dark outline around the silhouette. Soft two-tone shading with one clean highlight. Large expressive eyes. Front-facing, centred, the soles of the feet at the bottom of the frame. Crisp pixel-art shapes, readable at a glance.",
+      "negative": "Do not use dark muted realism, realistic adult proportions, photorealism, scenery, floor tiles, text, multiple characters, blurry anti-aliasing, or a perspective that contradicts the front-facing world.",
+      "palette": "skin #F2C79A highlight #FFE0B8 shadow #C98B60; hair #4A2A1C / #7A4A2E / #A8673E; tunic #2F5FA8 / #1C3A70 / #6EA8E8; outline #1A1210; eyes #3B6FD6 / #FFFFFF; boots #5A3A22.",
+      "geometry": {
+        "width": 64,
+        "height": 64,
+        "head": [
+          16,
+          4,
+          32,
+          28
+        ],
+        "hair": [
+          14,
+          2,
+          36,
+          20
+        ],
+        "body": [
+          20,
+          32,
+          24,
+          18
+        ],
+        "arm_left": [
+          14,
+          34,
+          6,
+          16
+        ],
+        "arm_right": [
+          44,
+          34,
+          6,
+          16
+        ],
+        "legs": [
+          24,
+          46,
+          16,
+          16
+        ],
+        "hand": [
+          48,
+          48
+        ],
+        "foot": [
+          32,
+          63
+        ],
+        "base": [
+          40,
+          24
+        ],
+        "pick": [
+          56,
+          60
+        ]
+      },
+      "width": 96,
+      "height": 96
+    },
+    "inventory_icon": {
+      "positive": "Readable at 32x32: a single centred symbol, clean monochrome warm-grey line art with one consistent dark outline, flat two-tone interior, generous transparent padding, no colour accent, no background, silhouette first.",
+      "negative": "Do not use text, labels, backgrounds, drop shadows, gradients, multiple objects, coloured fills, or thin broken lines.",
+      "width": 32,
+      "height": 32
+    },
+    "resource_icon": {
+      "positive": "A single bold resource symbol at 32x32, monochrome with a consistent dark outline, transparent background, high contrast at small size, same visual family as the inventory slot icons.",
+      "negative": "Do not use text, numbers, backgrounds, gradients, or fine detail that disappears below 24 pixels.",
+      "width": 32,
+      "height": 32
+    },
+    "skill_icon": {
+      "positive": "One centred subject at 32x32, flat two-tone colour with a dark outline, readable silhouette, transparent background, consistent warm palette, simple motion or impact cue only when the skill needs it.",
+      "negative": "Do not use text, frames, busy backgrounds, photographic detail, gradients, or more than one focal object.",
+      "width": 32,
+      "height": 32
+    },
+    "status_icon": {
+      "positive": "Readable at 32x32: a single centred symbol, clean monochrome warm-grey line art with one consistent dark outline, flat two-tone interior, generous transparent padding, no colour accent, no background, silhouette first.",
+      "negative": "Do not use text, labels, backgrounds, drop shadows, gradients, multiple objects, coloured fills, or thin broken lines.",
+      "width": 32,
+      "height": 32
+    },
+    "portrait": {
+      "positive": "Character portrait with a consistent painted pixel style, clear face and shoulders, warm limited palette, dark outline, transparent or simple neutral backdrop, readable at HUD size.",
+      "negative": "Do not use text, multiple characters, busy scenery, or a different rendering style from the world sprites.",
+      "width": 96,
+      "height": 96
+    },
+    "object": {
+      "positive": "Top-down three-quarter game sprite, 32x32, compact centred silhouette, warm limited palette, one-pixel dark outline, transparent background, readable at a glance, modest highlight and shadow.",
+      "negative": "Do not use text, UI frames, large empty backgrounds, photorealism, or a perspective that contradicts the top-down world.",
+      "width": 32,
+      "height": 32
+    },
+    "surface": {
+      "positive": "Transparent tile overlay at 32x32, shape fills the cell without a hard border, readable colour and silhouette, edges feather into transparency, same limited palette as the world sprites.",
+      "negative": "Do not use text, opaque backgrounds, rectangular frames, or hard cell borders.",
+      "width": 32,
+      "height": 32
+    },
+    "tile": {
+      "positive": "Top-down 32x32 ground material, fills the whole canvas edge to edge, warm limited palette, subtle small-scale texture, low contrast so entities read over it, no strong object silhouette.",
+      "negative": "Do not use text, props, walls, characters, large highlights, or transparent edges.",
+      "width": 32,
+      "height": 32
+    },
+    "silhouette": {
+      "positive": "Front-facing transparent body outline, thin consistent monochrome line, head at top and feet at bottom, symmetrical readable silhouette, no clothing or equipment, generous empty margin, 64x96 canvas.",
+      "negative": "Do not use text, fill colour, shading, clothing, background, or equipment.",
+      "width": 96,
+      "height": 96
+    },
+    "effect": {
+      "positive": "One centred subject at 32x32, flat two-tone colour with a dark outline, readable silhouette, transparent background, consistent warm palette, simple motion or impact cue only when the skill needs it.",
+      "negative": "Do not use text, frames, busy backgrounds, photographic detail, gradients, or more than one focal object.",
+      "width": 32,
+      "height": 32
+    }
   }
 }

@@ -430,9 +430,9 @@ private:
 
   // The 64x64 style test: one character in the style, saved as style_test_<style id>.
   // It becomes the style reference that the part and animation prompts carry.
-  void QueueStyleTest(const std::string &styleId, const std::string &role);
-  void UseStyleTestAsReference(const std::string &styleId, const std::string &role);
-  // The role the style test uses; one per style view rather than per style.
+  void QueueStyleTest(const std::string &styleId, const std::string &section);
+  void UseStyleTestAsReference(const std::string &styleId, const std::string &section);
+  // The section the style test uses; one per style view rather than per style.
   std::string styleTestRole = "actor";
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
@@ -472,7 +472,7 @@ private:
     bool redesign = false;
     // ArtStyleRegistry id for this layer's family; empty uses the registry's default.
     std::string styleId;
-    // The style role: a rig layer is "rig", a body silhouette "silhouette", and so on.
+    // The style section: a rig layer is "rig", a body silhouette "silhouette", and so on.
     std::string styleRole;
     // The layer's canvas; the frame contract and the request must agree.
     int width = 32;

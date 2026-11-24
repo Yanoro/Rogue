@@ -2136,58 +2136,52 @@ void ContentEditorWindow::DrawDocumentPane() {
 }
 
 void ContentEditorWindow::DrawVisualAssets(const ContentKinds::World &world) {
-  visualAssets.Refresh(world);
+  (void)world;
+  visualAssets.Load("data/visual_assets.json");
   ImGui::TextDisabled(
-      "Indexed from the content kinds. %zu visual asset(s); the style is the asset's "
-      "override, otherwise the kind default applies.",
-      visualAssets.GetAll().size());
-  if (visualAssets.GetAll().empty()) {
-    ImGui::TextDisabled("No visual kinds are registered.");
-    return;
-  }
-  for (const VisualAssetDef &asset : visualAssets.GetAll()) {
-    ImGui::PushID((asset.kind + "/" + asset.id).c_str());
-    ImGui::Text("%s / %s", asset.kind.c_str(), asset.label.c_str());
+      "Visual asset types, not individual items. Each type chooses a theme; the "
+      "individual content inherits it. Empty type theme = the global default.");
+  ImGui::Separator();
+  for (const VisualAssetDef &type : visualAssets.GetAll()) {
+    ImGui::PushID(type.id.c_str());
+    ImGui::Text("%s", type.label.c_str());
     ImGui::SameLine();
-    ImGui::TextDisabled("(%s)", asset.role.c_str());
-    ImGui::SameLine();
-    const ArtStyleDef *current = asset.styleId.empty()
-                                     ? nullptr
-                                     : game->artStyleRegistry.Get(asset.styleId);
-    ImGui::SetNextItemWidth(190.0f);
-    if (ImGui::BeginCombo("##visual_asset_style",
-                          current ? current->name.c_str() : "(kind default)")) {
-      if (ImGui::Selectable("(kind default)", asset.styleId.empty())) {
-        const ContentKinds::Kind *kind = ContentKinds::For(asset.kind);
-        if (kind != nullptr && kind->read != nullptr && kind->apply != nullptr) {
-          nlohmann::json document = kind->read(world, asset.id);
-          document["style"] = "";
-          std::string error;
-          std::vector<std::string> warnings;
-          if (!kind->apply(world, document, &error, &warnings)) {
-            status = error;
-            statusIsError = true;
-          }
-        }
+    ImGui::TextDisabled("section: %s  |  %dx%d", type.section.c_str(), type.width,
+                        type.height);
+    const ArtStyleDef *current = type.theme.empty()
+                                     ? game->artStyleRegistry.DefaultTheme()
+                                     : game->artStyleRegistry.Get(type.theme);
+    ImGui::SetNextItemWidth(220.0f);
+    if (ImGui::BeginCombo("##visual_type_theme",
+                          current ? current->name.c_str() : "(no theme)")) {
+      if (ImGui::Selectable("(global default)", type.theme.empty())) {
+        visualAssets.SetTheme(type.id, std::string());
+        visualAssets.Save("data/visual_assets.json");
       }
-      for (const ArtStyleDef *style : game->artStyleRegistry.GetAll()) {
-        if (ImGui::Selectable(style->name.c_str(), style->id == asset.styleId)) {
-          const ContentKinds::Kind *kind = ContentKinds::For(asset.kind);
-          if (kind != nullptr && kind->read != nullptr && kind->apply != nullptr) {
-            nlohmann::json document = kind->read(world, asset.id);
-            document["style"] = style->id;
-            std::string error;
-            std::vector<std::string> warnings;
-            if (!kind->apply(world, document, &error, &warnings)) {
-              status = error;
-              statusIsError = true;
-            }
-          }
+      for (const ArtStyleDef *theme : game->artStyleRegistry.GetAll()) {
+        if (ImGui::Selectable(theme->name.c_str(), theme->id == type.theme)) {
+          visualAssets.SetTheme(type.id, theme->id);
+          visualAssets.Save("data/visual_assets.json");
         }
       }
       ImGui::EndCombo();
     }
     ImGui::PopID();
+  }
+  ImGui::Separator();
+  ImGui::TextDisabled("Global default theme:");
+  const ArtStyleDef *defaultTheme = game->artStyleRegistry.DefaultTheme();
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(220.0f);
+  if (ImGui::BeginCombo("##default_theme",
+                        defaultTheme ? defaultTheme->name.c_str() : "(none)")) {
+    for (const ArtStyleDef *theme : game->artStyleRegistry.GetAll()) {
+      if (ImGui::Selectable(theme->name.c_str(),
+                            defaultTheme && theme->id == defaultTheme->id)) {
+        game->artStyleRegistry.SetDefaultTheme(theme->id);
+      }
+    }
+    ImGui::EndCombo();
   }
 }
 
