@@ -108,6 +108,8 @@ struct JsonFormOptions {
   std::string *surfaceSpriteFilter = nullptr;
   const ArtStyleRegistry *artStyles = nullptr;
   DebugLog *debugLog = nullptr;
+  // The character-portrait document's `source` is an enum, not prose.
+  bool portraitSource = false;
 };
 
 // A resize callback that lets InputTextMultiline edit a std::string, so a long
@@ -285,6 +287,20 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     }
     ImGui::PopTextWrapPos();
     return false;
+  }
+
+  if (depth == 1 && key == "source" && options.portraitSource) {
+    const char *choices[] = {"auto", "sprite", "generated"};
+    std::string currentValue = value.is_string() ? value.get<std::string>() : "auto";
+    int current = 0;
+    for (int i = 0; i < 3; ++i) {
+      if (currentValue == choices[i]) current = i;
+    }
+    if (ImGui::Combo("##portrait_source", &current, choices, 3)) {
+      value = std::string(choices[current]);
+      changed = true;
+    }
+    return changed;
   }
 
   if (value.is_boolean()) {
@@ -2153,6 +2169,7 @@ void ContentEditorWindow::DrawDocumentPane() {
   // registry's own validator is what decides whether the result is usable.
   JsonFormOptions options;
   options.artStyles = &game->artStyleRegistry;
+  options.portraitSource = kind->id == "portraits";
   if (kind->id == "npcs") {
     options.actorSprites = &game->actorSpriteRegistry;
     options.resources = &game->resourceManager;

@@ -189,7 +189,7 @@ private:
   static constexpr int kDefinitionConversation = 0;
   static constexpr int kArtConversation = 1;
 
-  void SendUserMessage(const std::string &prompt);
+  bool SendUserMessage(const std::string &prompt);
 
   // ---- the pixel document turn (art.generation.source == "dsl") -------------------
   //
@@ -587,15 +587,15 @@ private:
 
   // The "create a being's sprite" request: the text is a description, the reply is a
   // sprite document, and the name typed beside the mode becomes its filename.
-  void SendActorSpriteRequest(const std::string &description);
+  bool SendActorSpriteRequest(const std::string &description);
   char actorSpriteNameBuffer[64] = {};
   // The icon counterpart: creates the IconRegistry entry and then asks the icon
   // sprite-document turn for its art.
-  void SendIconRequest(const std::string &description);
+  bool SendIconRequest(const std::string &description);
   char iconNameBuffer[64] = {};
   // A reusable surface overlay sprite. The SurfaceRegistry definition is authored
   // elsewhere; this only creates the art entry and its generated image.
-  void SendSurfaceSpriteRequest(const std::string &description);
+  bool SendSurfaceSpriteRequest(const std::string &description);
   char surfaceSpriteNameBuffer[64] = {};
 
   // Applies the rewritten brief for the current mode to the Improve button, so an

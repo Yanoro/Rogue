@@ -489,9 +489,9 @@ std::string DesignerWindow::SaveEditedTile() {
   return {};
 }
 
-void DesignerWindow::SendUserMessage(const std::string &prompt) {
+bool DesignerWindow::SendUserMessage(const std::string &prompt) {
   if (!session->HasBackend() || prompt.empty() || session->IsBusy()) {
-    return;
+    return false;
   }
 
   // Actor sprites are the one mode whose request is not a definition: the text is a
@@ -499,16 +499,13 @@ void DesignerWindow::SendUserMessage(const std::string &prompt) {
   // attempt budget and the latched kind below, because none of that applies to the art
   // conversation.
   if (mode == DesignerDomains::Domain::ActorSprite) {
-    SendActorSpriteRequest(prompt);
-    return;
+    return SendActorSpriteRequest(prompt);
   }
   if (mode == DesignerDomains::Domain::Icon) {
-    SendIconRequest(prompt);
-    return;
+    return SendIconRequest(prompt);
   }
   if (mode == DesignerDomains::Domain::SurfaceSprite) {
-    SendSurfaceSpriteRequest(prompt);
-    return;
+    return SendSurfaceSpriteRequest(prompt);
   }
 
   // A new request restarts the attempt budget: the cap is per request, not per
@@ -547,6 +544,7 @@ void DesignerWindow::SendUserMessage(const std::string &prompt) {
   // DesignerSession's; the kind and shape latched above travel with it so inspection
   // judges the reply by the grammar it was asked for.
   session->Send(prompt, kDefinitionConversation, /*fromUser=*/true, designSet);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -691,68 +689,13 @@ void DesignerWindow::DrawStyleBatch() {
     }
     ImGui::EndCombo();
   }
-  const bool hasTest = true;
   ImGui::SameLine();
-  ImGui::SetNextItemWidth(120.0f);
-  if (ImGui::BeginCombo("##style_test_role", styleTestRole.c_str())) {
-    for (const std::string &section : ArtStyleRegistry::KnownSections()) {
-      if (ImGui::Selectable(section.c_str(), section == styleTestRole)) {
-        styleTestRole = section;
-      }
-    }
-    ImGui::EndCombo();
-  }
-  const ResolvedArtStyle resolvedTest =
-      game->artStyleRegistry.ResolveSection(*selectedStyle, styleTestRole);
-  const int testWidth = resolvedTest.width > 0
-                            ? resolvedTest.width
-                            : (selectedStyle->geometry ? selectedStyle->geometry->width : 64);
-  const int testHeight = resolvedTest.height > 0
-                             ? resolvedTest.height
-                             : (selectedStyle->geometry ? selectedStyle->geometry->height : 64);
-  const std::string testLabel =
-      "Test style (" + std::to_string(testWidth) + "x" +
-      std::to_string(testHeight) + ")";
-  ImGui::SameLine();
-  if (ImGui::Button(testLabel.c_str())) {
-    QueueStyleTest(selectedStyle->id, styleTestRole);
-  }
-  if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip(
-        "Asks for one asset in this style for the selected visual section. It becomes the "
-        "section's style reference.");
-  }
-  const std::string testName = "style_test_" + selectedStyle->id + "_" + styleTestRole;
-  if (hasTest && FindSpriteDSLDocument(testName).found) {
-    ImGui::SameLine();
-    if (ImGui::Button("Use test as style reference")) {
-      UseStyleTestAsReference(selectedStyle->id, styleTestRole);
-    }
-  }
-  ImGui::SameLine();
-  if (ImGui::Button("Regenerate all assets in style")) {
-    QueueIconStyleBatch(selectedStyle->id);
-  }
+  ImGui::TextDisabled("(theme sections are edited in the art-style document)");
   if (!selectedStyle->reference.empty()) {
     ImGui::TextDisabled("Reference: %s", selectedStyle->reference.c_str());
   }
   if (!selectedStyle->palette.empty()) {
     ImGui::TextDisabled("Palette: %.96s", selectedStyle->palette.c_str());
-  }
-  if (!hasTest) {
-    ImGui::TextDisabled(
-        "No style test yet for '%s'; generate one to give the prompts a concrete target.",
-        selectedStyle->id.c_str());
-  }
-  if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip(
-        "Queues every icon, actor sprite, surface sprite and equipment item whose "
-        "'style' matches this profile. Requests run one at a time, and this window "
-        "must stay open for replies to be processed.");
-  }
-  if (!artBatch.empty() || artBatchStarted) {
-    ImGui::SameLine();
-    ImGui::TextDisabled("%zu remaining", artBatch.size());
   }
 }
 
@@ -2552,13 +2495,19 @@ void DesignerWindow::RefreshRewriteBrief() {
     rewriter.SetBrief(RewriteBriefs::Object());
   } else if (mode == DesignerDomains::Domain::Map) {
     rewriter.SetBrief(RewriteBriefs::Map());
+  } else if (mode == DesignerDomains::Domain::ActorSprite) {
+    rewriter.SetBrief(RewriteBriefs::ActorSprite());
+  } else if (mode == DesignerDomains::Domain::Icon) {
+    rewriter.SetBrief(RewriteBriefs::Icon());
+  } else if (mode == DesignerDomains::Domain::SurfaceSprite) {
+    rewriter.SetBrief(RewriteBriefs::SurfaceSprite());
   } else {
     rewriter.SetBrief(RewriteBriefs::Tile());
   }
 }
 
-void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
-  if (game == nullptr) return;
+bool DesignerWindow::SendActorSpriteRequest(const std::string &description) {
+  if (game == nullptr) return false;
 
   // The name in the box is the filename, and the same slug the actor registry uses, so an
   // actor authored later with this name finds the sprite that was drawn for it.
@@ -2569,7 +2518,7 @@ void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
     statusIsError = true;
     statusLine = "Give the sprite a name first: the box beside the mode is the filename "
                  "an actor will look for.";
-    return;
+    return false;
   }
 
   // A sprite with no entry is not browsable: the Content Editor lists the catalogue, so
@@ -2589,7 +2538,7 @@ void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
     if (!out.is_open()) {
       statusIsError = true;
       statusLine = "Could not write the sprite catalogue entry to " + path.string();
-      return;
+      return false;
     }
     out << entry.dump(2) << "\n";
     out.close();
@@ -2602,10 +2551,11 @@ void DesignerWindow::SendActorSpriteRequest(const std::string &description) {
   // a *new* being rather than a redraw of one that exists: the text typed is the brief.
   RequestSpriteDocument(name, SpriteKinds::Kind::Actor, /*replaceGenerated=*/true,
                         std::string(), description);
+  return true;
 }
 
-void DesignerWindow::SendIconRequest(const std::string &description) {
-  if (game == nullptr) return;
+bool DesignerWindow::SendIconRequest(const std::string &description) {
+  if (game == nullptr) return false;
 
   nlohmann::json named = nlohmann::json::object();
   named["name"] = std::string(iconNameBuffer);
@@ -2614,7 +2564,7 @@ void DesignerWindow::SendIconRequest(const std::string &description) {
     statusIsError = true;
     statusLine = "Give the icon a name first: the box beside the mode is the filename "
                  "and the IconRegistry id.";
-    return;
+    return false;
   }
 
   // The entry is the definition. It is written before the art turn so the generated
@@ -2635,7 +2585,7 @@ void DesignerWindow::SendIconRequest(const std::string &description) {
   if (!out.is_open()) {
     statusIsError = true;
     statusLine = "Could not write the icon entry to " + path.string();
-    return;
+    return false;
   }
   out << entry.dump(2) << "\n";
   out.close();
@@ -2657,10 +2607,11 @@ void DesignerWindow::SendIconRequest(const std::string &description) {
 
   RequestSpriteDocument(name, SpriteKinds::Kind::Icon, /*replaceGenerated=*/true,
                         std::string(), description);
+  return true;
 }
 
-void DesignerWindow::SendSurfaceSpriteRequest(const std::string &description) {
-  if (game == nullptr) return;
+bool DesignerWindow::SendSurfaceSpriteRequest(const std::string &description) {
+  if (game == nullptr) return false;
 
   nlohmann::json named = nlohmann::json::object();
   named["name"] = std::string(surfaceSpriteNameBuffer);
@@ -2669,7 +2620,7 @@ void DesignerWindow::SendSurfaceSpriteRequest(const std::string &description) {
     statusIsError = true;
     statusLine = "Give the surface sprite a name first: the box beside the mode is "
                  "the filename and the SurfaceSpriteRegistry id.";
-    return;
+    return false;
   }
 
   nlohmann::json entry = nlohmann::json::object();
@@ -2685,7 +2636,7 @@ void DesignerWindow::SendSurfaceSpriteRequest(const std::string &description) {
   if (!out.is_open()) {
     statusIsError = true;
     statusLine = "Could not write the surface sprite entry to " + path.string();
-    return;
+    return false;
   }
   out << entry.dump(2) << "\n";
   out.close();
@@ -3538,40 +3489,7 @@ void DesignerWindow::DrawRigPreview() {
     draft.style = styleIndex <= 0 ? std::string() : styles[styleIndex - 1]->id;
   }
 
-  if (!draft.style.empty()) {
-    ImGui::SetNextItemWidth(120.0f);
-    if (ImGui::BeginCombo("##rig_test_role", styleTestRole.c_str())) {
-      for (const std::string &section : ArtStyleRegistry::KnownSections()) {
-        if (ImGui::Selectable(section.c_str(), section == styleTestRole)) {
-          styleTestRole = section;
-        }
-      }
-      ImGui::EndCombo();
-    }
-    const ArtStyleDef *testStyle = game->artStyleRegistry.Get(draft.style);
-    const ResolvedArtStyle resolvedTest =
-        testStyle != nullptr ? game->artStyleRegistry.ResolveSection(*testStyle, styleTestRole)
-                             : ResolvedArtStyle{};
-    const int styleWidth = resolvedTest.width > 0
-                               ? resolvedTest.width
-                               : (draft.geometry ? draft.geometry->width : 64);
-    const int styleHeight = resolvedTest.height > 0
-                                ? resolvedTest.height
-                                : (draft.geometry ? draft.geometry->height : 64);
-    const std::string testLabel =
-        "Test style (" + std::to_string(styleWidth) + "x" +
-        std::to_string(styleHeight) + ")";
-    if (ImGui::Button(testLabel.c_str())) {
-      QueueStyleTest(draft.style, styleTestRole);
-    }
-    const std::string testName = "style_test_" + draft.style + "_" + styleTestRole;
-    if (FindSpriteDSLDocument(testName).found) {
-      ImGui::SameLine();
-      if (ImGui::Button("Use test as style reference")) {
-        UseStyleTestAsReference(draft.style, styleTestRole);
-      }
-    }
-  }
+
 
   // The composed body first: the look is what this slice is for.
   ActorRig renderRig;
@@ -6009,11 +5927,14 @@ void DesignerWindow::Draw() {
           promptBox.Reset();
         }
       } else {
-        inputBuffer[0] = '\0';
-        // Forget the pre-rewrite text: the next message must not offer to undo back
-        // into the one just sent.
-        promptBox.Reset();
-        SendUserMessage(prompt);
+        // Do not clear until the request is accepted: the actor/icon/surface modes can
+        // reject a missing name, and the prompt the user typed must survive that.
+        if (SendUserMessage(prompt)) {
+          inputBuffer[0] = '\0';
+          // Forget the pre-rewrite text: the next message must not offer to undo back
+          // into the one just sent.
+          promptBox.Reset();
+        }
       }
     }
   }
