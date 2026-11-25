@@ -1,0 +1,45 @@
+{
+  "activation": {
+    "autoCast": false,
+    "baseDamage": 2.0,
+    "cast": 0.0,
+    "cooldown": 0.0,
+    "gcd": true,
+    "gcdSeconds": 0.0,
+    "interruptible": true,
+    "interrupts": true,
+    "projectile": "",
+    "range": 1.0,
+    "requiresTarget": true,
+    "skillshot": "",
+    "useWeapon": false,
+    "xpPerUse": 6
+  },
+  "animation": "kick",
+  "baseline": 0.0,
+  "description": "A quick boot to the ribs. It barely hurts, but it breaks concentration, which is the point: a telegraphed cast is a chance to stop it.",
+  "effects": [],
+  "icon": "data/sprites/skill_kick.png",
+  "id": "kick",
+  "levelsPerStage": 9,
+  "name": "Kick",
+  "scale": 9.0,
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "type": "active",
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ]
+}

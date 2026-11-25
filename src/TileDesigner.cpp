@@ -718,6 +718,26 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
   if (!brief.styleNegative.empty()) {
     out << "Do not: " << brief.styleNegative << "\n";
   }
+  if (!brief.stylePalette.empty()) {
+    out << "\nStyle palette (use these colours; do not drift to the default dark "
+           "palette):\n"
+        << brief.stylePalette << "\n";
+  }
+  if (!brief.styleRole.empty()) {
+    out << "\nThis asset's visual section is '" << brief.styleRole
+        << "'; follow the style's section-specific constraints from the style reference "
+           "and palette, not only the family prose.\n";
+  }
+  if (!brief.styleReference.empty()) {
+    out << "\nA reference character drawn in this style. Match its proportions, "
+           "palette, outline and shading, but draw the subject described above; do not "
+           "copy the reference's subject:\n<style-reference>\n"
+        << brief.styleReference << "\n</style-reference>\n";
+  }
+  if (brief.width > 0 && brief.height > 0) {
+    out << "\nThe document canvas is " << brief.width << "x" << brief.height
+        << " pixels; declare that size in its sprite block.\n";
+  }
   if (brief.kind == SpriteKinds::Kind::Tile) {
     out << "It " << (brief.blocksTile ? "blocks movement." : "can be walked on.")
         << "\n";
@@ -728,6 +748,32 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
   if (!brief.surroundings.empty()) {
     out << "\nWhat it will sit among, read from the building it is made for:\n"
         << brief.surroundings << "\n";
+  }
+  if (!brief.baseDocument.empty()) {
+    // Fenced with a tag rather than backticks: the reply must contain exactly one ```sprite
+    // block, and a second fenced block here would compete with that instruction.
+    out << "\nThe current sprite's document, verbatim:\n<base-document>\n"
+        << brief.baseDocument << "\n</base-document>\n";
+    if (!brief.editInstruction.empty()) {
+      out << "\nA person asks for this change to it:\n<edit-request>\n"
+          << brief.editInstruction << "\n</edit-request>\n"
+          << "Produce the complete edited document. Start from the base document and apply "
+             "only the requested change; keep its palette, silhouette and every operation "
+             "that is not part of the change. This is the same sprite edited, not a new "
+             "drawing of it.\n";
+    } else if (!brief.frameNames.empty()) {
+      out << "Produce the animation frames by editing this document. Keep its palette and "
+             "every operation that is not part of the moving pose; change only what the "
+             "pose requires. These frames are the same character, not a new drawing of it.\n";
+    } else {
+      out << "Start from this document and keep its palette and every operation that is "
+             "not being changed; this is the same sprite, not a new drawing of it.\n";
+    }
+  } else if (!brief.editInstruction.empty()) {
+    out << "\nA person asks for this change:\n<edit-request>\n"
+        << brief.editInstruction << "\n</edit-request>\n"
+        << "There is no base document for this sprite. Use the description as the starting "
+           "point and produce a document that applies the change.\n";
   }
   if (!brief.frameNames.empty()) {
     out << "\nThis is an animation layer: the document must contain exactly "
@@ -747,7 +793,7 @@ std::string BuildSpriteDocumentRequest(const SpriteDocumentBrief &brief,
       }
     }
   }
-  if (brief.redesign) {
+  if (brief.redesign && brief.editInstruction.empty()) {
     out << "\nThis is a re-draw of an existing sprite. Produce a materially different "
            "interpretation -- vary the silhouette, the materials or the detail -- and "
            "do not repeat the previous document.\n";

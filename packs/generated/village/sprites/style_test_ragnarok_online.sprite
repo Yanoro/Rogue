@@ -1,0 +1,178 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  skin_light = #FFE0B8
+  skin = #F2C79A
+  skin_shadow = #C98B60
+  hair_light = #A8673E
+  hair = #7A4A2E
+  hair_shadow = #4A2A1C
+  tunic_light = #6EA8E8
+  tunic = #2F5FA8
+  tunic_shadow = #1C3A70
+  eye_blue = #3B6FD6
+  white = #FFFFFF
+  boot = #5A3A22
+  boot_shadow = #3B2414
+  belt = #4A2A1C
+  gold = #FFE0B8
+}
+
+// ----------------------------------------------------
+// Base silhouette & Back Hair
+// ----------------------------------------------------
+// Hair silhouette behind the neck and shoulders
+rect (14,14) (49,38) color=out
+polygon (8,18) (55,18) (53,42) (10,42) color=out
+polygon (10,20) (53,20) (51,40) (12,40) color=hair_shadow
+
+// ----------------------------------------------------
+// Legs & Boots (grounded near bottom)
+// ----------------------------------------------------
+// Boot outlines
+rect (19,50) (29,62) color=out
+rect (34,50) (44,62) color=out
+
+// Left Boot
+rect (20,51) (28,61) color=boot
+rect (25,52) (28,61) color=boot_shadow
+line (21,52) (24,52) color=hair_light
+line (19,61) (29,61) color=out
+
+// Right Boot
+rect (35,51) (43,61) color=boot
+rect (40,52) (43,61) color=boot_shadow
+line (36,52) (39,52) color=hair_light
+line (34,61) (44,61) color=out
+
+// ----------------------------------------------------
+// Body & Tunic (compact, chibi torso)
+// ----------------------------------------------------
+// Tunic outline & base
+polygon (20,38) (43,38) (46,52) (17,52) color=out
+polygon (21,39) (42,39) (45,51) (18,51) color=tunic
+
+// Tunic shading & folds
+polygon (34,39) (42,39) (45,51) (32,51) color=tunic_shadow
+line (22,40) (25,48) color=tunic_light
+line (23,40) (26,48) color=tunic_light
+
+// Belt & Buckle
+rect (19,47) (44,49) color=out
+rect (20,48) (43,48) color=belt
+rect (30,47) (33,49) color=gold
+
+// Collar / Undershirt
+polygon (28,38) (35,38) (33,42) (30,42) color=out
+polygon (29,38) (34,38) (32,41) (31,41) color=white
+
+// ----------------------------------------------------
+// Arms & Hands (short stubby chibi limbs)
+// ----------------------------------------------------
+// Left arm (viewer's left)
+polygon (14,40) (21,39) (17,48) (11,46) color=out
+polygon (15,41) (20,40) (17,47) (12,45) color=tunic
+circle (13,47) radius=2 color=out
+circle (13,47) radius=1 color=skin
+
+// Right arm (viewer's right)
+polygon (42,39) (49,40) (52,46) (46,48) color=out
+polygon (43,40) (48,41) (51,45) (46,47) color=tunic_shadow
+circle (50,47) radius=2 color=out
+circle (50,47) radius=1 color=skin_shadow
+
+// ----------------------------------------------------
+// Head Base & Face
+// ----------------------------------------------------
+// Head base outline (large chibi head)
+circle (31,24) radius=18 color=out
+rect (15,22) (48,35) color=out
+polygon (18,34) (45,34) (37,40) (26,40) color=out
+
+// Face skin fill
+circle (31,24) radius=17 color=skin
+rect (16,23) (47,34) color=skin
+polygon (19,34) (44,34) (36,39) (27,39) color=skin
+
+// Soft skin shading (chin & right cheek)
+polygon (33,35) (44,34) (36,39) (31,39) color=skin_shadow
+line (44,28) (46,33) color=skin_shadow
+line (45,29) (46,32) color=skin_shadow
+
+// Cheek blush
+rect (20,31) (23,32) color=skin_shadow
+rect (40,31) (43,32) color=skin_shadow
+
+// ----------------------------------------------------
+// Eyes & Expression (big, expressive anime style)
+// ----------------------------------------------------
+// Left eye
+rect (21,24) (27,31) color=out
+rect (22,25) (26,30) color=white
+rect (23,26) (26,30) color=eye_blue
+pixel (23,26) color=white
+pixel (24,26) color=white
+line (21,23) (28,23) color=out
+
+// Right eye
+rect (36,24) (42,31) color=out
+rect (37,25) (41,30) color=white
+rect (37,26) (40,30) color=eye_blue
+pixel (37,26) color=white
+pixel (38,26) color=white
+line (35,23) (42,23) color=out
+
+// Eyebrows & Mouth
+line (22,21) (27,21) color=hair_shadow
+line (36,21) (41,21) color=hair_shadow
+line (30,34) (33,34) color=skin_shadow
+pixel (31,35) color=skin_shadow
+
+// ----------------------------------------------------
+// Hair Layer (Front Bangs & Spikes)
+// ----------------------------------------------------
+// Hair mass outline
+circle (31,18) radius=17 color=out
+polygon (12,18) (51,18) (48,6) (15,6) color=out
+polygon (10,24) (16,28) (15,20) color=out
+polygon (47,20) (47,28) (53,24) color=out
+
+// Hair fill
+circle (31,17) radius=16 color=hair
+polygon (13,18) (50,18) (47,7) (16,7) color=hair
+
+// Top & Left Hair Highlights
+polygon (17,9) (33,8) (29,14) (16,14) color=hair_light
+circle (25,12) radius=4 color=hair_light
+
+// Right & Underside Hair Shading
+polygon (36,8) (46,9) (48,22) (35,22) color=hair_shadow
+circle (40,16) radius=5 color=hair_shadow
+
+// Spiky RO bangs cutting across forehead
+// Bang 1 (Left)
+polygon (16,16) (23,16) (18,26) color=out
+polygon (17,16) (22,16) (18,24) color=hair
+
+// Bang 2 (Mid-left)
+polygon (22,16) (29,16) (26,27) color=out
+polygon (23,16) (28,16) (26,25) color=hair_light
+
+// Bang 3 (Center)
+polygon (28,16) (35,16) (32,28) color=out
+polygon (29,16) (34,16) (32,26) color=hair
+
+// Bang 4 (Mid-right)
+polygon (34,16) (42,16) (38,26) color=out
+polygon (35,16) (41,16) (38,24) color=hair_shadow
+
+// Bang 5 (Right)
+polygon (41,16) (47,16) (44,24) color=out
+polygon (42,16) (46,16) (44,22) color=hair_shadow
+
+// Top cowlick / hair tuff
+polygon (28,6) (34,3) (34,7) color=out
+polygon (29,6) (33,4) (33,7) color=hair_light

@@ -1,0 +1,55 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = grass.0
+  orc_mid = grass.1
+  orc_light = grass.2
+  leather_dark = soil.0
+  leather = soil.1
+  leather_light = soil.2
+  buckle = iron.3
+  scar = soil.2
+}
+
+// Base muscular torso silhouette
+rect (10,12) (22,21) color=orc_mid
+rect (11,11) (21,21) color=orc_mid
+
+// Shading / bulk contours
+line (10,12) (10,21) color=orc_dark
+line (22,12) (22,21) color=orc_dark
+rect (10,19) (22,21) color=orc_dark
+rect (11,12) (15,16) color=orc_light
+rect (17,12) (21,16) color=orc_light
+line (16,13) (16,18) color=orc_dark
+line (12,17) (20,17) color=orc_dark
+
+// Crossed brown leather straps across chest
+line (11,12) (21,20) color=leather
+line (12,12) (21,19) color=leather_light
+line (21,12) (11,20) color=leather
+line (20,12) (11,19) color=leather_dark
+
+// Central harness ring / buckle
+pixel (16,16) color=buckle
+pixel (15,16) color=leather_dark
+pixel (17,16) color=leather_dark
+
+// Scar across left chest/ribs
+pixel (13,14) color=scar
+pixel (14,15) color=scar
+
+// Sturdy belt at waistline
+rect (10,20) (22,22) color=leather_dark
+rect (11,21) (21,21) color=leather
+pixel (16,21) color=buckle
+pixel (15,21) color=iron.1
+pixel (17,21) color=iron.1
+
+// Outlines
+line (11,11) (21,11) color=ink.base
+line (9,12) (9,22) color=ink.base
+line (23,12) (23,22) color=ink.base
+line (10,22) (22,22) color=ink.base

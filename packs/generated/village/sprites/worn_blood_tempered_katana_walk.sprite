@@ -1,0 +1,232 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  tsuba = #c89b3c
+  tsuba_dark = #835f1b
+  blood_glow = #a81c24
+  blood_bright = #de343b
+  cord = #1e1d21
+  cord_dark = #100f12
+}
+
+frame "f1" {
+  // Tsuka (hilt) gripped in right hand (y: 21-26, slight forward tilt)
+  line (24,21) (25,26) color=ink.base
+  line (23,21) (24,26) color=cord
+  pixel (24,22) color=cord_dark
+  pixel (24,24) color=cord_dark
+  pixel (25,26) color=iron.1
+  pixel (24,26) color=iron.2
+
+  // Tsuba (guard)
+  rect (21,19) (24,20) color=tsuba_dark
+  pixel (22,19) color=tsuba
+  pixel (23,19) color=tsuba
+  pixel (21,20) color=ink.base
+  pixel (24,20) color=ink.base
+
+  // Habaki (collar)
+  pixel (22,18) color=tsuba
+  pixel (23,18) color=tsuba_dark
+
+  // Blade spine
+  line (22,17) (22,14) color=iron.1
+  line (22,14) (23,9) color=iron.1
+  line (23,9) (25,5) color=iron.1
+  pixel (26,4) color=ink.base
+
+  // Blade body
+  line (21,17) (21,14) color=iron.3
+  line (21,14) (22,9) color=iron.3
+  line (22,9) (24,5) color=iron.4
+  pixel (25,4) color=iron.4
+  pixel (25,3) color=iron.4
+
+  // Blade highlights
+  pixel (21,15) color=iron.4
+  pixel (22,11) color=iron.4
+  pixel (23,7) color=iron.4
+
+  // Blood-tempered cutting edge
+  line (20,17) (20,15) color=blood_glow
+  line (20,14) (21,10) color=blood_glow
+  line (21,9) (23,5) color=blood_glow
+  pixel (24,4) color=blood_bright
+  pixel (24,3) color=blood_bright
+
+  // Edge gleams
+  pixel (20,16) color=blood_bright
+  pixel (21,12) color=blood_bright
+  pixel (22,8) color=blood_bright
+
+  // Kissaki (tip)
+  pixel (25,3) color=iron.4
+  pixel (26,3) color=ink.base
+}
+
+frame "f2" {
+  // Tsuka (hilt) gripped in right hand (neutral drop, body raised 1px)
+  line (24,20) (25,25) color=ink.base
+  line (23,20) (24,25) color=cord
+  pixel (24,21) color=cord_dark
+  pixel (24,23) color=cord_dark
+  pixel (25,25) color=iron.1
+  pixel (24,25) color=iron.2
+
+  // Tsuba (guard)
+  rect (21,18) (24,19) color=tsuba_dark
+  pixel (22,18) color=tsuba
+  pixel (23,18) color=tsuba
+  pixel (21,19) color=ink.base
+  pixel (24,19) color=ink.base
+
+  // Habaki (collar)
+  pixel (22,17) color=tsuba
+  pixel (23,17) color=tsuba_dark
+
+  // Blade spine
+  line (22,16) (22,13) color=iron.1
+  line (22,13) (23,8) color=iron.1
+  line (23,8) (25,4) color=iron.1
+  pixel (26,3) color=ink.base
+
+  // Blade body
+  line (21,16) (21,13) color=iron.3
+  line (21,13) (22,8) color=iron.3
+  line (22,8) (24,4) color=iron.4
+  pixel (25,3) color=iron.4
+  pixel (25,2) color=iron.4
+
+  // Blade highlights
+  pixel (21,14) color=iron.4
+  pixel (22,10) color=iron.4
+  pixel (23,6) color=iron.4
+
+  // Blood-tempered cutting edge
+  line (20,16) (20,14) color=blood_glow
+  line (20,13) (21,9) color=blood_glow
+  line (21,8) (23,4) color=blood_glow
+  pixel (24,3) color=blood_bright
+  pixel (24,2) color=blood_bright
+
+  // Edge gleams
+  pixel (20,15) color=blood_bright
+  pixel (21,11) color=blood_bright
+  pixel (22,7) color=blood_bright
+
+  // Kissaki (tip)
+  pixel (25,2) color=iron.4
+  pixel (26,2) color=ink.base
+}
+
+frame "f3" {
+  // Tsuka (hilt) gripped in right hand trailing back (x shifted right/back)
+  line (25,21) (26,26) color=ink.base
+  line (24,21) (25,26) color=cord
+  pixel (25,22) color=cord_dark
+  pixel (25,24) color=cord_dark
+  pixel (26,26) color=iron.1
+  pixel (25,26) color=iron.2
+
+  // Tsuba (guard)
+  rect (22,19) (25,20) color=tsuba_dark
+  pixel (23,19) color=tsuba
+  pixel (24,19) color=tsuba
+  pixel (22,20) color=ink.base
+  pixel (25,20) color=ink.base
+
+  // Habaki (collar)
+  pixel (23,18) color=tsuba
+  pixel (24,18) color=tsuba_dark
+
+  // Blade spine (slight backward angle)
+  line (23,17) (23,14) color=iron.1
+  line (23,14) (22,9) color=iron.1
+  line (22,9) (21,5) color=iron.1
+  pixel (20,4) color=ink.base
+
+  // Blade body
+  line (24,17) (24,14) color=iron.3
+  line (24,14) (23,9) color=iron.3
+  line (23,9) (22,5) color=iron.4
+  pixel (21,4) color=iron.4
+  pixel (21,3) color=iron.4
+
+  // Blade highlights
+  pixel (24,15) color=iron.4
+  pixel (23,11) color=iron.4
+  pixel (22,7) color=iron.4
+
+  // Blood-tempered cutting edge
+  line (25,17) (25,15) color=blood_glow
+  line (25,14) (24,10) color=blood_glow
+  line (24,9) (23,5) color=blood_glow
+  pixel (22,4) color=blood_bright
+  pixel (22,3) color=blood_bright
+
+  // Edge gleams
+  pixel (25,16) color=blood_bright
+  pixel (24,12) color=blood_bright
+  pixel (23,8) color=blood_bright
+
+  // Kissaki (tip)
+  pixel (21,3) color=iron.4
+  pixel (20,3) color=ink.base
+}
+
+frame "f4" {
+  // Tsuka (hilt) gripped in right hand (neutral passing, body raised)
+  line (24,20) (25,25) color=ink.base
+  line (23,20) (24,25) color=cord
+  pixel (24,21) color=cord_dark
+  pixel (24,23) color=cord_dark
+  pixel (25,25) color=iron.1
+  pixel (24,25) color=iron.2
+
+  // Tsuba (guard)
+  rect (21,18) (24,19) color=tsuba_dark
+  pixel (22,18) color=tsuba
+  pixel (23,18) color=tsuba
+  pixel (21,19) color=ink.base
+  pixel (24,19) color=ink.base
+
+  // Habaki (collar)
+  pixel (22,17) color=tsuba
+  pixel (23,17) color=tsuba_dark
+
+  // Blade spine
+  line (22,16) (22,13) color=iron.1
+  line (22,13) (23,8) color=iron.1
+  line (23,8) (25,4) color=iron.1
+  pixel (26,3) color=ink.base
+
+  // Blade body
+  line (21,16) (21,13) color=iron.3
+  line (21,13) (22,8) color=iron.3
+  line (22,8) (24,4) color=iron.4
+  pixel (25,3) color=iron.4
+  pixel (25,2) color=iron.4
+
+  // Blade highlights
+  pixel (21,14) color=iron.4
+  pixel (22,10) color=iron.4
+  pixel (23,6) color=iron.4
+
+  // Blood-tempered cutting edge
+  line (20,16) (20,14) color=blood_glow
+  line (20,13) (21,9) color=blood_glow
+  line (21,8) (23,4) color=blood_glow
+  pixel (24,3) color=blood_bright
+  pixel (24,2) color=blood_bright
+
+  // Edge gleams
+  pixel (20,15) color=blood_bright
+  pixel (21,11) color=blood_bright
+  pixel (22,7) color=blood_bright
+
+  // Kissaki (tip)
+  pixel (25,2) color=iron.4
+  pixel (26,2) color=ink.base
+}

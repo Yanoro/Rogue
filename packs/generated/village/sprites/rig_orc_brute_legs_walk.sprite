@@ -1,0 +1,169 @@
+sprite 32x32
+kind object
+material soil
+
+frame "f1" {
+  // Contact: Left leg forward & planted low, right leg trailing back
+  // Left leg (viewer's left: x=12..16, y=21..31)
+  rect (12,21) (16,31) color=ink.base
+  // Right leg (viewer's right: trailing slightly, x=17..21, y=20..30)
+  rect (17,20) (21,30) color=ink.base
+
+  // Groin division
+  line (16,21) (17,24) color=ink.base
+
+  // Left breeches (y=21..24)
+  rect (13,21) (15,24) color=soil.2
+  line (13,21) (15,21) color=soil.3
+  // Right breeches (y=20..23)
+  rect (18,20) (20,23) color=soil.1
+
+  // Leather wraps (Left y=25..27, Right y=24..26)
+  rect (13,25) (15,27) color=wood.2
+  pixel (13,25) color=wood.3
+  pixel (14,26) color=wood.1
+  rect (18,24) (20,26) color=wood.1
+  pixel (18,24) color=wood.2
+
+  // Boots (Left y=28..31, Right y=27..30)
+  rect (12,28) (16,31) color=iron.1
+  rect (17,27) (21,30) color=iron.0
+
+  // Soles & toe caps
+  line (12,31) (16,31) color=ink.base
+  line (17,30) (21,30) color=ink.base
+  line (12,28) (14,28) color=iron.3
+  line (17,27) (19,27) color=iron.2
+  pixel (13,30) color=iron.3
+  pixel (18,29) color=iron.1
+
+  // Iron studs
+  pixel (13,29) color=iron.4
+  pixel (15,29) color=iron.3
+  pixel (18,28) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.1 seed=11 inside
+}
+
+frame "f2" {
+  // Passing: Left leg supporting (y=20..30), right leg lifting (y=20..28)
+  // Left leg outline
+  rect (12,20) (16,30) color=ink.base
+  // Right lifted leg outline (tucked up)
+  rect (17,20) (21,28) color=ink.base
+
+  // Groin division
+  line (16,20) (17,24) color=ink.base
+
+  // Breeches (y=20..23)
+  rect (13,20) (15,23) color=soil.2
+  line (13,20) (15,20) color=soil.3
+  rect (18,20) (20,22) color=soil.2
+  line (18,20) (20,20) color=soil.3
+
+  // Leather wraps (Left y=24..26, Right y=23..25)
+  rect (13,24) (15,26) color=wood.2
+  pixel (14,25) color=wood.3
+  rect (18,23) (20,25) color=wood.1
+  pixel (19,24) color=wood.2
+
+  // Left boot planted (y=27..30)
+  rect (12,27) (16,30) color=iron.1
+  line (12,30) (16,30) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,29) color=iron.2
+  pixel (13,28) color=iron.4
+  pixel (15,28) color=iron.3
+
+  // Right boot lifted (y=26..28)
+  rect (17,26) (21,28) color=iron.2
+  line (17,28) (21,28) color=ink.base
+  line (17,26) (19,26) color=iron.3
+  pixel (18,27) color=iron.4
+  pixel (20,27) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.1 seed=22 inside
+}
+
+frame "f3" {
+  // Contact: Right leg forward & planted low, left leg trailing back
+  // Left trailing leg (y=20..30)
+  rect (12,20) (16,30) color=ink.base
+  // Right forward leg (y=21..31)
+  rect (17,21) (21,31) color=ink.base
+
+  // Groin division
+  line (16,21) (17,24) color=ink.base
+
+  // Left breeches (y=20..23)
+  rect (13,20) (15,23) color=soil.1
+  // Right breeches (y=21..24)
+  rect (18,21) (20,24) color=soil.2
+  line (18,21) (20,21) color=soil.3
+
+  // Leather wraps (Left y=24..26, Right y=25..27)
+  rect (13,24) (15,26) color=wood.1
+  pixel (14,25) color=wood.2
+  rect (18,25) (20,27) color=wood.2
+  pixel (18,25) color=wood.3
+  pixel (19,26) color=wood.1
+
+  // Boots (Left y=27..30, Right y=28..31)
+  rect (12,27) (16,30) color=iron.0
+  rect (17,28) (21,31) color=iron.1
+
+  // Soles & toe caps
+  line (12,30) (16,30) color=ink.base
+  line (17,31) (21,31) color=ink.base
+  line (12,27) (14,27) color=iron.2
+  line (17,28) (19,28) color=iron.3
+  pixel (13,29) color=iron.1
+  pixel (18,30) color=iron.3
+
+  // Iron studs
+  pixel (14,28) color=iron.3
+  pixel (18,29) color=iron.4
+  pixel (20,29) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.1 seed=33 inside
+}
+
+frame "f4" {
+  // Passing: Right leg supporting (y=20..30), left leg lifting (y=20..28)
+  // Left lifted leg outline (tucked up)
+  rect (12,20) (16,28) color=ink.base
+  // Right supporting leg outline
+  rect (17,20) (21,30) color=ink.base
+
+  // Groin division
+  line (16,20) (17,24) color=ink.base
+
+  // Breeches (y=20..23)
+  rect (13,20) (15,22) color=soil.2
+  line (13,20) (15,20) color=soil.3
+  rect (18,20) (20,23) color=soil.2
+  line (18,20) (20,20) color=soil.3
+
+  // Leather wraps (Left y=23..25, Right y=24..26)
+  rect (13,23) (15,25) color=wood.1
+  pixel (14,24) color=wood.2
+  rect (18,24) (20,26) color=wood.2
+  pixel (19,25) color=wood.3
+
+  // Left boot lifted (y=26..28)
+  rect (12,26) (16,28) color=iron.2
+  line (12,28) (16,28) color=ink.base
+  line (12,26) (14,26) color=iron.3
+  pixel (13,27) color=iron.4
+  pixel (15,27) color=iron.3
+
+  // Right boot planted (y=27..30)
+  rect (17,27) (21,30) color=iron.1
+  line (17,30) (21,30) color=ink.base
+  line (17,27) (19,27) color=iron.3
+  pixel (18,29) color=iron.2
+  pixel (18,28) color=iron.4
+  pixel (20,28) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.1 seed=44 inside
+}

@@ -1,0 +1,67 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  skin = #F2C79A
+  skin_shadow = #C98B60
+  tunic = #2F5FA8
+  tunic_shadow = #1C3A70
+  tunic_light = #6EA8E8
+}
+
+// Frame 1: Contact - left leg forward, right arm swung forward, body at lowest
+frame "f1" {
+  // Sleeve outline & base (forward swing, pointing slightly down-forward)
+  polygon (42,39) (49,41) (50,47) (44,47) color=out
+  polygon (43,40) (48,42) (49,46) (44,46) color=tunic
+  polygon (46,41) (48,42) (49,46) (46,46) color=tunic_shadow
+  line (44,40) (45,43) color=tunic_light
+
+  // Hand outline & skin (holding weapon position around 47,48)
+  circle (47,48) radius=2 color=out
+  circle (47,48) radius=1 color=skin
+  pixel (48,48) color=skin_shadow
+}
+
+// Frame 2: Passing - legs together, right leg lifting, body rising (+1px)
+frame "f2" {
+  // Sleeve outline & base (neutral hanging, slightly raised)
+  polygon (42,38) (48,39) (50,46) (44,46) color=out
+  polygon (43,39) (47,40) (49,45) (44,45) color=tunic
+  polygon (46,40) (47,40) (49,45) (46,45) color=tunic_shadow
+  line (44,39) (45,42) color=tunic_light
+
+  // Hand outline & skin (neutral grip at 48,47)
+  circle (48,47) radius=2 color=out
+  circle (48,47) radius=1 color=skin
+  pixel (49,47) color=skin_shadow
+}
+
+// Frame 3: Contact - right leg forward, left arm forward, right arm back, body at lowest
+frame "f3" {
+  // Sleeve outline & base (swung back and slightly outward)
+  polygon (42,39) (49,39) (52,46) (46,47) color=out
+  polygon (43,40) (48,40) (51,45) (46,46) color=tunic_shadow
+  line (43,40) (45,42) color=tunic
+
+  // Hand outline & skin (swung back at 50,47)
+  circle (50,47) radius=2 color=out
+  circle (50,47) radius=1 color=skin_shadow
+  pixel (49,47) color=skin
+}
+
+// Frame 4: Passing - legs together, left leg lifting, body rising (+1px)
+frame "f4" {
+  // Sleeve outline & base (passing through, raised with torso bob)
+  polygon (42,38) (48,38) (50,45) (44,46) color=out
+  polygon (43,39) (47,39) (49,44) (44,45) color=tunic
+  polygon (46,39) (47,39) (49,44) (46,44) color=tunic_shadow
+  line (44,39) (45,42) color=tunic_light
+
+  // Hand outline & skin (passing grip at 48,47)
+  circle (48,47) radius=2 color=out
+  circle (48,47) radius=1 color=skin
+  pixel (48,48) color=skin_shadow
+}

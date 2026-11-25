@@ -51,6 +51,10 @@ struct Draft {
   std::string designerNotes;
   int width = kReferenceSide;
   int height = kReferenceSide;
+  // Optional art style and geometry override. The style's geometry supplies the frame
+  // contract when the draft has none of its own.
+  std::string style;
+  std::optional<RigGeometry> geometry;
   std::vector<Part> parts;
   // Clips the rig can play, with the authoring intent kept for regeneration.
   std::vector<RigClip> clips;
@@ -83,6 +87,8 @@ std::string BuildSystemPrompt(const std::string &promptFile);
 // The frame every part's art request carries, shared by the pane and the prompt so a part
 // is never requested without the coordinates the others are drawn against.
 std::string FrameContract();
+// The same contract cut from a rig's actual geometry (a chibi, a taller body, etc.).
+std::string FrameContract(const RigGeometry &geometry);
 
 // Writes <directory>/<slug>.json. The generated layer is ours, so an existing file is
 // replaced and `savedPath` says which; the hand-authored catalog is never the target.

@@ -28,6 +28,26 @@ after the block:
 }
 ```
 
+A hand item also declares its grip:
+
+```json
+{
+  "name": "Iron Sword",
+  "description": "A short, plain blade with a leather-wrapped grip.",
+  "designerNotes": "A cheap soldier's sword: straight, no fuller, a face-sized guard.",
+  "slot": "hand",
+  "tier": 2,
+  "damage": 6,
+  "swingTime": 0.9,
+  "durability": 80,
+  "tags": ["weapon", "sword", "iron"],
+  "worn": {
+    "brief": "a short straight iron blade with a plain crossguard and a wrapped grip",
+    "grip": { "x": 24, "y": 22, "angle": 0 }
+  }
+}
+```
+
 ## The slots
 
 | slot | what goes there | the layer it covers |
@@ -41,6 +61,13 @@ after the block:
 `worn.hides` names rig parts the item *replaces*; it must be a subset of `legs`, `body`,
 `arm_left`, `arm_right`, `head`, `hair`. A helmet hides `hair`; most armour hides
 nothing. `worn.z` is optional -- the engine places the layer for the slot.
+
+`worn.grip` is **required for hand items** and forbidden nowhere else: `x` and `y` are
+the pixel (0..31) in the 32x32 canvas where the hand closes around the item, normally
+inside the `arm_right` rectangle; `angle` is the item's rest orientation in degrees
+relative to the arm (-180..180). The engine places the worn art with that point at the
+hand and rotates it by the arm's direction plus this angle, so a sword held point-up is
+angle 0.
 
 ## Numbers
 
@@ -75,5 +102,6 @@ of floating beside it. Draw only the worn item, never the body underneath.
   a cap and a nose guard at 32 pixels.
 - `designerNotes` is required and is your own judgement of the item, not a summary of the
   JSON.
-- Do not name engine fields, pixel coordinates, colours as numbers or animation. Do not
-  describe a whole outfit in one item.
+- Do not name engine fields, pixel coordinates, colours as numbers or animation -- the
+  one exception is `worn.grip`, which *is* a pixel coordinate and must be stated.
+- Do not describe a whole outfit in one item.

@@ -36,8 +36,9 @@ void PortraitRegistry::LoadPortraits(const std::string &directoryPath) {
       PortraitDef def;
       def.id = entry.path().stem().string();
       def.sprite = j.value("sprite", "");
+      def.source = j.value("source", "auto");
 
-      if (def.sprite.empty()) {
+      if (def.sprite.empty() && def.source != "generated") {
         // A portrait with no image is the fallback's job, not this file's: an
         // entry that resolves to nothing would shadow the unknown sprite and
         // look like a broken portrait rather than a missing one.
@@ -52,6 +53,46 @@ void PortraitRegistry::LoadPortraits(const std::string &directoryPath) {
            std::string(e.what()));
     }
   }
+}
+
+nlohmann::json PortraitRegistry::ToJson(const PortraitDef &definition) const {
+  nlohmann::json document = nlohmann::json::object();
+  document["id"] = definition.id;
+  if (!definition.sprite.empty()) document["sprite"] = definition.sprite;
+  document["source"] = definition.source;
+  return document;
+}
+
+bool PortraitRegistry::AddOrReplace(const nlohmann::json &document,
+                                    const std::string &source, std::string *error,
+                                    std::vector<std::string> *warnings) {
+  (void)source;
+  (void)warnings;
+  if (!document.is_object()) {
+    if (error) *error = "the entry is not a JSON object";
+    return false;
+  }
+  PortraitDef definition;
+  definition.id = IdFor(document);
+  if (definition.id.empty()) {
+    if (error) *error = "the entry has no id";
+    return false;
+  }
+  definition.sprite = document.value("sprite", std::string());
+  definition.source = document.value("source", std::string("auto"));
+  if (definition.sprite.empty() && definition.source != "generated") {
+    if (error) *error = "a portrait with no sprite must use source 'generated'";
+    return false;
+  }
+  portraits[definition.id] = std::move(definition);
+  return true;
+}
+
+std::string PortraitRegistry::IdFor(const nlohmann::json &document) {
+  if (document.contains("id") && document["id"].is_string()) {
+    return document["id"].get<std::string>();
+  }
+  return std::string();
 }
 
 const PortraitDef *PortraitRegistry::Get(const std::string &id) const {

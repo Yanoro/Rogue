@@ -1,0 +1,92 @@
+sprite 32x32
+kind object
+material soil
+
+frame "f1" {
+  // Support left leg (planted)
+  rect (12,20) (16,30) color=ink.base
+  rect (13,20) (15,23) color=soil.2
+  line (13,20) (15,20) color=soil.3
+  rect (13,24) (15,26) color=wood.1
+  pixel (13,24) color=wood.2
+  pixel (14,25) color=wood.2
+  rect (12,27) (16,30) color=iron.1
+  line (12,30) (16,30) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (15,28) color=iron.3
+  pixel (13,29) color=iron.2
+
+  // Raised right leg (wind-up: knee high)
+  rect (17,19) (21,27) color=ink.base
+  rect (18,20) (20,22) color=soil.1
+  rect (18,22) (20,24) color=wood.0
+  pixel (18,23) color=wood.1
+  rect (17,24) (21,27) color=iron.0
+  line (17,27) (21,27) color=ink.base
+  line (17,24) (19,24) color=iron.2
+  pixel (18,25) color=iron.3
+  pixel (20,25) color=iron.2
+
+  scatter color=soil.0,soil.3 density=0.12 seed=19 cluster=1 inside
+}
+
+frame "f2" {
+  // Support left leg (planted, angled slightly back for leverage)
+  rect (12,20) (16,30) color=ink.base
+  rect (13,20) (15,23) color=soil.2
+  line (13,20) (15,20) color=soil.3
+  rect (13,24) (15,26) color=wood.1
+  pixel (13,24) color=wood.2
+  pixel (14,25) color=wood.2
+  rect (12,27) (16,30) color=iron.1
+  line (12,30) (16,30) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (15,28) color=iron.3
+  pixel (13,29) color=iron.2
+
+  // Extended right leg (kicking forward horizontal)
+  rect (16,19) (23,24) color=ink.base
+  rect (16,20) (18,22) color=soil.1
+  rect (18,20) (20,22) color=wood.0
+  pixel (19,21) color=wood.1
+  rect (20,19) (23,23) color=iron.0
+  line (23,19) (23,23) color=ink.base
+  line (20,19) (22,19) color=iron.2
+  pixel (21,20) color=iron.3
+  pixel (22,21) color=iron.2
+
+  scatter color=soil.0,soil.3 density=0.12 seed=47 cluster=1 inside
+}
+
+frame "f3" {
+  // Support left leg (planted)
+  rect (12,20) (16,30) color=ink.base
+  rect (13,20) (15,23) color=soil.2
+  line (13,20) (15,20) color=soil.3
+  rect (13,24) (15,26) color=wood.1
+  pixel (13,24) color=wood.2
+  pixel (14,25) color=wood.2
+  rect (12,27) (16,30) color=iron.1
+  line (12,30) (16,30) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (15,28) color=iron.3
+  pixel (13,29) color=iron.2
+
+  // Recovering right leg (descending)
+  rect (17,21) (21,29) color=ink.base
+  rect (18,21) (20,23) color=soil.1
+  rect (18,24) (20,26) color=wood.0
+  pixel (18,24) color=wood.1
+  pixel (19,25) color=wood.1
+  rect (17,26) (21,29) color=iron.0
+  line (17,29) (21,29) color=ink.base
+  line (17,26) (19,26) color=iron.2
+  pixel (18,27) color=iron.3
+  pixel (20,27) color=iron.2
+  pixel (18,28) color=iron.1
+
+  scatter color=soil.0,soil.3 density=0.12 seed=83 cluster=1 inside
+}

@@ -81,6 +81,7 @@
 #include "VisionQuery.hpp"
 
 #include "GameECSInternals.h"
+#include "RigRegistry.h"
 
 
 
@@ -792,6 +793,41 @@ void ApplySkillStatus(flecs::entity actor, flecs::entity target,
       calloutColor);
 }
 
+namespace {
+
+// Starts the skill's movement on the actor's rig, if it has one and the rig has that
+// clip. A missing rig or clip is not an error: the skill still works, it simply has no
+// visual for this body. The RigAnimationSystem plays the clip once and then hands back to
+// locomotion.
+void PlaySkillAnimation(flecs::entity actor, const SkillDef &def) {
+  if (def.animation.empty() || !actor.is_alive()) return;
+  const RigBody *body = actor.get<RigBody>();
+  if (body == nullptr) return;
+  auto registryResource = actor.world().get<RigRegistryResource>();
+  if (!registryResource || registryResource->registry == nullptr) return;
+  const ActorRig *rig = registryResource->registry->Get(body->rig);
+  if (rig == nullptr) return;
+  const RigClip *clip = nullptr;
+  for (const RigClip &candidate : rig->clips) {
+    if (candidate.id == def.animation) {
+      clip = &candidate;
+      break;
+    }
+  }
+  if (clip == nullptr) return;
+  RigAnim *anim = actor.get_mut<RigAnim>();
+  if (anim == nullptr) {
+    actor.set<RigAnim>({});
+    anim = actor.get_mut<RigAnim>();
+  }
+  if (anim == nullptr) return;
+  anim->clip = clip->id;
+  anim->time = 0.0f;
+  anim->oneShot = true;
+}
+
+}  // namespace
+
 SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                          flecs::entity target, bool secondPerson,
                          bool announce, Vector2 direction) {
@@ -907,6 +943,9 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                       def->activation.costResource + " to use " + def->name + ".";
     return outcome;
   }
+  // The use is accepted: start its movement on the body. Before the cooldown/effect so a
+  // cast and an instant skill both begin the animation at activation.
+  PlaySkillAnimation(actor, *def);
 
   // The cooldown starts now for both paths. A cast that is interrupted has still
   // spent the skill, which is what makes interrupting worth doing.

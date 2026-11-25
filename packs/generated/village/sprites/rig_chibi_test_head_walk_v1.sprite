@@ -1,0 +1,119 @@
+sprite 32x32
+kind object
+material sand
+
+frame "f1" {
+  rect (9,4) (23,16) color=sand.3
+  rect (10,3) (22,17) color=sand.3
+  line (11,3) (21,3) color=ink.base
+  line (11,17) (21,17) color=ink.base
+  line (9,5) (9,15) color=ink.base
+  line (23,5) (23,15) color=ink.base
+  pixel (10,4) color=ink.base
+  pixel (22,4) color=ink.base
+  pixel (10,16) color=ink.base
+  pixel (22,16) color=ink.base
+
+  rect (10,5) (22,8) color=sand.4
+  rect (11,15) (21,16) color=sand.2
+
+  rect (11,9) (14,13) color=ink.base
+  rect (18,9) (21,13) color=ink.base
+  rect (12,10) (14,13) color=water.base
+  rect (19,10) (21,13) color=water.base
+  pixel (12,10) color=#ffffff
+  pixel (19,10) color=#ffffff
+
+  pixel (10,13) color=#e58989
+  pixel (22,13) color=#e58989
+
+  pixel (16,13) color=sand.1
+  line (15,15) (17,15) color=ink.base
+}
+
+frame "f2" {
+  rect (9,3) (23,15) color=sand.3
+  rect (10,2) (22,16) color=sand.3
+  line (11,2) (21,2) color=ink.base
+  line (11,16) (21,16) color=ink.base
+  line (9,4) (9,14) color=ink.base
+  line (23,4) (23,14) color=ink.base
+  pixel (10,3) color=ink.base
+  pixel (22,3) color=ink.base
+  pixel (10,15) color=ink.base
+  pixel (22,15) color=ink.base
+
+  rect (10,4) (22,7) color=sand.4
+  rect (11,14) (21,15) color=sand.2
+
+  rect (11,8) (14,12) color=ink.base
+  rect (18,8) (21,12) color=ink.base
+  rect (12,9) (14,12) color=water.base
+  rect (19,9) (21,12) color=water.base
+  pixel (12,9) color=#ffffff
+  pixel (19,9) color=#ffffff
+
+  pixel (10,12) color=#e58989
+  pixel (22,12) color=#e58989
+
+  pixel (16,12) color=sand.1
+  line (15,14) (17,14) color=ink.base
+}
+
+frame "f3" {
+  rect (9,4) (23,16) color=sand.3
+  rect (10,3) (22,17) color=sand.3
+  line (11,3) (21,3) color=ink.base
+  line (11,17) (21,17) color=ink.base
+  line (9,5) (9,15) color=ink.base
+  line (23,5) (23,15) color=ink.base
+  pixel (10,4) color=ink.base
+  pixel (22,4) color=ink.base
+  pixel (10,16) color=ink.base
+  pixel (22,16) color=ink.base
+
+  rect (10,5) (22,8) color=sand.4
+  rect (11,15) (21,16) color=sand.2
+
+  rect (11,9) (14,13) color=ink.base
+  rect (18,9) (21,13) color=ink.base
+  rect (12,10) (14,13) color=water.base
+  rect (19,10) (21,13) color=water.base
+  pixel (12,10) color=#ffffff
+  pixel (19,10) color=#ffffff
+
+  pixel (10,13) color=#e58989
+  pixel (22,13) color=#e58989
+
+  pixel (16,13) color=sand.1
+  line (15,15) (17,15) color=ink.base
+}
+
+frame "f4" {
+  rect (9,3) (23,15) color=sand.3
+  rect (10,2) (22,16) color=sand.3
+  line (11,2) (21,2) color=ink.base
+  line (11,16) (21,16) color=ink.base
+  line (9,4) (9,14) color=ink.base
+  line (23,4) (23,14) color=ink.base
+  pixel (10,3) color=ink.base
+  pixel (22,3) color=ink.base
+  pixel (10,15) color=ink.base
+  pixel (22,15) color=ink.base
+
+  rect (10,4) (22,7) color=sand.4
+  rect (11,14) (21,15) color=sand.2
+
+  rect (11,8) (14,12) color=ink.base
+  rect (18,8) (21,12) color=ink.base
+  rect (12,9) (14,12) color=water.base
+  rect (19,9) (21,12) color=water.base
+  pixel (12,9) color=#ffffff
+  pixel (19,9) color=#ffffff
+
+  pixel (10,12) color=#e58989
+  pixel (22,12) color=#e58989
+
+  pixel (16,12) color=sand.1
+  line (15,14) (17,14) color=ink.base
+}

@@ -1,0 +1,80 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  skin = #F2C79A
+  skin_light = #FFE0B8
+  skin_shadow = #C98B60
+  tunic_light = #6EA8E8
+  tunic = #2F5FA8
+  tunic_shadow = #1C3A70
+}
+
+// ----------------------------------------------------
+// Frame 1: Contact (Left arm swung back)
+// ----------------------------------------------------
+frame "f1" {
+  // Sleeve outline & fill (angled back)
+  polygon (15,36) (20,35) (18,44) (13,43) color=out
+  polygon (16,37) (19,36) (17,43) (14,42) color=tunic
+  line (16,37) (15,41) color=tunic_light
+  line (18,37) (17,43) color=tunic_shadow
+
+  // Hand outline & fill (lifted slightly behind)
+  circle (14,45) radius=2 color=out
+  circle (14,45) radius=1 color=skin
+  pixel (14,44) color=skin_light
+}
+
+// ----------------------------------------------------
+// Frame 2: Passing (Arm neutral, body rising)
+// ----------------------------------------------------
+frame "f2" {
+  // Sleeve outline & fill (hanging down)
+  polygon (15,35) (21,35) (20,44) (14,44) color=out
+  polygon (16,36) (20,36) (19,43) (15,43) color=tunic
+  line (16,37) (16,42) color=tunic_light
+  line (19,37) (19,42) color=tunic_shadow
+
+  // Hand outline & fill
+  circle (17,47) radius=2 color=out
+  circle (17,47) radius=1 color=skin
+  pixel (16,46) color=skin_light
+  pixel (17,48) color=skin_shadow
+}
+
+// ----------------------------------------------------
+// Frame 3: Contact (Left arm swung forward)
+// ----------------------------------------------------
+frame "f3" {
+  // Sleeve outline & fill (swung forward)
+  polygon (15,36) (21,37) (18,46) (12,44) color=out
+  polygon (16,37) (20,38) (17,45) (13,43) color=tunic
+  line (14,42) (17,44) color=tunic_light
+  line (19,38) (18,44) color=tunic_shadow
+
+  // Hand outline & fill (extended forward)
+  circle (15,48) radius=2 color=out
+  circle (15,48) radius=1 color=skin
+  pixel (14,47) color=skin_light
+  pixel (15,49) color=skin_shadow
+}
+
+// ----------------------------------------------------
+// Frame 4: Passing (Arm returning through neutral, body rising)
+// ----------------------------------------------------
+frame "f4" {
+  // Sleeve outline & fill (neutral vertical)
+  polygon (15,35) (21,35) (20,44) (14,44) color=out
+  polygon (16,36) (20,36) (19,43) (15,43) color=tunic
+  line (16,37) (16,42) color=tunic_light
+  line (19,37) (19,42) color=tunic_shadow
+
+  // Hand outline & fill
+  circle (17,47) radius=2 color=out
+  circle (17,47) radius=1 color=skin
+  pixel (16,46) color=skin_light
+  pixel (17,48) color=skin_shadow
+}

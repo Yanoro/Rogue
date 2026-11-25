@@ -13,6 +13,8 @@
 #include "ActorArt.hpp"
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
+#include "RigRender.hpp"
+#include "RigGrip.hpp"
 #include "SpritePaths.hpp"
 #include "IconPaths.hpp"
 #include "ResourceSystem.h"
@@ -314,6 +316,7 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       if (data.background.empty()) data.background = definition->background;
       if (data.race.empty()) data.race = definition->race;
       if (data.sprite.empty()) data.sprite = definition->sprite;
+      if (data.rig.empty()) data.rig = definition->rig;
       if (data.portrait.empty()) data.portrait = definition->portrait;
       if (data.slots.empty()) data.slots = definition->slots;
       if (data.inventory.empty()) data.inventory = definition->inventory;
@@ -425,6 +428,62 @@ bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
   return true;
 }
 
+
+void Game::ApplyRigFootprint(flecs::entity e, const ActorRig &rig) {
+  const RigGeometry geometry = artStyleRegistry.GeometryFor(rig);
+  const DrawAscii *ascii = e.get<DrawAscii>();
+  const float cellWidth = ascii != nullptr ? static_cast<float>(ascii->width) : 32.0f;
+  const float cellHeight = ascii != nullptr ? static_cast<float>(ascii->height) : 32.0f;
+  const int baseWidth = geometry.baseWidth > 0 ? geometry.baseWidth
+                                               : static_cast<int>(cellWidth);
+  const int baseHeight = geometry.baseHeight > 0 ? geometry.baseHeight
+                                                 : static_cast<int>(cellHeight);
+  const int pickWidth = geometry.pickWidth > 0 ? geometry.pickWidth : baseWidth;
+  const int pickHeight = geometry.pickHeight > 0 ? geometry.pickHeight : baseHeight;
+
+  Hitbox base;
+  base.width = static_cast<size_t>(baseWidth);
+  base.height = static_cast<size_t>(baseHeight);
+  base.offsetX = (cellWidth - static_cast<float>(baseWidth)) * 0.5f;
+  base.offsetY = cellHeight - static_cast<float>(baseHeight);
+  e.set<Hitbox>(base);
+
+  Pickbox pick;
+  pick.width = static_cast<size_t>(pickWidth);
+  pick.height = static_cast<size_t>(pickHeight);
+  pick.offsetX = (cellWidth - static_cast<float>(pickWidth)) * 0.5f;
+  pick.offsetY = cellHeight - static_cast<float>(pickHeight);
+  e.set<Pickbox>(pick);
+}
+
+bool Game::ApplyPlayerRig(const std::string &rigId, std::string &message) {
+  message.clear();
+  if (!playerEntity.is_alive()) {
+    message = "The player has not been created yet.";
+    return false;
+  }
+  if (rigId.empty()) {
+    playerEntity.remove<RigBody>();
+    playerEntity.remove<RigAnim>();
+    playerEntity.remove<Pickbox>();
+    playerEntity.set<Hitbox>(
+        {DEFAULT_PLAYER_HITBOX_WIDTH, DEFAULT_PLAYER_HITBOX_HEIGHT, 0.0f, 0.0f});
+    message = "Player uses the actor sprite or the race's look.";
+    return true;
+  }
+  const ActorRig *rig = rigRegistry.Get(rigId);
+  if (rig == nullptr) {
+    message = "No actor rig is named '" + rigId + "'.";
+    return false;
+  }
+  playerEntity.set<RigBody>({rigId});
+  playerEntity.set<RigAnim>({});
+  ApplyRigFootprint(playerEntity, *rig);
+  message = "Player now uses the '" + rigId + "' rig.";
+  return true;
+}
+
+
 bool Game::ApplyPlayerActorSprite(const std::string &id, std::string &message) {
   message.clear();
   if (!playerEntity.is_alive()) {
@@ -509,6 +568,19 @@ flecs::entity Game::createNPC(const NPCData &data) {
   }
   if (data.armor > 0.0f) {
     entity.set<Armor>({data.armor});
+  }
+
+  // A template or map entry naming a rig gets layered art. Resolved here rather than in
+  // the renderer so an unknown id is reported once at spawn, with the NPC's name in hand.
+  if (!data.rig.empty()) {
+    if (const ActorRig *rig = rigRegistry.Get(data.rig)) {
+      entity.set<RigBody>({data.rig});
+      entity.set<RigAnim>({});
+      ApplyRigFootprint(entity, *rig);
+    } else if (debugLog) {
+      debugLog->LogWarning("Warning: NPC '" + name + "' names unknown rig '" +
+                           data.rig + "'; using its sprite or race look.");
+    }
   }
 
   // The agent phase of docs/spatial-memory-design.md: an NPC perceives through
@@ -875,13 +947,9 @@ void Game::ECSInitRenderSystems() {
       .kind<Render>()
       .iter([this](flecs::iter &) { DrawSurfaces(); });
 
-  ecs.system<DrawAscii, ScreenPosition>("DrawEntityLayer")
-      .without<MapTileVisual>()
+  ecs.system("DrawEntityLayer")
       .kind<Render>()
-      .each([this](flecs::entity e, const DrawAscii &ascii,
-                   const ScreenPosition screenPos) {
-        DrawEntityVisual(e, ascii, screenPos);
-      });
+      .iter([this](flecs::iter &) { DrawEntitiesSorted(); });
 
   // Name tags and the rest of the render work, registered last so they land on
   // top of both layers. Kept in its own function only because DrawEntityVisual is
@@ -890,8 +958,44 @@ void Game::ECSInitRenderSystems() {
   ECSInitOverlaySystems();
 }
 
+void Game::DrawEntitiesSorted() {
+  struct Entry {
+    flecs::entity entity;
+    DrawAscii ascii;
+    ScreenPosition position;
+  };
+  std::vector<Entry> entries;
+  ecs.filter<DrawAscii, ScreenPosition>().each(
+      [&entries](flecs::entity e, const DrawAscii &ascii,
+                 const ScreenPosition &position) {
+        // Tiles are drawn by the tile layer and the overlay pass; the entity layer is
+        // only the actors and objects.
+        if (e.has<MapTileVisual>()) return;
+        entries.push_back({e, ascii, position});
+      });
+  // Feet first: a character lower on the screen is in front. Taller rigs extend above
+  // their cell, so the other order let a neighbour's cell cover their head.
+  std::stable_sort(entries.begin(), entries.end(),
+                   [](const Entry &a, const Entry &b) {
+                     return a.position.y + a.ascii.height <
+                            b.position.y + b.ascii.height;
+                   });
+  for (const Entry &entry : entries) {
+    DrawEntityVisual(entry.entity, entry.ascii, entry.position);
+  }
+}
+
 void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                             const ScreenPosition &screenPos) {
+  // A rig wins over both: it is several layers with worn equipment over them. It only
+  // handles the fall-through when the rig itself cannot draw, in which case the sprite (or
+  // the unknown placeholder) is still the honest answer.
+  if (const RigBody *body = e.get<RigBody>()) {
+    if (DrawRigEntity(e, *body, screenPos, ascii)) {
+      return;
+    }
+  }
+
   // A raster sprite wins over the ASCII look when the entity has one.
   // Sprite is only ever attached once its image loaded (SpritePaths.hpp),
   // and the lookup is a cache hit, so a null here means the texture was
@@ -929,6 +1033,12 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
     raylib::Rectangle outerRect(screenPos.x, screenPos.y, ascii.width,
                                 ascii.height);
     outerRect.DrawLines(RED, 1.0f);
+    if (const Hitbox *hitbox = e.get<Hitbox>()) {
+      DrawRectangleLinesEx(HitboxRectangle(screenPos, *hitbox), 1.0f, BLUE);
+    }
+    if (const Pickbox *pick = e.get<Pickbox>()) {
+      DrawRectangleLinesEx(PickboxRectangle(screenPos, *pick), 1.0f, MAGENTA);
+    }
   }
 
   if (DrawAsciiDebug::GetShowInnerRectangles()) {
@@ -938,6 +1048,144 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
       DrawRectangleLinesEx(spriteRect, 1.0f, BLUE);
     }
   }
+}
+
+const RigGrip::ArmGrip &Game::RigGripFor(const std::string &sprite) {
+  const auto found = rigGripCache.find(sprite);
+  if (found != rigGripCache.end()) return found->second;
+  const Texture2D *texture = RigRender::ResolveRigSprite(sprite, resourceManager);
+  RigGrip::ArmGrip grip;
+  if (texture != nullptr) grip = RigGrip::AnalyzeArm(*texture);
+  return rigGripCache.emplace(sprite, grip).first->second;
+}
+
+bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
+                         const ScreenPosition &screenPos, const DrawAscii &ascii) {
+  const ActorRig *rig = rigRegistry.Get(body.rig);
+  if (rig == nullptr) return false;
+
+  // Worn equipment is read from the same held-item children the equipment system uses;
+  // an item that is not actually equipped (no Equipped component) is not drawn. Hand items
+  // are drawn on the grip path after the body, so they follow the arm instead of sitting
+  // at a fixed z.
+  std::vector<RigRender::WornLayer> worn;
+  std::vector<const ItemDef *> gripItems;
+  for (flecs::entity item : EquippedItems(e)) {
+    const ItemType *type = item.get<ItemType>();
+    const ItemDef *definition = type != nullptr ? itemRegistry.Get(type->id) : nullptr;
+    if (definition == nullptr || definition->wornSprite.empty()) continue;
+    if (definition->slot == "hand") {
+      gripItems.push_back(definition);
+      continue;
+    }
+    RigRender::WornLayer layer;
+    layer.label = definition->id;
+    layer.texture = RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
+    layer.z = definition->wornZ;
+    layer.hides = definition->wornHides;
+    // The per-rig worn anchor: the slot's target rect comes from this rig's geometry, and
+    // the source rect is the frame the item's worn art was authored in.
+    layer.slot = definition->slot;
+    layer.sourceGeometry = artStyleRegistry.GeometryForStyle(definition->style);
+    worn.push_back(std::move(layer));
+  }
+
+  RigRender::AnimationState animation;
+  const RigClip *clip = nullptr;
+  if (const RigAnim *anim = e.get<RigAnim>()) {
+    for (const RigClip &candidate : rig->clips) {
+      if (candidate.id == anim->clip) {
+        clip = &candidate;
+        break;
+      }
+    }
+    animation.clip = clip;
+    animation.time = anim->time;
+  }
+
+  // Larger-than-cell rigs are drawn from the foot, not from the tile's top-left. The
+  // world cell stays the collision/selection cell; the art may extend above it.
+  const RigGeometry geometry = artStyleRegistry.GeometryFor(*rig);
+  const float footX = screenPos.x + static_cast<float>(ascii.width) * 0.5f;
+  const float footY = screenPos.y + static_cast<float>(ascii.height);
+  const float rigX = footX - static_cast<float>(geometry.footX);
+  const float rigY = footY - static_cast<float>(geometry.footY);
+  const bool drew = RigRender::DrawWorld(
+      *rig, resourceManager, worn, rigX, rigY,
+      static_cast<float>(geometry.width), static_cast<float>(geometry.height),
+      clip != nullptr ? &animation : nullptr, geometry);
+
+  if (gripItems.empty()) return drew;
+
+  // The arm frame for the current clip and frame; the hand and arm direction come from its
+  // pixels (RigGrip), which is the same analysis the preview and the spike use.
+  std::string armSprite;
+  for (const RigPart &part : rig->parts) {
+    if (part.id != "arm_right") continue;
+    armSprite = part.sprite;
+    if (clip != nullptr) {
+      const int frame = RigRender::FrameIndex(*clip, animation.time);
+      for (const RigPartClip &partClip : part.clips) {
+        if (partClip.clip != clip->id || partClip.frames.empty()) continue;
+        const int index =
+            std::min(frame, static_cast<int>(partClip.frames.size()) - 1);
+        armSprite = partClip.frames[static_cast<size_t>(index)];
+      }
+    }
+    break;
+  }
+  const Texture2D *armTexture =
+      armSprite.empty() ? nullptr
+                        : RigRender::ResolveRigSprite(armSprite, resourceManager);
+  const float boxWidth = static_cast<float>(geometry.width);
+  const float boxHeight = static_cast<float>(geometry.height);
+  SpriteRect fit;
+  if (armTexture != nullptr) {
+    fit = SpriteFitRect(*armTexture, rigX, rigY, boxWidth, boxHeight);
+  }
+  const RigGrip::ArmGrip arm =
+      armSprite.empty() ? RigGrip::ArmGrip{} : RigGripFor(armSprite);
+  const float scale =
+      fit.width > 0.0f ? fit.width / static_cast<float>(geometry.width)
+                       : boxWidth / static_cast<float>(geometry.width);
+
+  bool drewWeapon = false;
+  for (const ItemDef *definition : gripItems) {
+    const Texture2D *weapon =
+        RigRender::ResolveRigSprite(definition->wornSprite, resourceManager);
+    if (weapon == nullptr) continue;
+    SetTextureFilter(*weapon, TEXTURE_FILTER_POINT);
+    const Rectangle source = {0.0f, 0.0f, static_cast<float>(weapon->width),
+                              static_cast<float>(weapon->height)};
+    if (arm.ok && fit.width > 0.0f) {
+      const Vector2 hand = {fit.x + arm.handX * scale, fit.y + arm.handY * scale};
+      const Vector2 origin = {definition->wornGripX * scale,
+                              definition->wornGripY * scale};
+      // raylib's DrawTexturePro treats `dest` as the rotation origin's position, not the
+      // top-left: it computes the top-left as dest - origin. Passing hand - origin here
+      // subtracted the grip twice and threw the weapon up-left of the character.
+      const Rectangle destination = {
+          hand.x, hand.y,
+          static_cast<float>(weapon->width) * scale,
+          static_cast<float>(weapon->height) * scale};
+      DrawTexturePro(*weapon, source, destination, origin,
+                     RigGrip::WeaponAngle(arm, *definition), WHITE);
+    } else {
+      // No arm frame to read: keep the item visible at its layer rather than dropping it.
+      const Rectangle destination = {fit.x, fit.y,
+                                     static_cast<float>(weapon->width) * scale,
+                                     static_cast<float>(weapon->height) * scale};
+      DrawTexturePro(*weapon, source, destination, {0.0f, 0.0f}, 0.0f, WHITE);
+    }
+    drewWeapon = true;
+  }
+  if (DrawAsciiDebug::GetShowOuterRectangles()) {
+    DrawRectangleLinesEx({rigX, rigY, static_cast<float>(geometry.width),
+                          static_cast<float>(geometry.height)},
+                         1.0f, GREEN);
+    DrawCircle(static_cast<int>(footX), static_cast<int>(footY), 2.0f, YELLOW);
+  }
+  return drew || drewWeapon;
 }
 
 // The render work that draws over the tile and entity layers: name tags and the
@@ -1299,19 +1547,21 @@ void Game::ECSInitPhysicsSystems() {
         bool nullXVector = false;
         bool nullYVector = false;
 
-        if ((newScreenPos.x < 0) ||
-            (newScreenPos.x + hitbox.width > map->GetMapWidthPx())) {
+        const float baseX = newScreenPos.x + hitbox.offsetX;
+        const float baseY = newScreenPos.y + hitbox.offsetY;
+        const float previousBaseY = origScreenPos.y + hitbox.offsetY;
+        const float previousBaseX = origScreenPos.x + hitbox.offsetX;
+        if ((baseX < 0.0f) ||
+            (baseX + static_cast<float>(hitbox.width) > map->GetMapWidthPx())) {
           nullXVector = true;
         }
-        if ((newScreenPos.y < 0) ||
-            (newScreenPos.y + hitbox.height > map->GetMapHeightPx())) {
+        if ((baseY < 0.0f) ||
+            (baseY + static_cast<float>(hitbox.height) > map->GetMapHeightPx())) {
           nullYVector = true;
         }
 
-        raylib::Rectangle deltaXRect(newScreenPos.x, origScreenPos.y,
-                                     hitboxSize, hitboxSize);
-        raylib::Rectangle deltaYRect(origScreenPos.x, newScreenPos.y,
-                                     hitboxSize, hitboxSize);
+        raylib::Rectangle deltaXRect(baseX, previousBaseY, hitboxSize, hitboxSize);
+        raylib::Rectangle deltaYRect(previousBaseX, baseY, hitboxSize, hitboxSize);
 
         GamePosition gamePos =
             map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
@@ -1358,6 +1608,58 @@ void Game::ECSInitPhysicsSystems() {
   });
 
   ecs.system<Velocity>().each([this](const Velocity &vel) { lastVel = vel; });
+
+  // A rigged actor chooses a locomotion clip from how fast it is actually moving, then
+  // advances it. Done here rather than in the renderer so a skipped frame does not lose
+  // animation time, and so the choice is a game fact rather than a drawing detail.
+  ecs.system<RigBody, RigAnim, Velocity>("RigAnimationSystem")
+      .each([this](flecs::entity e, const RigBody &body, RigAnim &anim,
+                   const Velocity &velocity) {
+        const ActorRig *rig = rigRegistry.Get(body.rig);
+        if (rig == nullptr) return;
+        // A skill clip owns the body until it finishes; locomotion resumes on the
+        // frame it ends, so the body never holds the last kick pose for a frame.
+        if (anim.oneShot) {
+          const RigClip *active = nullptr;
+          for (const RigClip &clip : rig->clips) {
+            if (clip.id == anim.clip) {
+              active = &clip;
+              break;
+            }
+          }
+          if (active == nullptr) {
+            anim.oneShot = false;
+          } else {
+            const float delta = std::min(GetFrameTime(), 0.1f);
+            anim.time += delta;
+            const float duration =
+                active->fps > 0
+                    ? active->frames / static_cast<float>(active->fps)
+                    : 0.0f;
+            if (duration > 0.0f && anim.time < duration) {
+              return;
+            }
+            anim.oneShot = false;
+            anim.time = 0.0f;
+          }
+        }
+        const float speed =
+            std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+        const MaxSpeed *maxSpeed = e.get<MaxSpeed>();
+        const float runThreshold =
+            maxSpeed != nullptr ? maxSpeed->value * 0.6f : 120.0f;
+        const RigClip *clip = RigRender::ChooseClip(*rig, speed, runThreshold);
+        if (clip == nullptr) {
+          anim.clip.clear();
+          anim.time = 0.0f;
+          return;
+        }
+        if (clip->id != anim.clip) {
+          anim.clip = clip->id;
+          anim.time = 0.0f;
+        }
+        anim.time += std::min(GetFrameTime(), 0.1f);
+      });
 }
 
 void Game::ECSInitLogicSystems() {

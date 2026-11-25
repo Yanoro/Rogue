@@ -1,0 +1,48 @@
+sprite 32x32
+kind object
+material iron
+
+// Outlines / Silhouette
+rect (12,20) (16,30) color=ink.base
+rect (17,20) (21,30) color=ink.base
+
+// Left Leg (spectator's left, x=12..16)
+// Trousers (y=20..24)
+rect (13,20) (16,24) color=iron.1
+line (13,20) (13,23) color=iron.2
+line (16,21) (16,24) color=iron.0
+
+// Left Boot (y=25..30)
+rect (12,25) (16,29) color=wood.1
+line (12,25) (12,28) color=wood.2
+rect (11,28) (15,30) color=wood.0
+pixel (12,28) color=wood.2
+line (12,30) (15,30) color=ink.base
+
+// Right Leg (spectator's right, x=17..21)
+// Trousers (y=20..24)
+rect (17,20) (20,24) color=iron.1
+line (17,20) (17,23) color=iron.2
+line (20,21) (20,24) color=iron.0
+
+// Right Boot (y=25..30)
+rect (17,25) (21,29) color=wood.1
+line (17,25) (17,28) color=wood.2
+rect (18,28) (22,30) color=wood.0
+pixel (18,28) color=wood.2
+line (18,30) (21,30) color=ink.base
+
+// Crotch / inseam separation
+line (16,20) (17,22) color=ink.base
+
+// Subtle fabric texture on trousers
+pixel (14,22) color=iron.0
+pixel (19,22) color=iron.0
+pixel (14,21) color=iron.2
+pixel (18,21) color=iron.2
+
+// Sole rims & straps
+line (12,29) (15,29) color=soil.0
+line (18,29) (21,29) color=soil.0
+line (13,25) (16,25) color=soil.1
+line (17,25) (20,25) color=soil.1

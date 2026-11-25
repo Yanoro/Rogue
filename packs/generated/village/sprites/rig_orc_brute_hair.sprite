@@ -1,0 +1,33 @@
+sprite 32x32
+kind object
+material iron
+
+// Shaved side stubble on temple / sides of scalp
+rect (11,6) (12,8) color=iron.0
+pixel (11,5) color=iron.0
+pixel (12,5) color=iron.1
+rect (20,6) (21,8) color=iron.0
+pixel (21,5) color=iron.0
+pixel (20,5) color=iron.1
+
+// Central crest / mohawk base leading to the topknot
+rect (13,4) (19,6) color=ink.base
+rect (14,4) (18,5) color=iron.1
+line (14,6) (18,6) color=iron.0
+
+// Hair tie / band binding the topknot
+line (15,4) (17,4) color=soil.2
+pixel (16,4) color=soil.3
+
+// Topknot tuft sprouting and flopping slightly
+rect (14,2) (18,3) color=ink.base
+polygon (14,3) (15,1) (17,2) (18,3) color=iron.0
+pixel (15,2) color=iron.1
+pixel (16,2) color=iron.2
+pixel (16,3) color=iron.1
+
+// Stray coarse strands
+pixel (13,3) color=iron.0
+pixel (18,4) color=iron.0
+pixel (14,5) color=iron.2
+pixel (17,5) color=iron.1

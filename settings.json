@@ -5,6 +5,10 @@
     "spawnNPCs": true,
     "mapsDirectory": "./maps"
   },
+  "ui": {
+    "windowColor": "#000000D9",
+    "popupColor": "#000000FF"
+  },
   "art": {
     "generation": {
       "source": "dsl"

@@ -72,6 +72,9 @@ struct NPCData {
   // the same rules the [EQUIP] command uses, so authored gear cannot produce a
   // state a player could not.
   std::vector<std::string> equipped;
+  // ActorRigRegistry id the NPC is drawn with, from "rig": "villager" or from its
+  // template. Empty means the actor sprite or the race look.
+  std::string rig;
   // The NPC's own raster sprite, from "sprite": "data/sprites/farmer.png". This
   // is the only way a character gets a look of its own, because there is no
   // convention path for NPCs -- a name-based data/sprites/Pietro.png would break

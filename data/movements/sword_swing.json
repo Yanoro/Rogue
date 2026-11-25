@@ -10,9 +10,6 @@
     "arm_left",
     "arm_right"
   ],
-  "requires": [
-    "weapon"
-  ],
   "poses": [
     "ready: right arm raised, blade behind the shoulder, weight on the back foot",
     "drive: right arm swinging forward, body turning into the cut",

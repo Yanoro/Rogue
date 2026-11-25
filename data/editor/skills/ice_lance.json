@@ -16,6 +16,7 @@
     "useWeapon": false,
     "xpPerUse": 10
   },
+  "animation": "spell_cast",
   "baseline": 0.0,
   "description": "A spear of ice thrown along a line. It hits the first living thing it crosses and stops there.",
   "effects": [],

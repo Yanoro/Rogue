@@ -1,0 +1,155 @@
+sprite 32x32
+kind object
+material sand
+
+frame "f1" {
+  rect (12,4) (20,10) color=#e8dfd5
+  pixel (13,11) color=#e8dfd5
+  pixel (14,11) color=#e8dfd5
+  pixel (15,11) color=#e8dfd5
+  pixel (16,11) color=#e8dfd5
+  pixel (17,11) color=#e8dfd5
+  pixel (18,11) color=#e8dfd5
+  pixel (19,11) color=#e8dfd5
+  pixel (15,12) color=#d8cbbf
+  pixel (16,12) color=#d8cbbf
+  pixel (17,12) color=#d8cbbf
+  line (11,4) (11,10) color=ink.base
+  line (21,4) (21,10) color=ink.base
+  line (12,3) (20,3) color=ink.base
+  pixel (12,11) color=ink.base
+  pixel (20,11) color=ink.base
+  pixel (13,12) color=ink.base
+  pixel (14,12) color=ink.base
+  pixel (18,12) color=ink.base
+  pixel (19,12) color=ink.base
+  line (15,13) (17,13) color=ink.base
+  pixel (10,6) color=ink.base
+  pixel (9,5) color=ink.base
+  pixel (10,5) color=#e8dfd5
+  pixel (22,6) color=ink.base
+  pixel (23,5) color=ink.base
+  pixel (22,5) color=#d8cbbf
+  pixel (14,6) color=iron.0
+  pixel (18,6) color=iron.0
+  pixel (14,7) color=iron.3
+  pixel (15,7) color=iron.1
+  pixel (17,7) color=iron.1
+  pixel (18,7) color=iron.3
+  pixel (16,9) color=#caa398
+  pixel (16,11) color=#baa099
+}
+
+frame "f2" {
+  rect (12,3) (20,9) color=#e8dfd5
+  pixel (13,10) color=#e8dfd5
+  pixel (14,10) color=#e8dfd5
+  pixel (15,10) color=#e8dfd5
+  pixel (16,10) color=#e8dfd5
+  pixel (17,10) color=#e8dfd5
+  pixel (18,10) color=#e8dfd5
+  pixel (19,10) color=#e8dfd5
+  pixel (15,11) color=#d8cbbf
+  pixel (16,11) color=#d8cbbf
+  pixel (17,11) color=#d8cbbf
+  line (11,3) (11,9) color=ink.base
+  line (21,3) (21,9) color=ink.base
+  line (12,2) (20,2) color=ink.base
+  pixel (12,10) color=ink.base
+  pixel (20,10) color=ink.base
+  pixel (13,11) color=ink.base
+  pixel (14,11) color=ink.base
+  pixel (18,11) color=ink.base
+  pixel (19,11) color=ink.base
+  line (15,12) (17,12) color=ink.base
+  pixel (10,5) color=ink.base
+  pixel (9,4) color=ink.base
+  pixel (10,4) color=#e8dfd5
+  pixel (22,5) color=ink.base
+  pixel (23,4) color=ink.base
+  pixel (22,4) color=#d8cbbf
+  pixel (14,5) color=iron.0
+  pixel (18,5) color=iron.0
+  pixel (14,6) color=iron.3
+  pixel (15,6) color=iron.1
+  pixel (17,6) color=iron.1
+  pixel (18,6) color=iron.3
+  pixel (16,8) color=#caa398
+  pixel (16,10) color=#baa099
+}
+
+frame "f3" {
+  rect (12,4) (20,10) color=#e8dfd5
+  pixel (13,11) color=#e8dfd5
+  pixel (14,11) color=#e8dfd5
+  pixel (15,11) color=#e8dfd5
+  pixel (16,11) color=#e8dfd5
+  pixel (17,11) color=#e8dfd5
+  pixel (18,11) color=#e8dfd5
+  pixel (19,11) color=#e8dfd5
+  pixel (15,12) color=#d8cbbf
+  pixel (16,12) color=#d8cbbf
+  pixel (17,12) color=#d8cbbf
+  line (11,4) (11,10) color=ink.base
+  line (21,4) (21,10) color=ink.base
+  line (12,3) (20,3) color=ink.base
+  pixel (12,11) color=ink.base
+  pixel (20,11) color=ink.base
+  pixel (13,12) color=ink.base
+  pixel (14,12) color=ink.base
+  pixel (18,12) color=ink.base
+  pixel (19,12) color=ink.base
+  line (15,13) (17,13) color=ink.base
+  pixel (10,6) color=ink.base
+  pixel (9,5) color=ink.base
+  pixel (10,5) color=#e8dfd5
+  pixel (22,6) color=ink.base
+  pixel (23,5) color=ink.base
+  pixel (22,5) color=#d8cbbf
+  pixel (14,6) color=iron.0
+  pixel (18,6) color=iron.0
+  pixel (14,7) color=iron.3
+  pixel (15,7) color=iron.1
+  pixel (17,7) color=iron.1
+  pixel (18,7) color=iron.3
+  pixel (16,9) color=#caa398
+  pixel (16,11) color=#baa099
+}
+
+frame "f4" {
+  rect (12,3) (20,9) color=#e8dfd5
+  pixel (13,10) color=#e8dfd5
+  pixel (14,10) color=#e8dfd5
+  pixel (15,10) color=#e8dfd5
+  pixel (16,10) color=#e8dfd5
+  pixel (17,10) color=#e8dfd5
+  pixel (18,10) color=#e8dfd5
+  pixel (19,10) color=#e8dfd5
+  pixel (15,11) color=#d8cbbf
+  pixel (16,11) color=#d8cbbf
+  pixel (17,11) color=#d8cbbf
+  line (11,3) (11,9) color=ink.base
+  line (21,3) (21,9) color=ink.base
+  line (12,2) (20,2) color=ink.base
+  pixel (12,10) color=ink.base
+  pixel (20,10) color=ink.base
+  pixel (13,11) color=ink.base
+  pixel (14,11) color=ink.base
+  pixel (18,11) color=ink.base
+  pixel (19,11) color=ink.base
+  line (15,12) (17,12) color=ink.base
+  pixel (10,5) color=ink.base
+  pixel (9,4) color=ink.base
+  pixel (10,4) color=#e8dfd5
+  pixel (22,5) color=ink.base
+  pixel (23,4) color=ink.base
+  pixel (22,4) color=#d8cbbf
+  pixel (14,5) color=iron.0
+  pixel (18,5) color=iron.0
+  pixel (14,6) color=iron.3
+  pixel (15,6) color=iron.1
+  pixel (17,6) color=iron.1
+  pixel (18,6) color=iron.3
+  pixel (16,8) color=#caa398
+  pixel (16,10) color=#baa099
+}

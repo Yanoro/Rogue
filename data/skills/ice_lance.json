@@ -31,5 +31,6 @@
     "autoCast": false,
     "xpPerUse": 10,
     "skillshot": "ice_lance"
-  }
+  },
+  "animation": "spell_cast"
 }

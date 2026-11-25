@@ -1,0 +1,89 @@
+{
+  "id": "dark_fantasy",
+  "name": "Dark Fantasy",
+  "description": "A dark, scuffed fantasy theme: low-saturation colours, worn materials, grim silhouettes and strong readable shapes.",
+  "palette": "surface #1b1714 / #2a231d / #3b3128 / #5a4938; ink #0d0b0a; metal #6b6f73 / #43474a; rust #7a3f2a; bone #cbb89a; ember #d0783a; highlight #e6c48a.",
+  "positive": "Dark fantasy pixel art: low-saturation earthy colours, worn and scuffed materials, heavy readable silhouettes, restrained highlights, a single warm ember accent. Four shading bands, dark near-black outline, no clean bright plastic surfaces.",
+  "negative": "no bright saturated candy colours, no clean shiny plastic, no flat single-colour fills, no missing outline, no sci-fi neon.",
+  "sections": {
+    "inventory_icon": {
+      "positive": "Inventory icon: dark colours, scuffed and dirty, worn edges, low-saturation materials, a single warm ember accent, readable silhouette.",
+      "negative": "no bright clean objects, no text, no scenery",
+      "width": 32,
+      "height": 32
+    },
+    "resource_icon": {
+      "positive": "Resource icon: raw, heavy, low-saturation material, dark outline, a faint ember highlight.",
+      "negative": "no bright clean icons, no text",
+      "width": 32,
+      "height": 32
+    },
+    "skill_icon": {
+      "positive": "Skill icon: dark readable silhouette with a single warm ember/glow accent, low-saturation base, no thin lines.",
+      "negative": "no neon, no text, no bright rainbow",
+      "width": 32,
+      "height": 32
+    },
+    "status_icon": {
+      "positive": "Status icon: dark, simple, readable, one restrained accent colour, strong silhouette.",
+      "negative": "no text, no thin detail",
+      "width": 32,
+      "height": 32
+    },
+    "portrait": {
+      "positive": "Character portrait: grim, dark fantasy, low-saturation skin and cloth, worn features, a warm rim light, strong face silhouette.",
+      "negative": "no bright clean anime look, no neon",
+      "width": 96,
+      "height": 96,
+      "source": "auto"
+    },
+    "actor": {
+      "positive": "Dark fantasy character: worn layered clothing, low-saturation earthy palette, dark outline, heavy readable silhouette, four shading bands.",
+      "negative": "no bright candy colours, no clean plastic",
+      "width": 96,
+      "height": 96
+    },
+    "rig": {
+      "positive": "Dark fantasy rig layer: worn clothing and armour, low-saturation earthy palette, dark outline, consistent four-band shading.",
+      "negative": "no bright candy colours, no clean plastic",
+      "width": 96,
+      "height": 96
+    },
+    "object": {
+      "positive": "World object: dark worn materials, heavy silhouette, low-saturation, a faint warm accent.",
+      "negative": "no bright clean objects, no text",
+      "width": 32,
+      "height": 32
+    },
+    "surface": {
+      "positive": "Surface: dark, worn, earthy, seamless, low-saturation.",
+      "negative": "no bright clean tiles, no obvious focal object",
+      "width": 32,
+      "height": 32
+    },
+    "silhouette": {
+      "positive": "Solid dark silhouette for the equipment window, clean outline, no interior detail.",
+      "negative": "no face, no bright colours",
+      "width": 96,
+      "height": 96
+    },
+    "tile": {
+      "positive": "Ground tile: dark worn earth/stone, seamless, low-saturation.",
+      "negative": "no seams, no text",
+      "width": 32,
+      "height": 32
+    },
+    "effect_icon": {
+      "positive": "Skill icon: dark readable silhouette with a single warm ember/glow accent, low-saturation base, no thin lines.",
+      "negative": "no neon, no text, no bright rainbow",
+      "width": 32,
+      "height": 32
+    },
+    "effect_sprite": {
+      "positive": "Effect: warm ember or sickly glow against dark, readable, low-saturation base.",
+      "negative": "no neon rainbow, no background",
+      "width": 32,
+      "height": 32
+    }
+  }
+}

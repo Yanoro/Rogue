@@ -204,6 +204,7 @@ set(SOURCES
     src/SettingsSchema.cpp
     src/SettingsReference.cpp
     src/SettingsWindow.cpp
+    src/UiStyle.cpp
     src/DebugLog.cpp
     src/MapReloader.cpp
     src/MapDesigner.cpp
@@ -270,6 +271,7 @@ set(SOURCES
     src/ArtRequestsPanel.cpp
     src/ContentKinds.cpp
     src/ContentEditorWindow.cpp
+    src/VisualAssetRegistry.cpp
     src/DesignerSession.cpp
     src/DesignerWindow.cpp
     src/SpeechQueue.cpp

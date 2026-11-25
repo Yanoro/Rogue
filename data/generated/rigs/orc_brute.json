@@ -1,0 +1,135 @@
+{
+  "clips": [
+    {
+      "brief": "A relaxed humanoid walk: a small body bob, the arms swinging opposite the legs, the head and hair following the bob.",
+      "fps": 8,
+      "frames": 4,
+      "id": "walk",
+      "loop": true,
+      "movement": "walk",
+      "poses": [
+        "contact: left leg forward, right arm forward, body at its lowest",
+        "passing: legs together, right leg lifting, body rising",
+        "contact: right leg forward, left arm forward, body at its lowest",
+        "passing: legs together, left leg lifting, body rising"
+      ]
+    },
+    {
+      "id": "kick",
+      "movement": "kick",
+      "frames": 3,
+      "fps": 10,
+      "loop": false,
+      "brief": "A short front kick with the right leg: the knee lifts, the lower leg snaps out, then the leg returns to the stance. The arms counterbalance and the body leans back slightly on the extension.",
+      "poses": [
+        "wind up: right knee raised toward the chest, body straight, arms ready",
+        "extend: right leg snapped forward and level, body leaning back, arms out for balance",
+        "recover: right leg lowering, body coming back over the hips"
+      ]
+    }
+  ],
+  "description": "A hulking, broad-shouldered orc with dull olive skin, protruding tusks, and worn leather harness.",
+  "height": 32,
+  "name": "Orc Brute",
+  "parts": [
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_legs_walk_f1",
+          "rig_orc_brute_legs_walk_f2",
+          "rig_orc_brute_legs_walk_f3",
+          "rig_orc_brute_legs_walk_f4"
+        ],
+        "kick": [
+          "rig_orc_brute_legs_kick_f1",
+          "rig_orc_brute_legs_kick_f2",
+          "rig_orc_brute_legs_kick_f3"
+        ]
+      },
+      "id": "legs",
+      "sprite": "rig_orc_brute_legs",
+      "z": 10
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_body_walk_f1",
+          "rig_orc_brute_body_walk_f2",
+          "rig_orc_brute_body_walk_f3",
+          "rig_orc_brute_body_walk_f4"
+        ],
+        "kick": [
+          "rig_orc_brute_body_kick_f1",
+          "rig_orc_brute_body_kick_f2",
+          "rig_orc_brute_body_kick_f3"
+        ]
+      },
+      "id": "body",
+      "sprite": "rig_orc_brute_body",
+      "z": 20
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_arm_left_walk_f1",
+          "rig_orc_brute_arm_left_walk_f2",
+          "rig_orc_brute_arm_left_walk_f3",
+          "rig_orc_brute_arm_left_walk_f4"
+        ],
+        "kick": [
+          "rig_orc_brute_arm_left_kick_f1",
+          "rig_orc_brute_arm_left_kick_f2",
+          "rig_orc_brute_arm_left_kick_f3"
+        ]
+      },
+      "id": "arm_left",
+      "sprite": "rig_orc_brute_arm_left",
+      "z": 25
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_arm_right_walk_f1",
+          "rig_orc_brute_arm_right_walk_f2",
+          "rig_orc_brute_arm_right_walk_f3",
+          "rig_orc_brute_arm_right_walk_f4"
+        ],
+        "kick": [
+          "rig_orc_brute_arm_right_kick_f1",
+          "rig_orc_brute_arm_right_kick_f2",
+          "rig_orc_brute_arm_right_kick_f3"
+        ]
+      },
+      "id": "arm_right",
+      "sprite": "rig_orc_brute_arm_right",
+      "z": 25
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_head_walk_f1",
+          "rig_orc_brute_head_walk_f2",
+          "rig_orc_brute_head_walk_f3",
+          "rig_orc_brute_head_walk_f4"
+        ]
+      },
+      "id": "head",
+      "sprite": "rig_orc_brute_head",
+      "z": 30
+    },
+    {
+      "clips": {
+        "walk": [
+          "rig_orc_brute_hair_walk_f1",
+          "rig_orc_brute_hair_walk_f2",
+          "rig_orc_brute_hair_walk_f3",
+          "rig_orc_brute_hair_walk_f4"
+        ]
+      },
+      "id": "hair",
+      "sprite": "rig_orc_brute_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

@@ -1,0 +1,59 @@
+sprite 32x32
+kind object
+material iron
+
+// Impact shockwave / arc in background
+line (2,22) (12,30) color=sand.1
+line (4,20) (15,29) color=sand.3
+line (6,19) (18,28) color=sand.4
+line (1,26) (8,30) color=sand.2
+
+// Blade heavy downward diagonal silhouette (ink backing)
+polygon (4,27) (13,29) (27,15) (24,12) (9,21) color=ink.base
+polygon (11,26) (26,11) (29,14) (14,29) color=ink.base
+
+// Heavy Cleaver Blade body
+polygon (5,26) (12,28) (26,14) (23,11) (9,21) color=iron.1
+polygon (7,24) (13,27) (25,15) (22,12) (10,21) color=iron.2
+
+// Lit upper bevel & spine
+polygon (8,22) (12,18) (23,7) (25,9) (22,12) color=iron.3
+line (11,19) (22,8) color=iron.4
+pixel (22,8) color=stone.4
+pixel (23,9) color=stone.4
+
+// Blade edge highlight
+line (6,26) (12,28) color=iron.4
+line (13,28) (26,15) color=iron.3
+pixel (5,26) color=stone.4
+
+// Heavy crossguard / collar
+polygon (20,10) (25,5) (28,8) (23,13) color=ink.base
+polygon (21,10) (25,6) (27,8) (23,12) color=wood.2
+line (22,9) (26,5) color=wood.3
+
+// Extended two-handed grip
+line (24,7) (29,2) color=ink.base
+line (25,6) (30,1) color=ink.base
+line (24,6) (28,2) color=soil.2
+line (25,7) (29,3) color=soil.1
+
+// Heavy pommel weight
+circle (29,2) radius=2 color=ink.base
+circle (29,2) radius=1 color=iron.3
+pixel (29,1) color=iron.4
+
+// Ground fracture and impact sparks
+line (2,29) (8,27) color=stone.1
+line (6,30) (11,28) color=stone.0
+pixel (3,28) color=sand.4
+pixel (5,25) color=sand.4
+pixel (1,24) color=sand.3
+pixel (8,21) color=sand.3
+pixel (14,24) color=sand.4
+pixel (3,22) color=sand.2
+pixel (7,31) color=stone.2
+pixel (10,30) color=sand.3
+
+// Additional impact dust & friction texture on blade
+scatter color=iron.0,iron.3 density=0.15 seed=42 inside

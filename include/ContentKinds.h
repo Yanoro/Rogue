@@ -26,6 +26,7 @@ class EffectRegistry;
 class ResourceRegistry;
 class ArtStyleRegistry;
 class BodySilhouetteRegistry;
+class PortraitRegistry;
 
 // The kinds of content the Content Editor can open: one row per registry.
 //
@@ -68,6 +69,7 @@ struct World {
   ResourceRegistry &resources;
   ArtStyleRegistry &artStyles;
   BodySilhouetteRegistry &bodySilhouettes;
+  PortraitRegistry &portraits;
   DebugLog *log = nullptr;
   // Called after a kind has successfully replaced its live definition. The
   // skills kind uses it to rebuild the player's ability bar immediately; kinds

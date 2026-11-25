@@ -1,0 +1,103 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  outl = ink.base
+  sleeve_dark = grass.0
+  sleeve_mid = grass.1
+  sleeve_light = grass.2
+  skin_dark = sand.2
+  skin_mid = sand.3
+  skin_light = sand.4
+}
+
+frame "f1" {
+  // Swung slightly back/outward, body dip (y+1)
+  // Shoulder / upper arm
+  rect (7,13) (10,17) color=sleeve_mid
+  line (7,13) (7,17) color=sleeve_light
+  line (10,13) (10,17) color=sleeve_dark
+  // Forearm extending down and angled back
+  rect (6,18) (9,20) color=sleeve_mid
+  line (6,18) (6,20) color=sleeve_light
+  line (9,18) (9,20) color=sleeve_dark
+  // Hand
+  rect (6,21) (8,23) color=skin_mid
+  pixel (6,21) color=skin_light
+  pixel (8,23) color=skin_dark
+  // Outlines
+  line (7,12) (10,12) color=outl
+  line (6,13) (6,17) color=outl
+  line (5,18) (5,23) color=outl
+  line (9,21) (9,23) color=outl
+  line (6,24) (8,24) color=outl
+  line (10,18) (10,20) color=outl
+  line (11,13) (11,17) color=outl
+}
+
+frame "f2" {
+  // Passing: vertical, body raised (y-1 from neutral)
+  // Shoulder / upper arm
+  rect (7,12) (10,16) color=sleeve_mid
+  line (7,12) (7,16) color=sleeve_light
+  line (10,12) (10,16) color=sleeve_dark
+  // Forearm straight down
+  rect (7,17) (9,19) color=sleeve_mid
+  line (7,17) (7,19) color=sleeve_light
+  line (9,17) (9,19) color=sleeve_dark
+  // Hand
+  rect (7,20) (9,22) color=skin_mid
+  pixel (7,20) color=skin_light
+  pixel (9,22) color=skin_dark
+  // Outlines
+  line (7,11) (10,11) color=outl
+  line (6,12) (6,22) color=outl
+  line (10,17) (10,22) color=outl
+  line (7,23) (9,23) color=outl
+  line (11,12) (11,16) color=outl
+}
+
+frame "f3" {
+  // Swung forward, body dip (y+1), arm angled forward/inward
+  // Shoulder / upper arm
+  rect (7,13) (10,17) color=sleeve_mid
+  line (7,13) (7,17) color=sleeve_light
+  line (10,13) (10,17) color=sleeve_dark
+  // Forearm swung forward/in
+  rect (8,18) (10,20) color=sleeve_mid
+  line (8,18) (8,20) color=sleeve_light
+  line (10,18) (10,20) color=sleeve_dark
+  // Hand angled slightly forward
+  rect (8,21) (10,23) color=skin_mid
+  pixel (8,21) color=skin_light
+  pixel (10,23) color=skin_dark
+  // Outlines
+  line (7,12) (10,12) color=outl
+  line (6,13) (6,17) color=outl
+  line (7,18) (7,23) color=outl
+  line (8,24) (10,24) color=outl
+  line (11,13) (11,23) color=outl
+}
+
+frame "f4" {
+  // Passing: vertical, body raised (y-1 from neutral)
+  // Shoulder / upper arm
+  rect (7,12) (10,16) color=sleeve_mid
+  line (7,12) (7,16) color=sleeve_light
+  line (10,12) (10,16) color=sleeve_dark
+  // Forearm straight down
+  rect (7,17) (9,19) color=sleeve_mid
+  line (7,17) (7,19) color=sleeve_light
+  line (9,17) (9,19) color=sleeve_dark
+  // Hand
+  rect (7,20) (9,22) color=skin_mid
+  pixel (7,20) color=skin_light
+  pixel (9,22) color=skin_dark
+  // Outlines
+  line (7,11) (10,11) color=outl
+  line (6,12) (6,22) color=outl
+  line (10,17) (10,22) color=outl
+  line (7,23) (9,23) color=outl
+  line (11,12) (11,16) color=outl
+}

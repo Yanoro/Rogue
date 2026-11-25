@@ -1,0 +1,45 @@
+sprite 32x32
+kind object
+material sand
+
+// Base silhouette for square, rugged warrior head and neck
+rect (12,4) (20,12) color=ink.base
+rect (13,11) (19,13) color=ink.base
+
+// Main head skin fill: weathered tan skin
+rect (12,5) (20,11) color=sand.2
+rect (13,12) (19,12) color=sand.1
+
+// Square jaw contouring & ear hints
+pixel (11,8) color=ink.base
+pixel (11,9) color=sand.1
+pixel (21,8) color=ink.base
+pixel (21,9) color=sand.1
+
+// Shading & facial structure
+// Heavy brow line cast in shadow
+line (13,6) (19,6) color=sand.0
+line (13,7) (19,7) color=sand.1
+
+// Eyes inset under brow
+pixel (14,7) color=ink.base
+pixel (15,7) color=sand.3
+pixel (17,7) color=sand.3
+pixel (18,7) color=ink.base
+
+// Weathered highlight on forehead and nose bridge
+rect (13,5) (19,5) color=sand.3
+pixel (16,6) color=sand.2
+pixel (16,8) color=sand.3
+
+// Firm mouth and chin
+pixel (16,9) color=sand.0
+line (15,10) (17,10) color=sand.0
+rect (14,11) (18,11) color=sand.2
+
+// Neck shading underneath jaw
+line (14,12) (18,12) color=sand.0
+line (14,13) (18,13) color=sand.1
+
+// Weathered texture across cheekbones and jaw
+scatter color=sand.1,sand.3 density=0.15 seed=41 cluster=1 inside

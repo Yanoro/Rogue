@@ -1,0 +1,50 @@
+sprite 32x32
+kind object
+material grass
+
+// Base silhouette for the body / tunic (10,11) to (22,22)
+// Dark outline / shadow base
+rect (11,11) (21,22) color=ink.base
+rect (10,13) (22,21) color=ink.base
+
+// Main tunic body in forest green
+rect (11,12) (21,21) color=grass.2
+rect (12,11) (20,12) color=grass.2
+rect (10,14) (22,20) color=grass.2
+
+// Upper-left highlights on the chest and shoulder drape
+line (11,12) (14,12) color=grass.3
+line (11,13) (13,13) color=grass.3
+pixel (11,14) color=grass.3
+pixel (12,15) color=grass.3
+
+// Right-side shading for depth
+line (21,13) (21,20) color=grass.1
+line (20,14) (20,21) color=grass.1
+
+// Neckline opening / collar (tunic V-neck cut)
+line (14,11) (16,14) color=grass.0
+line (18,11) (16,14) color=grass.0
+pixel (16,12) color=sand.1
+pixel (16,13) color=sand.0
+
+// Tunic skirt split / hemline shadow at bottom (y=21..22)
+line (12,21) (20,21) color=grass.1
+line (11,22) (21,22) color=grass.0
+pixel (16,21) color=grass.0
+pixel (16,22) color=ink.base
+
+// Narrow woven belt cinched around the waist (y=17..18)
+rect (10,17) (22,18) color=wood.1
+line (11,17) (21,17) color=wood.2
+// Belt edge shadow
+line (11,19) (21,19) color=grass.0
+
+// Buckle and belt detail
+pixel (16,17) color=iron.4
+pixel (16,18) color=iron.3
+pixel (15,17) color=wood.3
+pixel (17,17) color=wood.0
+
+// Fabric weave texture on tunic
+scatter color=grass.1,grass.3 density=0.1 seed=42 cluster=1 inside

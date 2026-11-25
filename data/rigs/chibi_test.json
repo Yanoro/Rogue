@@ -1,0 +1,45 @@
+{
+  "name": "Chibi Test",
+  "description": "A hand-authored test rig for the style geometry: the large-head, small-body layout from the Ragnarok-like style profile. Generate its layers in the Designer with the same style, or use it as a reference for a chibi rig.",
+  "width": 96,
+  "height": 96,
+  "style": "cheeseguy_pixel",
+  "parts": [
+    {
+      "id": "legs",
+      "sprite": "rig_chibi_test_legs",
+      "z": 10,
+      "brief": "short chibi legs in a small pair of boots; the feet sit flat at the bottom of the frame"
+    },
+    {
+      "id": "body",
+      "sprite": "rig_chibi_test_body",
+      "z": 20,
+      "brief": "a small chibi torso with a short belted tunic; bright cloth, thick outline"
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_chibi_test_arm_left",
+      "z": 25,
+      "brief": "a short chibi sleeve and a small mitten-like hand"
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_chibi_test_arm_right",
+      "z": 25,
+      "brief": "a short chibi sleeve and a small mitten-like hand; this hand holds weapons"
+    },
+    {
+      "id": "head",
+      "sprite": "rig_chibi_test_head",
+      "z": 30,
+      "brief": "a large chibi head with large expressive eyes and a small nose; bright skin, thick dark outline"
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_chibi_test_hair",
+      "z": 40,
+      "brief": "chibi hair with a large fringe over the forehead; bright saturated colour, thick outline"
+    }
+  ]
+}

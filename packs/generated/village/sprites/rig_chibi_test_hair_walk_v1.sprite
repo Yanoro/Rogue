@@ -1,0 +1,95 @@
+sprite 32x32
+kind object
+material sand
+
+frame "f1" {
+  rect (9,3) (23,5) color=ink.base
+  rect (8,4) (24,7) color=ink.base
+  rect (7,5) (9,11) color=ink.base
+  rect (23,5) (25,11) color=ink.base
+  polygon (10,6) (13,11) (15,7) (19,11) (22,6) color=ink.base
+
+  rect (9,4) (23,5) color=sand.3
+  rect (8,5) (24,6) color=sand.3
+  rect (8,6) (9,10) color=sand.2
+  rect (23,6) (24,10) color=sand.2
+
+  rect (10,4) (22,5) color=sand.4
+  pixel (11,3) color=sand.4
+  pixel (12,3) color=sand.4
+  pixel (13,3) color=sand.4
+
+  polygon (10,6) (12,10) (14,6) color=sand.3
+  polygon (14,6) (18,10) (21,6) color=sand.2
+  pixel (13,8) color=sand.4
+  pixel (17,8) color=sand.3
+}
+
+frame "f2" {
+  rect (9,2) (23,4) color=ink.base
+  rect (8,3) (24,6) color=ink.base
+  rect (7,4) (9,10) color=ink.base
+  rect (23,4) (25,10) color=ink.base
+  polygon (10,5) (13,11) (15,6) (19,10) (22,5) color=ink.base
+
+  rect (9,3) (23,4) color=sand.3
+  rect (8,4) (24,5) color=sand.3
+  rect (8,5) (9,9) color=sand.2
+  rect (23,5) (24,9) color=sand.2
+
+  rect (10,3) (22,4) color=sand.4
+  pixel (11,2) color=sand.4
+  pixel (12,2) color=sand.4
+  pixel (13,2) color=sand.4
+
+  polygon (10,5) (13,10) (15,5) color=sand.3
+  polygon (15,5) (19,9) (21,5) color=sand.2
+  pixel (12,7) color=sand.4
+  pixel (18,7) color=sand.3
+}
+
+frame "f3" {
+  rect (9,3) (23,5) color=ink.base
+  rect (8,4) (24,7) color=ink.base
+  rect (7,5) (9,11) color=ink.base
+  rect (23,5) (25,11) color=ink.base
+  polygon (10,6) (13,11) (15,7) (19,11) (22,6) color=ink.base
+
+  rect (9,4) (23,5) color=sand.3
+  rect (8,5) (24,6) color=sand.3
+  rect (8,6) (9,10) color=sand.2
+  rect (23,6) (24,10) color=sand.2
+
+  rect (10,4) (22,5) color=sand.4
+  pixel (11,3) color=sand.4
+  pixel (12,3) color=sand.4
+  pixel (13,3) color=sand.4
+
+  polygon (10,6) (13,10) (15,6) color=sand.3
+  polygon (14,6) (19,10) (21,6) color=sand.2
+  pixel (13,8) color=sand.4
+  pixel (17,8) color=sand.3
+}
+
+frame "f4" {
+  rect (9,2) (23,4) color=ink.base
+  rect (8,3) (24,6) color=ink.base
+  rect (7,4) (9,10) color=ink.base
+  rect (23,4) (25,10) color=ink.base
+  polygon (10,5) (14,10) (16,6) (19,11) (22,5) color=ink.base
+
+  rect (9,3) (23,4) color=sand.3
+  rect (8,4) (24,5) color=sand.3
+  rect (8,5) (9,9) color=sand.2
+  rect (23,5) (24,9) color=sand.2
+
+  rect (10,3) (22,4) color=sand.4
+  pixel (11,2) color=sand.4
+  pixel (12,2) color=sand.4
+  pixel (13,2) color=sand.4
+
+  polygon (10,5) (13,9) (15,5) color=sand.3
+  polygon (15,5) (19,10) (21,5) color=sand.2
+  pixel (12,7) color=sand.4
+  pixel (18,7) color=sand.3
+}

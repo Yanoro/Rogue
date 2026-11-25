@@ -153,4 +153,41 @@ PromptRewriter::Brief Blueprint() {
   return brief;
 }
 
+PromptRewriter::Brief ActorSprite() {
+  PromptRewriter::Brief brief;
+  brief.kind = "actor_sprite";
+  brief.context =
+      "The text describes one top-down 2D pixel-art actor sprite: a whole character, "
+      "head to feet, drawn as a single sprite. It can describe body shape and pose, "
+      "clothing, armour, hair, colours, an outline, a silhouette, equipment, and the "
+      "character's mood. It cannot add stats, classes, AI, behaviour, dialogue, or a "
+      "creature definition; this is only the look. The name in the box is the sprite "
+      "id, so keep the text about that one being and do not rename it. A rig layer, an "
+      "animation frame, and a portrait are different assets, so do not describe those.";
+  return brief;
+}
+
+PromptRewriter::Brief Icon() {
+  PromptRewriter::Brief brief;
+  brief.kind = "icon";
+  brief.context =
+      "The text describes one small UI icon for a 2D game, drawn as a single square "
+      "sprite. It should read at a glance: a strong silhouette, a few colours, no text, "
+      "no scene, no background. It can describe the object or concept it stands for, "
+      "the materials, the palette and the highlight. It cannot describe a character "
+      "portrait, a world object, an animation, or a whole scene.";
+  return brief;
+}
+
+PromptRewriter::Brief SurfaceSprite() {
+  PromptRewriter::Brief brief;
+  brief.kind = "surface_sprite";
+  brief.context =
+      "The text describes one tileable surface overlay sprite for a top-down 2D game, "
+      "drawn as a single square sprite. It can describe the surface, its material, "
+      "colour, wear and transparency. It cannot describe a scene, a standing object, a "
+      "character, an animation, or gameplay effects beyond the look of the overlay.";
+  return brief;
+}
+
 }  // namespace RewriteBriefs

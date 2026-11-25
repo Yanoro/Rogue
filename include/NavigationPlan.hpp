@@ -794,9 +794,14 @@ inline std::string BuildObjectTargetGrammar() {
 
 // The default group list. It deliberately omits aliases; aliases are only in an
 // inspect result, so the default prompt stays small even for a large group.
+//
+// `commandPrefix` is how a caller that wraps these keys in a command (continuous
+// navigation's `[GO ...]`) keeps the "for the rest" hint in the same dialect as
+// the rest of its prompt. The navigator passes nothing, so its wording is
+// unchanged.
 inline std::string BuildObjectGroupList(
     const std::vector<ObjectGroup> &groups, std::size_t maxGroups,
-    GamePosition here = {0, 0}) {
+    GamePosition here = {0, 0}, const std::string &commandPrefix = "") {
   if (groups.empty()) return "\nOBJECTS SEEN: (none)\n";
   const std::size_t shown =
       maxGroups == 0 ? groups.size() : std::min(maxGroups, groups.size());
@@ -805,7 +810,7 @@ inline std::string BuildObjectGroupList(
     out << "\nOBJECTS SEEN (" << groups.size() << " groups):\n";
   } else {
     out << "\nOBJECTS SEEN (" << shown << " of " << groups.size()
-        << " groups; objects:all for the rest):\n";
+        << " groups; " << commandPrefix << "objects:all for the rest):\n";
   }
   for (std::size_t i = 0; i < shown; ++i) {
     const ObjectGroup &group = groups[i];
@@ -836,7 +841,8 @@ inline std::string BuildObjectGroupList(
 // caller is told explicitly how to ask for the rest.
 inline std::string BuildObjectInstanceList(const ObjectGroup &group,
                                            bool all, std::size_t maxDetails,
-                                           GamePosition here = {0, 0}) {
+                                           GamePosition here = {0, 0},
+                                           const std::string &commandPrefix = "") {
   const std::size_t total = group.instances.size();
   const std::size_t shown =
       all ? total : std::min(maxDetails == 0 ? total : maxDetails, total);
@@ -864,10 +870,90 @@ inline std::string BuildObjectInstanceList(const ObjectGroup &group,
     out << "\n";
   }
   if (!all && shown < total) {
-    out << "Use inspect:" << group.key << ":all for the remaining "
-        << (total - shown) << ".\n";
+    out << "Use " << commandPrefix << "inspect:" << group.key
+        << ":all for the remaining " << (total - shown) << ".\n";
   }
   return out.str();
+}
+
+// The [GO] form of the object grammar, printed in continuous navigation's
+// spatial block. Kept beside BuildObjectTargetGrammar so the two vocabularies
+// cannot drift without someone noticing both.
+inline std::string BuildInlineObjectGrammar() {
+  return
+      "\nOBJECTS (walk-and-use as one step; the key= value below is the group "
+      "key):\n"
+      "  [GO objects:all]         list every object group; does not move\n"
+      "  [GO inspect:<group>]     list the nearest instance aliases and verbs\n"
+      "  [GO inspect:<group>:all] list every instance alias in that group\n"
+      "  [GO approach:<alias>]    walk to one instance; does not interact\n"
+      "  [GO <verb>:<alias>]      walk and use a no-argument verb\n"
+      "                           e.g. [GO examine:apple_tree-1]\n";
+}
+
+// A person the character can currently see. "In view" is what [TALK] is allowed
+// to act on, and it is derived from the perception sample rather than from
+// memory alone: a character remembered but out of sight is a different case.
+struct SeenCharacter {
+  flecs::entity_t id = 0;
+  std::string name;
+  std::string alias;
+  GamePosition pos;
+  int distance = 0;
+  std::string direction;
+};
+
+inline std::vector<SeenCharacter> CharactersInView(
+    const SpatialMemory &memory, const std::vector<GamePosition> &visibleCells,
+    GamePosition here, std::size_t maxCount = 4) {
+  std::vector<SeenCharacter> out;
+  if (visibleCells.empty()) return out;
+  std::unordered_set<std::uint64_t> visible;
+  visible.reserve(visibleCells.size());
+  for (const GamePosition &cell : visibleCells) {
+    visible.insert(VisionQuery::CellKey(cell));
+  }
+  for (const auto &[id, object] : memory.objects) {
+    if (!object.character || object.vanishedTick >= 0) continue;
+    if (visible.count(VisionQuery::CellKey(object.pos)) == 0) continue;
+    SeenCharacter character;
+    character.id = id;
+    character.name = object.name.empty() ? std::string("someone") : object.name;
+    character.alias = object.alias;
+    character.pos = object.pos;
+    character.distance = std::max(std::abs(object.pos.x - here.x),
+                                  std::abs(object.pos.y - here.y));
+    character.direction =
+        PlaceQuery::CompassWord(object.pos.x - here.x, object.pos.y - here.y);
+    out.push_back(std::move(character));
+  }
+  std::sort(out.begin(), out.end(),
+            [](const SeenCharacter &a, const SeenCharacter &b) {
+              if (a.distance != b.distance) return a.distance < b.distance;
+              return a.id < b.id;
+            });
+  if (out.size() > maxCount) out.resize(maxCount);
+  return out;
+}
+
+// Case-insensitive match on the display name first, then the memory alias. The
+// alias is what the block prints, so both spellings are accepted.
+inline bool FindCharacterInView(const std::vector<SeenCharacter> &characters,
+                                const std::string &wanted, SeenCharacter &out) {
+  for (const SeenCharacter &character : characters) {
+    if (StringUtils::EqualsIgnoreCase(character.name, wanted)) {
+      out = character;
+      return true;
+    }
+  }
+  for (const SeenCharacter &character : characters) {
+    if (!character.alias.empty() &&
+        StringUtils::EqualsIgnoreCase(character.alias, wanted)) {
+      out = character;
+      return true;
+    }
+  }
+  return false;
 }
 
 // Where the character is standing, in the words every navigation prompt uses:

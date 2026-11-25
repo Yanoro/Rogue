@@ -18,6 +18,7 @@
 #include "ObjectDesigner.hpp"
 #include "PathFinding.h"
 #include "Settings.h"
+#include "UiStyle.hpp"
 #include "SpriteDraw.hpp"
 #include "SpritePaths.hpp"
 #include "SkillshotPath.hpp"
@@ -325,6 +326,10 @@ void Game::Init() {
 
   rlImGuiSetup(true);
 
+  // The window background colour and transparency are settings (ui.windowColor and
+  // ui.popupColor); apply them now that rlImGuiSetup has created the style.
+  ApplyImGuiStyle();
+
   // ImGui renders with its own font, which is ASCII-only, so without this the
   // windows that preview art (the map editor's object palette, inventory rows)
   // would show blanks wherever the art uses a block character. ImGui's built-in
@@ -349,14 +354,24 @@ Vector2 CombatEntityCenter(flecs::entity entity) {
   }
   float width = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
   float height = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
-  if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+  float offsetX = 0.0f;
+  float offsetY = 0.0f;
+  if (const Pickbox *pick = entity.get<Pickbox>()) {
+    width = static_cast<float>(pick->width);
+    height = static_cast<float>(pick->height);
+    offsetX = pick->offsetX;
+    offsetY = pick->offsetY;
+  } else if (const Hitbox *hitbox = entity.get<Hitbox>()) {
     width = static_cast<float>(hitbox->width);
     height = static_cast<float>(hitbox->height);
+    offsetX = hitbox->offsetX;
+    offsetY = hitbox->offsetY;
   } else if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
     width = static_cast<float>(ascii->width);
     height = static_cast<float>(ascii->height);
   }
-  return {position->x + width * 0.5f, position->y + height * 0.5f};
+  return {position->x + offsetX + width * 0.5f,
+          position->y + offsetY + height * 0.5f};
 }
 } // namespace
 
@@ -732,12 +747,14 @@ void Game::UpdateGUI() {
           if (!Resources::IsDamageable(entity)) return;
           bool hit = false;
           if (const ScreenPosition *screen = entity.get<ScreenPosition>()) {
-            if (const Hitbox *box = entity.get<Hitbox>()) {
-              raylib::Rectangle rect(screen->x, screen->y, box->width,
-                                     box->height);
-              if (rect.CheckCollision(mouseWorldPos)) {
-                hit = true;
-              }
+            raylib::Rectangle rect = {screen->x, screen->y, 0.0f, 0.0f};
+            if (const Pickbox *pick = entity.get<Pickbox>()) {
+              rect = PickboxRectangle(*screen, *pick);
+            } else if (const Hitbox *box = entity.get<Hitbox>()) {
+              rect = HitboxRectangle(*screen, *box);
+            }
+            if (rect.width > 0.0f && rect.CheckCollision(mouseWorldPos)) {
+              hit = true;
             }
           }
           if (!hit && gPos == pos) {
@@ -759,11 +776,14 @@ void Game::UpdateGUI() {
                           WindowOnClick &clickWin) {
           bool clickedOnEntity = false;
           if (const ScreenPosition *sPos = entity.get<ScreenPosition>()) {
-            if (const Hitbox *hb = entity.get<Hitbox>()) {
-              raylib::Rectangle rect(sPos->x, sPos->y, hb->width, hb->height);
-              if (rect.CheckCollision(mouseWorldPos)) {
-                clickedOnEntity = true;
-              }
+            raylib::Rectangle rect = {sPos->x, sPos->y, 0.0f, 0.0f};
+            if (const Pickbox *pick = entity.get<Pickbox>()) {
+              rect = PickboxRectangle(*sPos, *pick);
+            } else if (const Hitbox *hb = entity.get<Hitbox>()) {
+              rect = HitboxRectangle(*sPos, *hb);
+            }
+            if (rect.width > 0.0f && rect.CheckCollision(mouseWorldPos)) {
+              clickedOnEntity = true;
             }
           }
           if (!clickedOnEntity && gPos == pos) {
@@ -3604,4 +3624,8 @@ SystemOne::SystemOneProfileStatus Game::SystemOneStatusFor(const std::string &id
   const auto found = systemOneStatus.find(id);
   if (found != systemOneStatus.end()) return found->second;
   return SystemOne::SystemOneProfileStatus{};
+}
+
+void Game::ApplyImGuiStyle() {
+  UiStyle::Apply(Settings());
 }

@@ -216,8 +216,10 @@ void Game::Draw() {
                             tileW, tileH, ColorAlpha(SKYBLUE, 0.18f));
             }
 
-            const float centerX = screenPos.x + hitbox.width / 2.0f;
-            const float centerY = screenPos.y + hitbox.height / 2.0f;
+            const float centerX =
+                screenPos.x + hitbox.offsetX + hitbox.width / 2.0f;
+            const float centerY =
+                screenPos.y + hitbox.offsetY + hitbox.height / 2.0f;
             const float rangePx = vision.range * static_cast<float>(tileW);
             const float centerAngle =
                 std::atan2(vision.cachedFacing.y, vision.cachedFacing.x) * RAD2DEG;
@@ -358,8 +360,8 @@ void Game::Draw() {
           [markerLength](const Facing &facing, const ScreenPosition &screenPos,
                          const Hitbox &hitbox) {
             const ::Vector2 center = {
-                screenPos.x + hitbox.width / 2.0f,
-                screenPos.y + hitbox.height / 2.0f};
+                screenPos.x + hitbox.offsetX + hitbox.width / 2.0f,
+                screenPos.y + hitbox.offsetY + hitbox.height / 2.0f};
             const ::Vector2 tip = {center.x + facing.x * markerLength,
                                    center.y + facing.y * markerLength};
             DrawLineV(center, tip, YELLOW);

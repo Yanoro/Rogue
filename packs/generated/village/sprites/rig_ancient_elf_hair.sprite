@@ -1,0 +1,38 @@
+sprite 32x32
+kind object
+material sand
+
+// Silhouette and base volume of neat swept-back hair
+polygon (12,2) (20,2) (22,4) (22,9) (20,9) (20,6) (12,6) (12,9) (10,9) (10,4) color=sand.1
+rect (12,3) (20,6) color=sand.base
+
+// Upper crown and volume (swept back)
+rect (13,3) (19,4) color=sand.3
+pixel (14,2) color=sand.3
+pixel (15,2) color=sand.4
+pixel (16,2) color=sand.4
+pixel (17,2) color=sand.3
+
+// Hair strands / swept directional highlights
+line (13,4) (15,5) color=sand.4
+line (16,4) (18,5) color=sand.3
+line (12,5) (13,7) color=sand.2
+line (19,5) (20,7) color=sand.1
+
+// Side locks framing the temples / ears
+rect (10,5) (11,8) color=sand.base
+pixel (10,8) color=sand.1
+pixel (11,5) color=sand.3
+rect (21,5) (22,8) color=sand.1
+pixel (21,5) color=sand.2
+
+// Forehead hairline contour (neatly swept back)
+pixel (13,6) color=sand.0
+pixel (14,5) color=sand.1
+pixel (15,5) color=sand.2
+pixel (16,5) color=sand.2
+pixel (17,5) color=sand.1
+pixel (18,6) color=sand.0
+
+// Subtle hair strand variation
+scatter color=sand.2,sand.3 density=0.15 seed=42 inside

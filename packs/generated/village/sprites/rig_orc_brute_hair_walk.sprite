@@ -1,0 +1,77 @@
+sprite 32x32
+kind object
+material iron
+
+frame "f1" {
+  // Shaved sides stubble
+  pixel (11,6) color=iron.0
+  pixel (12,5) color=iron.0
+  pixel (19,5) color=iron.0
+  pixel (20,6) color=iron.0
+  // Central coarse hair base / ridge (y: 4 to 6)
+  rect (13,4) (18,6) color=ink.base
+  rect (14,4) (17,5) color=iron.0
+  pixel (15,4) color=iron.1
+  // Topknot tie/band
+  rect (15,3) (17,3) color=soil.1
+  // Topknot hair tuft (bobbed down, trailing slightly right)
+  rect (15,1) (17,2) color=ink.base
+  rect (17,2) (18,3) color=iron.0
+  pixel (16,2) color=iron.1
+}
+
+frame "f2" {
+  // Shaved sides stubble (up 1px)
+  pixel (11,5) color=iron.0
+  pixel (12,4) color=iron.0
+  pixel (19,4) color=iron.0
+  pixel (20,5) color=iron.0
+  // Central coarse hair base / ridge (y: 3 to 5)
+  rect (13,3) (18,5) color=ink.base
+  rect (14,3) (17,4) color=iron.0
+  pixel (15,3) color=iron.1
+  // Topknot tie/band
+  rect (15,2) (17,2) color=soil.1
+  // Topknot hair tuft (bobbed up, upright)
+  rect (15,0) (17,1) color=ink.base
+  pixel (16,1) color=iron.1
+  pixel (15,1) color=iron.0
+  pixel (17,1) color=iron.0
+}
+
+frame "f3" {
+  // Shaved sides stubble
+  pixel (11,6) color=iron.0
+  pixel (12,5) color=iron.0
+  pixel (19,5) color=iron.0
+  pixel (20,6) color=iron.0
+  // Central coarse hair base / ridge (y: 4 to 6)
+  rect (13,4) (18,6) color=ink.base
+  rect (14,4) (17,5) color=iron.0
+  pixel (16,4) color=iron.1
+  // Topknot tie/band
+  rect (14,3) (16,3) color=soil.1
+  // Topknot hair tuft (bobbed down, trailing slightly left)
+  rect (14,1) (16,2) color=ink.base
+  rect (13,2) (14,3) color=iron.0
+  pixel (15,2) color=iron.1
+}
+
+frame "f4" {
+  // Shaved sides stubble (up 1px)
+  pixel (11,5) color=iron.0
+  pixel (12,4) color=iron.0
+  pixel (19,4) color=iron.0
+  pixel (20,5) color=iron.0
+  // Central coarse hair base / ridge (y: 3 to 5)
+  rect (13,3) (18,5) color=ink.base
+  rect (14,3) (17,4) color=iron.0
+  pixel (16,3) color=iron.1
+  // Topknot tie/band
+  rect (15,2) (17,2) color=soil.1
+  // Topknot hair tuft (bobbed up, upright)
+  rect (15,0) (17,1) color=ink.base
+  pixel (16,1) color=iron.1
+  pixel (15,1) color=iron.0
+  pixel (17,1) color=iron.0
+}

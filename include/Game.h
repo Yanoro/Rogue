@@ -25,6 +25,7 @@
 #include "ItemRegistry.h"
 #include "ActorSpriteRegistry.h"
 #include "MovementRegistry.h"
+#include "RigGrip.hpp"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "NpcTemplateRegistry.h"
@@ -33,6 +34,7 @@
 #include "PortraitRegistry.h"
 #include "IconRegistry.h"
 #include "ArtStyleRegistry.h"
+#include "VisualAssetRegistry.h"
 #include "BodySilhouetteRegistry.h"
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
@@ -202,9 +204,22 @@ public:
   // reports rather than only logging. Empty id removes the sprite.
   bool ApplyPlayerActorSprite(const std::string &id, std::string &message);
 
+  // Puts a rig on the player, or clears it back to the actor sprite / race look. Used by
+  // the spawn path and by the Settings window's rig picker; empty id removes it.
+  bool ApplyPlayerRig(const std::string &rigId, std::string &message);
+
+  // Applies a rig's world footprint to an entity: its collision base and its pick box,
+  // anchored bottom-centre at the cell. The art frame is allowed to be larger than
+  // either. A rig with no base/pick geometry keeps the entity's cell-sized hitbox.
+  void ApplyRigFootprint(flecs::entity e, const ActorRig &rig);
+
   // Sets the player's MaxSpeed component. Separate from the setting because the
   // setting is read once at spawn; the window calls this when it changes the row.
   bool ApplyPlayerMaxSpeed(float maxSpeed, std::string &message);
+
+  // Re-applies ui.windowColor / ui.popupColor to the live ImGui style. Called once after
+  // rlImGuiSetup and again by the Settings window's colour picker.
+  void ApplyImGuiStyle();
   // Content-editor developer action: spawn one object from `itemId` and place it
   // in the player's inventory. Does not equip it and respects capacity/stacking.
   bool GiveItemToPlayer(const std::string &itemId, std::string &message);
@@ -310,6 +325,7 @@ private:
   PortraitRegistry portraitRegistry;
   IconRegistry iconRegistry;
   ArtStyleRegistry artStyleRegistry;
+  VisualAssetRegistry visualAssets;
   BodySilhouetteRegistry bodySilhouetteRegistry;
   SurfaceSpriteRegistry surfaceSpriteRegistry;
   SurfaceRegistry surfaceRegistry;
@@ -647,6 +663,9 @@ private:
   // only in the console the game may not have been launched from.
   std::string speechUnavailableReason;
 
+  // Arm-frame grip analysis, by frame sprite; see RigGripFor.
+  std::map<std::string, RigGrip::ArmGrip> rigGripCache;
+
   friend class DebugConsoleWindow;
   friend class TileInfoWindow;
   friend class AStarWindow;
@@ -866,6 +885,21 @@ private:
   // layer and the entity layer cannot drift apart; see MapTileVisual.
   void DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                         const ScreenPosition &screenPos);
+
+  // Draws a rigged actor's layers and its worn equipment instead of its sprite. Returns
+  // false when the rig is unknown or nothing drew, so the caller can still fall back to
+  // the single-image look.
+  bool DrawRigEntity(flecs::entity e, const RigBody &body,
+                     const ScreenPosition &screenPos, const DrawAscii &ascii);
+
+  // The world's DrawEntityLayer pass: collect the drawable entities, sort by their feet,
+  // then draw. A taller-than-cell rig extends above its cell, so the creation order is
+  // not a draw order.
+  void DrawEntitiesSorted();
+
+  // The hand/arm direction read from an arm frame, cached per frame sprite. The pixels do
+  // not change, and the world draw asks every frame.
+  const RigGrip::ArmGrip &RigGripFor(const std::string &sprite);
 
   // The blueprint placement path, shared by the preview and the commit so the
   // two cannot disagree: whatever the ghost tints green is exactly what a click

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <ctime>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,6 +37,11 @@ struct RigPart {
   int z = 0;
   // The clips this part draws, one frame list each.
   std::vector<RigPartClip> clips;
+  // How this layer looks, in prose. Authoring intent kept with the rig: the animation
+  // prompts are cut from it, so an existing rig can be animated without re-drafting.
+  // Empty means the caller falls back to a generic "the <id> layer" description. Last
+  // because existing aggregate initializations spell the other fields in order.
+  std::string brief;
 };
 
 // One clip the rig can play.
@@ -42,6 +50,17 @@ struct RigPart {
 // than on each part so a mismatch is detectable. The brief and pose lines are the
 // authoring intent kept with the rig: regeneration has to redraw from what was asked for,
 // not from a list of frame names.
+// One stored generation of a clip: a complete part -> frame-list set. The original
+// generation is the frames that existed before variants; each later generation is one
+// "Generate" run. Selecting a variant copies its frame lists into the parts, so the world
+// keeps drawing one active set and every older set stays on disk.
+struct RigClipVariant {
+  std::string id;       // "original", "v1", "v2", ...
+  std::string name;     // "Original", "Generation 1", ...
+  std::string created;  // display-only timestamp
+  std::unordered_map<std::string, std::vector<std::string>> parts;
+};
+
 struct RigClip {
   std::string id;
   // The movement template this clip was generated from, when it came from one. Empty
@@ -53,6 +72,9 @@ struct RigClip {
   bool loop = true;
   std::string brief;
   std::vector<std::string> poses;
+  // Stored generations, oldest first. The part `clips` lists mirror `activeVariant`.
+  std::vector<RigClipVariant> variants;
+  std::string activeVariant;
 };
 
 // The sprite convention for one frame of a part's clip: <part sprite>_<clip>_f<index>.
@@ -60,16 +82,157 @@ struct RigClip {
 // Deterministic on purpose: the rig JSON can declare its frames before the art exists, and
 // the animation document (whose frames the compiler writes to <base>_<name>) lands exactly
 // where the declaration points.
+inline std::string VariantSuffix(const std::string &variantId) {
+  return (variantId.empty() || variantId == "original") ? std::string() : variantId;
+}
+
 inline std::string AnimationFrameSprite(const std::string &partSprite,
-                                        const std::string &clipId, int frame) {
-  return partSprite + "_" + clipId + "_f" + std::to_string(frame);
+                                        const std::string &clipId, int frame,
+                                        const std::string &variantId = std::string()) {
+  std::string base = partSprite + "_" + clipId;
+  const std::string suffix = VariantSuffix(variantId);
+  if (!suffix.empty()) base += "_" + suffix;
+  return base + "_f" + std::to_string(frame);
 }
 
 // The document base an animation document is requested under. Its frames are written as
 // <base>_f1.., which is what AnimationFrameSprite names.
 inline std::string AnimationDocumentName(const std::string &partSprite,
-                                         const std::string &clipId) {
-  return partSprite + "_" + clipId;
+                                         const std::string &clipId,
+                                         const std::string &variantId = std::string()) {
+  std::string base = partSprite + "_" + clipId;
+  const std::string suffix = VariantSuffix(variantId);
+  if (!suffix.empty()) base += "_" + suffix;
+  return base;
+}
+
+// The next free generation suffix (v1, v2, ...) for a clip; "original" is not a
+// generation and does not consume a number.
+inline std::string NextClipVariantId(const RigClip &clip) {
+  int next = 1;
+  for (const RigClipVariant &variant : clip.variants) {
+    if (variant.id.size() < 2 || variant.id.front() != 'v') continue;
+    try {
+      next = std::max(next, std::stoi(variant.id.substr(1)) + 1);
+    } catch (...) {
+    }
+  }
+  return "v" + std::to_string(next);
+}
+
+inline std::string ClipVariantCreated() {
+  const std::time_t now = std::time(nullptr);
+  std::tm local{};
+#if defined(_WIN32)
+  localtime_s(&local, &now);
+#else
+  localtime_r(&now, &local);
+#endif
+  char buffer[32];
+  std::strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M", &local);
+  return buffer;
+}
+
+// A rectangle in the rig's source frame. The right/bottom edges are x+w / y+h, the
+// spelling the frame contract uses.
+struct RigRect {
+  int x = 0;
+  int y = 0;
+  int w = 0;
+  int h = 0;
+};
+
+// Where a rig puts its body parts, hand and feet, in source pixels. The renderer draws
+// full-canvas layers, so this is not a skeleton: it is the contract the art prompts and
+// the equipment prompts are cut from. The default is the canonical 32x32 humanoid.
+struct RigGeometry {
+  int width = 32;
+  int height = 32;
+  RigRect head{11, 4, 10, 8};
+  RigRect hair{10, 2, 12, 7};
+  RigRect body{10, 11, 12, 11};
+  RigRect armLeft{7, 12, 3, 11};
+  RigRect armRight{22, 12, 3, 11};
+  RigRect legs{12, 20, 10, 11};
+  // The right hand (source pixels) and the soles of the feet.
+  int handX = 24;
+  int handY = 22;
+  int footX = 16;
+  int footY = 31;
+  // World footprint, in source pixels, anchored bottom-centre at the foot. Zero means
+  // the entity's cell width/height. The art frame may be larger than either: the base is
+  // what collides and the pick box is what the cursor tests.
+  int baseWidth = 0;
+  int baseHeight = 0;
+  int pickWidth = 0;
+  int pickHeight = 0;
+};
+
+inline nlohmann::json RigRectToJson(const RigRect &rect) {
+  return nlohmann::json::array({rect.x, rect.y, rect.w, rect.h});
+}
+
+inline RigRect RigRectFromJson(const nlohmann::json &value, const RigRect &fallback) {
+  if (!value.is_array() || value.size() != 4) return fallback;
+  for (const auto &part : value) {
+    if (!part.is_number_integer()) return fallback;
+  }
+  RigRect rect;
+  rect.x = value[0].get<int>();
+  rect.y = value[1].get<int>();
+  rect.w = value[2].get<int>();
+  rect.h = value[3].get<int>();
+  if (rect.w <= 0 || rect.h <= 0) return fallback;
+  return rect;
+}
+
+inline nlohmann::json RigGeometryToJson(const RigGeometry &geometry) {
+  nlohmann::json out = nlohmann::json::object();
+  out["width"] = geometry.width;
+  out["height"] = geometry.height;
+  out["head"] = RigRectToJson(geometry.head);
+  out["hair"] = RigRectToJson(geometry.hair);
+  out["body"] = RigRectToJson(geometry.body);
+  out["arm_left"] = RigRectToJson(geometry.armLeft);
+  out["arm_right"] = RigRectToJson(geometry.armRight);
+  out["legs"] = RigRectToJson(geometry.legs);
+  out["hand"] = nlohmann::json::array({geometry.handX, geometry.handY});
+  out["foot"] = nlohmann::json::array({geometry.footX, geometry.footY});
+  out["base"] = nlohmann::json::array({geometry.baseWidth, geometry.baseHeight});
+  out["pick"] = nlohmann::json::array({geometry.pickWidth, geometry.pickHeight});
+  return out;
+}
+
+inline RigGeometry RigGeometryFromJson(const nlohmann::json &value) {
+  RigGeometry geometry;
+  if (!value.is_object()) return geometry;
+  geometry.width = value.value("width", geometry.width);
+  geometry.height = value.value("height", geometry.height);
+  if (geometry.width <= 0) geometry.width = 32;
+  if (geometry.height <= 0) geometry.height = 32;
+  if (value.contains("head")) geometry.head = RigRectFromJson(value["head"], geometry.head);
+  if (value.contains("hair")) geometry.hair = RigRectFromJson(value["hair"], geometry.hair);
+  if (value.contains("body")) geometry.body = RigRectFromJson(value["body"], geometry.body);
+  if (value.contains("arm_left")) geometry.armLeft = RigRectFromJson(value["arm_left"], geometry.armLeft);
+  if (value.contains("arm_right")) geometry.armRight = RigRectFromJson(value["arm_right"], geometry.armRight);
+  if (value.contains("legs")) geometry.legs = RigRectFromJson(value["legs"], geometry.legs);
+  if (value.contains("hand") && value["hand"].is_array() && value["hand"].size() == 2) {
+    geometry.handX = value["hand"][0].get<int>();
+    geometry.handY = value["hand"][1].get<int>();
+  }
+  if (value.contains("foot") && value["foot"].is_array() && value["foot"].size() == 2) {
+    geometry.footX = value["foot"][0].get<int>();
+    geometry.footY = value["foot"][1].get<int>();
+  }
+  if (value.contains("base") && value["base"].is_array() && value["base"].size() == 2) {
+    geometry.baseWidth = value["base"][0].get<int>();
+    geometry.baseHeight = value["base"][1].get<int>();
+  }
+  if (value.contains("pick") && value["pick"].is_array() && value["pick"].size() == 2) {
+    geometry.pickWidth = value["pick"][0].get<int>();
+    geometry.pickHeight = value["pick"][1].get<int>();
+  }
+  return geometry;
 }
 
 // A rigged actor: a set of part layers over one canvas.
@@ -86,6 +249,12 @@ struct ActorRig {
   int height = 32;
   std::vector<RigPart> parts;
   std::vector<RigClip> clips;
+  // Optional art style id. The style supplies the prose and, when the rig has no geometry
+  // of its own, the proportions.
+  std::string style;
+  // Optional geometry override for this rig. Absent means the style's geometry, then the
+  // canonical 32x32 humanoid.
+  std::optional<RigGeometry> geometry;
 };
 
 // The actor-rig catalogue, loaded from data/rigs/<id>.json.

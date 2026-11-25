@@ -1,0 +1,45 @@
+sprite 32x32
+kind object
+material soil
+
+// Base silhouette for short cropped hair around the head bounds (10,2)-(22,9)
+polygon (12,3) (20,3) (22,5) (22,8) (21,9) (20,7) (18,7) (17,6) (14,6) (12,7) (11,9) (10,8) (10,5) color=soil.1
+
+// Dark outer trim / shading
+line (13,2) (19,2) color=ink.base
+pixel (12,3) color=ink.base
+pixel (20,3) color=ink.base
+pixel (21,4) color=ink.base
+pixel (22,5) color=ink.base
+pixel (22,6) color=ink.base
+pixel (22,7) color=ink.base
+pixel (21,8) color=ink.base
+pixel (10,5) color=ink.base
+pixel (10,6) color=ink.base
+pixel (10,7) color=ink.base
+pixel (11,8) color=ink.base
+
+// Main hair volume
+rect (12,4) (20,5) color=soil.2
+rect (13,3) (19,4) color=soil.2
+
+// Top highlight on the crown (light from upper-left)
+line (13,3) (17,3) color=soil.3
+pixel (14,4) color=soil.3
+pixel (15,4) color=soil.4
+
+// Hairline texturing and parting
+pixel (16,5) color=soil.1
+pixel (17,6) color=soil.0
+pixel (14,6) color=soil.0
+pixel (13,6) color=soil.1
+pixel (19,6) color=soil.1
+
+// Shadowed hair near nape / behind ears
+pixel (10,7) color=soil.0
+pixel (11,8) color=soil.0
+pixel (21,7) color=soil.0
+pixel (22,7) color=soil.0
+
+// Subtle texture on crown
+scatter color=soil.1,soil.3 density=0.15 seed=44 cluster=1 inside

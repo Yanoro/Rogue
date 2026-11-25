@@ -1791,3 +1791,146 @@ registries.
 - **The router's `building` classification** has not been run against the live model. It is one
   decision call: `./build/AIRogue --sprite-route "a two-bedroom cottage"` should print
   `RESULT: building`. It costs money, so it is left to the owner.
+
+---
+
+## 14. Editing an existing sprite
+
+The sprite asset section in the Content Editor (the one used by tiles, objects and worn
+equipment, and by any later registry that draws its art through `DrawSpriteAsset`) has an
+**Edit this sprite** box under the preview. The person selects a generated version in the
+archive below (activating a variant restores its `.sprite` document with it), types a small
+change -- *"make this staff longer and the colours darker"* -- and sends it.
+
+What happens:
+
+- The active picture is archived first, so the version on screen stays selectable. If the
+  active picture is already an archived variant, no duplicate is made.
+- The Designer reads the active sprite's current `.sprite` document, puts it in the request
+  as `<base-document>`, and adds the typed text as `<edit-request>`.
+- The prompt says to start from the base document and apply only the requested change,
+  preserving the palette, silhouette and every operation not being changed. The edit is
+  not a re-draw (`redesign` is false), so the model is not asked to vary the look.
+- The reply is the edited document; it compiles to a new generated PNG and `.sprite`. The
+  previous version is a variant in the archive, not a casualty of the edit.
+- With no document present (an asset that has never had a DSL source), the request says so
+  and the model writes a new document from the brief plus the requested change.
+
+Registry independence is deliberate: the edit lives on the generic asset section, the
+request field is on `SpriteDocumentBrief`, and the base-document lookup is the same
+`FindSpriteDSLDocument` every asset uses. A new content kind gets the editing by drawing
+its sprite through the same section; there is no per-registry edit path to add.
+
+---
+
+## 15. Style references, palettes and test sheets
+
+A style profile is no longer only positive/negative prose. It can carry:
+
+- **`palette`** — a short list of hex colours and their roles (skin, hair, tunic, outline,
+  eyes, boots). It is printed beside the style prose, so the model has specific colours
+  rather than only adjectives.
+- **`ramps`** — an optional DSL ramp file for this style; empty keeps the global ramps.
+- **`reference`** — a sprite/document id of a style-test character. Its `.sprite` document
+  is included as `<style-reference>` in every part and animation request: the model is told
+  to match its proportions, palette, outline and shading, but to draw the requested
+  subject, not copy the reference.
+
+The **style test** button in the Designer's rig pane asks for one whole front-facing
+**64x64** character in the selected style (`style_test_<style id>`). It is deliberately a
+single character, not a rig layer: it is the concrete target the prose was missing. When
+it lands, **Use test as style reference** writes that id into the style's `reference`,
+so the next layer and clip generations start from a real drawing in the style.
+
+The sample chibi style and rig moved to 64x64 as the first test of this path: the head and
+eyes have room for the detail a 32x32 frame cannot hold, while the world footprint stays
+32x32. The style test and the style reference are the intended way to iterate on a new
+family style before regenerating a whole rig.
+
+---
+
+## 16. Reference image -> style draft
+
+`tools/style_from_image.py` is the deterministic half of the image-to-style pipeline. It
+takes a reference image, crops one character, keys out the flat backdrop, trims to the
+opaque bounds, scales the character to the target canvas without inventing colours
+(NEAREST), quantises to a small palette, and writes two things:
+
+- a `.sprite` document with one run per horizontal pixel run, so the DSL compiler and the
+  model read the actual pixels rather than a description;
+- an `ArtStyleDef` draft with the measured palette, rough head/body/leg boxes, the
+  measured frame size, and a starting positive/negative list.
+
+```
+nix-shell --run "python3 tools/style_from_image.py \
+    --input ref.png --crop x,y,w,h --name style_ref_<name> \
+    --style-id <style id> --size 96 --colors 24"
+```
+
+The first run used the green-haired shaman from the reference sheet:
+`packs/generated/village/sprites/style_ref_green_shaman.sprite` (96x96, 24 colours) and
+`data/art_styles/cheeseguy_pixel.json` (96x96 geometry, the reference id, a palette). The
+style test now uses the style's own frame size instead of a hardcoded 64, and the chibi
+rig moved to 96x96 on `cheeseguy_pixel`.
+
+The converter's cutout and the geometry boxes are drafts: the crop/background key need a
+human eye, and the head/body/leg split is a proportion estimate. The point is to give the
+model an exact pixel reference and the style profile a measured palette, then iterate from
+the 96px style test rather than from prose.
+
+---
+
+## 17. Visual assets and role-specific styles
+
+The visual asset registry (`include/VisualAssetRegistry.h`) is an index over the existing
+domain registries, read through the Content Editor's `ContentKinds` table. Every entry has
+a `kind`, an `id`, a `role`, an optional style override and a source. The domain registries
+remain the storage; the visual registry is the one place that can answer "what visual
+assets exist, what role are they, and which style do they use".
+
+An `ArtStyleDef` now has a base and a map of roles. A role can override the base's
+positive/negative prose, palette, reference, geometry and size; missing fields fall back.
+The prompt builder applies the asset's role before building the request, and the style
+test is asked for that role (`style_test_<style>_<role>`) at the role's size. Use test as
+style reference writes the role's `reference`, not the base, so an icon reference cannot
+replace the character reference.
+
+Roles currently understood: actor, rig, icon, item, object, surface, effect, silhouette,
+tile. A rig layer is `rig`; a body silhouette is `silhouette`; status/resource entries use
+the `icon` role; the action bar/UI layout is deliberately not part of this registry.
+
+---
+
+## 18. Themes, sections and visual asset types
+
+An art style is a **theme**: a coherent aesthetic (Dark Fantasy, Ragnarok-like Pixel,
+Cheeseguy Pixel) with a base palette/prose and a **section per visual asset type**.
+Sections currently are inventory_icon, resource_icon, skill_icon, status_icon, portrait,
+actor, rig, object, surface, effect, silhouette and tile. A section can override the
+base positive/negative, palette, reference, geometry and size.
+
+The **visual asset registry** (`include/VisualAssetRegistry.h`) is a registry of those
+**types**, not a catalog of every sword/icon/actor. `data/visual_assets.json` holds the
+type list and each type's optional theme override. Each type has a section and the content
+kinds it consumes. The resolution is:
+
+    content theme override -> visual type theme -> global default theme
+
+The global default theme is chosen in the Content Editor's Visual assets panel; exactly one
+theme carries `"default": true`, and the registry falls back to the first theme when none
+does. The theme's section supplies the instructions, palette, reference and size. The style
+test is per theme + section (`style_test_<theme>_<section>`); "Use test as style reference"
+writes that section's reference.
+
+The old per-family style files (actor_sprite, item_sprite, ui_skill_icon, portrait and so
+on) were migrated into the Ragnarok-like Pixel theme's sections and removed. The
+Cheeseguy Pixel theme keeps its converted reference; Dark Fantasy is a new theme. The
+Content Editor still edits the content data; a content entry's style field is a theme
+override and is an exception, not the primary selection.
+
+Remaining work before this is fully wired: the content-kind to visual-type mapping is in
+place, but the icon entries themselves still need an explicit visual type (skill/resource/
+status/inventory) and the old per-content style values need cleaning up; the
+`RequestSpriteDocument` path currently falls back to the global default theme rather than
+consulting each visual type's theme override.
+

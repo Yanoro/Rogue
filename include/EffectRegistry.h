@@ -38,6 +38,11 @@ struct EffectDef {
   float surfaceDuration = 0.0f;
   int surfaceRadius = 0;
 
+  // The two visual representations of an effect: the UI icon and the world sprite.
+  // Empty means the effect has no art on that side.
+  std::string icon;
+  std::string sprite;
+
   bool HasTag(const std::string &tag) const;
 };
 

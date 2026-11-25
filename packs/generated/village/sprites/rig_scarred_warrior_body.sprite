@@ -1,0 +1,50 @@
+sprite 32x32
+kind object
+material sand
+
+// Torso silhouette base (bare chest and waist wrap)
+rect (10,11) (21,21) color=sand.1
+rect (11,11) (20,21) color=sand.2
+
+// Ink outline / silhouette border definition
+line (9,11) (9,21) color=ink.base
+line (22,11) (22,21) color=ink.base
+line (10,10) (21,10) color=ink.base
+line (10,22) (21,22) color=ink.base
+
+// Upper chest & clavicle shading
+rect (11,11) (20,12) color=sand.3
+pixel (15,11) color=sand.1
+pixel (16,11) color=sand.1
+
+// Pectorals shaping & lighting (light from top-left)
+rect (11,13) (14,15) color=sand.3
+pixel (12,13) color=sand.4
+rect (17,13) (20,15) color=sand.2
+pixel (18,13) color=sand.3
+
+// Sternal cleft and ab shading
+line (15,12) (16,17) color=sand.1
+line (11,16) (14,16) color=sand.1
+line (17,16) (20,16) color=sand.1
+
+// Thick diagonal scar across the chest (from right shoulder down to left rib)
+line (19,12) (13,17) color=soil.0
+pixel (18,12) color=soil.1
+pixel (14,17) color=sand.4
+pixel (17,14) color=sand.4
+
+// Leather waist wrap / belt across rows 18-21
+rect (10,18) (21,21) color=wood.1
+rect (10,19) (21,20) color=wood.2
+line (10,18) (21,18) color=wood.0
+line (10,21) (21,21) color=wood.0
+
+// Iron buckle at center waist
+rect (14,18) (17,21) color=iron.1
+rect (15,19) (16,20) color=iron.3
+pixel (15,19) color=iron.4
+pixel (16,20) color=iron.0
+
+// Subtle skin and leather texture
+scatter color=sand.3 density=0.08 seed=44 cluster=1 inside

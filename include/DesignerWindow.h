@@ -162,7 +162,18 @@ public:
   // than a first pass, so it varies the look instead of repeating the previous document.
   void AskForSpriteArt(const std::string &name, SpriteKinds::Kind kind,
                        const std::string &requirement = std::string(),
-                       bool redesign = true);
+                       bool redesign = true,
+                       const std::string &editInstruction = std::string(),
+                       const std::string &styleId = std::string(),
+                       const std::string &styleRole = std::string());
+
+  // Queues animation art for a rig that is not this window's draft (the Content Editor's
+  // rig). The clip's frame declarations live in the caller's registry document; this asks
+  // for one multi-frame document per participating part and opens the window so its Draw
+  // pumps the replies. Returns false, with a reason, when the movement's requirements are
+  // not met or there is nothing to animate.
+  bool QueueRigAnimation(const ActorRig &rig, const RigClip &clip,
+                         const std::string &variantId, std::string *error);
 
   // Bulk regeneration for every icon whose style field names `styleId`. Requests
   // run one after another; this window must be visible for replies to be pumped.
@@ -178,7 +189,7 @@ private:
   static constexpr int kDefinitionConversation = 0;
   static constexpr int kArtConversation = 1;
 
-  void SendUserMessage(const std::string &prompt);
+  bool SendUserMessage(const std::string &prompt);
 
   // ---- the pixel document turn (art.generation.source == "dsl") -------------------
   //
@@ -198,7 +209,12 @@ private:
                              const std::vector<std::string> &frameNames =
                                  std::vector<std::string>(),
                              const std::vector<std::string> &poses =
-                                 std::vector<std::string>());
+                                 std::vector<std::string>(),
+                             const std::string &baseDocument = std::string(),
+                             const std::string &editInstruction = std::string(),
+                             const std::string &styleOverride = std::string(),
+                             const std::string &styleRole = std::string(),
+                             int width = 0, int height = 0);
   // The gap offer at the top of the window, when Game has one: the crop the vision pass
   // read, what it read, and the Send button. Nothing is sent until it is pressed.
   void DrawGapOffer();
@@ -411,12 +427,23 @@ private:
   // The rig draft, the queue of art requests it still owes, and the last file time seen
   // per layer (a redraw changes the file, and the texture memo has to be told).
   void DrawRigPreview();
+
+  // The 64x64 style test: one character in the style, saved as style_test_<style id>.
+  // It becomes the style reference that the part and animation prompts carry.
+  void QueueStyleTest(const std::string &styleId, const std::string &section);
+  void UseStyleTestAsReference(const std::string &styleId, const std::string &section);
+  // The section the style test uses; one per style view rather than per style.
+  std::string styleTestRole = "actor";
   void QueueRigPartArt(const RigDesigner::Part &part);
   // Queues every layer of the draft for one clip, and declares each part's frame sprites
   // in the draft first (the art is requested by those names).
-  void QueueRigClipArt(const RigClip &clip);
+  void QueueRigClipArt(RigClip &clip);
   // Queues one layer's frames for one clip; also declares them in the draft.
-  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip);
+  void QueueRigPartClipArt(RigDesigner::Part &part, const RigClip &clip,
+                           const std::string &variantId);
+  // One layer regenerated on its own: a new stored generation that inherits the other
+  // layers from the active one, so the previous generation is untouched.
+  void QueueRigPartClipArt(RigDesigner::Part &part, RigClip &clip);
   // Copies the selected clip's brief and poses into the edit buffers.
   void SyncRigClipBuffers(const RigClip &clip);
   void QueueWornArt(const std::string &itemId);
@@ -437,9 +464,19 @@ private:
     // poses the prompt reads. Empty for a single-sprite layer.
     std::vector<std::string> frames;
     std::vector<std::string> poses;
+    // The base layer's source document, when one exists; the prompt asks the model to edit
+    // it instead of redrawing the layer from its brief.
+    std::string baseDocument;
     // True when art already exists and this is a deliberate re-draw, so the prompt asks
     // for a different interpretation rather than a copy of the current document.
     bool redesign = false;
+    // ArtStyleRegistry id for this layer's family; empty uses the registry's default.
+    std::string styleId;
+    // The style section: a rig layer is "rig", a body silhouette "silhouette", and so on.
+    std::string styleRole;
+    // The layer's canvas; the frame contract and the request must agree.
+    int width = 32;
+    int height = 32;
   };
   std::optional<RigDesigner::Draft> rigDraft;
 
@@ -550,15 +587,15 @@ private:
 
   // The "create a being's sprite" request: the text is a description, the reply is a
   // sprite document, and the name typed beside the mode becomes its filename.
-  void SendActorSpriteRequest(const std::string &description);
+  bool SendActorSpriteRequest(const std::string &description);
   char actorSpriteNameBuffer[64] = {};
   // The icon counterpart: creates the IconRegistry entry and then asks the icon
   // sprite-document turn for its art.
-  void SendIconRequest(const std::string &description);
+  bool SendIconRequest(const std::string &description);
   char iconNameBuffer[64] = {};
   // A reusable surface overlay sprite. The SurfaceRegistry definition is authored
   // elsewhere; this only creates the art entry and its generated image.
-  void SendSurfaceSpriteRequest(const std::string &description);
+  bool SendSurfaceSpriteRequest(const std::string &description);
   char surfaceSpriteNameBuffer[64] = {};
 
   // Applies the rewritten brief for the current mode to the Improve button, so an

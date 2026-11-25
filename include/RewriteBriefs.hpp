@@ -41,4 +41,16 @@ PromptRewriter::Brief Blueprint();
 // domain, which is exactly what happened before this existed.
 PromptRewriter::Brief Map();
 
+// For the actor-sprite designer. The text is a description of a whole being drawn as
+// one sprite, not a character definition: no stats, AI, race or behaviour belong in it.
+// This is the brief the Improve button was silently missing, which made it rewrite actor
+// prompts with tile vocabulary.
+PromptRewriter::Brief ActorSprite();
+
+// For the icon designer. One small UI icon, readable at its frame size.
+PromptRewriter::Brief Icon();
+
+// For the surface-sprite designer. One tileable overlay, not a scene.
+PromptRewriter::Brief SurfaceSprite();
+
 }  // namespace RewriteBriefs

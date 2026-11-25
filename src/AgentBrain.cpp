@@ -823,13 +823,34 @@ std::string AgentBrain::buildSpatialBlock() {
                        !ground->lastPath.empty() &&
                        ground->lastPath.back() == *here;
 
+  // Objects are grouped exactly as the single navigator groups them: by
+  // (content type, no-argument interaction set), inside the examine radius.
+  // `maxGroups` is 0 because the list itself decides what to show; the setting
+  // caps the printed lines, and [GO objects:all] ignores that cap.
+  std::vector<NavigationPlan::ObjectGroup> objectGroups;
+  if (cfg.includeObjects) {
+    objectGroups = NavigationPlan::BuildObjectGroups(
+        *memory, *here, Settings().system1.navigation.examineRadius, 0, true);
+  }
+
+  // "In view" is the perception sample, not memory: a character remembered but
+  // behind you is not someone [TALK] may act on.
+  std::vector<NavigationPlan::SeenCharacter> people;
+  if (const Vision *vision = entity.get<Vision>()) {
+    people = NavigationPlan::CharactersInView(*memory, vision->lastVisible,
+                                              *here);
+  }
+
   const NavigationWatch *watch = entity.get<NavigationWatch>();
+  const NavigationPlanNote *plan = entity.get<NavigationPlanNote>();
   const Facing *facing = entity.get<Facing>();
   const Facing facingValue = facing != nullptr ? *facing : Facing{};
 
   return NavigationStrategist::BuildSpatialBlock(
-      *memory, *here, facingValue, candidates, canFollow, canBack,
+      *memory, *here, facingValue, candidates, objectGroups, people, canFollow,
+      canBack, plan != nullptr ? plan->text : std::string(),
       watch != nullptr ? watch->text : std::string(), cfg.includeActions,
+      cfg.includeObjects, static_cast<std::size_t>(cfg.maxObjectGroups),
       cfg.includeMap, cfg.mapRadius);
 }
 

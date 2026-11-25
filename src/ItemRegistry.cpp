@@ -69,6 +69,19 @@ bool ItemRegistry::ParseAndStore(const nlohmann::json& j, const std::string& id,
       def.wornSprite = worn.value("sprite", std::string());
       def.wornBrief = worn.value("brief", std::string());
       def.wornZ = worn.value("z", 0);
+      if (worn.contains("grip") && worn["grip"].is_object()) {
+        const nlohmann::json& grip = worn["grip"];
+        def.wornGripX = grip.value("x", def.wornGripX);
+        def.wornGripY = grip.value("y", def.wornGripY);
+        def.wornGripAngle = grip.value("angle", def.wornGripAngle);
+        if (def.wornGripX < 0 || def.wornGripX > 31 || def.wornGripY < 0 ||
+            def.wornGripY > 31) {
+          warn("Warning: Item '" + def.id +
+               "' has a worn.grip outside the 32x32 frame; clamped.");
+          def.wornGripX = std::clamp(def.wornGripX, 0, 31);
+          def.wornGripY = std::clamp(def.wornGripY, 0, 31);
+        }
+      }
       if (worn.contains("hides") && worn["hides"].is_array()) {
         for (const auto& hide : worn["hides"]) {
           if (hide.is_string()) {
@@ -266,6 +279,11 @@ nlohmann::json ItemRegistry::ToJson(const ItemDef& definition) const {
                            {"z", definition.wornZ}};
     if (!definition.wornBrief.empty()) worn["brief"] = definition.wornBrief;
     if (!definition.wornHides.empty()) worn["hides"] = definition.wornHides;
+    if (definition.slot == "hand") {
+      worn["grip"] = {{"x", definition.wornGripX},
+                      {"y", definition.wornGripY},
+                      {"angle", definition.wornGripAngle}};
+    }
     document["worn"] = std::move(worn);
   }
   if (!definition.effectsJson.is_null()) {

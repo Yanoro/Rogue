@@ -144,6 +144,14 @@ struct SpriteDocumentBrief {
   std::string styleId;
   std::string stylePrompt;
   std::string styleNegative;
+  // Optional palette prose and style-reference document, both from the style profile.
+  std::string stylePalette;
+  std::string styleReference;
+  // The document's canvas. 32 for the ordinary sprite; the style test uses 64.
+  int width = 0;
+  int height = 0;
+  // The visual section the style is speaking to: icon, object, surface, actor, rig...
+  std::string styleRole;
   // What the art around the sprite looks like, as prose. Empty when nothing looked:
   // a standalone request from the window has no building to read, and an empty field
   // must stay a supported state rather than a prompt that says "the surroundings are:
@@ -166,6 +174,14 @@ struct SpriteDocumentBrief {
   std::vector<std::string> frameNames;
   // One pose line per frame; may be empty. The prompt reads them beside the frame names.
   std::vector<std::string> poses;
+  // The layer's current .sprite document, verbatim. An animation request that carries it
+  // asks the model to *edit* the existing art rather than invent a new character from the
+  // prose; no document leaves the prompt as it was. Single-sprite requests leave it empty.
+  std::string baseDocument;
+  // A person's requested change to the current sprite: "make the staff longer and the
+  // colours darker". With a base document the prompt asks for that document edited; with
+  // none, for a new document that applies the change. Empty for ordinary generation.
+  std::string editInstruction;
 };
 
 // The system prompt for the document turn. `%SPRITE_DSL%` is substituted from

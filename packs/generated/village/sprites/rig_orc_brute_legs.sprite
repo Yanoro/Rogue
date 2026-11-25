@@ -1,0 +1,45 @@
+sprite 32x32
+kind object
+material soil
+
+// Outline silhouette for legs and boots within (12,20)-(22,31)
+rect (12,20) (16,30) color=ink.base
+rect (17,20) (21,30) color=ink.base
+
+// Groin/gap separation
+line (16,20) (17,25) color=ink.base
+
+// Upper trousers / rough hide breeches (y=20 to y=23)
+rect (13,20) (15,23) color=soil.2
+rect (18,20) (20,23) color=soil.1
+line (13,20) (15,20) color=soil.3
+
+// Leather leg wraps (cross-banded shins, y=24 to y=26)
+rect (13,24) (15,26) color=wood.1
+rect (18,24) (20,26) color=wood.0
+// Highlight and strap overlaps
+pixel (13,24) color=wood.2
+pixel (14,25) color=wood.2
+pixel (18,24) color=wood.1
+pixel (19,25) color=wood.1
+
+// Heavy square boots (y=27 to y=30)
+rect (12,27) (16,30) color=iron.1
+rect (17,27) (21,30) color=iron.0
+
+// Boot soles & iron toe caps
+line (12,30) (16,30) color=ink.base
+line (17,30) (21,30) color=ink.base
+line (12,27) (14,27) color=iron.3
+line (17,27) (19,27) color=iron.2
+pixel (13,29) color=iron.2
+pixel (18,29) color=iron.1
+
+// Iron studs / rivets on boot cuffs
+pixel (13,28) color=iron.4
+pixel (15,28) color=iron.3
+pixel (18,28) color=iron.3
+pixel (20,28) color=iron.2
+
+// Hide texture scatter inside leg area
+scatter color=soil.0,soil.3 density=0.15 seed=42 cluster=1 inside

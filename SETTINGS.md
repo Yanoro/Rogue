@@ -364,7 +364,7 @@ Which navigator runs.
 
 | field | type | default | meaning |
 |---|---|---|---|
-| `agent` | string | `single` | Which navigator runs: the single-context plan-and-move navigator, or the strategist plus System 1 pilot. One of `single` or `two`. |
+| `agent` | string | `single` | Which navigator runs: the single-context plan-and-move navigator, the strategist plus System 1 pilot, or continuous navigation in the main agent's own context (no [NAVIGATE]). One of `single`, `two` or `inline`. *Restart to apply.* |
 
 ---
 
@@ -402,6 +402,21 @@ One main-model context that returns both the plan and the next move each decisio
 | `maxAttempts` | int | `3` | Consecutive unusable replies allowed for one decision before the fallback. Must be 1..8. A value outside the range is reported and replaced. |
 | `maxDirections` | int | `8` | Compass moves offered to the main model. Must be 1..8. A value outside the range is reported and replaced. |
 | `maxCandidates` | int | `12` | Total candidates offered: compass moves plus distant places. Must be 1..32. A value outside the range is reported and replaced. |
+
+---
+
+## `navigation.inline`
+
+Continuous navigation: the main agent's ordinary turns carry the spatial state and [GO] takes one step, with no [NAVIGATE] episode.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `maxDirections` | int | `8` | Compass moves offered in the spatial block on every turn. Must be 1..8. A value outside the range is reported and replaced. |
+| `maxCandidates` | int | `12` | Total steps offered in the spatial block: compass moves plus distant places. Must be 1..32. A value outside the range is reported and replaced. |
+| `includeActions` | bool | `true` | Include the [GO ...] step list in the wake prompt. Off leaves the orientation line and the watch, for an A/B on orientation alone. |
+| `includeMap` | bool | `false` | Include the north-up ASCII map in the spatial block. |
+| `mapRadius` | int | `6` | Radius of that map. Must be 3..12. A value outside the range is reported and replaced. |
+| `spatialHistory` | int | `2` | Previous spatial blocks kept in the main context. 0 keeps only the newest. Must be 0..64. A value outside the range is reported and replaced. |
 
 ---
 
@@ -503,6 +518,17 @@ Font and starting camera.
 
 ---
 
+## `ui`
+
+ImGui window backgrounds: colour and transparency.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `windowColor` | string | `#000000D9` | ImGui window background, #RRGGBB or #RRGGBBAA. Alpha is the window transparency. |
+| `popupColor` | string | `#000000FF` | ImGui popup background, #RRGGBB or #RRGGBBAA. Alpha is the popup transparency. |
+
+---
+
 ## `player`
 
 The player entity and its starting tile.
@@ -514,7 +540,9 @@ The player entity and its starting tile.
 | `startY` | int | `20` | Starting tile. *Restart to apply.* |
 | `race` | string | `""` | Race the player's body slots come from. Empty means the human default. *Restart to apply.* |
 | `actorSprite` | string | `""` | Actor sprite the player is drawn with. Empty uses the race's own look, then the ASCII art. |
+| `rig` | string | `""` | Actor rig the player is drawn with instead of a single sprite. Layered, so equipped items are drawn over the body and the rig's clips play as the player moves. |
 | `maxSpeed` | number | `100.0` | Top movement speed in pixels per second. Holding a direction adds velocity and the movement system clamps it to this. Must be at least 0. A value outside the range is reported and replaced. |
+| `inventorySlots` | int | `30` | Total inventory cells. Every 30 cells form one page; unused tail cells are crossed out. Must be 0..300. A value outside the range is reported and replaced. |
 | `portrait` | string | `""` | PortraitRegistry id for the player's HUD portrait. Empty means the race's default, then the unknown sprite. *Restart to apply.* |
 
 ---
@@ -526,6 +554,32 @@ Aimed skills: indicator-first or instant at the cursor.
 | field | type | default | meaning |
 |---|---|---|---|
 | `instantSkillshots` | bool | `false` | Fire aimed skills at the cursor immediately instead of showing their aim indicator first. |
+| `showSkillRanges` | bool | `true` | Draw the cast range of targeted skills, plus the positions that keep the target in range while a movement-enabled cast is active. |
+| `deathIcon` | string | `death` | IconRegistry id used as the corpse visual for every NPC death. |
+
+---
+
+## `HUD`
+
+Player-facing HUD layout.
+
+| field | type | default | meaning |
+|---|---|---|---|
+
+---
+
+## `Player portrait`
+
+Which resources the player portrait shows, in what order, and how much of each row is drawn.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `showIcons` | bool | `true` | Master switch for resource icons in the player portrait. Individual resources still control their own icon. |
+| `showValues` | bool | `true` | Show current / maximum numbers beside each resource bar. |
+| `showNames` | bool | `true` | Show the resource name beside each bar. |
+| `compact` | bool | `false` | Use tighter rows and a smaller portrait resource block. |
+| `barHeight` | number | `12.0` | Height of each resource bar in pixels. Must be 6..28. A value outside the range is reported and replaced. |
+| `resources` | object | `[]` | Ordered resource rows. Each entry is {id, visible, showIcon}; the array order is the portrait order. The Settings window edits this list directly. |
 
 ---
 
@@ -562,8 +616,17 @@ Where each content registry loads its definitions from.
 | `npcs` | string | `data/npcs` | NPC template directory: named starting configurations a map spawns by name and overrides. *Restart to apply.* |
 | `brains` | string | `data/brains` | Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent. *Restart to apply.* |
 | `portraits` | string | `data/portraits` | Portrait registry directory: one JSON per portrait, mapping an id to a sprite path or convention id. *Restart to apply.* |
+| `artStyles` | string | `data/art_styles` | Directory of prose art-style profiles used when generating sprites and icons. *Restart to apply.* |
+| `bodySilhouettes` | string | `data/body_silhouettes` | Directory of body silhouettes with normalised slot anchors for the inventory paper-doll. *Restart to apply.* |
+| `icons` | string | `data/icons` | Icon registry directory: one JSON per named icon (skill buttons, death marker, missing marker, future UI icons). *Restart to apply.* |
 | `projectiles` | string | `data/projectiles` | Projectile registry directory: one JSON per flying object, with its sprite, speed and size. *Restart to apply.* |
 | `skillshots` | string | `data/skillshots` | Skillshot registry directory: one JSON per aimed delivery, with its sprite, path, speed, width and length. *Restart to apply.* |
+| `combatStrategies` | string | `data/combat_strategies` | Combat strategy registry directory: one JSON per non-LLM combat tactic. *Restart to apply.* |
+| `surfaceSprites` | string | `data/surface_sprites` | Directory scanned for reusable surface-sprite entries. |
+| `surfaces` | string | `data/surfaces` | Directory scanned for surface definitions (fire, water, oil). |
+| `statusEffects` | string | `data/status_effects` | Directory scanned for reusable actor statuses such as wet and burning. |
+| `effects` | string | `data/effects` | Directory scanned for atomic effect definitions used by surfaces and statuses. |
+| `resources` | string | `data/resources` | Directory scanned for character resource definitions (health, mana, stamina, shields). |
 | `places` | string | `data/places.json` | The place taxonomy file: which categories form places, their seed thresholds, link radii and split rule. *Restart to apply.* |
 | `tiles` | string | `data/tiles` | The hand-authored tile catalog directory. Agent-created tiles go to generatedTiles instead. *Restart to apply.* |
 | `generatedTiles` | string | `data/generated/tiles` | Generated overlay for agent-created tiles, loaded additively on top of the catalog. *Restart to apply.* |
@@ -690,35 +753,3 @@ Two related files are *not* settings:
 - `debug_windows_state.json` is runtime state (which windows are open),
   written by the game. Only its **path** is configurable.
 - `openrouter_debug.log` is AI debug output, not configuration.
-
-## Surface content paths
-
-- `content.surfaceSprites` (default `data/surface_sprites`)
-- `content.surfaces` (default `data/surfaces`)
-- `content.statusEffects` (default `data/status_effects`)
-
-## Resource content paths
-
-- `content.resources` (default `data/resources`)
-
-## Player portrait resources
-
-- `hud.portrait.showIcons`
-- `hud.portrait.showValues`
-- `hud.portrait.showNames`
-- `hud.portrait.compact`
-- `hud.portrait.barHeight`
-- `hud.portrait.resources` (ordered `{id, visible, showIcon}` array)
-
-## Inventory
-
-- `player.inventorySlots` (default 30; every 30 cells form a page; unused tail cells are crossed out)
-
-## Art styles
-
-- `content.artStyles` (default `data/art_styles`): prose profiles for generated sprite families.
-- Icons can set `"style": "<style id>"`; other sprite kinds use their family default.
-
-## Body silhouettes
-
-- `content.bodySilhouettes` (default `data/body_silhouettes`): silhouette icons and normalised slot anchors for the inventory paper-doll.

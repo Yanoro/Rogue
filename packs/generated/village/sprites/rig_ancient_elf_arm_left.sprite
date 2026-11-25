@@ -1,0 +1,32 @@
+sprite 32x32
+kind object
+material grass
+
+// Sleeve silhouette and base
+rect (7,12) (10,20) color=ink.base
+rect (8,13) (9,19) color=grass.base
+
+// Sleeve lighting and folds (light from above-left)
+line (8,12) (9,12) color=grass.3
+line (8,13) (8,18) color=grass.3
+line (9,14) (9,19) color=grass.1
+pixel (8,16) color=grass.2
+pixel (8,19) color=grass.2
+pixel (9,20) color=grass.0
+pixel (8,20) color=grass.1
+
+// Elven hand silhouette and base (pale skin tone via sand ramp)
+rect (8,21) (9,23) color=sand.1
+pixel (7,21) color=ink.base
+pixel (7,22) color=ink.base
+pixel (10,21) color=ink.base
+pixel (10,22) color=ink.base
+pixel (8,24) color=ink.base
+pixel (9,24) color=ink.base
+
+// Hand lighting / fingers detail
+pixel (8,21) color=sand.3
+pixel (8,22) color=sand.2
+pixel (9,22) color=sand.1
+pixel (8,23) color=sand.2
+pixel (9,23) color=sand.0

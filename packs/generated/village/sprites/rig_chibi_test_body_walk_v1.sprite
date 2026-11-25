@@ -1,0 +1,107 @@
+sprite 32x32
+kind object
+
+frame "f1" {
+  // Outline
+  rect (11,17) (21,25) color=ink.base
+  rect (10,18) (22,24) color=ink.base
+
+  // Tunic main fill (bright cloth)
+  rect (11,18) (21,24) color=water.2
+
+  // Highlights and shadows on cloth
+  rect (11,18) (15,21) color=water.3
+  pixel (12,18) color=water.3
+  rect (18,18) (21,21) color=water.1
+
+  // Belt & buckle
+  rect (11,22) (21,23) color=wood.1
+  rect (15,22) (17,23) color=sand.4
+  pixel (16,22) color=sand.3
+
+  // Tunic hem below belt
+  line (11,24) (21,24) color=water.2
+  pixel (11,24) color=water.3
+  pixel (21,24) color=water.1
+
+  // Collar notch
+  pixel (16,18) color=sand.2
+}
+
+frame "f2" {
+  // Outline (body raised 1px)
+  rect (11,16) (21,24) color=ink.base
+  rect (10,17) (22,23) color=ink.base
+
+  // Tunic main fill
+  rect (11,17) (21,23) color=water.2
+
+  // Highlights and shadows
+  rect (11,17) (15,20) color=water.3
+  rect (18,17) (21,20) color=water.1
+
+  // Belt & buckle
+  rect (11,21) (21,22) color=wood.1
+  rect (15,21) (17,22) color=sand.4
+  pixel (16,21) color=sand.3
+
+  // Tunic hem below belt
+  line (11,23) (21,23) color=water.2
+  pixel (11,23) color=water.3
+  pixel (21,23) color=water.1
+
+  // Collar notch
+  pixel (16,17) color=sand.2
+}
+
+frame "f3" {
+  // Outline (body at lowest position)
+  rect (11,17) (21,25) color=ink.base
+  rect (10,18) (22,24) color=ink.base
+
+  // Tunic main fill
+  rect (11,18) (21,24) color=water.2
+
+  // Highlights and shadows
+  rect (11,18) (15,21) color=water.3
+  rect (18,18) (21,21) color=water.1
+
+  // Belt & buckle
+  rect (11,22) (21,23) color=wood.1
+  rect (15,22) (17,23) color=sand.4
+  pixel (16,22) color=sand.3
+
+  // Tunic hem below belt
+  line (11,24) (21,24) color=water.2
+  pixel (11,24) color=water.3
+  pixel (21,24) color=water.1
+
+  // Collar notch
+  pixel (16,18) color=sand.2
+}
+
+frame "f4" {
+  // Outline (body raised 1px)
+  rect (11,16) (21,24) color=ink.base
+  rect (10,17) (22,23) color=ink.base
+
+  // Tunic main fill
+  rect (11,17) (21,23) color=water.2
+
+  // Highlights and shadows
+  rect (11,17) (15,20) color=water.3
+  rect (18,17) (21,20) color=water.1
+
+  // Belt & buckle
+  rect (11,21) (21,22) color=wood.1
+  rect (15,21) (17,22) color=sand.4
+  pixel (16,21) color=sand.3
+
+  // Tunic hem below belt
+  line (11,23) (21,23) color=water.2
+  pixel (11,23) color=water.3
+  pixel (21,23) color=water.1
+
+  // Collar notch
+  pixel (16,17) color=sand.2
+}

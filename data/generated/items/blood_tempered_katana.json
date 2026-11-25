@@ -16,6 +16,11 @@
   "worn": {
     "brief": "a slender curved steel blade with a crimson-tinted cutting edge and a black-wrapped hilt with a brass guard",
     "sprite": "worn_blood_tempered_katana",
-    "z": 110
+    "z": 110,
+    "grip": {
+      "x": 24,
+      "y": 24,
+      "angle": 0
+    }
   }
 }

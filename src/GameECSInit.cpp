@@ -457,6 +457,7 @@ void Game::ECSInit() {
   // Agent-authored rigs load after the catalog, so deleting one reverts to the
   // hand-authored body it was written over.
   rigRegistry.Load(settings.content.generatedRigs);
+  ecs.set<RigRegistryResource>({&rigRegistry});
 
   // Movement templates load after the rigs so the cross-check below can see both. A rig
   // clip and a skill both name a movement by id; a typo would otherwise be a silent
@@ -503,6 +504,7 @@ void Game::ECSInit() {
   iconRegistry.SetDebugLog(debugLog.get());
   iconRegistry.Load(settings.content.icons);
   artStyleRegistry.Load(settings.content.artStyles);
+  visualAssets.Load("data/visual_assets.json");
   bodySilhouetteRegistry.Load(settings.content.bodySilhouettes);
 
   // Surface visuals are their own reusable registry, exactly like actor sprites:
@@ -871,7 +873,7 @@ void Game::ECSInit() {
   // keys are ever stated.
   GlobalCommandRegistry::Register({
     .format = "[GO $STEP]",
-    .rule = "Take one step from the spatial block: a compass run, a remembered place, follow, back or to:<n>.",
+    .rule = "Take one step from the spatial block: a compass run, a remembered place, an object to inspect or use, follow, back or to:<n>.",
     .pattern = std::regex(R"(\[GO\s+([^\]]+?)\s*\])", std::regex_constants::icase),
     .createAction = [](const std::smatch& match) {
       std::string key = match[1].str();
@@ -881,11 +883,12 @@ void Game::ECSInit() {
     },
     .hidden = Settings().navigation.agent != "inline",
     .help = {
-      .description = "Take one step from the spatial state at the top of your context: a compass run within the place you are standing in ([GO here:north]), a remembered place ([GO p17]), a linear feature underfoot ([GO follow] or [GO follow:east]), the step you just walked ([GO back]), or a step by its number in the map targets ([GO to:3]). The step walks one leg and hands the turn back to you; it is not a journey, and nothing continues without you. Keys are resolved against what you remember now, so use them exactly as the spatial block printed them: a key that is no longer offered fails and names the steps that are offered instead.",
-      .examples = {"[GO here:north]", "[GO p17]", "[GO follow:east]", "[GO back]", "[GO to:3]"},
-      .usage = {"$STEP: one key from the spatial block, e.g. here:north, p17, follow, follow:east, back or to:3."},
+      .description = "Take one step from the spatial state at the top of your context. A move is a compass run within the place you are standing in ([GO here:north]), a remembered place ([GO p17]), a linear feature underfoot ([GO follow] or [GO follow:east]), the step you just walked ([GO back]), or a step by its number in the map targets ([GO to:3]). An object step is [GO objects:all], [GO inspect:<group>], [GO approach:<alias>] or [GO <verb>:<alias>]: the first two list without moving, the last two walk to the instance and then stand beside it or use the verb. The step walks one leg and hands the turn back to you; it is not a journey, and nothing continues without you. Keys are resolved against what you remember now, so use them exactly as the spatial block printed them: a key that is no longer offered fails and names the steps that are offered instead.",
+      .examples = {"[GO here:north]", "[GO p17]", "[GO follow:east]", "[GO back]", "[GO inspect:apple_tree]", "[GO examine:apple_tree-1]"},
+      .usage = {"$STEP: one key from the spatial block, e.g. here:north, p17, objects:all, inspect:apple_tree, approach:apple_tree-1, examine:apple_tree-1, follow, follow:east, back or to:3."},
       .notes = {"[MOVE_TO] is for a character, object or place whose name you already know -- your farm, the market, a person. [GO] is for the steps the engine offers from where you stand, including stretches of road that have no name.",
                 "A here:<direction> step is one compass run -- often several tiles -- not a single tile. follow goes further: it stays on the feature through forced turns to the next junction or end.",
+                "An object alias comes only from [GO inspect:<group>]; it is not a name you can invent. A verb step walks there first, so a harvest or an examine is one command.",
                 "You do not have to move: your other commands work on the same turn."}
     }
   });
@@ -910,6 +913,81 @@ void Game::ECSInit() {
       .examples = {"[WATCH look for a village, a signpost or water]", "[WATCH]"},
       .usage = {"$WHAT: a short phrase, e.g. look for a signpost or a village. Leave it out to clear."},
       .notes = {"Nothing is filtered out: the brief says what is worth interrupting for, and everything you see is still remembered and listed in your spatial state."}
+    }
+  });
+
+  // [PLAN] -- what the character is trying to do, in its own words. [WATCH] is
+  // the attention brief (what to stop for); [PLAN] is the intention the gate's
+  // classifier weighs it against, and it is echoed at the top of the spatial
+  // block. Hidden outside inline mode, where the navigator owns its own plan.
+  GlobalCommandRegistry::Register({
+    .format = "[PLAN $WHAT]",
+    .rule = "Say what you are trying to do in your own words; [PLAN] alone clears it.",
+    .pattern = std::regex(R"(\[PLAN(?:\s+([^\]]*?))?\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) {
+      std::string what;
+      if (match.size() > 1 && match[1].matched) what = match[1].str();
+      return [what](flecs::entity) -> std::unique_ptr<AgentAction> {
+        return std::make_unique<PlanAction>(what);
+      };
+    },
+    .hidden = Settings().navigation.agent != "inline",
+    .help = {
+      .description = "State what you are trying to do, in your own words: cross to the far side of the orchard, find whoever left the cart, get back to the road before dark. It is echoed at the top of your spatial state each turn, so it survives the parts of a walk you stop looking at, and the attention gate uses it as the intention behind your watch. A bare [PLAN] clears it. Unlike [WATCH], which says what should interrupt you, the plan says why the walk is happening.",
+      .examples = {"[PLAN follow the road north until it forks, then take the west branch]", "[PLAN]"},
+      .usage = {"$WHAT: a short sentence. Leave it out to clear."},
+      .notes = {"A plan is not a command: it does not move you. It is context, and the next step is still a [GO] or another command.",
+                "Your task list is the fixed frame; a plan is the current intention inside it."}
+    }
+  });
+
+  // [TALK] -- start a conversation with someone in view. The spatial block lists
+  // the people it can act on, in the exact [TALK <name>] form. [TALK_TO] remains
+  // the verb for a character you know but cannot see; this one refuses someone
+  // out of view rather than starting a conversation across the map.
+  GlobalCommandRegistry::Register({
+    .format = "[TALK $PERSON]",
+    .rule = "Start a conversation with a person you can see; the spatial block lists them.",
+    .pattern = std::regex(R"(\[TALK\s+([^\]]+?)\s*\])", std::regex_constants::icase),
+    .createAction = [](const std::smatch& match) {
+      std::string person = match[1].str();
+      return [person](flecs::entity actor) -> std::unique_ptr<AgentAction> {
+        const SpatialMemory *memory = actor.get<SpatialMemory>();
+        const GamePosition *here = actor.get<GamePosition>();
+        const Vision *vision = actor.get<Vision>();
+        if (memory == nullptr || here == nullptr || vision == nullptr) {
+          return std::make_unique<NoticeAction>(
+              "System: You cannot see anyone from here.\n");
+        }
+        const std::vector<NavigationPlan::SeenCharacter> characters =
+            NavigationPlan::CharactersInView(*memory, vision->lastVisible,
+                                             *here);
+        NavigationPlan::SeenCharacter found;
+        if (!NavigationPlan::FindCharacterInView(characters, person, found)) {
+          std::string names;
+          for (const NavigationPlan::SeenCharacter &character : characters) {
+            if (!names.empty()) names += ", ";
+            names += character.name;
+          }
+          return std::make_unique<NoticeAction>(
+              "System: You cannot see anyone called '" + person + "' from "
+              "here. " +
+              (names.empty()
+                   ? std::string("There is no one in view; [LOOK around] may "
+                                 "find someone, or [TALK_TO] a character you "
+                                 "already know.")
+                   : "In view: " + names + ". Use [TALK <name>].") +
+              "\n");
+        }
+        return std::make_unique<TalkAction>(actor, found.name);
+      };
+    },
+    .hidden = Settings().navigation.agent != "inline",
+    .help = {
+      .description = "Start a conversation with a person you can currently see. The spatial block's PEOPLE IN VIEW section lists who this works on, and what they are near. Use [TALK_TO] for a character you know by name but cannot see from where you stand: an unseen person is not someone you can call across the map.",
+      .examples = {"[TALK Pietro]"},
+      .usage = {"$PERSON: a name from PEOPLE IN VIEW, or the alias in that block."},
+      .notes = {"Conversation takes over the turn: [OFFER], [ACCEPT], [DECLINE], [COUNTER_OFFER], [INVENTORY] and [EXIT] are the verbs until it ends. The walk waits; nothing moves while you talk."}
     }
   });
 
@@ -2097,6 +2175,22 @@ void Game::ECSInit() {
           "Warning: player.actorSprite '" + settings.player.actorSprite +
           "' has no sprite art (data/sprites/" + settings.player.actorSprite +
           ".png); using the race's look.";
+      if (debugLog) debugLog->LogWarning(message);
+      else std::cerr << message << std::endl;
+    }
+  }
+
+  // The player's rig, when the settings name one. Layered art wins over the actor sprite
+  // in the renderer; an unknown id is reported and leaves the sprite in place.
+  if (!settings.player.rig.empty()) {
+    if (const ActorRig *rig = rigRegistry.Get(settings.player.rig)) {
+      playerEntity.set<RigBody>({settings.player.rig});
+      playerEntity.set<RigAnim>({});
+      ApplyRigFootprint(playerEntity, *rig);
+    } else {
+      const std::string message =
+          "Warning: player.rig '" + settings.player.rig +
+          "' is not an actor rig; using the actor sprite or race look.";
       if (debugLog) debugLog->LogWarning(message);
       else std::cerr << message << std::endl;
     }

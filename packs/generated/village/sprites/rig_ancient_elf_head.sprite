@@ -1,0 +1,53 @@
+sprite 32x32
+kind object
+material sand
+
+// Base face shape & pointed ears
+// Ears sticking out slightly at temple/eye level
+pixel (10,7) color=sand.3
+pixel (10,8) color=sand.2
+pixel (22,7) color=sand.3
+pixel (22,8) color=sand.2
+
+// Main head mass: forehead down to tapering chin
+rect (12,4) (20,8) color=sand.4
+rect (13,9) (19,10) color=sand.3
+rect (14,11) (18,11) color=sand.2
+// Sharp pointed chin
+rect (15,12) (17,12) color=sand.2
+pixel (16,12) color=sand.1
+
+// Shading / facial plane structure
+// Forehead top highlight
+line (13,4) (19,4) color=sand.4
+// Left ear highlight, right ear shade
+pixel (10,7) color=sand.4
+pixel (22,8) color=soil.1
+
+// Jawline contour shading
+pixel (13,10) color=sand.2
+pixel (19,10) color=sand.1
+pixel (14,11) color=sand.1
+pixel (18,11) color=soil.1
+
+// Brows - fine, angled
+line (13,6) (15,6) color=soil.2
+line (17,6) (19,6) color=soil.2
+
+// Sharp grey eyes (iron palette)
+pixel (13,7) color=iron.3
+pixel (14,7) color=iron.1
+pixel (18,7) color=iron.1
+pixel (19,7) color=iron.3
+
+// Eye catchlights / lower rim
+pixel (14,8) color=sand.4
+pixel (18,8) color=sand.4
+
+// Nose bridge & tip
+pixel (16,8) color=sand.4
+pixel (16,9) color=sand.2
+
+// Refined elven mouth
+line (15,11) (17,11) color=soil.2
+pixel (16,11) color=soil.1

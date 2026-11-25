@@ -1,0 +1,162 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  skin_base = #4f6828
+  skin_dark = #394d1b
+  skin_hi   = #6a8836
+  tusk      = #cfaf63
+  tusk_hi   = #ede0a6
+  tusk_dark = #8a6c32
+  eye_glow  = #c73824
+  shadow    = #222e11
+}
+
+frame "f1" {
+  // Contact: lowest step (y offset +1: y=5..13)
+  // Dark outline / silhouette
+  rect (11,5) (21,13) color=ink.base
+  pixel (11,5) color=#00000000
+  pixel (21,5) color=#00000000
+  pixel (11,13) color=#00000000
+  pixel (21,13) color=#00000000
+
+  // Base olive face & heavy jaw
+  rect (12,6) (20,12) color=skin_base
+  rect (12,10) (20,12) color=skin_dark
+  // Brow highlight
+  line (13,6) (19,6) color=skin_hi
+
+  // Sunken eye sockets & eyes
+  rect (13,8) (14,9) color=shadow
+  rect (18,8) (19,9) color=shadow
+  pixel (13,8) color=eye_glow
+  pixel (18,8) color=eye_glow
+
+  // Broad nose & snout shadow
+  pixel (16,9) color=shadow
+  line (15,10) (17,10) color=shadow
+
+  // Mouth slit
+  line (14,12) (18,12) color=ink.base
+
+  // Upward tusks
+  pixel (13,11) color=tusk
+  pixel (13,10) color=tusk_hi
+  pixel (19,11) color=tusk
+  pixel (19,10) color=tusk_hi
+  pixel (13,12) color=tusk_dark
+  pixel (19,12) color=tusk_dark
+}
+
+frame "f2" {
+  // Passing: rising step (standard pos: y=4..12)
+  // Dark outline / silhouette
+  rect (11,4) (21,12) color=ink.base
+  pixel (11,4) color=#00000000
+  pixel (21,4) color=#00000000
+  pixel (11,12) color=#00000000
+  pixel (21,12) color=#00000000
+
+  // Base olive face & heavy jaw
+  rect (12,5) (20,11) color=skin_base
+  rect (12,9) (20,11) color=skin_dark
+  // Brow highlight
+  line (13,5) (19,5) color=skin_hi
+
+  // Sunken eye sockets & eyes
+  rect (13,7) (14,8) color=shadow
+  rect (18,7) (19,8) color=shadow
+  pixel (13,7) color=eye_glow
+  pixel (18,7) color=eye_glow
+
+  // Broad nose & snout shadow
+  pixel (16,8) color=shadow
+  line (15,9) (17,9) color=shadow
+
+  // Mouth slit
+  line (14,11) (18,11) color=ink.base
+
+  // Upward tusks
+  pixel (13,10) color=tusk
+  pixel (13,9) color=tusk_hi
+  pixel (19,10) color=tusk
+  pixel (19,9) color=tusk_hi
+  pixel (13,11) color=tusk_dark
+  pixel (19,11) color=tusk_dark
+}
+
+frame "f3" {
+  // Contact: lowest step (y offset +1: y=5..13)
+  // Dark outline / silhouette
+  rect (11,5) (21,13) color=ink.base
+  pixel (11,5) color=#00000000
+  pixel (21,5) color=#00000000
+  pixel (11,13) color=#00000000
+  pixel (21,13) color=#00000000
+
+  // Base olive face & heavy jaw
+  rect (12,6) (20,12) color=skin_base
+  rect (12,10) (20,12) color=skin_dark
+  // Brow highlight
+  line (13,6) (19,6) color=skin_hi
+
+  // Sunken eye sockets & eyes
+  rect (13,8) (14,9) color=shadow
+  rect (18,8) (19,9) color=shadow
+  pixel (13,8) color=eye_glow
+  pixel (18,8) color=eye_glow
+
+  // Broad nose & snout shadow
+  pixel (16,9) color=shadow
+  line (15,10) (17,10) color=shadow
+
+  // Mouth slit
+  line (14,12) (18,12) color=ink.base
+
+  // Upward tusks
+  pixel (13,11) color=tusk
+  pixel (13,10) color=tusk_hi
+  pixel (19,11) color=tusk
+  pixel (19,10) color=tusk_hi
+  pixel (13,12) color=tusk_dark
+  pixel (19,12) color=tusk_dark
+}
+
+frame "f4" {
+  // Passing: rising step (standard pos: y=4..12)
+  // Dark outline / silhouette
+  rect (11,4) (21,12) color=ink.base
+  pixel (11,4) color=#00000000
+  pixel (21,4) color=#00000000
+  pixel (11,12) color=#00000000
+  pixel (21,12) color=#00000000
+
+  // Base olive face & heavy jaw
+  rect (12,5) (20,11) color=skin_base
+  rect (12,9) (20,11) color=skin_dark
+  // Brow highlight
+  line (13,5) (19,5) color=skin_hi
+
+  // Sunken eye sockets & eyes
+  rect (13,7) (14,8) color=shadow
+  rect (18,7) (19,8) color=shadow
+  pixel (13,7) color=eye_glow
+  pixel (18,7) color=eye_glow
+
+  // Broad nose & snout shadow
+  pixel (16,8) color=shadow
+  line (15,9) (17,9) color=shadow
+
+  // Mouth slit
+  line (14,11) (18,11) color=ink.base
+
+  // Upward tusks
+  pixel (13,10) color=tusk
+  pixel (13,9) color=tusk_hi
+  pixel (19,10) color=tusk
+  pixel (19,9) color=tusk_hi
+  pixel (13,11) color=tusk_dark
+  pixel (19,11) color=tusk_dark
+}

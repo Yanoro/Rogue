@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -9,6 +10,8 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "VisualAssetRegistry.h"
+#include "RigRegistry.h"
 #include "SpriteKinds.hpp"
 #include "Window.h"
 
@@ -48,6 +51,7 @@ private:
   void Save();
 
   void DrawKindAndList();
+  void DrawVisualAssets(const ContentKinds::World &world);
   void DrawDocumentPane();
   void DrawSpritePane();
   // The sprite asset section, shared by the sprite kinds and the equipment tab: preview,
@@ -64,12 +68,16 @@ private:
   // worn equipment layer), and becomes the brief a Regenerate is redrawn from.
   void DrawSpriteAsset(const std::string &convention, const std::string &requestName,
                        SpriteKinds::Kind spriteKind, const std::string &explicitSprite,
-                       bool builtInFallback, const std::string &artRequirement);
+                       bool builtInFallback, const std::string &artRequirement,
+                       const std::string &styleId = std::string());
 
   // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
   // one kind whose document is a *composition*, so the generic form alone cannot show
   // what it makes.
   void DrawRigPreviewPane();
+  // Writes a clip and its per-part frame declarations into the live rig registry and the
+  // editor's document. The art itself is queued through the Designer afterwards.
+  bool ApplyRigClip(const ActorRig &rig, const RigClip &clip, std::string *error);
   // The equipment preview: the item's numbers and, when it has worn art, the layer on a
   // chosen rig. A worn item with no body to wear it is only half an item.
   void DrawItemPreviewPane();
@@ -96,7 +104,8 @@ private:
 
   const ContentKinds::Kind *Kind() const;
   // The registries, wrapped for the kind table. Built per frame; it only holds references.
-  ContentKinds::World World_() ;
+  ContentKinds::World World_();
+  VisualAssetRegistry visualAssets;
 
   Game *game = nullptr;
 
@@ -109,12 +118,33 @@ private:
   // selected rig changes so a different rig starts from a full outfit.
   std::set<std::string> rigPreviewWorn;
   std::string rigPreviewEntry;
+  // Animation in the rig pane: the selected clip, its playback clock, the movement chosen
+  // for a new clip, and the texture stamps that let generated frames appear as they land.
+  std::string rigClipId;
+  float rigClipTime = 0.0f;
+  bool rigClipPlaying = true;
+  std::string rigNewClipMovement;
+  std::map<std::string, std::filesystem::file_time_type> rigAnimStamps;
+  std::string rigAnimStatus;
+  bool rigAnimStatusIsError = false;
   std::string itemPreviewRig;
+  // The sprite-asset edit box. Shared by every asset section so a new registry that draws
+  // its sprite through DrawSpriteAsset gets the same editing for free. Cleared when the
+  // section moves to a different sprite, so an instruction never leaks across assets.
+  char spriteEditBuffer[512] = {};
+  std::string spriteEditTarget;
+  // Grip editing in the item pane: the clip/frame whose arm the weapon is previewed on.
+  std::string itemGripClip;
+  int itemGripFrame = 0;
 
   // The working copy. Edited in place, saved or reverted; the registry is only touched on
   // save, so a half-typed document never reaches the world.
   nlohmann::json document;
   bool dirty = false;
+  // The transient theme chosen for the next sprite generation. Empty means the global
+  // default. It is a generation control, not a content field; the content's own style
+  // field remains the persistent override.
+  std::string generationTheme;
   char anchorSlotBuffer[64] = "";
 
   std::string status;

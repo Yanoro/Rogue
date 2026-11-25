@@ -1,0 +1,59 @@
+sprite 32x32
+kind object
+material soil
+
+// Base dark silhouette of tangled hair over crown and temples
+rect (11,2) (21,5) color=soil.0
+polygon (10,3) (12,1) (20,1) (22,3) (21,6) (11,6) color=soil.0
+
+// Side locks framing the face and spilling toward the shoulders
+polygon (9,4) (11,4) (11,13) (8,12) color=soil.0
+polygon (21,4) (23,4) (24,12) (21,13) color=soil.0
+
+// Additional ragged, tangled tufts
+pixel (10,2) color=soil.0
+pixel (12,1) color=soil.0
+pixel (15,0) color=soil.0
+pixel (18,1) color=soil.0
+pixel (21,2) color=soil.0
+
+// Jagged side strands hanging over shoulders
+pixel (8,13) color=soil.0
+pixel (9,14) color=soil.0
+pixel (7,11) color=soil.0
+pixel (23,13) color=soil.0
+pixel (24,14) color=soil.0
+pixel (25,11) color=soil.0
+
+// Fringe/bangs hanging over forehead (forehead top at y=4..5)
+polygon (11,4) (13,7) (15,4) (17,7) (19,4) (21,6) color=soil.0
+
+// Deep shadows / ink accents underneath strands and at roots
+pixel (12,7) color=ink.base
+pixel (16,7) color=ink.base
+pixel (20,6) color=ink.base
+line (9,6) (9,11) color=ink.base
+line (23,6) (23,11) color=ink.base
+
+// Midtone volume (soil.1)
+rect (12,3) (20,4) color=soil.1
+pixel (11,4) color=soil.1
+pixel (14,2) color=soil.1
+pixel (17,2) color=soil.1
+pixel (10,5) color=soil.1
+pixel (10,8) color=soil.1
+pixel (10,10) color=soil.1
+pixel (22,5) color=soil.1
+pixel (22,8) color=soil.1
+pixel (22,10) color=soil.1
+
+// Rough top-left lighting highlights on hair ridges (soil.2)
+pixel (13,2) color=soil.2
+pixel (14,3) color=soil.2
+pixel (16,2) color=soil.2
+pixel (11,5) color=soil.2
+pixel (10,7) color=soil.2
+pixel (18,3) color=soil.2
+
+// Fine scatter for coarse, tangled texture
+scatter color=soil.1,soil.2 density=0.18 seed=41 cluster=1 inside

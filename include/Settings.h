@@ -401,6 +401,15 @@ struct GameSettings {
     // Include the [GO ...] step list. Off leaves the orientation line and the
     // watch, which is the "does standing orientation alone help?" arm.
     bool includeActions = true;
+    // Include the OBJECTS section: the grouped object grammar
+    // ([GO objects:all], [GO inspect:<group>], [GO approach:<alias>],
+    // [GO <verb>:<alias>]) plus one line per group. Off is the cheap arm: the
+    // steps alone still describe the topology.
+    bool includeObjects = true;
+    // Groups listed before the rest are hidden behind [GO objects:all], and
+    // instances shown by [GO inspect:<group>] before :all is needed.
+    int maxObjectGroups = 6;
+    int maxObjectDetails = 8;
     // Include the north-up ASCII map in the spatial block. Off by default: the
     // block is meant to be cheap on every turn, and the map is the first thing
     // to turn on when a run shows the model misreading the local layout.
@@ -598,6 +607,14 @@ struct GameSettings {
     float cameraZoom = 0.0f;
   } render;
 
+  // ImGui window styling. Colors are #RRGGBB or #RRGGBBAA; the alpha is the window
+  // transparency. Strings so settings.json stays hand-editable; the Settings window shows
+  // a colour picker over the same value.
+  struct UiSection {
+    std::string windowColor = "#000000D9";
+    std::string popupColor = "#000000FF";
+  } ui;
+
   // Acquisition field for every character's Vision. Named `perception` rather
   // than `vision` because `vision` is already the independent Vision Chat AI
   // backend. The default is all-round (360 degrees) so navigation can be
@@ -657,6 +674,10 @@ struct GameSettings {
     // data/sprites/<id>.png, and an id with no art leaves the race's look in
     // place and is reported.
     std::string actorSprite;
+    // ActorRigRegistry id the player is drawn with instead of a single sprite. Empty
+    // keeps the actor sprite (or the race's look). A rig is layered, so equipped items are
+    // drawn over the body and the clips stored in the rig play when the player moves.
+    std::string rig;
     // Top movement speed in pixels per second. Holding a direction adds velocity
     // each frame and the movement system clamps it to this, so this is how fast
     // the player settles at walking, not how quickly they get there. 0 is a

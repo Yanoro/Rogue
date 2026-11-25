@@ -1,0 +1,69 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  venom_dark = #226b18
+  venom_mid = #3db320
+  venom_bright = #73f038
+  venom_drip = #a4ff66
+  grip_dark = #241812
+  grip_mid = #3b281f
+  grip_wrap = #543b2d
+}
+
+// Pommel & lower grip cap
+pixel (23,24) color=ink.base
+pixel (22,24) color=iron.1
+pixel (23,23) color=iron.2
+
+// Leather-wrapped Grip centered at (23, 21)
+line (22,20) (22,22) color=ink.base
+line (23,20) (23,22) color=grip_dark
+line (24,20) (24,22) color=ink.base
+pixel (23,20) color=grip_wrap
+pixel (23,21) color=grip_mid
+pixel (23,22) color=grip_wrap
+
+// Crossguard
+line (21,19) (25,19) color=ink.base
+pixel (21,19) color=iron.1
+pixel (22,19) color=iron.3
+pixel (23,19) color=iron.2
+pixel (24,19) color=iron.3
+pixel (25,19) color=iron.0
+
+// Dagger Blade - Straightened slender dagger
+// Outlines
+line (22,18) (22,9) color=ink.base
+line (24,18) (24,9) color=ink.base
+pixel (23,8) color=ink.base
+pixel (23,7) color=ink.base
+
+// Blackened core & spine of the blade
+pixel (23,18) color=iron.1
+pixel (23,17) color=iron.0
+pixel (23,16) color=iron.1
+pixel (23,15) color=iron.0
+pixel (23,14) color=iron.1
+pixel (23,13) color=iron.0
+pixel (23,12) color=iron.1
+pixel (23,11) color=iron.0
+pixel (23,10) color=iron.1
+pixel (23,9) color=iron.2
+pixel (23,8) color=iron.0
+
+// Venom-coated cutting edge & blade details
+line (24,17) (24,11) color=venom_dark
+pixel (24,18) color=venom_mid
+pixel (24,16) color=venom_bright
+pixel (24,14) color=venom_mid
+pixel (24,12) color=venom_bright
+pixel (24,10) color=venom_bright
+pixel (23,9) color=venom_mid
+pixel (23,8) color=venom_bright
+pixel (23,7) color=venom_drip
+
+// Toxic gleam bead
+pixel (24,13) color=venom_drip
+pixel (25,14) color=venom_mid

@@ -612,6 +612,28 @@ struct Sprite {
   std::string path;
 };
 
+// The rig an actor is drawn with, instead of its single Sprite.
+//
+// Runtime-only, like Sprite: the art lives in the rig and item registries, and the id is
+// all an entity needs. An entity with a RigBody is drawn part by part, with its equipped
+// items as worn layers. A rig id that does not resolve falls back to the sprite, so a typo
+// is a visible fallback rather than an invisible actor.
+struct RigBody {
+  std::string rig;
+};
+
+// Which clip a rigged actor is playing and how far into it. The animation system updates
+// this from movement; the renderer only reads it, which keeps a draw call from being the
+// place a clip starts.
+struct RigAnim {
+  std::string clip;
+  float time = 0.0f;
+  // A skill-driven clip plays once and then yields to locomotion. Kept on the component
+  // rather than inferred from the clip's loop flag because a preview or a locomotion clip
+  // can legitimately be non-looping too, and only the skill path owns this hand-over.
+  bool oneShot = false;
+};
+
 // Marks the map's own ground tiles, so the renderer can draw them before
 // everything that stands on them.
 //
@@ -623,11 +645,41 @@ struct Sprite {
 // the rest (see Game::ECSInitRenderSystems).
 struct MapTileVisual {};
 
-// Whats actually taken into account when handling collision
+// Whats actually taken into account when handling collision. The offset is the base's
+// top-left relative to the entity's cell; a rig's art can extend above it, and the foot
+// of a larger rig sits at the cell bottom.
 struct Hitbox {
   size_t width;
   size_t height;
+  float offsetX = 0.0f;
+  float offsetY = 0.0f;
 };
+
+// The click/hover rectangle, kept separate from the collision base. A tall rig can be
+// clickable over its whole silhouette while colliding with a small footprint. Absent
+// means the Hitbox is used for picking too.
+struct Pickbox {
+  size_t width = 0;
+  size_t height = 0;
+  float offsetX = 0.0f;
+  float offsetY = 0.0f;
+};
+
+inline raylib::Rectangle HitboxRectangle(const ScreenPosition &position,
+                                         const Hitbox &hitbox) {
+  return raylib::Rectangle(position.x + hitbox.offsetX,
+                           position.y + hitbox.offsetY,
+                           static_cast<float>(hitbox.width),
+                           static_cast<float>(hitbox.height));
+}
+
+inline raylib::Rectangle PickboxRectangle(const ScreenPosition &position,
+                                          const Pickbox &pickbox) {
+  return raylib::Rectangle(position.x + pickbox.offsetX,
+                           position.y + pickbox.offsetY,
+                           static_cast<float>(pickbox.width),
+                           static_cast<float>(pickbox.height));
+}
 
 // TODO: Right now it's not very clear who owns drawAscii,
 // probably should create a resourceManager class in the future
@@ -1038,6 +1090,20 @@ struct NPCContext {
 // Runtime-only and not serialized: it is a first-person intention, not world
 // state, so a reload starts with no brief rather than with a stale one.
 struct NavigationWatch {
+  std::string text;
+};
+
+// The agent's own plan for what it is doing, in continuous navigation.
+//
+// The navigator's plan was a JSON field it rewrote every decision, because its
+// context was small and the strategy had to survive pruning. Here the
+// conversation already carries the reasoning, so a plan is only worth keeping
+// for two readers: the agent itself, which sees it echoed at the top of every
+// spatial block, and the attention gate's classifier, which gets it as the
+// intention behind the watch. Set with [PLAN <text>]; a bare [PLAN] clears it.
+//
+// Runtime-only, like the watch.
+struct NavigationPlanNote {
   std::string text;
 };
 
@@ -1926,6 +1992,14 @@ struct ItemRegistryResource {
   ItemRegistry* registry;
 };
 
+class RigRegistry;
+// Actor-rig definitions, loaded once at init. UseSkill is a free function and needs the
+// rig's clips to start a skill animation; this is the same resource pattern as the item
+// and skill registries above.
+struct RigRegistryResource {
+  RigRegistry* registry;
+};
+
 class RaceRegistry;
 // Race definitions, loaded once at init from data/races/*.json (see
 // RaceRegistry.h). Supplies the body slots a character is born with, which is
@@ -2103,6 +2177,8 @@ inline void RegisterComponents(flecs::world &ecs) {
   // merely skipped, so there is nothing here a serializer needs.
   ecs.component<Vitals>().member<float>("health").member<float>("maxHealth");
   ecs.component<Portrait>().member<std::string>("id");
+  ecs.component<RigBody>().member<std::string>("rig");
+  ecs.component<RigAnim>().member<std::string>("clip").member<float>("time").member<bool>("oneShot");
   ecs.component<Armor>().member<float>("value");
   ecs.component<Aggressive>()
       .member<float>("interval")
