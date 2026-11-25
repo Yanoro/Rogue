@@ -146,6 +146,9 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
       }
     }
   }
+  if (definition.isDefault) {
+    for (auto &[existingId, existing] : styles) existing.isDefault = false;
+  }
   auto existing = styles.find(definition.id);
   if (existing == styles.end()) order.push_back(definition.id);
   styles[definition.id] = std::move(definition);

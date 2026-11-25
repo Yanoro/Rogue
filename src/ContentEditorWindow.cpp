@@ -952,6 +952,30 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
   ImGui::BeginGroup();
   ImGui::TextDisabled("%s", convention.empty() ? "(no convention id)"
                                                : convention.c_str());
+  // The theme this generation uses. Empty means the global default; the content's own
+  // style field remains the persistent override, and the visual type's theme is the
+  // resolution fallback.
+  ImGui::TextDisabled("Art style for generation");
+  ImGui::SameLine();
+  const ArtStyleDef *generationStyle = generationTheme.empty()
+                                           ? nullptr
+                                           : game->artStyleRegistry.Get(generationTheme);
+  ImGui::SetNextItemWidth(220.0f);
+  if (ImGui::BeginCombo("##generation_theme",
+                        generationStyle ? generationStyle->name.c_str()
+                                        : "(global default)")) {
+    if (ImGui::Selectable("(global default)", generationTheme.empty())) {
+      generationTheme.clear();
+    }
+    for (const ArtStyleDef *theme : game->artStyleRegistry.GetAll()) {
+      if (ImGui::Selectable(theme->name.c_str(), theme->id == generationTheme)) {
+        generationTheme = theme->id;
+      }
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::Separator();
+
   // The fact that decides what Regenerate will do, stated before the click rather than
   // returned afterwards as an error from the queue.
   const SpriteDSLDocument document = FindSpriteDSLDocument(convention);
@@ -1006,8 +1030,9 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       // invent them). Opening the window is not decoration: its Draw is what pumps the
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
-                                            /*redesign=*/true, std::string(), styleId);
+      game->designerWindow->AskForSpriteArt(
+          requestName, spriteKind, artRequirement, /*redesign=*/true, std::string(),
+          generationTheme.empty() ? styleId : generationTheme);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
@@ -1066,8 +1091,9 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
     if (!alreadyArchived) ArchiveActiveSprite(convention);
     if (game->designerWindow) {
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-      game->designerWindow->AskForSpriteArt(requestName, spriteKind, artRequirement,
-                                            /*redesign=*/false, spriteEditBuffer, styleId);
+      game->designerWindow->AskForSpriteArt(
+          requestName, spriteKind, artRequirement, /*redesign=*/false, spriteEditBuffer,
+          generationTheme.empty() ? styleId : generationTheme);
       status = "asked the Designer to edit this sprite; the previous version is in the "
                "list below and the edited one lands as a new generated version";
       statusIsError = false;
@@ -2060,6 +2086,21 @@ void ContentEditorWindow::DrawRigPreviewPane() {
 }
 
 void ContentEditorWindow::DrawDocumentPane() {
+  if (kindId == "art_styles" && document.is_object() && !document.empty()) {
+    if (ImGui::Button("Set as default theme")) {
+      document["default"] = true;
+      dirty = true;
+      status = "marked as default; Save the theme to persist it";
+      statusIsError = false;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Marks this theme as the global default. The change is only written when "
+          "you Save; the other themes stop being default in the live registry.");
+    }
+    ImGui::Separator();
+  }
+
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr) return;
   const bool newablePane = kind->id == "icons" || kind->id == "surfaces" ||
@@ -2201,7 +2242,9 @@ void ContentEditorWindow::DrawVisualAssets(const ContentKinds::World &world) {
     for (const ArtStyleDef *theme : game->artStyleRegistry.GetAll()) {
       if (ImGui::Selectable(theme->name.c_str(),
                             defaultTheme && theme->id == defaultTheme->id)) {
-        game->artStyleRegistry.SetDefaultTheme(theme->id);
+        kindId = "art_styles";
+        entryId = theme->id;
+        ReloadDocument();
       }
     }
     ImGui::EndCombo();

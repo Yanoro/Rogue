@@ -141,6 +141,10 @@ private:
   // save, so a half-typed document never reaches the world.
   nlohmann::json document;
   bool dirty = false;
+  // The transient theme chosen for the next sprite generation. Empty means the global
+  // default. It is a generation control, not a content field; the content's own style
+  // field remains the persistent override.
+  std::string generationTheme;
   char anchorSlotBuffer[64] = "";
 
   std::string status;
