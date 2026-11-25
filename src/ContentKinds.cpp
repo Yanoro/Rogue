@@ -21,6 +21,7 @@
 #include "StatusEffectRegistry.h"
 #include "EffectRegistry.h"
 #include "ResourceRegistry.h"
+#include "PortraitRegistry.h"
 #include "SpritePaths.hpp"
 #include "TileDesigner.hpp"
 #include "TileRegistry.h"
@@ -296,6 +297,30 @@ std::string EffectFileName(const nlohmann::json &document) {
 }
 
 // ---- icons -----------------------------------------------------------------
+
+std::vector<Entry> ListPortraits(const World &world) {
+  std::vector<Entry> entries;
+  for (const PortraitDef *portrait : world.portraits.GetAll()) {
+    entries.push_back({portrait->id, portrait->id,
+                       portrait->sprite.empty() ? "generated" : portrait->sprite});
+  }
+  return entries;
+}
+
+nlohmann::json ReadPortrait(const World &world, const std::string &id) {
+  const PortraitDef *portrait = world.portraits.Get(id);
+  return portrait == nullptr ? nlohmann::json::object()
+                             : world.portraits.ToJson(*portrait);
+}
+
+bool ApplyPortrait(const World &world, const nlohmann::json &document,
+                   std::string *error, std::vector<std::string> *warnings) {
+  return world.portraits.AddOrReplace(document, "content editor", error, warnings);
+}
+
+std::string PortraitFileName(const nlohmann::json &document) {
+  return PortraitRegistry::IdFor(document);
+}
 
 std::vector<Entry> ListIcons(const World &world) {
   std::vector<Entry> out;
@@ -636,6 +661,17 @@ void RegisterBuiltinKinds() {
           &ReadArtStyle,
           &ApplyArtStyle,
           &ArtStyleFileName,
+          nullptr,
+          "id",
+    });
+    Registry().Register({
+          "portraits",
+          "Character portraits",
+          /*hasSprites=*/false,
+          &ListPortraits,
+          &ReadPortrait,
+          &ApplyPortrait,
+          &PortraitFileName,
           nullptr,
           "id",
     });

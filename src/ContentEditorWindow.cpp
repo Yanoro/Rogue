@@ -401,7 +401,7 @@ ContentKinds::World ContentEditorWindow::World_() {
       game->brainTemplateRegistry, game->surfaceSpriteRegistry,
       game->surfaceRegistry, game->statusEffectRegistry, game->effectRegistry,
       game->resourceRegistry, game->artStyleRegistry,
-      game->bodySilhouetteRegistry, game->debugLog.get(),
+      game->bodySilhouetteRegistry, game->portraitRegistry, game->debugLog.get(),
       [this]() { game->RefreshPlayerSkillBar(); }};
 }
 

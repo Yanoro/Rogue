@@ -2,5 +2,5 @@
   "name": "Slot Legs",
   "description": "Transparent legs slot icon.",
   "sprite": "",
-  "style": "ui_slot_icon"
+  "visualType": "inventory_icon"
 }

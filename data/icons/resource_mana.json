@@ -2,5 +2,5 @@
   "name": "Resource Mana",
   "description": "A spark for the Mana resource.",
   "sprite": "",
-  "style": "ui_resource_icon"
+  "visualType": "resource_icon"
 }
