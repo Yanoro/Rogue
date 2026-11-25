@@ -110,12 +110,52 @@ struct JsonFormOptions {
   DebugLog *debugLog = nullptr;
 };
 
-// Keys that carry prose rather than identifiers or one art row. A nested
-// description or art-style note wraps even though it is not a top-level key.
-bool IsProseKey(const std::string &key) {
-  return key == "description" || key == "brief" || key == "notes" ||
-         key == "positive" || key == "negative" || key == "prompt" ||
-         key == "requirement" || key == "text" || key == "wornBrief";
+// A resize callback that lets InputTextMultiline edit a std::string, so a long
+// description or art-style prompt is never truncated by a fixed char buffer.
+int ResizeStringCallback(ImGuiInputTextCallbackData *data) {
+  if (data->EventFlag == ImGuiInputTextFlags_CallbackResize) {
+    auto *value = static_cast<std::string *>(data->UserData);
+    value->resize(static_cast<size_t>(data->BufTextLen));
+    data->Buf = value->data();
+  }
+  return 0;
+}
+
+// How many wrapped lines the text needs at this width. Splits on explicit newlines
+// first, then accounts for wrapping inside each paragraph.
+int WrappedLineCount(const std::string &text, float wrapWidth) {
+  if (wrapWidth <= 1.0f) return 1;
+  int lines = 0;
+  size_t start = 0;
+  while (start <= text.size()) {
+    const size_t end = text.find('\n', start);
+    const std::string line =
+        text.substr(start, end == std::string::npos ? std::string::npos : end - start);
+    const float width = ImGui::CalcTextSize(line.c_str()).x;
+    lines += std::max(1, static_cast<int>(std::ceil(width / wrapWidth)));
+    if (end == std::string::npos) break;
+    start = end + 1;
+  }
+  return std::max(1, lines);
+}
+
+// Every text field in the editor wraps by default: the height grows with the wrapped
+// text, and the width fills the form, so a long prompt is visible without an inner
+// scrollbar. The document fields, the art-style prose and the nested strings all use it.
+bool DrawWrappedTextInput(const char *id, std::string &value) {
+  const float width = ImGui::GetContentRegionAvail().x;
+  const float wrapWidth = std::max(16.0f, width - 16.0f);
+  const int lines = WrappedLineCount(value, wrapWidth);
+  const float height = lines * ImGui::GetTextLineHeight() +
+                       ImGui::GetStyle().FramePadding.y * 2.0f + 4.0f;
+  std::string buffer = value;
+  ImGui::SetNextItemWidth(width);
+  const bool changed = ImGui::InputTextMultiline(
+      id, buffer.data(), buffer.capacity() + 1, ImVec2(-1.0f, height),
+      ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AllowTabInput,
+      ResizeStringCallback, &buffer);
+  if (changed) value = buffer;
+  return changed;
 }
 
 // One value of the document, edited in place. Returns true when it changed.
@@ -273,26 +313,9 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
       changed = true;
     }
   } else if (value.is_string()) {
-    // A fixed buffer because that is what ImGui edits; the document is a person's file,
-    // not a stream, and a string longer than this in a tile or object definition is a
-    // mistake rather than a limitation worth streaming for.
-    char buffer[2048];
-    std::snprintf(buffer, sizeof(buffer), "%s", value.get<std::string>().c_str());
-    // Top-level prose fields (descriptions, art-style positive/negative text,
-    // prompts) are the ones long enough to need wrapping. Nested strings, such
-    // as one row of ASCII art, stay single-line so a list of lines remains a list.
-    ImGui::SetNextItemWidth(-1.0f);
-    const std::string stringValue = value.get<std::string>();
-    if (depth <= 1 || IsProseKey(key) || stringValue.size() > 120) {
-      const float height = ImGui::GetTextLineHeight() * 4.0f;
-      if (ImGui::InputTextMultiline("##string", buffer, sizeof(buffer),
-                                    ImVec2(-1.0f, height),
-                                    ImGuiInputTextFlags_AllowTabInput)) {
-        value = std::string(buffer);
-        changed = true;
-      }
-    } else if (ImGui::InputText("##string", buffer, sizeof(buffer))) {
-      value = std::string(buffer);
+    std::string stringValue = value.get<std::string>();
+    if (DrawWrappedTextInput("##string", stringValue)) {
+      value = std::move(stringValue);
       changed = true;
     }
   } else if (value.is_array()) {
