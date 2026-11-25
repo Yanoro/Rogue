@@ -64,6 +64,31 @@ inline const char *const HELP_HINT =
     "Use [HELP] to list every command with a short description, or "
     "[HELP <COMMAND>] for a full explanation, e.g. [HELP MOVE_TO].";
 
+// One-line, bracket-free, length-capped text for a navigation brief ([WATCH],
+// [PLAN]). Models write sentences with brackets in them ("[MOVE_TO] the mill"),
+// and a bracket in a brief would be re-read as a command when the spatial block
+// echoes it back, so the punctuation is flattened here rather than trusted.
+inline std::string SanitiseNavigationBrief(std::string raw,
+                                           std::size_t maxChars) {
+  std::string out;
+  out.reserve(raw.size());
+  bool lastSpace = false;
+  for (char c : raw) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (c == '[' || c == ']' || std::iscntrl(uc) != 0) c = ' ';
+    if (c == ' ') {
+      if (lastSpace || out.empty()) continue;
+      lastSpace = true;
+    } else {
+      lastSpace = false;
+    }
+    out.push_back(c);
+  }
+  while (!out.empty() && out.back() == ' ') out.pop_back();
+  if (out.size() > maxChars) out.resize(maxChars);
+  return out;
+}
+
 // Executes the object's Examine interaction, if it has one. Returns the AI-facing
 // text (the ObjectDescription and any extra state); empty when nothing answered.
 inline std::string ExamineNavigationObject(flecs::entity actor,
@@ -767,20 +792,26 @@ public:
       // (navigation.agent = "inline").
       //
       // The key is one the spatial block printed: a candidate key from
-      // NavigationPlan::BuildCandidates ("here:north", "p17"), or a primitive
-      // ("follow", "follow:<direction>", "back", "to:<n>"). It is resolved
-      // against the character's own memory when the action runs, so a key the
-      // block no longer offers fails with the list that is offered now instead
-      // of walking somewhere the character never chose.
+      // NavigationPlan::BuildCandidates ("here:north", "p17"), a primitive
+      // ("follow", "follow:<direction>", "back", "to:<n>"), or an object step
+      // ("objects:all", "inspect:<group>", "approach:<alias>", "<verb>:<alias>").
+      // It is resolved against the character's own memory when the action runs,
+      // so a key the block no longer offers fails with the list that is offered
+      // now instead of walking somewhere the character never chose.
       //
-      // This is deliberately not the navigator's decision machinery: no
-      // episode, no plan, no budget, no summary. One leg, then the ordinary
-      // wake prompt asks what happened and what is next. The walk record it
-      // leaves behind (WalkedGround) is what stops the next block offering the
-      // same ground twice and what [GO back] retraces.
+      // This is deliberately not the navigator's decision machinery: no episode,
+      // no plan object, no summary. One leg, then the ordinary wake prompt asks
+      // what happened and what is next. Three pieces of the navigator's leg come
+      // with it because they are what make a walk *informed*: the per-leg chunk
+      // strip reported with the arrival, the mid-walk attention gate (fed by
+      // [WATCH] and owned by this action because there is no episode to own it),
+      // and the object grammar (a listing does not move; approach and a
+      // no-argument verb walk and end in the interaction).
       class GoAction : public AgentAction {
       public:
         explicit GoAction(std::string key) : key(Normalise(std::move(key))) {}
+
+        ~GoAction() override { gate.Abandon(); }
 
         std::string getActionName() const override { return "GO"; }
         std::string getActionContext() const override { return key; }
@@ -790,43 +821,105 @@ public:
             resolved = true;
             if (!Resolve(entity)) return ActionStatus::Failed;
           }
-          if (step == nullptr) {
+          // A listing is a turn that does not move: the answer is the action's
+          // result and the next wake offers the steps again.
+          if (kind == Kind::List) return ActionStatus::Done;
+          if (leg == nullptr) {
             error = "there is no step to take";
             return ActionStatus::Failed;
           }
-          const ActionStatus status = step->update(deltaTime, entity);
-          if (status == ActionStatus::Done) {
-            RecordWalk(entity);
+
+          // While the classifier is answering, it has the floor: the character
+          // stands still and looks, exactly as in an episode.
+          if (gate.Busy()) {
+            WalkGate::Verdict verdict;
+            if (gate.Poll(entity, verdict)) {
+              if (verdict.kind == GateVerdict::Stop) {
+                StopForGate(entity, verdict.report);
+                return ActionStatus::Done;
+              }
+              leg->resume(entity);
+              return ActionStatus::Doing;
+            }
+            return ActionStatus::Doing;
           }
-          return status;
+
+          if (SecondsSince(legStartedAt) >
+              Settings().system1.navigation.legTimeoutSeconds) {
+            leg->handleInterruption(entity);
+            error = "the walk took too long; you are where you stopped";
+            return ActionStatus::Failed;
+          }
+
+          const ActionStatus status = leg->update(deltaTime, entity);
+          if (status == ActionStatus::Doing) {
+            if (gate.Update(entity, planText, watchText, whereText,
+                            std::string())) {
+              leg->handleInterruption(entity);
+            }
+            return ActionStatus::Doing;
+          }
+          if (status == ActionStatus::Failed) {
+            error = leg->getFailureReason();
+            return ActionStatus::Failed;
+          }
+          Arrive(entity);
+          return ActionStatus::Done;
         }
 
         std::string getSuccessMessage() override {
-          return step != nullptr ? step->getSuccessMessage()
-                                 : std::string("System: You walked a step.\n");
+          return response.empty() ? std::string("System: You walked a step.\n")
+                                  : response;
         }
 
         std::string getFailureMessage() override {
           if (!error.empty()) return "System: " + error + "\n";
-          return step != nullptr ? step->getFailureMessage()
-                                 : std::string("System: You could not walk "
-                                               "there.\n");
+          return leg != nullptr ? leg->getFailureMessage()
+                                : std::string("System: You could not walk "
+                                              "there.\n");
         }
 
         ActionStatus handleInterruption(flecs::entity entity) override {
-          if (step != nullptr) step->handleInterruption(entity);
-          step.reset();
+          gate.Abandon();
+          if (leg != nullptr) leg->handleInterruption(entity);
+          leg.reset();
           return ActionStatus::Interrupted;
         }
 
         void resume(flecs::entity) override {
           // Re-resolve from the current memory on the next update: a resumed
           // walk must not resume a path planned before the interruption.
-          step.reset();
+          leg.reset();
           resolved = false;
         }
 
       private:
+        enum class Kind { Move, Approach, Interact, List };
+
+        using Clock = std::chrono::steady_clock;
+
+        static double SecondsSince(Clock::time_point start) {
+          return std::chrono::duration<double>(Clock::now() - start).count();
+        }
+
+        // The same mapping the navigators use; kept local so this action does
+        // not have to know about their episode classes.
+        static ChunkViewSettings ChunkSettings() {
+          ChunkViewSettings settings;
+          const GameSettings::ChunksSection &chunks = Settings().chunks;
+          settings.enabled = chunks.enabled;
+          settings.size = chunks.size;
+          settings.maxTraversedAreas = chunks.maxTraversedAreas;
+          settings.maxJourneySegments = chunks.maxJourneySegments;
+          settings.maxNewAreas = chunks.maxNewAreas;
+          settings.maxFeaturesPerArea = chunks.maxFeaturesPerArea;
+          settings.cardAspects = chunks.cardAspects;
+          settings.cardObjectGroups = chunks.cardObjectGroups;
+          settings.cardPlaces = chunks.cardPlaces;
+          settings.includeCharacters = chunks.includeCharacters;
+          return settings;
+        }
+
         // Keys are printed lowercase and typed by a model, so case and stray
         // whitespace are normalised away rather than reported as an error.
         static std::string Normalise(std::string text) {
@@ -851,6 +944,16 @@ public:
           return out.empty() ? std::string("none") : out;
         }
 
+        static std::string GroupKeys(
+            const std::vector<NavigationPlan::ObjectGroup> &groups) {
+          std::string out;
+          for (const NavigationPlan::ObjectGroup &group : groups) {
+            if (!out.empty()) out += ", ";
+            out += "[GO inspect:" + group.key + "]";
+          }
+          return out.empty() ? std::string("none") : out;
+        }
+
         bool Resolve(flecs::entity entity) {
           const SpatialMemory *memory = entity.get<SpatialMemory>();
           const GamePosition *here = entity.get<GamePosition>();
@@ -860,8 +963,36 @@ public:
           }
           const Facing *facing = entity.get<Facing>();
           const Facing facingValue = facing != nullptr ? *facing : Facing{};
-
           const WalkedGround *ground = entity.get<WalkedGround>();
+          const GameSettings::NavigationInlineSection &cfg =
+              Settings().navigation.inlineNav;
+
+          // A resumed action resolves again, so every decision made by this one
+          // is cleared first: a stale kind or target from the interrupted walk
+          // would move the character somewhere it no longer chose.
+          kind = Kind::Move;
+          target = {-1, -1};
+          label.clear();
+          objectRef = NavigationPlan::ObjectRef{};
+          interaction.clear();
+          error.clear();
+          response.clear();
+          candidates.clear();
+
+          // State for the gate and the strip, captured against the moment the
+          // leg starts.
+          legStart = *here;
+          legStartedAt = Clock::now();
+          chunkSettings = ChunkSettings();
+          if (const NavigationPlanNote *plan =
+                  entity.get<NavigationPlanNote>()) {
+            planText = plan->text;
+          }
+          if (const NavigationWatch *watch = entity.get<NavigationWatch>()) {
+            watchText = watch->text;
+          }
+          whereText =
+              NavigationPlan::DescribeWhere(*memory, *here, facingValue);
 
           // The block captured the steps it printed; resolving against that is
           // what makes "use the key exactly as it appeared" true, because place
@@ -883,8 +1014,6 @@ public:
               candidates.push_back(std::move(candidate));
             }
           } else {
-            const GameSettings::NavigationInlineSection &cfg =
-                Settings().navigation.inlineNav;
             std::unordered_set<std::uint64_t> walked;
             if (ground != nullptr) walked = ground->cells;
             candidates = NavigationPlan::BuildCandidates(
@@ -894,98 +1023,341 @@ public:
                 Settings().system1.navigation.examineRadius, true);
           }
 
-          legStart = *here;
-          NavigationPlan::PrimitiveMove primitive;
-          std::string primitiveError;
-          std::vector<GamePosition> fixedPath;
-          const NavigationPlan::Candidate *chosen = nullptr;
+          const int examineRadius =
+              Settings().system1.navigation.examineRadius;
 
-          if (key == "back") {
-            if (ground == nullptr ||
-                !NavigationPlan::BuildBackMove(*memory, *here,
-                                               ground->lastStart,
-                                               ground->lastPath, primitive,
-                                               primitiveError)) {
-              error = primitiveError.empty()
-                          ? "there is no remembered step to retrace"
-                          : primitiveError;
-              return false;
+          // ── Object steps ──────────────────────────────────────────────────
+          // The one family whose keys are not candidates. A listing is answered
+          // here and does not move; approach and a no-argument verb set the
+          // target and share the leg machinery below.
+          if (cfg.includeObjects) {
+            if (key == "objects:all") {
+              const std::vector<NavigationPlan::ObjectGroup> groups =
+                  NavigationPlan::BuildObjectGroups(*memory, *here,
+                                                    examineRadius, 0, true);
+              response = NavigationPlan::BuildObjectGroupList(groups, 0, *here,
+                                                              "[GO ");
+              kind = Kind::List;
+              return true;
             }
-            fixedPath = primitive.path;
-            chosen = &primitive.candidate;
-          } else if (key == "follow" || key.rfind("follow:", 0) == 0) {
-            const std::string direction =
-                key.size() > 7 ? key.substr(7) : std::string();
-            if (!NavigationPlan::BuildFollowMove(*memory, *here, facingValue,
-                                                 direction, primitive,
+            if (key.rfind("inspect:", 0) == 0) {
+              std::string groupKey = key.substr(8);
+              bool all = false;
+              if (groupKey.size() > 4 &&
+                  groupKey.compare(groupKey.size() - 4, 4, ":all") == 0) {
+                groupKey.resize(groupKey.size() - 4);
+                all = true;
+              }
+              const std::vector<NavigationPlan::ObjectGroup> groups =
+                  NavigationPlan::BuildObjectGroups(*memory, *here,
+                                                    examineRadius, 0, true);
+              const NavigationPlan::ObjectGroup *group = nullptr;
+              for (const NavigationPlan::ObjectGroup &candidate : groups) {
+                if (candidate.key == groupKey) {
+                  group = &candidate;
+                  break;
+                }
+              }
+              if (group == nullptr) {
+                error = "there is no object group called '" + groupKey +
+                        "'. The groups within range: " + GroupKeys(groups) +
+                        ".";
+                return false;
+              }
+              response = NavigationPlan::BuildObjectInstanceList(
+                  *group, all,
+                  static_cast<std::size_t>(cfg.maxObjectDetails), *here,
+                  "[GO ");
+              kind = Kind::List;
+              return true;
+            }
+            if (key.rfind("approach:", 0) == 0) {
+              const std::string alias = key.substr(9);
+              if (!NavigationPlan::FindObjectByAlias(*memory, *here,
+                                                     examineRadius, alias,
+                                                     objectRef)) {
+                error = "there is no object called '" + alias +
+                        "' within range. Use [GO inspect:<group>] to list the "
+                        "aliases.";
+                return false;
+              }
+              kind = Kind::Approach;
+              target = objectRef.approach;
+              label = objectRef.name;
+            }
+            if (kind == Kind::Move) {
+              const std::size_t colon = key.find(':');
+              if (colon != std::string::npos) {
+                const std::string verb = key.substr(0, colon);
+                // Reserved families, so a verb can never shadow them.
+                const bool reserved =
+                    verb == "here" || verb == "follow" || verb == "to" ||
+                    verb == "inspect" || verb == "approach";
+                const InteractionHandler *handler =
+                    reserved ? nullptr
+                             : InteractionRegistry::FindInteraction(verb);
+                if (handler != nullptr) {
+                  const std::string alias = key.substr(colon + 1);
+                  if (handler->requiresArgs) {
+                    error = "the verb '" + verb +
+                            "' needs arguments; walk there with [GO "
+                            "approach:<alias>] and use its own command.";
+                    return false;
+                  }
+                  if (!NavigationPlan::FindObjectByAlias(*memory, *here,
+                                                         examineRadius, alias,
+                                                         objectRef)) {
+                    error = "there is no object called '" + alias +
+                            "' within range. Use [GO inspect:<group>] to list "
+                            "the aliases.";
+                    return false;
+                  }
+                  kind = Kind::Interact;
+                  interaction = verb;
+                  target = objectRef.approach;
+                  label = objectRef.name;
+                }
+              }
+            }
+          }
+
+          std::vector<GamePosition> fixedPath;
+          if (kind == Kind::Move) {
+            // ── Primitives and candidates ───────────────────────────────────
+            NavigationPlan::PrimitiveMove primitive;
+            std::string primitiveError;
+            const NavigationPlan::Candidate *chosen = nullptr;
+            if (key == "back") {
+              if (ground == nullptr ||
+                  !NavigationPlan::BuildBackMove(*memory, *here,
+                                                 ground->lastStart,
+                                                 ground->lastPath, primitive,
                                                  primitiveError)) {
-              error = primitiveError;
-              return false;
-            }
-            fixedPath = primitive.path;
-            chosen = &primitive.candidate;
-          } else if (key.rfind("to:", 0) == 0) {
-            const std::string arg = key.substr(3);
-            bool numeric = !arg.empty();
-            for (char c : arg) {
-              if (std::isdigit(static_cast<unsigned char>(c)) == 0) {
-                numeric = false;
+                error = primitiveError.empty()
+                            ? "there is no remembered step to retrace"
+                            : primitiveError;
+                return false;
               }
-            }
-            if (numeric) {
-              int index = 0;
-              try {
-                index = std::stoi(arg);
-              } catch (...) {
-                index = 0;
+              fixedPath = primitive.path;
+              chosen = &primitive.candidate;
+            } else if (key == "follow" || key.rfind("follow:", 0) == 0) {
+              const std::string direction =
+                  key.size() > 7 ? key.substr(7) : std::string();
+              if (!NavigationPlan::BuildFollowMove(*memory, *here, facingValue,
+                                                   direction, primitive,
+                                                   primitiveError)) {
+                error = primitiveError;
+                return false;
               }
-              if (index >= 1 && index <= static_cast<int>(candidates.size())) {
-                chosen = &candidates[static_cast<std::size_t>(index - 1)];
+              fixedPath = primitive.path;
+              chosen = &primitive.candidate;
+            } else if (key.rfind("to:", 0) == 0) {
+              const std::string arg = key.substr(3);
+              bool numeric = !arg.empty();
+              for (char c : arg) {
+                if (std::isdigit(static_cast<unsigned char>(c)) == 0) {
+                  numeric = false;
+                }
+              }
+              if (numeric) {
+                int index = 0;
+                try {
+                  index = std::stoi(arg);
+                } catch (...) {
+                  index = 0;
+                }
+                if (index >= 1 &&
+                    index <= static_cast<int>(candidates.size())) {
+                  chosen = &candidates[static_cast<std::size_t>(index - 1)];
+                }
+              } else {
+                for (const NavigationPlan::Candidate &candidate : candidates) {
+                  if (candidate.key == arg) {
+                    chosen = &candidate;
+                    break;
+                  }
+                }
+              }
+              if (chosen == nullptr) {
+                error = "to:" + arg + " is not a step offered here";
+                return false;
               }
             } else {
               for (const NavigationPlan::Candidate &candidate : candidates) {
-                if (candidate.key == arg) {
+                if (candidate.key == key) {
                   chosen = &candidate;
                   break;
                 }
               }
             }
+
             if (chosen == nullptr) {
-              error = "to:" + arg + " is not a step offered here";
+              error = "'" + key +
+                      "' is not a step you were offered. The steps now: " +
+                      StepList(candidates) +
+                      ". Use the key exactly as your spatial block printed "
+                      "it.";
               return false;
             }
-          } else {
-            for (const NavigationPlan::Candidate &candidate : candidates) {
-              if (candidate.key == key) {
-                chosen = &candidate;
-                break;
+            if (chosen->examine) {
+              error = "examine steps are not part of [GO]; walk there with "
+                      "[MOVE_TO] and use the object's own command";
+              return false;
+            }
+            target = chosen->target;
+            label = chosen->label;
+          }
+
+          leg = std::make_unique<MoveToCellAction>(target, label, fixedPath,
+                                                   legStart);
+          BeginLeg(entity);
+          return true;
+        }
+
+        // Baselines for the two per-leg trackers: what ground was already
+        // observed (the chunk strip only calls a segment new if it was not),
+        // and what percepts were already known (the gate only reports news).
+        void BeginLeg(flecs::entity entity) {
+          if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+            legStartTick = memory->lastVisionTick;
+            chunksBeforeLeg.clear();
+            if (chunkSettings.enabled) {
+              for (const auto &[cellKey, cell] : memory->cells) {
+                (void)cellKey;
+                chunksBeforeLeg.insert(
+                    ChunkKey(ChunkAt(cell.pos, chunkSettings.size)));
               }
             }
           }
+          gate.Begin(entity);
+        }
 
-          if (chosen == nullptr) {
-            error = "'" + key +
-                    "' is not a step you were offered. The steps now: " +
-                    StepList(candidates) +
-                    ". Use the key exactly as your spatial block printed it.";
-            return false;
+        void Arrive(flecs::entity entity) {
+          std::string outcome;
+          if (kind == Kind::Approach) {
+            flecs::entity object(entity.world(), objectRef.id);
+            if (!object.is_alive()) {
+              outcome = "you reached the spot, but the " + objectRef.name +
+                        " (" + objectRef.alias + ") is gone";
+            } else {
+              entity.set<InteractionTarget>({object});
+              outcome = "arrived next to " + objectRef.name + " (" +
+                        objectRef.alias + ")";
+            }
+          } else if (kind == Kind::Interact) {
+            flecs::entity object(entity.world(), objectRef.id);
+            const InteractionHandler *handler =
+                InteractionRegistry::FindInteraction(interaction);
+            if (!object.is_alive() || handler == nullptr ||
+                !handler->canInteract(object)) {
+              outcome = "you reached the spot, but the " + objectRef.name +
+                        " no longer offers '" + interaction + "'";
+            } else {
+              flecs::entity beforeAction = flecs::entity::null();
+              if (const Busy *busy = entity.get<Busy>()) {
+                beforeAction = busy->actionEntity;
+              }
+              std::string text = handler->execute(entity, object, "");
+              flecs::entity afterAction = flecs::entity::null();
+              if (const Busy *busy = entity.get<Busy>()) {
+                afterAction = busy->actionEntity;
+              }
+              const bool timed =
+                  afterAction.is_alive() && afterAction != beforeAction;
+              if (timed) {
+                outcome = "started " + interaction + " on " + objectRef.name +
+                          " (" + objectRef.alias +
+                          "); control returns to you";
+              } else if (text.empty()) {
+                outcome = "used " + interaction + " on " + objectRef.name +
+                          " (" + objectRef.alias + ")";
+              } else {
+                outcome = text;
+              }
+            }
+          } else {
+            const int tiles = static_cast<int>(leg->getPath().size());
+            outcome = "you walked " + std::to_string(tiles) +
+                      (tiles == 1 ? " tile" : " tiles") + " to " + label;
           }
-          if (chosen->examine) {
-            error = "examine steps are not part of [GO]; walk there with "
-                    "[MOVE_TO] and use the object's own command";
-            return false;
+
+          RecordWalk(entity, leg->getPath());
+          std::string message = BuildStrip(entity, outcome);
+          if (!gate.Noted().empty()) {
+            message += "\nNoticed while walking:\n" + gate.Noted();
           }
-          step = std::make_unique<MoveToCellAction>(chosen->target,
-                                                    chosen->label, fixedPath,
-                                                    *here);
-          return true;
+          if (message.empty() || message.back() != '\n') message += "\n";
+          response = "System: " + message;
+        }
+
+        // The gate stopped the leg early. Report why, and describe only the
+        // ground actually covered: the walk was cut short at the current cell.
+        void StopForGate(flecs::entity entity, const std::string &report) {
+          std::vector<GamePosition> walked;
+          const GamePosition *here = entity.get<GamePosition>();
+          if (leg != nullptr && here != nullptr) {
+            for (const GamePosition &cell : leg->getPath()) {
+              walked.push_back(cell);
+              if (cell == *here) break;
+            }
+          }
+          const bool walkedHere =
+              here != nullptr && !walked.empty() && walked.back() == *here;
+          if (walkedHere) {
+            RecordWalk(entity, walked);
+          }
+
+          std::string message = "you stopped walking to look.\n" + report;
+          if (walkedHere) {
+            if (SpatialMemory *memory = entity.get_mut<SpatialMemory>()) {
+              const LegTrace trace = BuildLegTrace(
+                  walked, legStart, *memory, chunksBeforeLeg, legStartTick,
+                  label, "you stopped to look", chunkSettings);
+              message += "\n" + trace.ToProse(*memory, chunkSettings);
+            }
+          }
+          if (!gate.Noted().empty()) {
+            message += "\nNoticed earlier while walking:\n" + gate.Noted();
+          }
+          if (message.empty() || message.back() != '\n') message += "\n";
+          response = "System: " + message;
+          if (leg != nullptr) leg->handleInterruption(entity);
+          leg.reset();
+        }
+
+        // The leg's route strip, plus the area card only when the leg reached
+        // ground the character had not observed: the spatial block already
+        // carries the current area's places and objects, cheaper, on every turn.
+        std::string BuildStrip(flecs::entity entity,
+                               const std::string &outcome) {
+          SpatialMemory *memory = entity.get_mut<SpatialMemory>();
+          const GamePosition *here = entity.get<GamePosition>();
+          if (!chunkSettings.enabled || memory == nullptr || here == nullptr ||
+              leg == nullptr) {
+            return outcome + "\n";
+          }
+          const LegTrace trace = BuildLegTrace(
+              leg->getPath(), legStart, *memory, chunksBeforeLeg, legStartTick,
+              label, outcome, chunkSettings);
+          std::string text = trace.ToProse(*memory, chunkSettings);
+          bool newGround = !trace.newlyObserved.empty();
+          for (const ChunkSegment &segment : trace.traversed) {
+            if (segment.firstObserved) newGround = true;
+          }
+          if (newGround) {
+            const ChunkKnowledge knowledge = BuildChunkKnowledge(
+                *memory, ChunkAt(*here, chunkSettings.size), chunkSettings,
+                *here);
+            text += "\n" + RenderAreaCard(knowledge, *memory, chunkSettings);
+          }
+          return text;
         }
 
         // Completed leg -> the character's own walk record. Kept on the
         // character rather than in the action because the next wake is a
         // different action.
-        void RecordWalk(flecs::entity entity) {
-          if (step == nullptr) return;
+        void RecordWalk(flecs::entity entity,
+                        const std::vector<GamePosition> &path) {
           WalkedGround *ground = entity.get_mut<WalkedGround>();
           if (ground == nullptr) {
             entity.set<WalkedGround>({});
@@ -993,8 +1365,8 @@ public:
           }
           if (ground == nullptr) return;
           ground->lastStart = legStart;
-          ground->lastPath = step->getPath();
-          for (const GamePosition &cell : ground->lastPath) {
+          ground->lastPath = path;
+          for (const GamePosition &cell : path) {
             ground->cells.insert(VisionQuery::CellKey(cell));
           }
           ground->cells.insert(VisionQuery::CellKey(legStart));
@@ -1005,10 +1377,24 @@ public:
 
         std::string key;
         std::string error;
-        GamePosition legStart{0, 0};
+        std::string response;
+        Kind kind = Kind::Move;
         bool resolved = false;
+        GamePosition legStart{0, 0};
+        GamePosition target{-1, -1};
+        std::string label;
+        NavigationPlan::ObjectRef objectRef;
+        std::string interaction;
+        std::string planText;
+        std::string watchText;
+        std::string whereText;
+        ChunkViewSettings chunkSettings = ChunkSettings();
+        std::unordered_set<std::uint64_t> chunksBeforeLeg;
+        int legStartTick = -1;
+        Clock::time_point legStartedAt = Clock::now();
+        WalkGate gate;
         std::vector<NavigationPlan::Candidate> candidates;
-        std::unique_ptr<MoveToCellAction> step;
+        std::unique_ptr<MoveToCellAction> leg;
       };
 
       // [WATCH <what>] -- the standing attention brief for continuous
@@ -1016,14 +1402,13 @@ public:
       // plan the agent states it once and it holds until it says otherwise. A
       // bare [WATCH] clears it.
       //
-      // Nothing consumes it yet: the mid-walk attention gate is the next slice.
-      // It is still worth setting now, because the spatial block echoes it, so
-      // the intent the gate will one day act on is already part of what the
-      // agent reads every turn.
+      // The mid-walk attention gate reads it: an empty brief means no gate, and
+      // a non-empty one is what the classifier weighs the new percepts against.
+      // The spatial block echoes it, so the agent reads its own brief every turn.
       class WatchAction : public AgentAction {
       public:
         explicit WatchAction(std::string text)
-            : text(Sanitise(std::move(text))) {}
+            : text(SanitiseNavigationBrief(std::move(text), kMaxWatchChars)) {}
 
         std::string getActionName() const override { return "WATCH"; }
 
@@ -1049,26 +1434,46 @@ public:
         void resume(flecs::entity) override {}
 
       private:
-        static std::string Sanitise(std::string raw) {
-          constexpr std::size_t kMaxWatchChars = 300;
-          std::string out;
-          out.reserve(raw.size());
-          bool lastSpace = false;
-          for (char c : raw) {
-            const unsigned char uc = static_cast<unsigned char>(c);
-            if (c == '[' || c == ']' || std::iscntrl(uc) != 0) c = ' ';
-            if (c == ' ') {
-              if (lastSpace || out.empty()) continue;
-              lastSpace = true;
-            } else {
-              lastSpace = false;
-            }
-            out.push_back(c);
+        static constexpr std::size_t kMaxWatchChars = 300;
+
+        std::string text;
+        std::string response;
+      };
+
+      // [PLAN <text>] -- what the character is currently trying to do, in its own
+      // words. [WATCH] is what should stop the walk; [PLAN] is why the walk is
+      // happening. It is echoed at the top of the spatial block and given to the
+      // attention gate's classifier as the intention behind the watch. A bare
+      // [PLAN] clears it. Runtime-only, like the watch.
+      class PlanAction : public AgentAction {
+      public:
+        explicit PlanAction(std::string text)
+            : text(SanitiseNavigationBrief(std::move(text), kMaxPlanChars)) {}
+
+        std::string getActionName() const override { return "PLAN"; }
+
+        ActionStatus update(float, flecs::entity entity) override {
+          if (text.empty()) {
+            entity.remove<NavigationPlanNote>();
+            response = "System: You clear your plan; you are between "
+                       "intentions.\n";
+            return ActionStatus::Done;
           }
-          while (!out.empty() && out.back() == ' ') out.pop_back();
-          if (out.size() > kMaxWatchChars) out.resize(kMaxWatchChars);
-          return out;
+          entity.set<NavigationPlanNote>({text});
+          response = "System: Your plan: " + text + "\n";
+          return ActionStatus::Done;
         }
+
+        std::string getSuccessMessage() override { return response; }
+
+        ActionStatus handleInterruption(flecs::entity) override {
+          return ActionStatus::Interrupted;
+        }
+
+        void resume(flecs::entity) override {}
+
+      private:
+        static constexpr std::size_t kMaxPlanChars = 300;
 
         std::string text;
         std::string response;

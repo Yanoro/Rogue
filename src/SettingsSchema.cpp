@@ -1060,6 +1060,14 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
         .Between(1, 32, 12);
     add(Field<ValueType::Bool>("navigation.inline", "navigation.inline.includeActions",
             "Include the [GO ...] step list in the wake prompt. Off leaves the orientation line and the watch, for an A/B on orientation alone.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::includeActions));
+    add(Field<ValueType::Bool>("navigation.inline", "navigation.inline.includeObjects",
+            "Include the OBJECTS section: grouped object grammar and one line per group. Off leaves the steps to describe the topology on their own.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::includeObjects));
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.maxObjectGroups",
+            "Object groups listed before the rest are hidden behind [GO objects:all].", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::maxObjectGroups))
+        .Between(1, 64, 6);
+    add(Field<ValueType::Int>("navigation.inline", "navigation.inline.maxObjectDetails",
+            "Instances shown by [GO inspect:<group>]. inspect:<group>:all ignores this.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::maxObjectDetails))
+        .Between(1, 128, 8);
     add(Field<ValueType::Bool>("navigation.inline", "navigation.inline.includeMap",
             "Include the north-up ASCII map in the spatial block.", &GameSettings::navigation, &NavigationSection::inlineNav, &NavigationInlineSection::includeMap));
     add(Field<ValueType::Int>("navigation.inline", "navigation.inline.mapRadius",

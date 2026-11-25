@@ -401,6 +401,15 @@ struct GameSettings {
     // Include the [GO ...] step list. Off leaves the orientation line and the
     // watch, which is the "does standing orientation alone help?" arm.
     bool includeActions = true;
+    // Include the OBJECTS section: the grouped object grammar
+    // ([GO objects:all], [GO inspect:<group>], [GO approach:<alias>],
+    // [GO <verb>:<alias>]) plus one line per group. Off is the cheap arm: the
+    // steps alone still describe the topology.
+    bool includeObjects = true;
+    // Groups listed before the rest are hidden behind [GO objects:all], and
+    // instances shown by [GO inspect:<group>] before :all is needed.
+    int maxObjectGroups = 6;
+    int maxObjectDetails = 8;
     // Include the north-up ASCII map in the spatial block. Off by default: the
     // block is meant to be cheap on every turn, and the map is the first thing
     // to turn on when a run shows the model misreading the local layout.

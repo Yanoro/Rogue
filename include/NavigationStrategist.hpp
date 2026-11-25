@@ -1368,13 +1368,19 @@ inline constexpr const char *SPATIAL_BLOCK_MARKER = "SPATIAL: where you are";
 
 inline std::string BuildSpatialBlock(
     const SpatialMemory &memory, GamePosition here, const Facing &facing,
-    const std::vector<NavigationPlan::Candidate> &candidates, bool canFollow,
-    bool canBack, const std::string &watch, bool includeActions,
+    const std::vector<NavigationPlan::Candidate> &candidates,
+    const std::vector<NavigationPlan::ObjectGroup> &objectGroups,
+    const std::vector<NavigationPlan::SeenCharacter> &people, bool canFollow,
+    bool canBack, const std::string &plan, const std::string &watch,
+    bool includeActions, bool includeObjects, std::size_t maxObjectGroups,
     bool includeMap, int mapRadius) {
   std::ostringstream out;
   out << SPATIAL_BLOCK_MARKER << "\n";
   out << "YOU ARE: " << NavigationPlan::DescribeWhere(memory, here, facing)
       << ".\n";
+  if (!plan.empty()) {
+    out << "PLAN: " << plan << "\n";
+  }
 
   if (includeActions) {
     out << "STEPS (one leg each; your other commands still work, and you do "
@@ -1396,6 +1402,25 @@ inline std::string BuildSpatialBlock(
     if (!any && !canFollow && !canBack) {
       out << "  (no step is offered from here; [MOVE_TO] still works for a "
              "place or person you can name)\n";
+    }
+  }
+
+  if (includeObjects && !objectGroups.empty()) {
+    out << NavigationPlan::BuildInlineObjectGrammar();
+    out << NavigationPlan::BuildObjectGroupList(objectGroups, maxObjectGroups,
+                                                here, "[GO ");
+  }
+
+  if (!people.empty()) {
+    out << "\nPEOPLE IN VIEW (start a conversation with [TALK <name>]):\n";
+    for (const NavigationPlan::SeenCharacter &person : people) {
+      out << "  [TALK " << person.name << "]";
+      if (person.distance == 0) {
+        out << "  right here";
+      } else {
+        out << "  " << person.distance << " tiles " << person.direction;
+      }
+      out << "\n";
     }
   }
 
