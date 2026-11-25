@@ -1,0 +1,110 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  trousers = #1C3A70
+  trousers_light = #2F5FA8
+  boot = #5A3A22
+  boot_shadow = #3B2414
+  boot_light = #A8673E
+}
+
+// ----------------------------------------------------
+// Frame 1: Contact (Left leg forward, right leg trailing)
+// ----------------------------------------------------
+frame "f1" {
+  // Trousers
+  rect (24,46) (30,51) color=out
+  rect (33,46) (39,51) color=out
+  rect (25,47) (29,50) color=trousers_light
+  rect (34,47) (38,50) color=trousers
+
+  // Left Leg / Boot (Forward, planted flat)
+  rect (22,50) (31,62) color=out
+  rect (23,51) (30,61) color=boot
+  rect (27,52) (30,61) color=boot_shadow
+  line (24,52) (26,52) color=boot_light
+  line (22,62) (31,62) color=out
+
+  // Right Leg / Boot (Trailing, slightly raised heel)
+  rect (34,49) (42,60) color=out
+  rect (35,50) (41,59) color=boot_shadow
+  line (36,51) (39,51) color=boot
+  line (34,60) (42,60) color=out
+}
+
+// ----------------------------------------------------
+// Frame 2: Passing (Left supporting, right leg lifting)
+// ----------------------------------------------------
+frame "f2" {
+  // Trousers (Body risen 1px)
+  rect (25,45) (31,50) color=out
+  rect (32,45) (38,50) color=out
+  rect (26,46) (30,49) color=trousers_light
+  rect (33,46) (37,49) color=trousers
+
+  // Left Leg / Boot (Supporting, directly beneath)
+  rect (24,49) (32,62) color=out
+  rect (25,50) (31,61) color=boot
+  rect (29,51) (31,61) color=boot_shadow
+  line (26,51) (28,51) color=boot_light
+  line (24,62) (32,62) color=out
+
+  // Right Leg / Boot (Passing through, lifted off ground)
+  rect (33,47) (41,58) color=out
+  rect (34,48) (40,57) color=boot
+  rect (38,49) (40,57) color=boot_shadow
+  line (35,49) (37,49) color=boot_light
+  line (33,58) (41,58) color=out
+}
+
+// ----------------------------------------------------
+// Frame 3: Contact (Right leg forward, left leg trailing)
+// ----------------------------------------------------
+frame "f3" {
+  // Trousers
+  rect (24,46) (30,51) color=out
+  rect (33,46) (39,51) color=out
+  rect (25,47) (29,50) color=trousers
+  rect (34,47) (38,50) color=trousers_light
+
+  // Left Leg / Boot (Trailing, slightly raised heel)
+  rect (22,49) (30,60) color=out
+  rect (23,50) (29,59) color=boot_shadow
+  line (24,51) (27,51) color=boot
+  line (22,60) (30,60) color=out
+
+  // Right Leg / Boot (Forward, planted flat)
+  rect (33,50) (42,62) color=out
+  rect (34,51) (41,61) color=boot
+  rect (38,52) (41,61) color=boot_shadow
+  line (35,52) (37,52) color=boot_light
+  line (33,62) (42,62) color=out
+}
+
+// ----------------------------------------------------
+// Frame 4: Passing (Right supporting, left leg lifting)
+// ----------------------------------------------------
+frame "f4" {
+  // Trousers (Body risen 1px)
+  rect (25,45) (31,50) color=out
+  rect (32,45) (38,50) color=out
+  rect (26,46) (30,49) color=trousers
+  rect (33,46) (37,49) color=trousers_light
+
+  // Left Leg / Boot (Passing through, lifted off ground)
+  rect (23,47) (31,58) color=out
+  rect (24,48) (30,57) color=boot
+  rect (28,49) (30,57) color=boot_shadow
+  line (25,49) (27,49) color=boot_light
+  line (23,58) (31,58) color=out
+
+  // Right Leg / Boot (Supporting, directly beneath)
+  rect (32,49) (40,62) color=out
+  rect (33,50) (39,61) color=boot
+  rect (37,51) (39,61) color=boot_shadow
+  line (34,51) (36,51) color=boot_light
+  line (32,62) (40,62) color=out
+}

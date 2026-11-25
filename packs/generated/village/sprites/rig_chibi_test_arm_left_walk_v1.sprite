@@ -1,0 +1,89 @@
+sprite 32x32
+kind object
+material sand
+
+palette {
+  dark = #181819
+  sleeve_lit = #3b7dc4
+  sleeve_base = #285a96
+  sleeve_dark = #1c3e6b
+  skin_lit = sand.4
+  skin_base = sand.3
+  skin_shadow = sand.1
+}
+
+frame "f1" {
+  // Contact: Left arm swings backward (slightly angled out/back), body lowered by 1px
+  // Outline
+  rect (6,18) (9,25) color=dark
+  pixel (5,21) color=dark
+  pixel (5,22) color=dark
+  pixel (5,23) color=dark
+  pixel (10,18) color=dark
+  pixel (10,19) color=dark
+
+  // Sleeve (shoulder / bicep)
+  rect (7,18) (9,21) color=sleeve_base
+  line (7,18) (7,20) color=sleeve_lit
+  pixel (9,21) color=sleeve_dark
+
+  // Hand / Wrist swinging back
+  rect (6,22) (8,24) color=skin_base
+  pixel (6,22) color=skin_lit
+  pixel (6,23) color=skin_lit
+  pixel (8,24) color=skin_shadow
+}
+
+frame "f2" {
+  // Passing: Neutral hanging position, body rising (up 1px)
+  // Outline
+  rect (7,17) (10,25) color=dark
+
+  // Sleeve
+  rect (8,17) (9,21) color=sleeve_base
+  line (8,17) (8,20) color=sleeve_lit
+  pixel (9,21) color=sleeve_dark
+
+  // Hand
+  rect (8,22) (9,24) color=skin_base
+  pixel (8,22) color=skin_lit
+  pixel (8,23) color=skin_lit
+  pixel (9,24) color=skin_shadow
+}
+
+frame "f3" {
+  // Contact: Left arm swings forward (angled slightly inward/forward), body lowered by 1px
+  // Outline
+  rect (7,18) (10,25) color=dark
+  pixel (11,22) color=dark
+  pixel (11,23) color=dark
+  pixel (11,24) color=dark
+
+  // Sleeve
+  rect (8,18) (10,21) color=sleeve_base
+  line (8,18) (8,21) color=sleeve_lit
+  pixel (10,21) color=sleeve_dark
+
+  // Hand swinging forward
+  rect (8,22) (10,24) color=skin_base
+  line (8,22) (9,22) color=skin_lit
+  pixel (10,24) color=skin_shadow
+  pixel (9,24) color=skin_shadow
+}
+
+frame "f4" {
+  // Passing: Neutral vertical return, body high
+  // Outline
+  rect (7,17) (10,24) color=dark
+
+  // Sleeve
+  rect (8,17) (9,20) color=sleeve_base
+  line (8,17) (8,19) color=sleeve_lit
+  pixel (9,20) color=sleeve_dark
+
+  // Hand
+  rect (8,21) (9,23) color=skin_base
+  pixel (8,21) color=skin_lit
+  pixel (8,22) color=skin_lit
+  pixel (9,23) color=skin_shadow
+}

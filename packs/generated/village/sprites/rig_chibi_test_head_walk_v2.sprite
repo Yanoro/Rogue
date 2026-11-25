@@ -1,0 +1,205 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  skin_light = #FFE0B8
+  skin = #F2C79A
+  skin_shadow = #C98B60
+  hair_shadow = #4A2A1C
+  eye_blue = #3B6FD6
+  white = #FFFFFF
+}
+
+frame "f1" {
+  // --- Head Base & Ears (y-offset +1) ---
+  rect (14,19) (17,23) color=out
+  rect (15,20) (16,22) color=skin
+  rect (47,19) (50,23) color=out
+  rect (48,20) (49,22) color=skin_shadow
+
+  circle (32,19) radius=15 color=out
+  rect (18,18) (46,29) color=out
+  polygon (20,29) (44,29) (37,33) (27,33) color=out
+
+  circle (32,19) radius=14 color=skin
+  rect (19,18) (45,28) color=skin
+  polygon (21,29) (43,29) (36,32) (28,32) color=skin
+
+  // Shading & Highlights
+  polygon (34,29) (43,29) (36,32) (30,32) color=skin_shadow
+  line (43,23) (45,27) color=skin_shadow
+  line (20,10) (28,7) color=skin_light
+
+  // Blush
+  rect (20,25) (24,26) color=skin_shadow
+  rect (40,25) (44,26) color=skin_shadow
+
+  // Left Eye
+  rect (21,18) (27,25) color=out
+  rect (22,19) (26,24) color=white
+  rect (23,20) (26,24) color=eye_blue
+  pixel (23,20) color=white
+  pixel (24,20) color=white
+  line (21,17) (28,17) color=out
+
+  // Right Eye
+  rect (37,18) (43,25) color=out
+  rect (38,19) (42,24) color=white
+  rect (38,20) (41,24) color=eye_blue
+  pixel (38,20) color=white
+  pixel (39,20) color=white
+  line (36,17) (43,17) color=out
+
+  // Eyebrows, Nose & Mouth
+  line (22,15) (27,15) color=hair_shadow
+  line (37,15) (42,15) color=hair_shadow
+  pixel (32,25) color=skin_shadow
+  line (30,28) (34,28) color=skin_shadow
+  pixel (32,29) color=skin_shadow
+}
+
+frame "f2" {
+  // --- Head Base & Ears (y-offset 0) ---
+  rect (14,18) (17,22) color=out
+  rect (15,19) (16,21) color=skin
+  rect (47,18) (50,22) color=out
+  rect (48,19) (49,21) color=skin_shadow
+
+  circle (32,18) radius=15 color=out
+  rect (18,17) (46,28) color=out
+  polygon (20,28) (44,28) (37,32) (27,32) color=out
+
+  circle (32,18) radius=14 color=skin
+  rect (19,17) (45,27) color=skin
+  polygon (21,28) (43,28) (36,31) (28,31) color=skin
+
+  // Shading & Highlights
+  polygon (34,28) (43,28) (36,31) (30,31) color=skin_shadow
+  line (43,22) (45,26) color=skin_shadow
+  line (20,9) (28,6) color=skin_light
+
+  // Blush
+  rect (20,24) (24,25) color=skin_shadow
+  rect (40,24) (44,25) color=skin_shadow
+
+  // Left Eye
+  rect (21,17) (27,24) color=out
+  rect (22,18) (26,23) color=white
+  rect (23,19) (26,23) color=eye_blue
+  pixel (23,19) color=white
+  pixel (24,19) color=white
+  line (21,16) (28,16) color=out
+
+  // Right Eye
+  rect (37,17) (43,24) color=out
+  rect (38,18) (42,23) color=white
+  rect (38,19) (41,23) color=eye_blue
+  pixel (38,19) color=white
+  pixel (39,19) color=white
+  line (36,16) (43,16) color=out
+
+  // Eyebrows, Nose & Mouth
+  line (22,14) (27,14) color=hair_shadow
+  line (37,14) (42,14) color=hair_shadow
+  pixel (32,24) color=skin_shadow
+  line (30,27) (34,27) color=skin_shadow
+  pixel (32,28) color=skin_shadow
+}
+
+frame "f3" {
+  // --- Head Base & Ears (y-offset +1) ---
+  rect (14,19) (17,23) color=out
+  rect (15,20) (16,22) color=skin
+  rect (47,19) (50,23) color=out
+  rect (48,20) (49,22) color=skin_shadow
+
+  circle (32,19) radius=15 color=out
+  rect (18,18) (46,29) color=out
+  polygon (20,29) (44,29) (37,33) (27,33) color=out
+
+  circle (32,19) radius=14 color=skin
+  rect (19,18) (45,28) color=skin
+  polygon (21,29) (43,29) (36,32) (28,32) color=skin
+
+  // Shading & Highlights
+  polygon (34,29) (43,29) (36,32) (30,32) color=skin_shadow
+  line (43,23) (45,27) color=skin_shadow
+  line (20,10) (28,7) color=skin_light
+
+  // Blush
+  rect (20,25) (24,26) color=skin_shadow
+  rect (40,25) (44,26) color=skin_shadow
+
+  // Left Eye
+  rect (21,18) (27,25) color=out
+  rect (22,19) (26,24) color=white
+  rect (23,20) (26,24) color=eye_blue
+  pixel (23,20) color=white
+  pixel (24,20) color=white
+  line (21,17) (28,17) color=out
+
+  // Right Eye
+  rect (37,18) (43,25) color=out
+  rect (38,19) (42,24) color=white
+  rect (38,20) (41,24) color=eye_blue
+  pixel (38,20) color=white
+  pixel (39,20) color=white
+  line (36,17) (43,17) color=out
+
+  // Eyebrows, Nose & Mouth
+  line (22,15) (27,15) color=hair_shadow
+  line (37,15) (42,15) color=hair_shadow
+  pixel (32,25) color=skin_shadow
+  line (30,28) (34,28) color=skin_shadow
+  pixel (32,29) color=skin_shadow
+}
+
+frame "f4" {
+  // --- Head Base & Ears (y-offset 0) ---
+  rect (14,18) (17,22) color=out
+  rect (15,19) (16,21) color=skin
+  rect (47,18) (50,22) color=out
+  rect (48,19) (49,21) color=skin_shadow
+
+  circle (32,18) radius=15 color=out
+  rect (18,17) (46,28) color=out
+  polygon (20,28) (44,28) (37,32) (27,32) color=out
+
+  circle (32,18) radius=14 color=skin
+  rect (19,17) (45,27) color=skin
+  polygon (21,28) (43,28) (36,31) (28,31) color=skin
+
+  // Shading & Highlights
+  polygon (34,28) (43,28) (36,31) (30,31) color=skin_shadow
+  line (43,22) (45,26) color=skin_shadow
+  line (20,9) (28,6) color=skin_light
+
+  // Blush
+  rect (20,24) (24,25) color=skin_shadow
+  rect (40,24) (44,25) color=skin_shadow
+
+  // Left Eye
+  rect (21,17) (27,24) color=out
+  rect (22,18) (26,23) color=white
+  rect (23,19) (26,23) color=eye_blue
+  pixel (23,19) color=white
+  pixel (24,19) color=white
+  line (21,16) (28,16) color=out
+
+  // Right Eye
+  rect (37,17) (43,24) color=out
+  rect (38,18) (42,23) color=white
+  rect (38,19) (41,23) color=eye_blue
+  pixel (38,19) color=white
+  pixel (39,19) color=white
+  line (36,16) (43,16) color=out
+
+  // Eyebrows, Nose & Mouth
+  line (22,14) (27,14) color=hair_shadow
+  line (37,14) (42,14) color=hair_shadow
+  pixel (32,24) color=skin_shadow
+  line (30,27) (34,27) color=skin_shadow
+  pixel (32,28) color=skin_shadow
+}

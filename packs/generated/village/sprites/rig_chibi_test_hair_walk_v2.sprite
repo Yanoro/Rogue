@@ -1,0 +1,202 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  hair_light = #A8673E
+  hair = #7A4A2E
+  hair_shadow = #4A2A1C
+}
+
+// ----------------------------------------------------
+// Frame 1: Contact (body at lowest, y + 1)
+// ----------------------------------------------------
+frame "f1" {
+  // Hair outline silhouette
+  circle (31,16) radius=15 color=out
+  polygon (13,16) (49,16) (46,5) (16,5) color=out
+  polygon (11,21) (17,25) (16,17) color=out
+  polygon (46,17) (46,25) (51,21) color=out
+
+  // Main hair fill
+  circle (31,15) radius=14 color=hair
+  polygon (14,16) (48,16) (45,6) (17,6) color=hair
+
+  // Top-left highlight
+  polygon (17,8) (33,7) (29,13) (16,13) color=hair_light
+  circle (25,11) radius=4 color=hair_light
+
+  // Right-side shading
+  polygon (36,7) (45,8) (47,19) (35,19) color=hair_shadow
+  circle (40,14) radius=4 color=hair_shadow
+
+  // Front bangs
+  // Bang 1 (far left)
+  polygon (15,15) (22,15) (18,24) color=out
+  polygon (16,15) (21,15) (18,22) color=hair
+
+  // Bang 2 (mid left)
+  polygon (21,15) (28,15) (25,25) color=out
+  polygon (22,15) (27,15) (25,23) color=hair_light
+
+  // Bang 3 (center)
+  polygon (27,15) (35,15) (31,26) color=out
+  polygon (28,15) (34,15) (31,24) color=hair
+
+  // Bang 4 (mid right)
+  polygon (34,15) (41,15) (37,24) color=out
+  polygon (35,15) (40,15) (37,22) color=hair_shadow
+
+  // Bang 5 (far right)
+  polygon (40,15) (47,15) (43,23) color=out
+  polygon (41,15) (46,15) (43,21) color=hair_shadow
+
+  // Top cowlick / tuft
+  polygon (28,5) (34,2) (34,6) color=out
+  polygon (29,5) (33,3) (33,6) color=hair_light
+}
+
+// ----------------------------------------------------
+// Frame 2: Passing (body rising, y - 1)
+// ----------------------------------------------------
+frame "f2" {
+  // Hair outline silhouette
+  circle (31,14) radius=15 color=out
+  polygon (13,14) (49,14) (46,3) (16,3) color=out
+  polygon (11,19) (17,23) (16,15) color=out
+  polygon (46,15) (46,23) (51,19) color=out
+
+  // Main hair fill
+  circle (31,13) radius=14 color=hair
+  polygon (14,14) (48,14) (45,4) (17,4) color=hair
+
+  // Top-left highlight
+  polygon (17,6) (33,5) (29,11) (16,11) color=hair_light
+  circle (25,9) radius=4 color=hair_light
+
+  // Right-side shading
+  polygon (36,5) (45,6) (47,17) (35,17) color=hair_shadow
+  circle (40,12) radius=4 color=hair_shadow
+
+  // Front bangs
+  // Bang 1 (far left)
+  polygon (15,13) (22,13) (17,22) color=out
+  polygon (16,13) (21,13) (17,20) color=hair
+
+  // Bang 2 (mid left)
+  polygon (21,13) (28,13) (24,23) color=out
+  polygon (22,13) (27,13) (24,21) color=hair_light
+
+  // Bang 3 (center)
+  polygon (27,13) (35,13) (30,24) color=out
+  polygon (28,13) (34,13) (30,22) color=hair
+
+  // Bang 4 (mid right)
+  polygon (34,13) (41,13) (37,23) color=out
+  polygon (35,13) (40,13) (37,21) color=hair_shadow
+
+  // Bang 5 (far right)
+  polygon (40,13) (47,13) (44,21) color=out
+  polygon (41,13) (46,13) (44,19) color=hair_shadow
+
+  // Top cowlick / tuft (slight trail back)
+  polygon (27,4) (33,1) (33,5) color=out
+  polygon (28,4) (32,2) (32,5) color=hair_light
+}
+
+// ----------------------------------------------------
+// Frame 3: Contact (body at lowest, y + 1)
+// ----------------------------------------------------
+frame "f3" {
+  // Hair outline silhouette
+  circle (31,16) radius=15 color=out
+  polygon (13,16) (49,16) (46,5) (16,5) color=out
+  polygon (11,21) (17,25) (16,17) color=out
+  polygon (46,17) (46,25) (51,21) color=out
+
+  // Main hair fill
+  circle (31,15) radius=14 color=hair
+  polygon (14,16) (48,16) (45,6) (17,6) color=hair
+
+  // Top-left highlight
+  polygon (17,8) (33,7) (29,13) (16,13) color=hair_light
+  circle (25,11) radius=4 color=hair_light
+
+  // Right-side shading
+  polygon (36,7) (45,8) (47,19) (35,19) color=hair_shadow
+  circle (40,14) radius=4 color=hair_shadow
+
+  // Front bangs
+  // Bang 1 (far left)
+  polygon (15,15) (22,15) (18,24) color=out
+  polygon (16,15) (21,15) (18,22) color=hair
+
+  // Bang 2 (mid left)
+  polygon (21,15) (28,15) (25,25) color=out
+  polygon (22,15) (27,15) (25,23) color=hair_light
+
+  // Bang 3 (center)
+  polygon (27,15) (35,15) (31,26) color=out
+  polygon (28,15) (34,15) (31,24) color=hair
+
+  // Bang 4 (mid right)
+  polygon (34,15) (41,15) (37,24) color=out
+  polygon (35,15) (40,15) (37,22) color=hair_shadow
+
+  // Bang 5 (far right)
+  polygon (40,15) (47,15) (43,23) color=out
+  polygon (41,15) (46,15) (43,21) color=hair_shadow
+
+  // Top cowlick / tuft
+  polygon (28,5) (34,2) (34,6) color=out
+  polygon (29,5) (33,3) (33,6) color=hair_light
+}
+
+// ----------------------------------------------------
+// Frame 4: Passing (body rising, y - 1)
+// ----------------------------------------------------
+frame "f4" {
+  // Hair outline silhouette
+  circle (31,14) radius=15 color=out
+  polygon (13,14) (49,14) (46,3) (16,3) color=out
+  polygon (11,19) (17,23) (16,15) color=out
+  polygon (46,15) (46,23) (51,19) color=out
+
+  // Main hair fill
+  circle (31,13) radius=14 color=hair
+  polygon (14,14) (48,14) (45,4) (17,4) color=hair
+
+  // Top-left highlight
+  polygon (17,6) (33,5) (29,11) (16,11) color=hair_light
+  circle (25,9) radius=4 color=hair_light
+
+  // Right-side shading
+  polygon (36,5) (45,6) (47,17) (35,17) color=hair_shadow
+  circle (40,12) radius=4 color=hair_shadow
+
+  // Front bangs
+  // Bang 1 (far left)
+  polygon (15,13) (22,13) (19,22) color=out
+  polygon (16,13) (21,13) (19,20) color=hair
+
+  // Bang 2 (mid left)
+  polygon (21,13) (28,13) (26,23) color=out
+  polygon (22,13) (27,13) (26,21) color=hair_light
+
+  // Bang 3 (center)
+  polygon (27,13) (35,13) (32,24) color=out
+  polygon (28,13) (34,13) (32,22) color=hair
+
+  // Bang 4 (mid right)
+  polygon (34,13) (41,13) (39,23) color=out
+  polygon (35,13) (40,13) (39,21) color=hair_shadow
+
+  // Bang 5 (far right)
+  polygon (40,13) (47,13) (45,21) color=out
+  polygon (41,13) (46,13) (45,19) color=hair_shadow
+
+  // Top cowlick / tuft (slight trail opposite)
+  polygon (29,4) (35,1) (35,5) color=out
+  polygon (30,4) (34,2) (34,5) color=hair_light
+}

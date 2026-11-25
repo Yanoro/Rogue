@@ -1,0 +1,51 @@
+sprite 32x32
+kind object
+material wood
+
+frame "f1" {
+  rect (21,17) (25,20) color=ink.base
+  rect (22,21) (26,24) color=ink.base
+  rect (22,18) (24,20) color=wood.base
+  pixel (22,18) color=wood.3
+  pixel (24,20) color=wood.1
+  rect (23,21) (25,23) color=sand.base
+  pixel (23,21) color=sand.3
+  pixel (25,23) color=sand.1
+  pixel (24,24) color=sand.base
+}
+
+frame "f2" {
+  rect (21,16) (25,19) color=ink.base
+  rect (22,20) (26,24) color=ink.base
+  rect (22,17) (24,19) color=wood.base
+  pixel (22,17) color=wood.3
+  pixel (24,19) color=wood.1
+  rect (23,20) (25,23) color=sand.base
+  pixel (23,20) color=sand.3
+  pixel (25,23) color=sand.1
+  pixel (24,24) color=sand.base
+}
+
+frame "f3" {
+  rect (22,17) (26,20) color=ink.base
+  rect (22,21) (26,25) color=ink.base
+  rect (23,18) (25,20) color=wood.base
+  pixel (23,18) color=wood.3
+  pixel (25,20) color=wood.1
+  rect (23,21) (25,24) color=sand.base
+  pixel (23,21) color=sand.3
+  pixel (25,24) color=sand.1
+  pixel (24,24) color=sand.base
+}
+
+frame "f4" {
+  rect (21,16) (25,19) color=ink.base
+  rect (22,20) (26,24) color=ink.base
+  rect (22,17) (24,19) color=wood.base
+  pixel (22,17) color=wood.3
+  pixel (24,19) color=wood.1
+  rect (23,20) (25,23) color=sand.base
+  pixel (23,20) color=sand.3
+  pixel (25,23) color=sand.1
+  pixel (24,24) color=sand.base
+}

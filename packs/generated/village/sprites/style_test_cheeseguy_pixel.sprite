@@ -1,0 +1,261 @@
+version 1
+sprite 96x96
+kind object
+
+palette {
+  dark = #4c2836
+  shadow = #574848
+  line = #716460
+  deep_red = #9b6460
+  warm_red = #bb8a84
+  blush = #ebc3b5
+  skin_base = #fae0d2
+  skin_lit = #fef1e9
+  hair_dark = #716460
+  hair_mid = #87946f
+  hair_base = #97b390
+  hair_lit = #ccd5bc
+  cloth_dark = #a78e8a
+  cloth_mid = #b99f97
+  cloth_base = #cab7b0
+  cloth_lit = #eee2dc
+  tunic_pure = #eedcd3
+}
+
+// === Silhouette Base: Hair & Crown (Y: 4 to 28) ===
+rect (42,6) (53,10) color=hair_mid
+rect (38,11) (57,18) color=hair_base
+rect (34,18) (61,24) color=hair_base
+
+// Hair Highlights & Tufts
+rect (43,7) (50,9) color=hair_lit
+rect (40,11) (46,14) color=hair_lit
+rect (51,12) (55,15) color=hair_lit
+pixel (42,5) color=dark
+line (43,4) (51,4) color=dark
+line (52,5) (54,5) color=dark
+pixel (38,10) color=dark
+pixel (58,10) color=dark
+pixel (35,16) color=dark
+pixel (61,16) color=dark
+line (33,19) (33,25) color=dark
+line (62,19) (62,25) color=dark
+
+// Hair Strands and Shading
+line (35,18) (37,24) color=hair_dark
+line (58,18) (60,24) color=hair_dark
+line (47,11) (48,16) color=hair_dark
+pixel (44,15) color=hair_lit
+pixel (53,14) color=hair_lit
+pixel (39,17) color=hair_lit
+
+// === Face & Head (Y: 21 to 35) ===
+rect (40,22) (55,33) color=skin_base
+rect (42,21) (53,23) color=skin_lit
+rect (41,25) (44,30) color=skin_lit
+rect (51,25) (54,30) color=skin_base
+rect (43,32) (52,34) color=blush
+
+// Front Bangs draping over forehead
+rect (41,20) (43,24) color=hair_base
+rect (48,20) (49,23) color=hair_mid
+rect (53,20) (55,23) color=hair_base
+pixel (42,22) color=hair_lit
+pixel (41,24) color=dark
+pixel (49,24) color=dark
+pixel (55,24) color=dark
+
+// Eyes & Brows
+// Eyebrows
+line (42,24) (45,24) color=deep_red
+line (50,24) (53,24) color=deep_red
+// Left Eye
+pixel (42,26) color=dark
+pixel (43,26) color=dark
+pixel (42,27) color=dark
+pixel (43,27) color=cloth_lit
+pixel (42,28) color=deep_red
+pixel (43,28) color=warm_red
+// Right Eye
+pixel (51,26) color=dark
+pixel (52,26) color=dark
+pixel (51,27) color=cloth_lit
+pixel (52,27) color=dark
+pixel (51,28) color=warm_red
+pixel (52,28) color=deep_red
+
+// Cheeks blush & Nose / Mouth
+pixel (41,29) color=blush
+pixel (53,29) color=blush
+pixel (47,28) color=warm_red
+pixel (47,31) color=deep_red
+line (46,32) (48,32) color=warm_red
+pixel (47,33) color=dark
+
+// Chin contour and jaw outline
+line (39,26) (39,32) color=dark
+line (56,26) (56,32) color=dark
+pixel (40,33) color=dark
+pixel (55,33) color=dark
+line (41,34) (43,35) color=dark
+line (52,35) (54,34) color=dark
+line (44,36) (51,36) color=dark
+
+// === Neck & Collar (Y: 36 to 39) ===
+rect (45,36) (50,38) color=blush
+pixel (44,37) color=warm_red
+pixel (51,37) color=warm_red
+rect (42,38) (53,40) color=cloth_base
+line (41,39) (41,41) color=dark
+line (54,39) (54,41) color=dark
+line (42,38) (44,38) color=cloth_lit
+line (51,38) (53,38) color=cloth_mid
+
+// === Torso & Armor Vest (Y: 40 to 57) ===
+// Main Tunic / Jerkin
+rect (41,41) (54,54) color=cloth_mid
+rect (43,41) (52,51) color=cloth_base
+rect (44,42) (48,48) color=cloth_lit
+rect (49,42) (52,48) color=tunic_pure
+
+// Shoulder Pauldrons / Sleeves
+rect (36,41) (40,46) color=hair_base
+rect (37,42) (39,44) color=hair_lit
+rect (55,41) (59,46) color=hair_mid
+rect (56,42) (58,44) color=hair_base
+// Outline for shoulders
+line (35,41) (35,46) color=dark
+line (60,41) (60,46) color=dark
+line (36,40) (40,40) color=dark
+line (55,40) (59,40) color=dark
+
+// Torso Outlines and Seams
+line (40,42) (40,54) color=dark
+line (55,42) (55,54) color=dark
+line (47,41) (47,50) color=cloth_dark
+line (48,41) (48,50) color=shadow
+
+// Leather straps across chest
+line (42,43) (46,47) color=deep_red
+line (53,43) (49,47) color=deep_red
+pixel (47,47) color=cloth_lit
+pixel (48,47) color=cloth_lit
+
+// Belt & Buckle (Y: 52 to 55)
+rect (41,52) (54,54) color=deep_red
+rect (46,51) (49,55) color=cloth_lit
+rect (47,52) (48,54) color=dark
+pixel (43,53) color=warm_red
+pixel (52,53) color=shadow
+
+// Belt Trim Outlines
+line (40,51) (55,51) color=dark
+line (40,55) (55,55) color=dark
+
+// Lower Tunic / Skirt Faulds (Y: 56 to 63)
+rect (39,56) (56,62) color=cloth_base
+rect (41,56) (47,61) color=cloth_lit
+rect (48,56) (54,61) color=cloth_mid
+line (47,56) (47,62) color=shadow
+line (38,56) (38,62) color=dark
+line (57,56) (57,62) color=dark
+line (39,63) (56,63) color=dark
+
+// === Arms & Hands (Y: 46 to 62) ===
+// Left Arm (facing viewer right)
+rect (35,47) (39,54) color=cloth_mid
+rect (36,48) (38,52) color=cloth_lit
+line (34,47) (34,55) color=dark
+line (35,55) (39,55) color=dark
+// Left Hand (glove / bracer)
+rect (35,56) (39,60) color=deep_red
+rect (36,57) (38,59) color=warm_red
+line (34,56) (34,61) color=dark
+line (35,61) (39,61) color=dark
+pixel (37,60) color=skin_base
+
+// Right Arm (facing viewer left)
+rect (56,47) (60,54) color=cloth_dark
+rect (57,48) (59,52) color=cloth_mid
+line (61,47) (61,55) color=dark
+line (56,55) (60,55) color=dark
+// Right Hand (glove / bracer)
+rect (56,56) (60,60) color=deep_red
+rect (57,57) (59,59) color=shadow
+line (61,56) (61,61) color=dark
+line (56,61) (60,61) color=dark
+pixel (58,60) color=skin_base
+
+// === Legs & Pants (Y: 63 to 82) ===
+// Left Leg (viewer's left: X: 41 to 46)
+rect (41,64) (47,78) color=hair_mid
+rect (42,65) (45,74) color=hair_base
+rect (43,66) (44,72) color=hair_lit
+line (40,64) (40,78) color=dark
+line (47,64) (47,78) color=dark
+
+// Right Leg (viewer's right: X: 49 to 54)
+rect (48,64) (54,78) color=hair_dark
+rect (49,65) (52,74) color=hair_mid
+rect (49,66) (50,72) color=hair_base
+line (48,64) (48,78) color=dark
+line (55,64) (55,78) color=dark
+
+// Crotch / Separation Shadow
+line (47,63) (48,68) color=dark
+
+// Knees definition
+rect (42,72) (45,74) color=hair_lit
+rect (49,72) (52,74) color=hair_mid
+line (41,74) (46,74) color=hair_dark
+line (48,74) (54,74) color=dark
+
+// Knee guards / Straps
+rect (41,75) (46,76) color=deep_red
+rect (48,75) (54,76) color=deep_red
+line (41,77) (46,77) color=dark
+line (48,77) (54,77) color=dark
+
+// Lower shins
+rect (41,78) (46,82) color=cloth_mid
+rect (42,79) (44,81) color=cloth_lit
+rect (48,78) (54,82) color=cloth_dark
+rect (49,79) (52,81) color=cloth_mid
+
+// === Boots & Feet Planted at Bottom (Y: 82 to 95) ===
+// Left Boot (X: 38 to 47, grounded at 95)
+rect (40,82) (47,87) color=deep_red
+rect (41,83) (44,86) color=warm_red
+line (39,83) (39,94) color=dark
+line (47,82) (47,94) color=dark
+
+// Left Boot Flare & Foot
+rect (38,88) (47,93) color=deep_red
+rect (39,89) (45,92) color=warm_red
+rect (40,90) (43,92) color=blush
+line (37,92) (37,95) color=dark
+line (38,95) (47,95) color=dark
+// Boot sole & trim
+line (38,94) (47,94) color=shadow
+pixel (42,88) color=cloth_lit
+pixel (43,88) color=cloth_lit
+
+// Right Boot (X: 48 to 57, grounded at 95)
+rect (48,82) (55,87) color=shadow
+rect (49,83) (53,86) color=deep_red
+line (48,82) (48,94) color=dark
+line (56,83) (56,94) color=dark
+
+// Right Boot Flare & Foot
+rect (48,88) (57,93) color=deep_red
+rect (49,89) (55,92) color=warm_red
+rect (50,90) (53,92) color=cloth_lit
+line (57,92) (58,95) color=dark
+line (48,95) (57,95) color=dark
+// Boot sole & trim
+line (48,94) (57,94) color=shadow
+pixel (51,88) color=cloth_lit
+pixel (52,88) color=cloth_lit
+
+// Central gap clean-up
+line (47,88) (48,94) color=dark

@@ -1,0 +1,97 @@
+sprite 64x64
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  tunic_light = #6EA8E8
+  tunic = #2F5FA8
+  tunic_shadow = #1C3A70
+  belt = #4A2A1C
+  gold = #FFE0B8
+  white = #FFFFFF
+}
+
+frame "f1" {
+  // Body low pose (contact)
+  // Tunic outline & base
+  polygon (22,35) (41,35) (44,49) (19,49) color=out
+  polygon (23,36) (40,36) (43,48) (20,48) color=tunic
+
+  // Tunic shading & folds
+  polygon (33,36) (40,36) (43,48) (31,48) color=tunic_shadow
+  line (24,37) (27,45) color=tunic_light
+  line (25,37) (28,45) color=tunic_light
+
+  // Belt & Buckle
+  rect (20,44) (43,46) color=out
+  rect (21,45) (42,45) color=belt
+  rect (30,44) (33,46) color=gold
+
+  // Collar / Undershirt
+  polygon (29,35) (35,35) (33,39) (31,39) color=out
+  polygon (30,35) (34,35) (32,38) (32,38) color=white
+}
+
+frame "f2" {
+  // Body high pose (passing, 1px up)
+  // Tunic outline & base
+  polygon (22,34) (41,34) (44,48) (19,48) color=out
+  polygon (23,35) (40,35) (43,47) (20,47) color=tunic
+
+  // Tunic shading & folds
+  polygon (33,35) (40,35) (43,47) (31,47) color=tunic_shadow
+  line (24,36) (27,44) color=tunic_light
+  line (25,36) (28,44) color=tunic_light
+
+  // Belt & Buckle
+  rect (20,43) (43,45) color=out
+  rect (21,44) (42,44) color=belt
+  rect (30,43) (33,45) color=gold
+
+  // Collar / Undershirt
+  polygon (29,34) (35,34) (33,38) (31,38) color=out
+  polygon (30,34) (34,34) (32,37) (32,37) color=white
+}
+
+frame "f3" {
+  // Body low pose (contact)
+  // Tunic outline & base
+  polygon (22,35) (41,35) (44,49) (19,49) color=out
+  polygon (23,36) (40,36) (43,48) (20,48) color=tunic
+
+  // Tunic shading & folds
+  polygon (33,36) (40,36) (43,48) (31,48) color=tunic_shadow
+  line (24,37) (27,45) color=tunic_light
+  line (25,37) (28,45) color=tunic_light
+
+  // Belt & Buckle
+  rect (20,44) (43,46) color=out
+  rect (21,45) (42,45) color=belt
+  rect (30,44) (33,46) color=gold
+
+  // Collar / Undershirt
+  polygon (29,35) (35,35) (33,39) (31,39) color=out
+  polygon (30,35) (34,35) (32,38) (32,38) color=white
+}
+
+frame "f4" {
+  // Body high pose (passing, 1px up)
+  // Tunic outline & base
+  polygon (22,34) (41,34) (44,48) (19,48) color=out
+  polygon (23,35) (40,35) (43,47) (20,47) color=tunic
+
+  // Tunic shading & folds
+  polygon (33,35) (40,35) (43,47) (31,47) color=tunic_shadow
+  line (24,36) (27,44) color=tunic_light
+  line (25,36) (28,44) color=tunic_light
+
+  // Belt & Buckle
+  rect (20,43) (43,45) color=out
+  rect (21,44) (42,44) color=belt
+  rect (30,43) (33,45) color=gold
+
+  // Collar / Undershirt
+  polygon (29,34) (35,34) (33,38) (31,38) color=out
+  polygon (30,34) (34,34) (32,37) (32,37) color=white
+}
