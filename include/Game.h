@@ -34,6 +34,7 @@
 #include "PortraitRegistry.h"
 #include "IconRegistry.h"
 #include "ArtStyleRegistry.h"
+#include "VisualAssetRegistry.h"
 #include "BodySilhouetteRegistry.h"
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
@@ -323,6 +324,7 @@ private:
   PortraitRegistry portraitRegistry;
   IconRegistry iconRegistry;
   ArtStyleRegistry artStyleRegistry;
+  VisualAssetRegistry visualAssets;
   BodySilhouetteRegistry bodySilhouetteRegistry;
   SurfaceSpriteRegistry surfaceSpriteRegistry;
   SurfaceRegistry surfaceRegistry;

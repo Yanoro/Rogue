@@ -110,6 +110,8 @@ bool EffectRegistry::AddOrReplace(const nlohmann::json &document,
   definition.base = document.value("base", 0.0f);
   definition.damageType = document.value("damageType", std::string());
   definition.statusId = document.value("status", std::string());
+  definition.icon = document.value("icon", std::string());
+  definition.sprite = document.value("sprite", std::string());
   definition.statusDuration = document.value("duration", 0.0f);
   definition.surfaceId = document.value("surface", std::string());
   definition.surfaceDuration = document.value("surfaceDuration", 0.0f);
@@ -175,6 +177,8 @@ nlohmann::json EffectRegistry::ToJson(const EffectDef &definition) const {
   if (!definition.damageType.empty()) j["damageType"] = definition.damageType;
   if (!definition.statusId.empty()) j["status"] = definition.statusId;
   if (definition.statusDuration > 0.0f) j["duration"] = definition.statusDuration;
+  if (!definition.icon.empty()) j["icon"] = definition.icon;
+  if (!definition.sprite.empty()) j["sprite"] = definition.sprite;
   if (!definition.surfaceId.empty()) j["surface"] = definition.surfaceId;
   if (definition.surfaceDuration > 0.0f) {
     j["surfaceDuration"] = definition.surfaceDuration;

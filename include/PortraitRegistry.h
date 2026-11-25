@@ -4,6 +4,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 class DebugLog;
 
 // One character's portrait: a square image that stands for them in the HUD.
@@ -20,6 +22,9 @@ class DebugLog;
 struct PortraitDef {
   std::string id;
   std::string sprite;
+  // "sprite" uses `sprite` as the portrait; "generated" asks the portrait theme
+  // section for art; "auto" uses the sprite when set and generates otherwise.
+  std::string source = "auto";
 };
 
 // Content database for portraits, the counterpart of StatRegistry/SkillRegistry.
@@ -42,6 +47,11 @@ public:
   std::vector<const PortraitDef *> GetAll() const;
 
   size_t Count() const { return portraits.size(); }
+
+  nlohmann::json ToJson(const PortraitDef &definition) const;
+  bool AddOrReplace(const nlohmann::json &document, const std::string &source,
+                    std::string *error, std::vector<std::string> *warnings);
+  static std::string IdFor(const nlohmann::json &document);
 
   void SetDebugLog(DebugLog *log) { debugLog = log; }
 

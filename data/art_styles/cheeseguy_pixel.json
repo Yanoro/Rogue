@@ -97,7 +97,8 @@
     },
     "portrait": {
       "width": 96,
-      "height": 96
+      "height": 96,
+      "source": "auto"
     },
     "object": {
       "positive": "World object sprite, feet at the bottom of the canvas, dark outline, readable silhouette, palette-matched materials and soft shading.",
@@ -111,12 +112,6 @@
       "width": 32,
       "height": 32
     },
-    "effect": {
-      "positive": "Bright pixel-art effect, transparent background, high contrast, palette accents, readable at small size.",
-      "negative": "no character, no background, no text",
-      "width": 32,
-      "height": 32
-    },
     "silhouette": {
       "positive": "Solid body silhouette for the equipment window: a plain dark shape with a clean outline, no face, no clothing detail, palette-neutral so equipment reads over it.",
       "negative": "no face, no interior detail, no bright colours, no background",
@@ -126,6 +121,18 @@
     "tile": {
       "positive": "Tileable pixel-art ground tile, palette-matched, dark outline only where it meets an object.",
       "negative": "no seams, no text",
+      "width": 32,
+      "height": 32
+    },
+    "effect_icon": {
+      "positive": "Readable pixel-art game icon, centered, strong silhouette, high contrast against the dark UI, no thin lines, transparent background. Match the style palette, outline and soft shading.",
+      "negative": "no scenery, no text, no thin single-pixel details, no flat background",
+      "width": 32,
+      "height": 32
+    },
+    "effect_sprite": {
+      "positive": "Bright pixel-art effect, transparent background, high contrast, palette accents, readable at small size.",
+      "negative": "no character, no background, no text",
       "width": 32,
       "height": 32
     }

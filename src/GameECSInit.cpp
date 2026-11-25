@@ -501,6 +501,7 @@ void Game::ECSInit() {
   iconRegistry.SetDebugLog(debugLog.get());
   iconRegistry.Load(settings.content.icons);
   artStyleRegistry.Load(settings.content.artStyles);
+  visualAssets.Load("data/visual_assets.json");
   bodySilhouetteRegistry.Load(settings.content.bodySilhouettes);
 
   // Surface visuals are their own reusable registry, exactly like actor sprites:

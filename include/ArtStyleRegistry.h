@@ -23,6 +23,9 @@ struct ArtStyleSection {
   // 0 means inherit the base/asset size.
   int width = 0;
   int height = 0;
+  // How the asset is sourced: "auto" (use a provided sprite, else generate),
+  // "sprite" (use the provided sprite) or "generated" (ask the model).
+  std::string source;
 };
 
 // A style after a section has been applied. Empty strings mean the section had no override
@@ -35,6 +38,7 @@ struct ResolvedArtStyle {
   std::optional<RigGeometry> geometry;
   int width = 0;
   int height = 0;
+  std::string source;
 };
 
 // A prose style profile for generated art. It is deliberately prompt data, not a

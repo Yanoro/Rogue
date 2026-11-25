@@ -52,6 +52,7 @@
       "section": "portrait",
       "theme": "",
       "consumes": [
+        "portraits",
         "actors"
       ],
       "width": 96,
@@ -102,9 +103,20 @@
       "height": 32
     },
     {
-      "id": "effect",
-      "label": "Effects",
-      "section": "effect",
+      "id": "effect_icon",
+      "label": "Effect icons",
+      "section": "effect_icon",
+      "theme": "",
+      "consumes": [
+        "effects"
+      ],
+      "width": 32,
+      "height": 32
+    },
+    {
+      "id": "effect_sprite",
+      "label": "Effect sprites",
+      "section": "effect_sprite",
       "theme": "",
       "consumes": [
         "effects"

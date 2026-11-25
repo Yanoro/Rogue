@@ -943,6 +943,11 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
   if (style == nullptr && !requestedStyle.empty()) {
     style = game->artStyleRegistry.Get(requestedStyle);
   }
+  if (style == nullptr && game != nullptr) {
+    if (const VisualAssetDef *visualType = game->visualAssets.Find(resolvedRole)) {
+      if (!visualType->theme.empty()) style = game->artStyleRegistry.Get(visualType->theme);
+    }
+  }
   if (style == nullptr) {
     style = game->artStyleRegistry.DefaultTheme();
   }

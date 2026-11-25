@@ -118,6 +118,7 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
         roleDefinition.reference = value.value("reference", std::string());
         roleDefinition.width = value.value("width", 0);
         roleDefinition.height = value.value("height", 0);
+        roleDefinition.source = value.value("source", std::string());
         if (value.contains("geometry")) {
           roleDefinition.geometry = RigGeometryFromJson(value["geometry"]);
         }
@@ -197,6 +198,7 @@ ResolvedArtStyle ArtStyleRegistry::ResolveSection(const ArtStyleDef &style,
     if (value.geometry) resolved.geometry = value.geometry;
     if (value.width > 0) resolved.width = value.width;
     if (value.height > 0) resolved.height = value.height;
+    if (!value.source.empty()) resolved.source = value.source;
   }
   return resolved;
 }
@@ -270,6 +272,7 @@ nlohmann::json ArtStyleRegistry::ToJson(const ArtStyleDef &definition) const {
       if (value.geometry) entry["geometry"] = RigGeometryToJson(*value.geometry);
       if (value.width > 0) entry["width"] = value.width;
       if (value.height > 0) entry["height"] = value.height;
+      if (!value.source.empty()) entry["source"] = value.source;
       sections[section] = std::move(entry);
     }
     document["sections"] = std::move(sections);

@@ -34,7 +34,8 @@
       "positive": "Character portrait: grim, dark fantasy, low-saturation skin and cloth, worn features, a warm rim light, strong face silhouette.",
       "negative": "no bright clean anime look, no neon",
       "width": 96,
-      "height": 96
+      "height": 96,
+      "source": "auto"
     },
     "actor": {
       "positive": "Dark fantasy character: worn layered clothing, low-saturation earthy palette, dark outline, heavy readable silhouette, four shading bands.",
@@ -60,12 +61,6 @@
       "width": 32,
       "height": 32
     },
-    "effect": {
-      "positive": "Effect: warm ember or sickly glow against dark, readable, low-saturation base.",
-      "negative": "no neon rainbow, no background",
-      "width": 32,
-      "height": 32
-    },
     "silhouette": {
       "positive": "Solid dark silhouette for the equipment window, clean outline, no interior detail.",
       "negative": "no face, no bright colours",
@@ -75,6 +70,18 @@
     "tile": {
       "positive": "Ground tile: dark worn earth/stone, seamless, low-saturation.",
       "negative": "no seams, no text",
+      "width": 32,
+      "height": 32
+    },
+    "effect_icon": {
+      "positive": "Skill icon: dark readable silhouette with a single warm ember/glow accent, low-saturation base, no thin lines.",
+      "negative": "no neon, no text, no bright rainbow",
+      "width": 32,
+      "height": 32
+    },
+    "effect_sprite": {
+      "positive": "Effect: warm ember or sickly glow against dark, readable, low-saturation base.",
+      "negative": "no neon rainbow, no background",
       "width": 32,
       "height": 32
     }

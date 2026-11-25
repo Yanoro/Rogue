@@ -218,7 +218,8 @@
       "positive": "Character portrait with a consistent painted pixel style, clear face and shoulders, warm limited palette, dark outline, transparent or simple neutral backdrop, readable at HUD size.",
       "negative": "Do not use text, multiple characters, busy scenery, or a different rendering style from the world sprites.",
       "width": 96,
-      "height": 96
+      "height": 96,
+      "source": "auto"
     },
     "object": {
       "positive": "Top-down three-quarter game sprite, 32x32, compact centred silhouette, warm limited palette, one-pixel dark outline, transparent background, readable at a glance, modest highlight and shadow.",
@@ -244,7 +245,13 @@
       "width": 96,
       "height": 96
     },
-    "effect": {
+    "effect_icon": {
+      "positive": "One centred subject at 32x32, flat two-tone colour with a dark outline, readable silhouette, transparent background, consistent warm palette, simple motion or impact cue only when the skill needs it.",
+      "negative": "Do not use text, frames, busy backgrounds, photographic detail, gradients, or more than one focal object.",
+      "width": 32,
+      "height": 32
+    },
+    "effect_sprite": {
       "positive": "One centred subject at 32x32, flat two-tone colour with a dark outline, readable silhouette, transparent background, consistent warm palette, simple motion or impact cue only when the skill needs it.",
       "negative": "Do not use text, frames, busy backgrounds, photographic detail, gradients, or more than one focal object.",
       "width": 32,
