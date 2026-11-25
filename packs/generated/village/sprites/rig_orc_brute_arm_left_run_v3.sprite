@@ -1,0 +1,222 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  orc_dark = #2d451b
+  orc_mid = #456b23
+  orc_light = #618f33
+  wrap_dark = soil.1
+  wrap_mid = soil.2
+  wrap_light = soil.3
+  ink = ink.base
+}
+
+frame "f1" {
+  // Left arm driving forward, bent at elbow, fist up near chest
+  rect (7,12) (10,20) color=ink
+  rect (8,12) (10,14) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (8,13) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Forearm angled forward/up
+  rect (7,14) (10,17) color=orc_mid
+  pixel (7,14) color=orc_light
+  pixel (7,15) color=orc_light
+  pixel (8,15) color=orc_light
+  pixel (10,16) color=orc_dark
+
+  // Wrist wrap
+  rect (7,17) (10,18) color=wrap_mid
+  line (7,17) (10,17) color=wrap_light
+  line (7,18) (10,18) color=wrap_dark
+
+  // Clenched fist tucked high
+  rect (7,19) (10,20) color=orc_mid
+  pixel (7,19) color=orc_light
+  pixel (8,19) color=orc_light
+  pixel (9,20) color=orc_dark
+  pixel (10,20) color=ink
+
+  // Clean transparency margins
+  pixel (7,12) color=#00000000
+  pixel (7,13) color=#00000000
+}
+
+frame "f2" {
+  // Down pose: body sinks, fist swings forward and up to peak contraction
+  rect (7,13) (10,20) color=ink
+  rect (8,13) (10,15) color=orc_mid
+  pixel (8,13) color=orc_light
+  pixel (8,14) color=orc_light
+  pixel (10,15) color=orc_dark
+
+  // Compact forearm
+  rect (7,15) (10,17) color=orc_mid
+  pixel (7,15) color=orc_light
+  pixel (8,16) color=orc_light
+  pixel (10,17) color=orc_dark
+
+  // Wrist wrap
+  rect (7,17) (10,18) color=wrap_mid
+  line (7,17) (10,17) color=wrap_light
+  line (7,18) (10,18) color=wrap_dark
+
+  // Raised fist
+  rect (7,18) (10,20) color=orc_mid
+  pixel (7,18) color=orc_light
+  pixel (8,18) color=orc_light
+  pixel (9,19) color=orc_dark
+  pixel (10,20) color=ink
+
+  pixel (7,13) color=#00000000
+}
+
+frame "f3" {
+  // Push pose: left leg drives back, left arm swinging down and back
+  rect (7,12) (10,22) color=ink
+
+  // Upper arm extending downward
+  rect (8,12) (10,15) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (8,13) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+  pixel (10,15) color=orc_dark
+
+  // Mid arm / forearm passing torso
+  rect (7,16) (10,19) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (7,17) color=orc_light
+  pixel (8,17) color=orc_light
+  pixel (10,18) color=orc_dark
+  pixel (10,19) color=orc_dark
+
+  // Wrist wrap
+  rect (7,19) (10,20) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+
+  // Hand dropping into swing
+  rect (8,21) (10,22) color=orc_mid
+  pixel (8,21) color=orc_light
+  pixel (9,21) color=orc_light
+  pixel (10,22) color=orc_dark
+  pixel (8,22) color=ink
+
+  pixel (7,12) color=#00000000
+  pixel (7,13) color=#00000000
+  pixel (7,21) color=#00000000
+  pixel (7,22) color=#00000000
+}
+
+frame "f4" {
+  // Flight pose: left arm driving strongly backwards and trailing high
+  rect (7,12) (10,23) color=ink
+
+  // Shoulder and bicep angled backward
+  rect (8,12) (10,15) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Forearm trailing back
+  rect (7,15) (10,19) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (8,17) color=orc_light
+  pixel (10,18) color=orc_dark
+  pixel (10,19) color=orc_dark
+
+  // Wrist wrap
+  rect (7,19) (10,21) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,21) (10,21) color=wrap_dark
+
+  // Fist reaching back
+  rect (7,21) (10,23) color=orc_mid
+  pixel (7,21) color=orc_light
+  pixel (8,22) color=orc_light
+  pixel (9,23) color=orc_dark
+  pixel (10,23) color=ink
+
+  pixel (7,12) color=#00000000
+  pixel (7,13) color=#00000000
+  pixel (7,14) color=#00000000
+}
+
+frame "f5" {
+  // Contact (opposite foot): left arm extended back at apex of backswing
+  rect (7,12) (10,23) color=ink
+
+  // Upper arm stretched
+  rect (8,12) (10,14) color=orc_mid
+  pixel (8,12) color=orc_light
+  pixel (9,12) color=orc_light
+  pixel (10,14) color=orc_dark
+
+  // Forearm back and tense
+  rect (7,15) (10,18) color=orc_mid
+  pixel (7,15) color=orc_light
+  pixel (7,16) color=orc_light
+  pixel (8,16) color=orc_light
+  pixel (10,17) color=orc_dark
+  pixel (10,18) color=orc_dark
+
+  // Wrist wrap
+  rect (7,18) (10,20) color=wrap_mid
+  line (7,18) (10,18) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+  pixel (8,19) color=wrap_light
+
+  // Trailing clenched fist
+  rect (7,21) (10,23) color=orc_mid
+  pixel (7,21) color=orc_light
+  pixel (8,21) color=orc_light
+  pixel (7,22) color=orc_light
+  pixel (9,22) color=orc_dark
+  pixel (10,22) color=ink
+  pixel (8,23) color=orc_dark
+  pixel (9,23) color=orc_dark
+
+  pixel (7,12) color=#00000000
+  pixel (7,13) color=#00000000
+  pixel (7,14) color=#00000000
+  pixel (10,23) color=#00000000
+  pixel (7,23) color=ink
+}
+
+frame "f6" {
+  // Down pose (opposite side): arm rebounds forward from backswing
+  rect (7,13) (10,22) color=ink
+
+  // Upper arm swinging forward
+  rect (8,13) (10,15) color=orc_mid
+  pixel (8,13) color=orc_light
+  pixel (9,13) color=orc_light
+  pixel (10,15) color=orc_dark
+
+  // Forearm bending forward
+  rect (7,16) (10,19) color=orc_mid
+  pixel (7,16) color=orc_light
+  pixel (8,17) color=orc_light
+  pixel (10,18) color=orc_dark
+  pixel (10,19) color=orc_dark
+
+  // Wrist wrap
+  rect (7,19) (10,20) color=wrap_mid
+  line (7,19) (10,19) color=wrap_light
+  line (7,20) (10,20) color=wrap_dark
+
+  // Hand cocking forward
+  rect (8,20) (10,22) color=orc_mid
+  pixel (8,20) color=orc_light
+  pixel (8,21) color=orc_light
+  pixel (9,22) color=orc_dark
+  pixel (10,22) color=ink
+
+  pixel (7,13) color=#00000000
+  pixel (7,14) color=#00000000
+  pixel (7,21) color=#00000000
+  pixel (7,22) color=#00000000
+}

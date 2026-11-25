@@ -1,0 +1,183 @@
+sprite 32x32
+kind object
+material soil
+
+frame "f1" {
+  // Outline: left foot forward, right trailing back
+  rect (12,21) (16,30) color=ink.base
+  rect (17,20) (21,27) color=ink.base
+
+  // Breeches / trousers
+  rect (13,21) (15,24) color=soil.2
+  rect (18,20) (20,23) color=soil.1
+  line (13,21) (15,21) color=soil.3
+
+  // Leather wraps
+  rect (13,25) (15,26) color=wood.1
+  rect (18,23) (20,24) color=wood.0
+  pixel (13,25) color=wood.2
+  pixel (18,23) color=wood.1
+
+  // Boots
+  rect (12,27) (16,30) color=iron.1
+  rect (17,24) (21,27) color=iron.0
+
+  // Soles, highlights, studs
+  line (12,30) (16,30) color=ink.base
+  line (17,27) (21,27) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (18,25) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=42 cluster=1 inside
+}
+
+frame "f2" {
+  // Outline: deep crouch / compression on left leg
+  rect (12,22) (16,30) color=ink.base
+  rect (16,21) (20,28) color=ink.base
+
+  // Breeches
+  rect (13,22) (15,24) color=soil.2
+  rect (17,21) (19,23) color=soil.1
+  line (13,22) (15,22) color=soil.3
+
+  // Wraps
+  rect (13,25) (15,26) color=wood.1
+  rect (17,24) (19,25) color=wood.0
+  pixel (13,25) color=wood.2
+  pixel (17,24) color=wood.1
+
+  // Boots
+  rect (12,27) (16,30) color=iron.1
+  rect (16,25) (20,28) color=iron.0
+
+  // Soles & accents
+  line (12,30) (16,30) color=ink.base
+  line (16,28) (20,28) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (17,26) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=43 cluster=1 inside
+}
+
+frame "f3" {
+  // Outline: left push-off extending back, right knee driving up/forward
+  rect (12,22) (16,29) color=ink.base
+  rect (17,20) (21,26) color=ink.base
+
+  // Breeches
+  rect (13,22) (15,24) color=soil.2
+  rect (18,20) (20,22) color=soil.1
+  line (13,22) (15,22) color=soil.3
+
+  // Wraps
+  rect (13,25) (15,26) color=wood.1
+  rect (18,22) (20,23) color=wood.0
+  pixel (13,25) color=wood.2
+  pixel (18,22) color=wood.1
+
+  // Boots
+  rect (12,27) (16,29) color=iron.1
+  rect (17,23) (21,26) color=iron.0
+
+  // Soles & accents
+  line (12,29) (16,29) color=ink.base
+  line (17,26) (21,26) color=ink.base
+  line (12,27) (14,27) color=iron.3
+  pixel (13,28) color=iron.4
+  pixel (18,24) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=44 cluster=1 inside
+}
+
+frame "f4" {
+  // Outline: flight pose, both feet in air
+  rect (12,21) (16,27) color=ink.base
+  rect (17,20) (21,28) color=ink.base
+
+  // Breeches
+  rect (13,21) (15,23) color=soil.2
+  rect (18,20) (20,22) color=soil.1
+  line (13,21) (15,21) color=soil.3
+
+  // Wraps
+  rect (13,24) (15,25) color=wood.1
+  rect (18,23) (20,24) color=wood.0
+  pixel (13,24) color=wood.2
+  pixel (18,23) color=wood.1
+
+  // Boots
+  rect (12,25) (16,27) color=iron.1
+  rect (17,25) (21,28) color=iron.0
+
+  // Soles & accents
+  line (12,27) (16,27) color=ink.base
+  line (17,28) (21,28) color=ink.base
+  line (12,25) (14,25) color=iron.3
+  pixel (13,26) color=iron.4
+  pixel (18,26) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=45 cluster=1 inside
+}
+
+frame "f5" {
+  // Outline: right foot contact forward, left trailing back
+  rect (12,20) (16,27) color=ink.base
+  rect (17,21) (21,30) color=ink.base
+
+  // Breeches
+  rect (13,20) (15,23) color=soil.2
+  rect (18,21) (20,24) color=soil.1
+  line (18,21) (20,21) color=soil.3
+
+  // Wraps
+  rect (13,23) (15,24) color=wood.1
+  rect (18,25) (20,26) color=wood.0
+  pixel (13,23) color=wood.2
+  pixel (18,25) color=wood.1
+
+  // Boots
+  rect (12,24) (16,27) color=iron.1
+  rect (17,27) (21,30) color=iron.0
+
+  // Soles & accents
+  line (12,27) (16,27) color=ink.base
+  line (17,30) (21,30) color=ink.base
+  line (17,27) (19,27) color=iron.2
+  pixel (13,25) color=iron.4
+  pixel (18,28) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=46 cluster=1 inside
+}
+
+frame "f6" {
+  // Outline: right leg compression absorbing weight
+  rect (13,21) (17,28) color=ink.base
+  rect (17,22) (21,30) color=ink.base
+
+  // Breeches
+  rect (14,21) (16,23) color=soil.2
+  rect (18,22) (20,24) color=soil.1
+  line (18,22) (20,22) color=soil.3
+
+  // Wraps
+  rect (14,24) (16,25) color=wood.1
+  rect (18,25) (20,26) color=wood.0
+  pixel (14,24) color=wood.2
+  pixel (18,25) color=wood.1
+
+  // Boots
+  rect (13,25) (17,28) color=iron.1
+  rect (17,27) (21,30) color=iron.0
+
+  // Soles & accents
+  line (13,28) (17,28) color=ink.base
+  line (17,30) (21,30) color=ink.base
+  line (17,27) (19,27) color=iron.2
+  pixel (14,26) color=iron.4
+  pixel (18,28) color=iron.3
+
+  scatter color=soil.0,soil.3 density=0.12 seed=47 cluster=1 inside
+}

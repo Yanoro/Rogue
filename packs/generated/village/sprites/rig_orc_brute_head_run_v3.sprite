@@ -1,0 +1,219 @@
+sprite 32x32
+kind object
+material grass
+
+frame "f1" {
+  rect (11,5) (21,11) color=ink.base
+  rect (12,4) (20,12) color=ink.base
+
+  rect (12,5) (20,11) color=grass.1
+  rect (13,4) (19,4) color=grass.2
+
+  line (13,5) (19,5) color=grass.2
+  line (12,6) (20,6) color=grass.0
+
+  pixel (13,7) color=ink.base
+  pixel (14,7) color=soil.0
+  pixel (18,7) color=soil.0
+  pixel (19,7) color=ink.base
+  pixel (14,7) color=#b02222
+  pixel (18,7) color=#b02222
+
+  rect (15,7) (17,8) color=grass.1
+  pixel (15,8) color=grass.0
+  pixel (17,8) color=grass.0
+
+  rect (13,9) (19,11) color=grass.1
+  line (14,9) (18,9) color=grass.0
+  line (13,11) (19,11) color=grass.0
+
+  pixel (13,9) color=sand.3
+  pixel (13,8) color=sand.4
+  pixel (12,8) color=ink.base
+
+  pixel (19,9) color=sand.3
+  pixel (19,8) color=sand.4
+  pixel (20,8) color=ink.base
+
+  line (13,12) (19,12) color=ink.base
+}
+
+frame "f2" {
+  rect (11,6) (21,12) color=ink.base
+  rect (12,5) (20,13) color=ink.base
+
+  rect (12,6) (20,12) color=grass.1
+  rect (13,5) (19,5) color=grass.2
+
+  line (13,6) (19,6) color=grass.2
+  line (12,7) (20,7) color=grass.0
+
+  pixel (13,8) color=ink.base
+  pixel (14,8) color=soil.0
+  pixel (18,8) color=soil.0
+  pixel (19,8) color=ink.base
+  pixel (14,8) color=#b02222
+  pixel (18,8) color=#b02222
+
+  rect (15,8) (17,9) color=grass.1
+  pixel (15,9) color=grass.0
+  pixel (17,9) color=grass.0
+
+  rect (13,10) (19,12) color=grass.1
+  line (14,10) (18,10) color=grass.0
+  line (13,12) (19,12) color=grass.0
+
+  pixel (13,10) color=sand.3
+  pixel (13,9) color=sand.4
+  pixel (12,9) color=ink.base
+
+  pixel (19,10) color=sand.3
+  pixel (19,9) color=sand.4
+  pixel (20,9) color=ink.base
+
+  line (13,13) (19,13) color=ink.base
+}
+
+frame "f3" {
+  rect (11,5) (21,11) color=ink.base
+  rect (12,4) (20,12) color=ink.base
+
+  rect (12,5) (20,11) color=grass.1
+  rect (13,4) (19,4) color=grass.2
+
+  line (13,5) (19,5) color=grass.2
+  line (12,6) (20,6) color=grass.0
+
+  pixel (13,7) color=ink.base
+  pixel (14,7) color=soil.0
+  pixel (18,7) color=soil.0
+  pixel (19,7) color=ink.base
+  pixel (14,7) color=#b02222
+  pixel (18,7) color=#b02222
+
+  rect (15,7) (17,8) color=grass.1
+  pixel (15,8) color=grass.0
+  pixel (17,8) color=grass.0
+
+  rect (13,9) (19,11) color=grass.1
+  line (14,9) (18,9) color=grass.0
+  line (13,11) (19,11) color=grass.0
+
+  pixel (13,9) color=sand.3
+  pixel (13,8) color=sand.4
+  pixel (12,8) color=ink.base
+
+  pixel (19,9) color=sand.3
+  pixel (19,8) color=sand.4
+  pixel (20,8) color=ink.base
+
+  line (13,12) (19,12) color=ink.base
+}
+
+frame "f4" {
+  rect (11,4) (21,10) color=ink.base
+  rect (12,3) (20,11) color=ink.base
+
+  rect (12,4) (20,10) color=grass.1
+  rect (13,3) (19,3) color=grass.2
+
+  line (13,4) (19,4) color=grass.2
+  line (12,5) (20,5) color=grass.0
+
+  pixel (13,6) color=ink.base
+  pixel (14,6) color=soil.0
+  pixel (18,6) color=soil.0
+  pixel (19,6) color=ink.base
+  pixel (14,6) color=#b02222
+  pixel (18,6) color=#b02222
+
+  rect (15,6) (17,7) color=grass.1
+  pixel (15,7) color=grass.0
+  pixel (17,7) color=grass.0
+
+  rect (13,8) (19,10) color=grass.1
+  line (14,8) (18,8) color=grass.0
+  line (13,10) (19,10) color=grass.0
+
+  pixel (13,8) color=sand.3
+  pixel (13,7) color=sand.4
+  pixel (12,7) color=ink.base
+
+  pixel (19,8) color=sand.3
+  pixel (19,7) color=sand.4
+  pixel (20,7) color=ink.base
+
+  line (13,11) (19,11) color=ink.base
+}
+
+frame "f5" {
+  rect (11,5) (21,11) color=ink.base
+  rect (12,4) (20,12) color=ink.base
+
+  rect (12,5) (20,11) color=grass.1
+  rect (13,4) (19,4) color=grass.2
+
+  line (13,5) (19,5) color=grass.2
+  line (12,6) (20,6) color=grass.0
+
+  pixel (13,7) color=ink.base
+  pixel (14,7) color=soil.0
+  pixel (18,7) color=soil.0
+  pixel (19,7) color=ink.base
+  pixel (14,7) color=#b02222
+  pixel (18,7) color=#b02222
+
+  rect (15,7) (17,8) color=grass.1
+  pixel (15,8) color=grass.0
+  pixel (17,8) color=grass.0
+
+  rect (13,9) (19,11) color=grass.1
+  line (14,9) (18,9) color=grass.0
+  line (13,11) (19,11) color=grass.0
+
+  pixel (13,9) color=sand.3
+  pixel (13,8) color=sand.4
+  pixel (12,8) color=ink.base
+
+  pixel (19,9) color=sand.3
+  pixel (19,8) color=sand.4
+  pixel (20,8) color=ink.base
+
+  line (13,12) (19,12) color=ink.base
+}
+
+frame "f6" {
+  rect (11,6) (21,12) color=ink.base
+  rect (12,5) (20,13) color=ink.base
+
+  rect (12,6) (20,12) color=grass.1
+  rect (13,5) (19,5) color=grass.2
+
+  line (13,6) (19,6) color=grass.2
+  line (12,7) (20,7) color=grass.0
+
+  pixel (13,8) color=ink.base
+  pixel (14,8) color=soil.0
+  pixel (18,8) color=soil.0
+  pixel (19,8) color=ink.base
+  pixel (14,8) color=#b02222
+  pixel (18,8) color=#b02222
+
+  rect (15,8) (17,9) color=grass.1
+  pixel (15,9) color=grass.0
+  pixel (17,9) color=grass.0
+
+  rect (13,10) (19,12) color=grass.1
+  line (14,10) (18,10) color=grass.0
+  line (13,12) (19,12) color=grass.0
+
+  pixel (13,10) color=sand.3
+  pixel (13,9) color=sand.4
+  pixel (12,9) color=ink.base
+
+  pixel (19,10) color=sand.3
+  pixel (19,9) color=sand.4
+  pixel (20,9) color=ink.base
+
+  line (13,13) (19,13) color=ink.base
+}

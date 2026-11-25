@@ -1,0 +1,89 @@
+sprite 32x32
+kind object
+
+palette {
+  out = #1A1210
+  dark_fur = #4A2A1C
+  fur_shade = #7A4A2E
+  fur_base = #A8673E
+  fur_mid = #C98B60
+  fur_light = #F2C79A
+  fur_hi = #FFE0B8
+  eye_blue = #3B6FD6
+  white = #FFFFFF
+  tongue = #2F5FA8
+  tongue_hi = #6EA8E8
+  nose = #1A1210
+}
+
+// Silhouette / Outline: Outer mane & body
+circle (16,13) radius=12 color=out
+circle (10,5) radius=4 color=out
+circle (22,5) radius=4 color=out
+rect (10,18) (22,29) color=out
+circle (9,28) radius=3 color=out
+circle (23,28) radius=3 color=out
+
+// Ears (inner & outer)
+circle (10,5) radius=3 color=fur_shade
+circle (22,5) radius=3 color=fur_shade
+circle (10,6) radius=2 color=dark_fur
+circle (22,6) radius=2 color=dark_fur
+
+// Body & Legs
+rect (11,19) (21,27) color=fur_base
+rect (12,20) (20,26) color=fur_mid
+// Front paws
+circle (11,28) radius=2 color=fur_light
+circle (21,28) radius=2 color=fur_light
+pixel (11,29) color=out
+pixel (21,29) color=out
+
+// Fluffy Chow Chow Mane (outer ring tone)
+circle (16,13) radius=11 color=fur_shade
+circle (16,13) radius=10 color=fur_base
+
+// Mane Tufts / Fluff details
+polygon (6,11) (4,14) (7,16) color=fur_base
+polygon (26,11) (28,14) (25,16) color=fur_base
+polygon (8,18) (6,21) (10,21) color=fur_shade
+polygon (24,18) (26,21) (22,21) color=fur_shade
+
+// Face core
+circle (16,13) radius=8 color=fur_mid
+circle (15,12) radius=7 color=fur_light
+
+// Cheeks & Muzzle
+circle (16,15) radius=5 color=fur_hi
+rect (12,14) (20,18) color=fur_hi
+
+// Chow Chow dark eye patches & eyes
+circle (12,12) radius=2 color=dark_fur
+circle (20,12) radius=2 color=dark_fur
+pixel (12,12) color=eye_blue
+pixel (20,12) color=eye_blue
+pixel (12,11) color=white
+pixel (20,11) color=white
+
+// Nose & Muzzle details
+polygon (15,14) (17,14) (16,15) color=nose
+pixel (16,16) color=out
+
+// Signature blue-purple Chow Chow tongue
+rect (15,17) (17,19) color=tongue
+pixel (16,18) color=tongue_hi
+pixel (15,19) color=out
+pixel (17,19) color=out
+pixel (16,20) color=out
+
+// Forehead highlight & mane shading
+pixel (15,8) color=fur_hi
+pixel (16,8) color=fur_hi
+pixel (16,7) color=fur_hi
+line (12,19) (20,19) color=dark_fur
+
+// Cleanup outline margins (ensure 1px margin)
+erase rect (0,0) (31,0)
+erase rect (0,31) (31,31)
+erase rect (0,0) (0,31)
+erase rect (31,0) (31,31)

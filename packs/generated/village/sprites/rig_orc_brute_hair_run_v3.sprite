@@ -1,0 +1,200 @@
+sprite 32x32
+kind object
+material iron
+
+frame "f1" {
+  // Shaved side stubble
+  rect (11,6) (12,8) color=iron.0
+  pixel (11,5) color=iron.0
+  pixel (12,5) color=iron.1
+  rect (20,6) (21,8) color=iron.0
+  pixel (21,5) color=iron.0
+  pixel (20,5) color=iron.1
+
+  // Central crest
+  rect (13,4) (19,6) color=ink.base
+  rect (14,4) (18,5) color=iron.1
+  line (14,6) (18,6) color=iron.0
+
+  // Hair tie
+  line (15,4) (17,4) color=soil.2
+  pixel (16,4) color=soil.3
+
+  // Topknot tuft flopping back
+  rect (14,2) (18,3) color=ink.base
+  polygon (14,3) (15,1) (17,2) (18,3) color=iron.0
+  pixel (15,2) color=iron.1
+  pixel (16,2) color=iron.2
+  pixel (16,3) color=iron.1
+
+  // Stray strands
+  pixel (13,3) color=iron.0
+  pixel (18,4) color=iron.0
+  pixel (14,5) color=iron.2
+  pixel (17,5) color=iron.1
+}
+
+frame "f2" {
+  // Down pose: entire head down 1px
+  // Shaved side stubble
+  rect (11,7) (12,9) color=iron.0
+  pixel (11,6) color=iron.0
+  pixel (12,6) color=iron.1
+  rect (20,7) (21,9) color=iron.0
+  pixel (21,6) color=iron.0
+  pixel (20,6) color=iron.1
+
+  // Central crest
+  rect (13,5) (19,7) color=ink.base
+  rect (14,5) (18,6) color=iron.1
+  line (14,7) (18,7) color=iron.0
+
+  // Hair tie
+  line (15,5) (17,5) color=soil.2
+  pixel (16,5) color=soil.3
+
+  // Topknot tuft lagging upward slightly
+  rect (14,3) (18,4) color=ink.base
+  polygon (13,3) (15,1) (17,2) (18,4) color=iron.0
+  pixel (15,2) color=iron.1
+  pixel (16,2) color=iron.2
+  pixel (16,3) color=iron.1
+
+  // Stray strands
+  pixel (13,4) color=iron.0
+  pixel (18,5) color=iron.0
+  pixel (14,6) color=iron.2
+  pixel (17,6) color=iron.1
+}
+
+frame "f3" {
+  // Push pose: returning to baseline, rising
+  // Shaved side stubble
+  rect (11,6) (12,8) color=iron.0
+  pixel (11,5) color=iron.0
+  pixel (12,5) color=iron.1
+  rect (20,6) (21,8) color=iron.0
+  pixel (21,5) color=iron.0
+  pixel (20,5) color=iron.1
+
+  // Central crest
+  rect (13,4) (19,6) color=ink.base
+  rect (14,4) (18,5) color=iron.1
+  line (14,6) (18,6) color=iron.0
+
+  // Hair tie
+  line (15,4) (17,4) color=soil.2
+  pixel (16,4) color=soil.3
+
+  // Topknot tuft compressed trailing behind
+  rect (14,2) (18,3) color=ink.base
+  polygon (14,3) (16,2) (18,1) (18,3) color=iron.0
+  pixel (15,3) color=iron.1
+  pixel (16,2) color=iron.2
+  pixel (17,2) color=iron.1
+
+  // Stray strands
+  pixel (13,4) color=iron.0
+  pixel (19,3) color=iron.0
+  pixel (14,5) color=iron.2
+  pixel (17,5) color=iron.1
+}
+
+frame "f4" {
+  // Flight pose: high point, head up 1px
+  // Shaved side stubble
+  rect (11,5) (12,7) color=iron.0
+  pixel (11,4) color=iron.0
+  pixel (12,4) color=iron.1
+  rect (20,5) (21,7) color=iron.0
+  pixel (21,4) color=iron.0
+  pixel (20,4) color=iron.1
+
+  // Central crest
+  rect (13,3) (19,5) color=ink.base
+  rect (14,3) (18,4) color=iron.1
+  line (14,5) (18,5) color=iron.0
+
+  // Hair tie
+  line (15,3) (17,3) color=soil.2
+  pixel (16,3) color=soil.3
+
+  // Topknot tuft floating high
+  rect (14,1) (18,2) color=ink.base
+  polygon (14,2) (15,0) (17,1) (18,2) color=iron.0
+  pixel (15,1) color=iron.1
+  pixel (16,1) color=iron.2
+  pixel (16,2) color=iron.1
+
+  // Stray strands
+  pixel (13,2) color=iron.0
+  pixel (18,3) color=iron.0
+  pixel (14,4) color=iron.2
+  pixel (17,4) color=iron.1
+}
+
+frame "f5" {
+  // Contact pose: right foot landing, baseline height
+  // Shaved side stubble
+  rect (11,6) (12,8) color=iron.0
+  pixel (11,5) color=iron.0
+  pixel (12,5) color=iron.1
+  rect (20,6) (21,8) color=iron.0
+  pixel (21,5) color=iron.0
+  pixel (20,5) color=iron.1
+
+  // Central crest
+  rect (13,4) (19,6) color=ink.base
+  rect (14,4) (18,5) color=iron.1
+  line (14,6) (18,6) color=iron.0
+
+  // Hair tie
+  line (15,4) (17,4) color=soil.2
+  pixel (16,4) color=soil.3
+
+  // Topknot tuft trailing forward momentum
+  rect (14,2) (18,3) color=ink.base
+  polygon (14,3) (15,1) (17,2) (18,3) color=iron.0
+  pixel (15,2) color=iron.1
+  pixel (16,2) color=iron.2
+  pixel (16,3) color=iron.1
+
+  // Stray strands
+  pixel (13,3) color=iron.0
+  pixel (18,4) color=iron.0
+  pixel (14,5) color=iron.2
+  pixel (17,5) color=iron.1
+}
+
+frame "f6" {
+  // Down pose: body sinks 1px on right foot
+  // Shaved side stubble
+  rect (11,7) (12,9) color=iron.0
+  pixel (11,6) color=iron.0
+  pixel (12,6) color=iron.1
+  rect (20,7) (21,9) color=iron.0
+  pixel (21,6) color=iron.0
+  pixel (20,6) color=iron.1
+
+  // Central crest
+  rect (13,5) (19,7) color=ink.base
+  rect (14,5) (18,6) color=iron.1
+  line (14,7) (18,7) color=iron.0
+
+  // Hair tie
+  line (15,5) (17,5) color=soil.2
+  pixel (16,5) color=soil.3
+
+  // Topknot tuft lagging upward
+  rect (14,3) (18,4) color=ink.base
+  polygon (13,3) (15,1) (17,2) (18,4) color=iron.0
+  pixel (15,2) color=iron.1
+  pixel (16,2) color=iron.2
+  pixel (16,3) color=iron.1
+
+  // Stray strands
+  pixel (13,4) color=iron.0
+  pixel (18,5) color=iron.0
+  pixel (14,6) color=iron.2
+  pixel (17,6) color=iron.1
+}
