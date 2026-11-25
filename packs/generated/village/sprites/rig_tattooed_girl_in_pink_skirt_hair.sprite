@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+material soil
+
+// Base dark outline / back volume of the hair
+circle (16,5) radius=5 color=soil.0
+rect (10,4) (22,9) color=soil.0
+rect (9,7) (11,18) color=soil.0
+rect (21,7) (23,18) color=soil.0
+
+// Main curly brown body (top crown and bangs)
+circle (16,5) radius=4 color=soil.2
+rect (11,3) (21,7) color=soil.2
+circle (13,4) radius=3 color=soil.3
+circle (19,4) radius=3 color=soil.2
+
+// Framing curls on the left
+circle (10,8) radius=2 color=soil.2
+circle (9,11) radius=2 color=soil.1
+circle (10,14) radius=2 color=soil.2
+circle (9,17) radius=2 color=soil.1
+
+// Framing curls on the right
+circle (22,8) radius=2 color=soil.2
+circle (23,11) radius=2 color=soil.1
+circle (22,14) radius=2 color=soil.2
+circle (23,17) radius=2 color=soil.1
+
+// Curly volume and bangs across the forehead
+rect (12,4) (20,6) color=soil.2
+pixel (12,6) color=soil.3
+pixel (13,6) color=soil.3
+pixel (15,6) color=soil.1
+pixel (17,7) color=soil.2
+pixel (18,6) color=soil.3
+pixel (19,6) color=soil.2
+
+// Highlights and curly strand texture
+pixel (13,3) color=soil.4
+pixel (14,3) color=soil.4
+pixel (17,3) color=soil.4
+pixel (18,3) color=soil.4
+pixel (10,7) color=soil.3
+pixel (10,13) color=soil.3
+pixel (22,7) color=soil.3
+pixel (22,13) color=soil.3
+
+// Inner cutout to leave the face open
+erase rect (12,7) (20,12)
+erase pixel (12,6)
+erase pixel (20,6)
+
+// Dark definition along inner edges framing the face
+line (11,7) (11,12) color=soil.0
+line (21,7) (21,12) color=soil.0
+pixel (12,6) color=soil.0
+pixel (20,6) color=soil.0
+
+// Light organic scatter on the curly body
+scatter color=soil.1,soil.3 density=0.15 seed=42 cluster=1 inside

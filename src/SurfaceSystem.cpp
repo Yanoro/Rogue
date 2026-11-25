@@ -10,6 +10,7 @@
 #include "Game.h"
 #include "GameECSInternals.h"
 #include "Map.h"
+#include "FloatingText.hpp"
 #include "SpritePaths.hpp"
 
 namespace {
@@ -149,7 +150,8 @@ bool Game::CellHasSurfaceTag(GamePosition position, const std::string &tag) cons
 }
 
 void Game::ApplyStatus(flecs::entity target, const std::string &statusId,
-                       const EffectOrigin &origin, float durationOverride) {
+                       const EffectOrigin &origin, float durationOverride,
+                       Color calloutColor) {
   if (!target.is_alive()) return;
   const StatusEffectDef *definition = statusEffectRegistry.Get(statusId);
   if (definition == nullptr) {
@@ -169,18 +171,52 @@ void Game::ApplyStatus(flecs::entity target, const std::string &statusId,
   }
   const float duration =
       durationOverride > 0.0f ? durationOverride : definition->durationSeconds;
+  const bool shouldWarn =
+      existing == nullptr || existing->calloutCooldown <= 0.0f;
   if (existing != nullptr) {
     existing->remaining = std::max(existing->remaining, duration);
     existing->origin = origin;
-    return;
+    if (shouldWarn) existing->calloutCooldown =
+        definition->reapplyWarningSeconds;
+  } else {
+    StatusEffectInstance instance;
+    instance.id = statusId;
+    instance.remaining = duration;
+    instance.tickTimer = definition->tickSeconds;
+    instance.calloutCooldown = definition->reapplyWarningSeconds;
+    instance.origin = origin;
+    statuses.effects.push_back(std::move(instance));
   }
-  StatusEffectInstance instance;
-  instance.id = statusId;
-  instance.remaining = duration;
-  instance.tickTimer = definition->tickSeconds;
-  instance.origin = origin;
-  statuses.effects.push_back(std::move(instance));
-  if (!definition->onApplyEffects.empty()) {
+
+  if (shouldWarn) {
+    Color color = calloutColor;
+    if (color.a == 0) {
+      color = Color{static_cast<unsigned char>(definition->color[0]),
+                    static_cast<unsigned char>(definition->color[1]),
+                    static_cast<unsigned char>(definition->color[2]),
+                    static_cast<unsigned char>(definition->color[3])};
+    }
+    // Refresh an existing same-text callout instead of stacking identical
+    // status names every time a status is reapplied.
+    flecs::entity existingText = flecs::entity::null();
+    ecs.filter<FloatingText>().each(
+        [&](flecs::entity textEntity, FloatingText &floating) {
+          if (!existingText.is_alive() && floating.target == target &&
+              floating.text == definition->name) {
+            existingText = textEntity;
+          }
+        });
+    if (existingText.is_alive()) {
+      if (FloatingText *floating = existingText.get_mut<FloatingText>()) {
+        floating->elapsed = 0.0f;
+        floating->color = color;
+      }
+    } else {
+      SpawnFloatingText(target, definition->name, color);
+    }
+  }
+
+  if (existing == nullptr && !definition->onApplyEffects.empty()) {
     if (const GamePosition *position = target.get<GamePosition>()) {
       for (const std::string &effectId : definition->onApplyEffects) {
         ApplyEffectAt(target.world(), origin, effectId, target, *position);

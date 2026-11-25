@@ -1,0 +1,23 @@
+{
+  "name": "Sparring Dummy",
+  "description": "A dummy on a swivel that swings back. Its strike is slow and telegraphed -- long enough to step away from, or to kick apart.",
+  "sprite": "training_dummy",
+  "portrait": "training_dummy",
+  "disposition": "aggressive",
+  "trainingDummy": true,
+  "obstacle": true,
+  "attackDamage": 8,
+  "attackInterval": 7,
+  "attackFirstDelay": 2,
+  "attackRange": 1,
+  "attackCastSeconds": 2,
+  "attackLabel": "Straw Strike",
+  "resources": [
+    {
+      "id": "health",
+      "vital": true,
+      "primary": true,
+      "max": 500
+    }
+  ]
+}

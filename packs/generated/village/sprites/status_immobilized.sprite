@@ -1,0 +1,65 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #181819
+  mid = #73726c
+  light = #b1b0aa
+  bright = #dbdad3
+}
+
+// Boot silhouette - lower leg and foot planted flat
+polygon (11,4) (18,4) (18,15) (24,19) (26,22) (26,26) (7,26) (7,21) (11,18) color=mid
+
+// Boot sole/heel shadow
+rect (7,24) (26,26) color=dark
+
+// Base highlights on boot
+polygon (12,5) (15,5) (15,16) (12,17) color=bright
+polygon (13,19) (22,19) (24,22) (10,22) color=light
+
+// Vine coil 1 (lower: wraps across instep and heel)
+line (6,23) (14,21) color=dark
+line (6,24) (15,22) color=dark
+line (14,21) (23,24) color=dark
+line (15,22) (24,25) color=dark
+rect (8,22) (13,23) color=light
+rect (16,22) (22,24) color=light
+
+// Vine coil 2 (mid: wraps across ankle)
+line (8,18) (18,15) color=dark
+line (9,19) (19,16) color=dark
+line (10,20) (20,17) color=dark
+rect (11,18) (17,17) color=bright
+
+// Vine coil 3 (upper: wraps across lower shin)
+line (10,12) (19,9) color=dark
+line (10,13) (19,10) color=dark
+line (10,14) (20,11) color=dark
+rect (12,12) (17,11) color=bright
+
+// Thorns branching off the vines
+polygon (5,21) (8,22) (6,24) color=dark
+polygon (23,21) (21,23) (25,23) color=dark
+polygon (8,15) (11,17) (8,18) color=dark
+polygon (20,13) (18,15) (21,16) color=dark
+polygon (9,9) (11,11) (8,12) color=dark
+
+// Rooting anchoring tendrils into the ground
+line (7,26) (4,29) color=dark
+line (8,26) (5,29) color=dark
+line (22,26) (25,29) color=dark
+line (23,26) (26,29) color=dark
+line (15,26) (15,28) color=dark
+
+// Outer boot outline
+line (11,4) (18,4) color=dark
+line (11,4) (11,18) color=dark
+line (18,4) (18,15) color=dark
+line (18,15) (24,19) color=dark
+line (24,19) (26,22) color=dark
+line (26,22) (26,26) color=dark
+line (7,26) (26,26) color=dark
+line (7,21) (7,26) color=dark
+line (7,21) (11,18) color=dark

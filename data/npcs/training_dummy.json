@@ -1,0 +1,17 @@
+{
+  "name": "Training Dummy",
+  "description": "A straw-stuffed post on a wooden base. It does not hit back, and it does not fall over.",
+  "sprite": "training_dummy",
+  "portrait": "training_dummy",
+  "disposition": "neutral",
+  "trainingDummy": true,
+  "obstacle": true,
+  "resources": [
+    {
+      "id": "health",
+      "vital": true,
+      "primary": true,
+      "max": 500
+    }
+  ]
+}

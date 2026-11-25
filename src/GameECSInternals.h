@@ -25,7 +25,7 @@
 
 // --- Character setup helpers, defined in GameECS.cpp --------------------------
 void GiveDefaultStats(flecs::entity character, const StatRegistry *registry);
-void GiveStartingSkills(flecs::entity character, const SkillRegistry *registry);
+void GiveUniversalSkills(flecs::entity character, const SkillRegistry *registry);
 void ApplyStartingStats(flecs::entity character,
                         const std::vector<StatValue> &starting,
                         const StatRegistry *registry, const std::string &name,
@@ -128,6 +128,8 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
                      const std::string &subjectId, const std::string &label,
                      bool secondPerson, bool interrupts);
 std::string FinalizeSkillUse(flecs::entity actor, const SkillDef &def);
+void ApplySkillStatus(flecs::entity actor, flecs::entity target,
+                      const SkillDef &def);
 Vector2 ScreenCenterOf(flecs::entity entity);
 float EntityHitRadius(flecs::entity entity);
 bool SpawnSkillProjectile(flecs::entity actor, flecs::entity target,

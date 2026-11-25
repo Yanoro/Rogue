@@ -53,9 +53,23 @@ struct NpcTemplate {
   // saves through the Content Editor.
   float attackDamage = 8.0f;
   float attackInterval = 6.0f;
+  // The simple controller's wind-up, strike range and call-out. The defaults
+  // match Aggressive's old built-in profile; the sparring dummy authors them.
+  float attackRange = 1.0f;
+  float attackCastSeconds = 2.0f;
+  float attackFirstDelay = 2.0f;
+  std::string attackLabel = "Strike";
+  // Training dummies are actors with a special reset/death rule. The old object
+  // templates also marked them solid, so the template carries both facts.
+  bool trainingDummy = false;
+  bool obstacle = false;
+  float armor = 0.0f;
   // CombatStrategyRegistry id used by the non-LLM chase/tactic layer. Empty
   // means hold position, which is the pre-strategy behavior.
   std::string combatStrategy;
+  // BehaviorRegistry id used by the skill-driven combat controller. Empty falls
+  // back to the old Aggressive/CombatStrategy layers.
+  std::string behavior;
   std::vector<SlotSpec> slots;
   std::vector<ItemStack> inventory;
   std::vector<StartingSkill> startingSkills;

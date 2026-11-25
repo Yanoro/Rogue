@@ -1,0 +1,62 @@
+sprite 32x32
+kind object
+
+palette {
+  dark = #181819
+  skin_base = #a86c44
+  skin_shade = #7d4d2b
+  skirt_base = #e6428c
+  skirt_dark = #ba276c
+  skirt_lit = #f768aa
+  white = #e8e8e8
+  white_shade = #b8b8b8
+}
+
+// Left and Right Legs (Bare skin)
+rect (13,23) (15,28) color=skin_base
+rect (17,23) (19,28) color=skin_base
+
+// Leg shading / separation
+rect (15,24) (15,28) color=skin_shade
+rect (17,24) (17,28) color=skin_shade
+
+// Sneakers (white canvas with dark soles)
+rect (12,29) (15,30) color=white
+rect (17,29) (20,30) color=white
+line (12,29) (12,30) color=white_shade
+line (17,29) (17,30) color=white_shade
+line (12,31) (15,31) color=dark
+line (17,31) (20,31) color=dark
+
+// Sneaker laces/tongue detail
+pixel (14,29) color=white_shade
+pixel (19,29) color=white_shade
+
+// Pleated Pink Skirt (y: 20 to 24)
+rect (12,20) (20,22) color=skirt_base
+polygon (11,23) (21,23) (21,24) (11,24) color=skirt_base
+
+// Skirt pleats and shading (lighting from top-left)
+line (11,20) (11,24) color=dark
+line (21,20) (21,24) color=dark
+line (12,20) (12,23) color=skirt_lit
+line (14,21) (14,24) color=skirt_dark
+line (17,21) (17,24) color=skirt_dark
+line (20,21) (20,24) color=skirt_dark
+pixel (15,21) color=skirt_lit
+pixel (18,21) color=skirt_lit
+
+// Skirt hem shadow on legs
+line (13,24) (15,24) color=skin_shade
+line (17,24) (19,24) color=skin_shade
+
+// Outlines around legs and shoes
+line (12,25) (12,28) color=dark
+line (16,25) (16,28) color=dark
+line (20,25) (20,28) color=dark
+pixel (11,29) color=dark
+pixel (11,30) color=dark
+pixel (21,29) color=dark
+pixel (21,30) color=dark
+line (13,28) (15,28) color=dark
+line (17,28) (19,28) color=dark

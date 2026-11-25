@@ -1308,6 +1308,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::String>("content", "content.npcs",
             "NPC template directory: named starting configurations a map spawns by name and overrides.", &GameSettings::content, &ContentSection::npcs))
         .Restart();
+    add(Field<ValueType::String>("content", "content.player",
+            "Player starter template path. Its 'skills' object grants the player's starting skills.", &GameSettings::content, &ContentSection::player));
+
     add(Field<ValueType::String>("content", "content.brains",
             "Brain template directory: background, goals and model profile for agents. A template with no brain is a body with no agent.", &GameSettings::content, &ContentSection::brains))
         .Restart();
@@ -1330,7 +1333,9 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "Skillshot registry directory: one JSON per aimed delivery, with its sprite, path, speed, width and length.", &GameSettings::content, &ContentSection::skillshots))
         .Restart();
     add(Field<ValueType::String>("content", "content.combatStrategies",
-            "Combat strategy registry directory: one JSON per non-LLM combat tactic.", &GameSettings::content, &ContentSection::combatStrategies))
+            "Combat strategy registry directory: one JSON per non-LLM combat tactic.", &GameSettings::content, &ContentSection::combatStrategies));
+    add(Field<ValueType::String>("content", "content.behaviors",
+            "Behavior registry directory: one JSON per NPC combat behavior.", &GameSettings::content, &ContentSection::behaviors))
         .Restart();
     add(Field<ValueType::String>("content", "content.surfaceSprites",
             "Directory scanned for reusable surface-sprite entries.", &GameSettings::content, &ContentSection::surfaceSprites));

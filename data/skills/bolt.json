@@ -1,0 +1,37 @@
+{
+  "name": "Bolt",
+  "description": "A direct arcane bolt.",
+  "icon": "",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "baseline": 0,
+  "scale": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 12,
+    "cooldown": 5.0,
+    "range": 5,
+    "gcd": true,
+    "autoCast": false,
+    "requiresTarget": true,
+    "cast": 0,
+    "interruptible": true,
+    "hidden": true
+  }
+}

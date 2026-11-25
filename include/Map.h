@@ -32,10 +32,18 @@ struct NPCData {
   bool retaliates = false;
   float attackDamage = 8.0f;
   float attackInterval = 6.0f;
+  float attackRange = 1.0f;
+  float attackCastSeconds = 2.0f;
+  float attackFirstDelay = 2.0f;
+  std::string attackLabel = "Strike";
+  bool trainingDummy = false;
+  bool obstacle = false;
+  float armor = 0.0f;
   // CombatStrategyRegistry id for the non-LLM tactic. Resolved from the
   // template unless the spawner/author clears it.
   std::string combatStrategy;
   bool suppressCombatStrategy = false;
+  std::string behavior;
   // Starting stat values from "stats": {"strength": 14}. Applied over the
   // registry baselines GiveDefaultStats stamps, before the brain exists.
   std::vector<StatValue> startingStats;

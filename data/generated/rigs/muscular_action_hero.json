@@ -1,0 +1,38 @@
+{
+  "description": "A muscular shirtless man wearing a red bandana, black sunglasses, and black combat trousers.",
+  "height": 32,
+  "name": "Muscular Action Hero",
+  "parts": [
+    {
+      "id": "legs",
+      "sprite": "rig_muscular_action_hero_legs",
+      "z": 10
+    },
+    {
+      "id": "body",
+      "sprite": "rig_muscular_action_hero_body",
+      "z": 20
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_muscular_action_hero_arm_left",
+      "z": 25
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_muscular_action_hero_arm_right",
+      "z": 25
+    },
+    {
+      "id": "head",
+      "sprite": "rig_muscular_action_hero_head",
+      "z": 30
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_muscular_action_hero_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

@@ -444,21 +444,55 @@
     0,
     0
   ],
-  "objects": [
+  "npcs": [
     {
-      "type": "training_dummy",
-      "x": 10,
-      "y": 10
+      "template": "training_dummy",
+      "position": [
+        10,
+        10
+      ]
     },
     {
-      "type": "armored_dummy",
-      "x": 8,
-      "y": 13
+      "template": "armoured_dummy",
+      "position": [
+        8,
+        13
+      ]
     },
     {
-      "type": "sparring_dummy",
-      "x": 12,
-      "y": 10
+      "template": "sparring_dummy",
+      "position": [
+        12,
+        10
+      ]
+    },
+    {
+      "template": "grey_wolf",
+      "position": [
+        10,
+        8
+      ]
+    },
+    {
+      "template": "zombie",
+      "position": [
+        11,
+        8
+      ]
+    },
+    {
+      "template": "bandit",
+      "position": [
+        10,
+        9
+      ]
+    },
+    {
+      "template": "mage",
+      "position": [
+        11,
+        9
+      ]
     }
   ]
 }

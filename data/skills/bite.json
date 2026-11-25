@@ -1,0 +1,37 @@
+{
+  "name": "Bite",
+  "description": "A close, wet crunch.",
+  "icon": "",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "baseline": 0,
+  "scale": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 7,
+    "cooldown": 2.0,
+    "range": 1,
+    "gcd": true,
+    "autoCast": false,
+    "requiresTarget": true,
+    "cast": 0,
+    "interruptible": true,
+    "hidden": true
+  }
+}

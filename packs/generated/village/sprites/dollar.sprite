@@ -1,0 +1,46 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  out = ink.base
+  base = stone.2
+  light = stone.4
+  dark = stone.1
+}
+
+// Outer silhouette / outline
+rect (14,2) (17,29) color=out
+rect (10,5) (21,11) color=out
+rect (8,8) (13,17) color=out
+rect (10,13) (21,18) color=out
+rect (18,15) (23,24) color=out
+rect (10,21) (21,26) color=out
+
+// Interior cutouts for S-curve outline definition
+rect (12,7) (19,9) color=base
+rect (10,9) (12,15) color=base
+rect (12,14) (19,17) color=base
+rect (19,16) (21,22) color=base
+rect (12,22) (19,24) color=base
+
+// Vertical stroke interior
+rect (15,3) (16,28) color=base
+
+// Lighting highlights (upper and left faces)
+rect (15,3) (15,6) color=light
+line (12,7) (18,7) color=light
+line (10,9) (10,14) color=light
+line (12,14) (18,14) color=light
+rect (15,14) (15,17) color=light
+line (19,16) (19,17) color=light
+rect (15,25) (15,28) color=light
+
+// Shading / depth (lower and right edges)
+line (11,9) (19,9) color=dark
+line (12,10) (12,15) color=dark
+line (13,17) (19,17) color=dark
+line (21,17) (21,22) color=dark
+line (12,24) (19,24) color=dark
+rect (16,4) (16,6) color=dark
+rect (16,25) (16,28) color=dark

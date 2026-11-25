@@ -1,0 +1,39 @@
+{
+  "name": "Mage Kiter",
+  "description": "Hold range and cast; close to melee when mana is exhausted.",
+  "maxTargetDistance": 12,
+  "repathSeconds": 0.4,
+  "movement": {
+    "default": {
+      "mode": "kite",
+      "desiredRange": 4,
+      "tolerance": 1
+    },
+    "rules": [
+      {
+        "id": "low_mana_melee",
+        "priority": 100,
+        "enterWhen": {
+          "self.resource.mana.pctBelow": 0.2
+        },
+        "exitWhen": {
+          "self.resource.mana.pctAbove": 0.4
+        },
+        "minDuration": 2.0,
+        "cooldown": 5.0,
+        "policy": {
+          "mode": "chase",
+          "desiredRange": 1,
+          "allowActions": true
+        }
+      }
+    ]
+  },
+  "actions": [
+    {
+      "skill": "bolt",
+      "priority": 10,
+      "minRange": 2
+    }
+  ]
+}

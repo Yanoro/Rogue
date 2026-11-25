@@ -495,6 +495,9 @@ void Game::ECSInit() {
   // and by the HUD, so they belong beside the other content registries.
   combatStrategyRegistry.SetDebugLog(debugLog.get());
   combatStrategyRegistry.Load(settings.content.combatStrategies);
+  behaviorRegistry.SetDebugLog(debugLog.get());
+  behaviorRegistry.Load(settings.content.behaviors);
+  ecs.set<BehaviorRegistryResource>({&behaviorRegistry});
   ecs.set<CombatStrategyRegistryResource>({&combatStrategyRegistry});
 
   iconRegistry.SetDebugLog(debugLog.get());
@@ -2070,7 +2073,10 @@ void Game::ECSInit() {
     GiveDefaultStats(playerEntity, registryRes->registry);
   }
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
-    GiveStartingSkills(playerEntity, skillRes->registry);
+    LoadPlayerTemplate();
+    GiveUniversalSkills(playerEntity, skillRes->registry);
+    ApplyStartingSkills(playerEntity, skillRes->registry, playerStartingSkills,
+                        debugLog.get());
   }
   // The player gets the same default body every other character does -- slots and
   // look -- so [EQUIPMENT] and [EQUIP] work from the first frame and a humanoid
@@ -2123,13 +2129,18 @@ void Game::ECSInit() {
     if (skillRes->registry != nullptr) {
       SkillBar bar;
       AutoCastSkills autoCast;
-      for (const SkillDef *def : skillRes->registry->GetAll()) {
-        if (!SkillIsActivatable(def->type)) {
-          continue;
-        }
-        bar.ids.push_back(def->id);
-        if (def->activation.autoCast) {
-          autoCast.ids.push_back(def->id);
+      if (const SkillBlock *known = playerEntity.get<SkillBlock>()) {
+        for (const SkillValue &value : known->values) {
+          if (value.level <= 0) continue;
+          const SkillDef *def = skillRes->registry->Get(value.id);
+          if (def == nullptr || !SkillIsActivatable(def->type) ||
+              def->activation.hidden) {
+            continue;
+          }
+          bar.ids.push_back(def->id);
+          if (def->activation.autoCast) {
+            autoCast.ids.push_back(def->id);
+          }
         }
       }
       playerEntity.set<SkillBar>(bar);

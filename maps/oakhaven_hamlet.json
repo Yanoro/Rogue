@@ -3,6 +3,22 @@
   "mapHeight": 18,
   "mapWidth": 24,
   "name": "Oakhaven Hamlet",
+  "npcs": [
+    {
+      "template": "training_dummy",
+      "position": [
+        11,
+        9
+      ]
+    },
+    {
+      "template": "sparring_dummy",
+      "position": [
+        11,
+        10
+      ]
+    }
+  ],
   "objects": [
     {
       "type": "apple_tree",
@@ -142,16 +158,6 @@
     {
       "type": "iron_sword",
       "x": 4,
-      "y": 10
-    },
-    {
-      "type": "training_dummy",
-      "x": 11,
-      "y": 9
-    },
-    {
-      "type": "sparring_dummy",
-      "x": 11,
       "y": 10
     },
     {

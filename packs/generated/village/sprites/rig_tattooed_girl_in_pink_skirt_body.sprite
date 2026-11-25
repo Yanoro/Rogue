@@ -1,0 +1,68 @@
+sprite 32x32
+kind object
+
+palette {
+  out = #1b1c2b
+  skin = #e8b382
+  skin_dark = #be8258
+  shirt_dark = #32628d
+  shirt_mid = #4d8ec2
+  shirt_light = #78b8e8
+  shirt_hi = #a8d5f8
+  pink_dark = #9a2b5e
+  pink_mid = #cf4682
+  pink_light = #f178ac
+  buckle = #f6d166
+}
+
+// Base dark outline / silhouette
+rect (12,11) (20,12) color=out
+rect (10,13) (22,20) color=out
+rect (11,21) (21,22) color=out
+
+// Neck / chest scoop (skin peek at top of collar)
+rect (14,12) (18,13) color=skin
+pixel (13,12) color=skin_dark
+pixel (19,12) color=skin_dark
+pixel (16,13) color=skin_dark
+
+// Shirt base fill
+rect (11,14) (21,20) color=shirt_mid
+
+// Short capped sleeves on shoulders
+rect (10,14) (11,16) color=shirt_dark
+pixel (11,14) color=shirt_light
+rect (21,14) (22,16) color=shirt_dark
+pixel (21,14) color=shirt_mid
+
+// Lighting and contours on torso (light from upper-left)
+line (12,14) (12,19) color=shirt_light
+line (13,14) (13,17) color=shirt_hi
+pixel (14,14) color=shirt_light
+pixel (15,14) color=shirt_light
+
+// Right-side shading and folds
+line (20,15) (20,19) color=shirt_dark
+pixel (19,18) color=shirt_dark
+pixel (19,19) color=shirt_dark
+line (14,18) (18,18) color=shirt_dark
+
+// Pink waistband / belt at base of shirt
+rect (12,20) (20,21) color=pink_mid
+line (12,20) (15,20) color=pink_light
+line (17,21) (20,21) color=pink_dark
+pixel (12,21) color=pink_dark
+pixel (20,20) color=pink_dark
+
+// Small golden belt detail / buckle center
+pixel (16,20) color=buckle
+pixel (16,21) color=buckle
+pixel (15,21) color=pink_dark
+pixel (17,21) color=pink_dark
+
+// Crisp inner outline cleanup
+pixel (11,13) color=out
+pixel (21,13) color=out
+pixel (11,21) color=out
+pixel (21,21) color=out
+line (12,22) (20,22) color=out

@@ -224,6 +224,7 @@ set(SOURCES
     src/ProjectileRegistry.cpp
     src/SkillshotRegistry.cpp
     src/CombatStrategyRegistry.cpp
+    src/BehaviorRegistry.cpp
     src/SurfaceSpriteRegistry.cpp
     src/SurfaceRegistry.cpp
     src/StatusEffectRegistry.cpp

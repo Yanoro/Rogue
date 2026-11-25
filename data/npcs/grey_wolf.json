@@ -1,0 +1,17 @@
+{
+  "name": "Grey Wolf",
+  "description": "A lean pack hunter: claws up close, pounce from a few paces out.",
+  "sprite": "wolf",
+  "portrait": "",
+  "disposition": "neutral",
+  "retaliates": true,
+  "behavior": "wolf_pack",
+  "skills": {
+    "claw": {
+      "level": 2
+    },
+    "pounce": {
+      "level": 1
+    }
+  }
+}

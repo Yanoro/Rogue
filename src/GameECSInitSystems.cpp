@@ -194,6 +194,12 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
     float dt = it.delta_time() * 1000.0f;
 
     for (auto i : it) {
+      flecs::entity entity = it.entity(i);
+      const NpcDisposition *disposition = entity.get<NpcDisposition>();
+      if (entity.has<NpcBehaviorId>() && disposition != nullptr &&
+          disposition->value == Disposition::Aggressive) {
+        continue;
+      }
       brains[i].agBrain.get()->update(dt);
     }
   });
@@ -341,13 +347,13 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
       });
 
   // A targeted cast is a commitment to a target, not just to a timer. Re-check
-  // the distance every frame while the timer is live; if the target steps out of
-  // the skill's range the cast is canceled immediately instead of waiting for the
-  // completion fizzle.
+  // the distance every frame while the timer is live; if the target steps outside
+  // the cast range (or the activation range when none is authored) the cast is
+  // canceled immediately instead of waiting for the completion fizzle.
   ecs.system<ActionActor, CastAction, ActionTimer>("CastRangeCancelSystem")
       .each([this](flecs::entity actionEntity, ActionActor& actorRef,
                    CastAction& cast, const ActionTimer&) {
-        if (!cast.requiresTarget || cast.skillId.empty()) {
+        if (!cast.requiresTarget) {
           return;
         }
         flecs::entity actor = actorRef.actor;
@@ -361,9 +367,11 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         const ActionTarget* targetRef = actionEntity.get<ActionTarget>();
         const bool targetLost =
             targetRef == nullptr || !targetRef->target.is_alive();
+        const float castRange =
+            cast.castRangeTiles > 0.0f ? cast.castRangeTiles : cast.rangeTiles;
         const bool outOfRange =
             !targetLost &&
-            !WithinActivationRange(actor, targetRef->target, cast.rangeTiles);
+            !WithinActivationRange(actor, targetRef->target, castRange);
         if (!targetLost && !outOfRange) {
           return;
         }
@@ -441,6 +449,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   ecs.system<CombatStrategy, Aggressive, GamePosition, ResourcePools>(
       "CombatStrategySystem")
       .without<AgentBrainWrapper>()
+      .without<NpcBehaviorId>()
       .iter([this](flecs::iter& it, CombatStrategy* strategies,
                    Aggressive*, GamePosition* positions, ResourcePools*) {
         if (!playerEntity.is_alive()) {
@@ -499,6 +508,12 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         }
       });
 
+  // Skill-driven NPC behavior. Runs only for NPCs with a behavior id; the old
+  // Aggressive/CombatStrategy controllers are excluded for those entities.
+  ecs.system("NpcBehaviorSystem").iter([this](flecs::iter& it) {
+    UpdateNpcBehaviors(it.delta_time());
+  });
+
   // The corpse visual is a setting, not a property baked into the death event.
   ecs.system<Corpse>("CorpseIconSystem")
       .each([this](flecs::entity entity, const Corpse&) {
@@ -540,6 +555,8 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
               continue;
             }
             status.remaining -= dt;
+            status.calloutCooldown =
+                std::max(0.0f, status.calloutCooldown - dt);
             if (status.remaining <= 0.0f) {
               if (position != nullptr && !definition->onExpireEffects.empty()) {
                 pending.push_back({actor, status.origin,
@@ -594,6 +611,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   // strike. It exists so incoming damage and interrupts are testable without the
   // LLM path; a real hostile agent will not carry this component.
   ecs.system<Aggressive, ResourcePools, GamePosition>("AggressiveCombatSystem")
+      .without<NpcBehaviorId>()
       .iter([this](flecs::iter& it, Aggressive* aggressive, ResourcePools*,
                    GamePosition* positions) {
         if (!playerEntity.is_alive()) {
@@ -630,19 +648,27 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           const std::string label = aggressive[i].label;
           const float castSeconds = aggressive[i].castSeconds;
           const float damage = aggressive[i].damage;
+          const float range = aggressive[i].range;
           aggressive[i].timer = aggressive[i].interval;
 
-          ecs.defer([this, entity, label, castSeconds, damage]() {
+          ecs.defer([this, entity, label, castSeconds, damage, range]() {
             // The captured handle is const inside a defer lambda; a local copy
             // is what lets the deferred writes go through.
             flecs::entity caster = entity;
+            CastAction inlineCast;
+            inlineCast.label = label;
+            inlineCast.baseDamage = damage;
+            inlineCast.interruptible = true;
+            inlineCast.playerCast = false;
+            inlineCast.requiresTarget = true;
+            inlineCast.rangeTiles = range;
+            inlineCast.castRangeTiles = range;
             flecs::entity action =
                 ecs.entity()
                     .set<ActionTimer>({castSeconds})
                     .set<ActionActor>({caster})
                     .set<ActionTarget>({playerEntity})
-                    .set<CastAction>(
-                        {std::string(), label, damage, true, false});
+                    .set<CastAction>(inlineCast);
             caster.set<Casting>({action, std::string(), label, true});
             caster.set<Busy>({action});
           });
@@ -689,8 +715,11 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
               message = "The cast fizzles: the skill no longer exists.";
             } else if (def->activation.requiresTarget &&
                        (!target.is_alive() ||
-                        !WithinActivationRange(actor, target,
-                                               def->activation.rangeTiles))) {
+                        !WithinActivationRange(
+                            actor, target,
+                            cast.castRangeTiles > 0.0f
+                                ? cast.castRangeTiles
+                                : def->activation.rangeTiles))) {
               message = "The " + def->name +
                         " fizzles: the target is out of reach.";
             } else if (!def->activation.skillshot.empty()) {
@@ -724,6 +753,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                 message = ApplyHit(actor, target, cast.baseDamage, cast.skillId,
                                    def->name, cast.playerCast,
                                    def->activation.interrupts);
+                ApplySkillStatus(actor, target, *def);
                 message += FinalizeSkillUse(actor, *def);
                 landed = true;
               }
@@ -1062,3 +1092,264 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
           actionEntity.destruct();
       });
 };
+
+bool Game::BehaviorConditionMatches(const BehaviorCondition &condition,
+                                    flecs::entity self,
+                                    flecs::entity target) const {
+  const auto selfPosition = self.get<GamePosition>();
+  const auto targetPosition = target.get<GamePosition>();
+  const int distance =
+      selfPosition != nullptr && targetPosition != nullptr
+          ? GridSteps(*selfPosition, *targetPosition)
+          : 9999;
+
+  const auto resourcePercent = [](flecs::entity entity,
+                                  const std::string &id) {
+    const float max = Resources::Max(entity, id);
+    return max > 0.0f ? Resources::Current(entity, id) / max : 0.0f;
+  };
+
+  switch (condition.kind) {
+  case BehaviorCondition::Kind::Always:
+    return true;
+  case BehaviorCondition::Kind::All:
+    for (const BehaviorCondition &child : condition.children) {
+      if (!BehaviorConditionMatches(child, self, target)) return false;
+    }
+    return true;
+  case BehaviorCondition::Kind::Any:
+    for (const BehaviorCondition &child : condition.children) {
+      if (BehaviorConditionMatches(child, self, target)) return true;
+    }
+    return false;
+  case BehaviorCondition::Kind::Not:
+    return !condition.children.empty() &&
+           !BehaviorConditionMatches(condition.children.front(), self, target);
+  case BehaviorCondition::Kind::SelfHealthPctBelow:
+    return resourcePercent(self, "health") < condition.value;
+  case BehaviorCondition::Kind::SelfHealthPctAbove:
+    return resourcePercent(self, "health") > condition.value;
+  case BehaviorCondition::Kind::SelfResourcePctBelow:
+    return resourcePercent(self, condition.id) < condition.value;
+  case BehaviorCondition::Kind::SelfResourcePctAbove:
+    return resourcePercent(self, condition.id) > condition.value;
+  case BehaviorCondition::Kind::TargetDistanceAtLeast:
+    return static_cast<float>(distance) >= condition.value;
+  case BehaviorCondition::Kind::TargetDistanceAtMost:
+    return static_cast<float>(distance) <= condition.value;
+  case BehaviorCondition::Kind::TargetHasStatus: {
+    const StatusEffects *statuses = target.get<StatusEffects>();
+    return statuses != nullptr && statuses->Has(condition.id);
+  }
+  case BehaviorCondition::Kind::TargetLacksStatus: {
+    const StatusEffects *statuses = target.get<StatusEffects>();
+    return statuses == nullptr || !statuses->Has(condition.id);
+  }
+  case BehaviorCondition::Kind::SelfHasStatus: {
+    const StatusEffects *statuses = self.get<StatusEffects>();
+    return statuses != nullptr && statuses->Has(condition.id);
+  }
+  case BehaviorCondition::Kind::AlliesWithin:
+  case BehaviorCondition::Kind::EnemiesWithin: {
+    int count = 0;
+    if (selfPosition == nullptr) return false;
+    ecs.filter<Actor, GamePosition>().each(
+        [&](flecs::entity other, const Actor &, const GamePosition &position) {
+          if (!other.is_alive() || other == self) return;
+          if (static_cast<float>(GridSteps(*selfPosition, position)) >
+              condition.range) {
+            return;
+          }
+          if (condition.kind == BehaviorCondition::Kind::AlliesWithin) {
+            if (!other.has<PlayerControlled>()) ++count;
+          } else if (other.has<PlayerControlled>()) {
+            ++count;
+          }
+        });
+    return count >= condition.count;
+  }
+  }
+  return false;
+}
+
+void Game::UpdateNpcBehaviors(float dt) {
+  if (!playerEntity.is_alive() || map == nullptr) return;
+  const GamePosition *targetPosition = playerEntity.get<GamePosition>();
+  if (targetPosition == nullptr) return;
+
+  std::vector<flecs::entity> actors;
+  ecs.filter<NpcBehaviorId>().each(
+      [&](flecs::entity entity, NpcBehaviorId &) {
+        if (entity.is_alive()) actors.push_back(entity);
+      });
+
+  for (flecs::entity entity : actors) {
+    const NpcBehaviorId *behaviorId = entity.get<NpcBehaviorId>();
+    NpcBehaviorState *state = entity.get_mut<NpcBehaviorState>();
+    const GamePosition *selfPosition = entity.get<GamePosition>();
+    const NpcDisposition *disposition = entity.get<NpcDisposition>();
+    if (behaviorId == nullptr || state == nullptr || selfPosition == nullptr) {
+      continue;
+    }
+    const BehaviorDef *definition = behaviorRegistry.Get(behaviorId->id);
+    if (definition == nullptr) continue;
+    if (disposition == nullptr ||
+        disposition->value == Disposition::Neutral) {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      state->inCombat = false;
+      state->activeRule.clear();
+      continue;
+    }
+    if (!Resources::IsAlive(entity)) continue;
+
+    state->inCombat = true;
+    if (entity.has<Casting>()) {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      continue;
+    }
+
+    const int targetDistance =
+        GridSteps(*selfPosition, *targetPosition);
+    for (NpcBehaviorRuleCooldown &cooldown : state->ruleCooldowns) {
+      cooldown.remaining = std::max(0.0f, cooldown.remaining - dt);
+    }
+
+    // Update the active movement rule first. It owns the body until its exit
+    // condition passes and its minimum duration has elapsed.
+    const BehaviorMovementRule *activeRule = nullptr;
+    for (const BehaviorMovementRule &rule : definition->rules) {
+      if (rule.id == state->activeRule) {
+        activeRule = &rule;
+        break;
+      }
+    }
+    if (activeRule != nullptr) {
+      state->activeSeconds += dt;
+      const bool enter =
+          BehaviorConditionMatches(activeRule->enterWhen, entity, playerEntity);
+      const bool exit =
+          activeRule->hasExit
+              ? BehaviorConditionMatches(activeRule->exitWhen, entity,
+                                         playerEntity)
+              : !enter;
+      if (state->activeSeconds >= activeRule->minDuration && exit) {
+        state->SetCooldown(activeRule->id, activeRule->cooldown);
+        state->activeRule.clear();
+        state->activeSeconds = 0.0f;
+        activeRule = nullptr;
+      }
+    }
+    if (activeRule == nullptr) {
+      for (const BehaviorMovementRule &rule : definition->rules) {
+        if (state->CooldownFor(rule.id) > 0.0f) continue;
+        if (!BehaviorConditionMatches(rule.enterWhen, entity, playerEntity)) {
+          continue;
+        }
+        state->activeRule = rule.id;
+        state->activeSeconds = 0.0f;
+        activeRule = &rule;
+        break;
+      }
+    }
+
+    const MovementPolicy &policy =
+        activeRule != nullptr ? activeRule->policy : definition->defaultMovement;
+
+    // Choose one action by strict priority. The skill owns its maximum range;
+    // the behavior can only raise the minimum (pounce must not fire at 1 tile).
+    if (policy.allowActions && !HasStatusTag(entity, "immobilized")) {
+      SkillCooldowns *cooldowns = entity.get_mut<SkillCooldowns>();
+      for (const BehaviorAction &action : definition->actions) {
+        const SkillDef *skill = FindSkillDef(entity.world(), action.skillId);
+        if (skill == nullptr || cooldowns == nullptr ||
+            !cooldowns->IsReady(action.skillId)) {
+          continue;
+        }
+        const float range = skill->activation.rangeTiles;
+        if (static_cast<float>(targetDistance) > range ||
+            static_cast<float>(targetDistance) < action.minRange) {
+          continue;
+        }
+        if (!BehaviorConditionMatches(action.when, entity, playerEntity)) {
+          continue;
+        }
+        const SkillUseOutcome outcome =
+            UseSkill(entity, action.skillId, playerEntity, false, false);
+        if (!outcome.used) continue;
+        entity.remove<MOVE_THROUGH_PATH_ACTION>();
+        state->repathTimer = 0.0f;
+        if (debugLog && !outcome.message.empty()) {
+          debugLog->LogCombat(outcome.message);
+        }
+        break;
+      }
+      if (entity.has<Casting>()) continue;
+    }
+
+    if (HasStatusTag(entity, "immobilized")) {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      continue;
+    }
+
+    if (policy.mode == "hold") {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      continue;
+    }
+
+    if (state->repathTimer > 0.0f) {
+      state->repathTimer = std::max(0.0f, state->repathTimer - dt);
+      if (entity.has<MOVE_THROUGH_PATH_ACTION>()) continue;
+    }
+
+    const float distance = static_cast<float>(targetDistance);
+    auto clearPath = [&]() {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      state->repathTimer = definition->repathSeconds;
+    };
+    auto walkTo = [&](const GamePosition &destination) {
+      if (destination == *selfPosition) {
+        clearPath();
+        return;
+      }
+      const std::vector<GamePosition> path =
+          AStar(map.get(), *selfPosition, destination);
+      if (path.empty()) {
+        clearPath();
+        return;
+      }
+      entity.set<MOVE_THROUGH_PATH_ACTION>({path});
+      state->repathTimer = definition->repathSeconds;
+    };
+    auto awayDestination = [&](float desiredRange) {
+      int dx = selfPosition->x - targetPosition->x;
+      int dy = selfPosition->y - targetPosition->y;
+      if (dx == 0 && dy == 0) dx = 1;
+      const int sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+      const int sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+      const int step = std::max(1, static_cast<int>(std::lround(desiredRange)));
+      const int maxX = static_cast<int>(map->GetWidth()) - 1;
+      const int maxY = static_cast<int>(map->GetHeight()) - 1;
+      return GamePosition{
+          std::clamp(targetPosition->x + sx * step, 0, maxX),
+          std::clamp(targetPosition->y + sy * step, 0, maxY)};
+    };
+
+    if (policy.mode == "chase") {
+      if (distance <= policy.desiredRange + policy.tolerance) {
+        clearPath();
+      } else {
+        walkTo(*targetPosition);
+      }
+    } else if (policy.mode == "kite") {
+      if (distance < policy.desiredRange - policy.tolerance) {
+        walkTo(awayDestination(policy.desiredRange));
+      } else if (distance > policy.desiredRange + policy.tolerance) {
+        walkTo(*targetPosition);
+      } else {
+        clearPath();
+      }
+    } else if (policy.mode == "flee") {
+      walkTo(awayDestination(std::max(6.0f, policy.desiredRange)));
+    }
+  }
+}

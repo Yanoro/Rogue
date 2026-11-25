@@ -422,6 +422,45 @@ void Game::DrawCombatHud() {
       }
       ImGui::EndGroup();
 
+      // Status icons sit under the portrait image, one icon with its own
+      // countdown. Application order is the order effects were added.
+      if (const StatusEffects *statuses = entity.get<StatusEffects>();
+          statuses != nullptr && !statuses->effects.empty()) {
+        ImGui::SetCursorScreenPos(
+            ImVec2(origin.x, origin.y + kPortraitSize + 4.0f));
+        ImGui::BeginGroup();
+        bool first = true;
+        for (const StatusEffectInstance &status : statuses->effects) {
+          const StatusEffectDef *definition =
+              statusEffectRegistry.Get(status.id);
+          if (definition == nullptr || status.remaining <= 0.0f) continue;
+          if (!first) ImGui::SameLine();
+          first = false;
+          ImGui::BeginGroup();
+          const std::string iconId =
+              definition->icon.empty() ? "missing" : definition->icon;
+          if (const Texture2D *icon = IconPaths::ResolveIconTexture(
+                  iconRegistry, resourceManager, iconId, debugLog.get())) {
+            ImGui::Image(
+                static_cast<ImTextureID>(static_cast<intptr_t>(icon->id)),
+                ImVec2(20.0f, 20.0f));
+            if (ImGui::IsItemHovered()) {
+              ImGui::SetTooltip("%s", definition->name.c_str());
+            }
+          } else {
+            ImGui::Dummy(ImVec2(20.0f, 20.0f));
+          }
+          const int totalSeconds =
+              std::max(0, static_cast<int>(std::ceil(status.remaining)));
+          char countdown[16];
+          std::snprintf(countdown, sizeof(countdown), "%02d:%02d",
+                        totalSeconds / 60, totalSeconds % 60);
+          ImGui::TextUnformatted(countdown);
+          ImGui::EndGroup();
+        }
+        ImGui::EndGroup();
+      }
+
       x = ImGui::GetWindowPos().x;
       y = ImGui::GetWindowPos().y;
     }

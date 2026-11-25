@@ -29,6 +29,27 @@ struct SkillValue {
 // exactly the way a missing stat is (section 3.4).
 struct SkillBlock {
   std::vector<SkillValue> values;
+
+  const SkillValue *Find(const std::string &id) const {
+    for (const SkillValue &value : values) {
+      if (value.id == id) return &value;
+    }
+    return nullptr;
+  }
+
+  SkillValue *Find(const std::string &id) {
+    for (SkillValue &value : values) {
+      if (value.id == id) return &value;
+    }
+    return nullptr;
+  }
+
+  // Level 0 is a placeholder: the character has the entry but cannot use it.
+  // This is why a granted skill must explicitly start at level >= 1.
+  bool Knows(const std::string &id) const {
+    const SkillValue *value = Find(id);
+    return value != nullptr && value->level > 0;
+  }
 };
 
 // The toggle skills currently switched on, by definition id.

@@ -10,5 +10,12 @@
   "icon": "status_burning",
   "tick": [
     "burning_damage"
-  ]
+  ],
+  "color": [
+    255,
+    140,
+    60,
+    255
+  ],
+  "reapplyWarningSeconds": 1.0
 }

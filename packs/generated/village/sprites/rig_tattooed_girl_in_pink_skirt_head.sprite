@@ -1,0 +1,57 @@
+sprite 32x32
+kind object
+
+palette {
+  dark = ink.base
+  skin_shadow = soil.1
+  skin_base = wood.2
+  skin_light = wood.3
+  white = sand.4
+}
+
+// Head silhouette and outline (11,4) to (21,12)
+rect (12,4) (20,12) color=dark
+rect (11,6) (21,10) color=dark
+rect (13,13) (19,13) color=dark
+pixel (14,14) color=dark
+pixel (15,14) color=dark
+pixel (16,14) color=dark
+pixel (17,14) color=dark
+pixel (18,14) color=dark
+
+// Base skin fill
+rect (12,5) (20,11) color=skin_base
+rect (11,7) (21,9) color=skin_base
+rect (13,12) (19,12) color=skin_base
+rect (14,13) (18,13) color=skin_base
+
+// Ears
+pixel (11,8) color=skin_shadow
+pixel (21,8) color=skin_shadow
+
+// Shading and contouring (warm brown skin, light from top-left)
+line (12,5) (17,5) color=skin_light
+line (12,6) (14,6) color=skin_light
+pixel (12,7) color=skin_light
+
+// Jaw and chin shadow
+line (13,12) (19,12) color=skin_shadow
+line (14,13) (18,13) color=skin_shadow
+pixel (20,10) color=skin_shadow
+pixel (20,11) color=skin_shadow
+
+// Eyebrows
+pixel (13,7) color=dark
+pixel (14,7) color=dark
+pixel (18,7) color=dark
+pixel (19,7) color=dark
+
+// Eyes
+pixel (13,9) color=white
+pixel (14,9) color=dark
+pixel (18,9) color=dark
+pixel (19,9) color=white
+
+// Nose and soft mouth
+pixel (16,10) color=skin_shadow
+line (15,11) (17,11) color=skin_shadow

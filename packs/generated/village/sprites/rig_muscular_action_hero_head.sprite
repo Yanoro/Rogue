@@ -1,0 +1,45 @@
+sprite 32x32
+kind object
+material sand
+
+// Base silhouette and neck connection
+rect (12,5) (20,12) color=ink.base
+rect (11,6) (21,11) color=ink.base
+
+// Tanned skin base
+rect (12,6) (20,11) color=sand.3
+pixel (13,5) color=sand.3
+pixel (14,5) color=sand.3
+pixel (15,5) color=sand.3
+pixel (16,5) color=sand.3
+pixel (17,5) color=sand.3
+pixel (18,5) color=sand.3
+pixel (19,5) color=sand.3
+
+// Square jaw shading and stubble
+line (12,11) (20,11) color=sand.1
+line (13,12) (19,12) color=sand.0
+pixel (12,10) color=sand.2
+pixel (20,10) color=sand.2
+
+// Chin definition and cleft
+pixel (16,11) color=sand.0
+
+// Stern mouth line
+line (14,10) (18,10) color=sand.0
+
+// Nose shadow
+pixel (16,8) color=sand.2
+
+// Cool rectangular sunglasses
+rect (11,6) (21,7) color=ink.base
+pixel (12,8) color=ink.base
+pixel (13,8) color=ink.base
+pixel (14,8) color=ink.base
+pixel (18,8) color=ink.base
+pixel (19,8) color=ink.base
+pixel (20,8) color=ink.base
+
+// Sunglass lens reflection highlights
+pixel (13,6) color=iron.4
+pixel (19,6) color=iron.4

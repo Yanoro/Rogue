@@ -1,0 +1,134 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  dark_belt   = #181819
+  buckle      = iron.3
+  pouch       = iron.1
+  pants_base  = iron.1
+  pants_light = iron.2
+  pants_dark  = iron.0
+  boot_base   = #181819
+  boot_hi     = iron.1
+  lace        = iron.2
+  sole        = #0d0d0e
+}
+
+frame "f1" {
+  // Belt & waist (y=21)
+  rect (12,21) (20,22) color=dark_belt
+  pixel (16,21) color=buckle
+  pixel (13,21) color=pouch
+  pixel (19,21) color=pouch
+
+  // Left leg forward (screen-left, x=12..15, y=23..31)
+  rect (12,23) (15,26) color=pants_base
+  rect (12,23) (12,26) color=pants_light
+  rect (15,23) (15,26) color=pants_dark
+
+  // Left boot forward, firmly planted
+  rect (11,27) (15,30) color=boot_base
+  rect (11,28) (11,30) color=boot_hi
+  pixel (13,28) color=lace
+  pixel (13,29) color=lace
+  rect (10,31) (15,31) color=sole
+
+  // Right leg trailing / back (screen-right, x=17..20, y=23..30)
+  rect (17,23) (20,26) color=pants_dark
+  rect (17,23) (17,25) color=pants_base
+
+  // Right boot pushed back, toe contact
+  rect (17,27) (20,30) color=boot_base
+  pixel (18,28) color=lace
+  rect (17,30) (20,30) color=sole
+}
+
+frame "f2" {
+  // Belt & waist (y=20, rising)
+  rect (12,20) (20,21) color=dark_belt
+  pixel (16,20) color=buckle
+  pixel (13,20) color=pouch
+  pixel (19,20) color=pouch
+
+  // Supporting Left leg straight (screen-left, x=12..15, y=22..31)
+  rect (12,22) (15,26) color=pants_base
+  rect (12,22) (12,26) color=pants_light
+  rect (15,22) (15,26) color=pants_dark
+
+  // Left boot standing flat
+  rect (12,27) (15,30) color=boot_base
+  rect (12,28) (12,30) color=boot_hi
+  pixel (13,28) color=lace
+  pixel (13,29) color=lace
+  rect (11,31) (15,31) color=sole
+
+  // Right leg passing / bent knee lifting (screen-right, x=16..20, y=22..29)
+  rect (16,22) (20,25) color=pants_base
+  rect (17,22) (17,25) color=pants_light
+  rect (20,22) (20,25) color=pants_dark
+
+  // Right boot lifted
+  rect (17,26) (20,29) color=boot_base
+  pixel (18,27) color=lace
+  rect (17,29) (21,29) color=sole
+}
+
+frame "f3" {
+  // Belt & waist (y=21)
+  rect (12,21) (20,22) color=dark_belt
+  pixel (16,21) color=buckle
+  pixel (13,21) color=pouch
+  pixel (19,21) color=pouch
+
+  // Left leg trailing / back (screen-left, x=12..15, y=23..30)
+  rect (12,23) (15,26) color=pants_dark
+  rect (12,23) (12,25) color=pants_base
+
+  // Left boot pushed back, toe contact
+  rect (12,27) (15,30) color=boot_base
+  pixel (14,28) color=lace
+  rect (12,30) (15,30) color=sole
+
+  // Right leg forward (screen-right, x=17..21, y=23..31)
+  rect (17,23) (20,26) color=pants_base
+  rect (17,23) (17,26) color=pants_light
+  rect (20,23) (20,26) color=pants_dark
+
+  // Right boot forward, firmly planted
+  rect (17,27) (21,30) color=boot_base
+  rect (17,28) (17,30) color=boot_hi
+  pixel (19,28) color=lace
+  pixel (19,29) color=lace
+  rect (17,31) (22,31) color=sole
+}
+
+frame "f4" {
+  // Belt & waist (y=20, rising)
+  rect (12,20) (20,21) color=dark_belt
+  pixel (16,20) color=buckle
+  pixel (13,20) color=pouch
+  pixel (19,20) color=pouch
+
+  // Left leg passing / bent knee lifting (screen-left, x=12..16, y=22..29)
+  rect (12,22) (16,25) color=pants_base
+  rect (12,22) (12,25) color=pants_light
+  rect (16,22) (16,25) color=pants_dark
+
+  // Left boot lifted
+  rect (12,26) (15,29) color=boot_base
+  pixel (14,27) color=lace
+  rect (11,29) (15,29) color=sole
+
+  // Supporting Right leg straight (screen-right, x=17..20, y=22..31)
+  rect (17,22) (20,26) color=pants_base
+  rect (17,22) (17,26) color=pants_light
+  rect (20,22) (20,26) color=pants_dark
+
+  // Right boot standing flat
+  rect (17,27) (20,30) color=boot_base
+  rect (17,28) (17,30) color=boot_hi
+  pixel (19,28) color=lace
+  pixel (19,29) color=lace
+  rect (17,31) (21,31) color=sole
+}

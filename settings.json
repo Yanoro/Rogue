@@ -231,6 +231,8 @@
     "projectiles": "data/projectiles",
     "skillshots": "data/skillshots",
     "combatStrategies": "data/combat_strategies",
+    "behaviors": "data/behaviors",
+    "player": "data/player.json",
     "surfaceSprites": "data/surface_sprites",
     "surfaces": "data/surfaces",
     "statusEffects": "data/status_effects",

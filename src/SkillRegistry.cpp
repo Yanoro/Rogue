@@ -79,15 +79,35 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
       def.activation.gcdSeconds =
           a.contains("gcdSeconds") ? a.value("gcdSeconds", 0.0f) : -1.0f;
       def.activation.autoCast = a.value("autoCast", false);
+      def.activation.hidden = a.value("hidden", false);
       def.activation.canCastWhileMoving = a.value("canCastWhileMoving", true);
       def.activation.allowSliding = a.value("allowSliding", false);
       def.activation.xpPerUse = a.value("xpPerUse", 0);
       def.activation.requiresTarget = a.value("requiresTarget", true);
       def.activation.castSeconds = a.value("cast", 0.0f);
+      def.activation.castRangeTiles = a.value("castRange", 0.0f);
+      def.activation.refundCooldownOnCancel =
+          a.value("refundCooldownOnCancel", false);
+      def.activation.refundResourceOnCancel =
+          a.value("refundResourceOnCancel", false);
+      def.activation.refundGCDOnCancel =
+          a.value("refundGCDOnCancel", false);
       def.activation.interruptible = a.value("interruptible", true);
       def.activation.interrupts = a.value("interrupts", false);
       def.activation.projectile = a.value("projectile", std::string());
       def.activation.skillshot = a.value("skillshot", std::string());
+      if (a.contains("applyStatus") && a["applyStatus"].is_object()) {
+        const auto &status = a["applyStatus"];
+        def.activation.applyStatus = status.value("id", std::string());
+        def.activation.statusDuration = status.value("duration", 0.0f);
+        if (status.contains("color") && status["color"].is_array() &&
+            (status["color"].size() == 3 || status["color"].size() == 4)) {
+          for (size_t i = 0; i < status["color"].size(); ++i) {
+            def.activation.statusColor[i] = status["color"][i].get<int>();
+          }
+          def.activation.hasStatusColor = true;
+        }
+      }
       if (a.contains("cost") && a["cost"].is_object()) {
         const auto &cost = a["cost"];
         def.activation.costResource = cost.value("resource", std::string());
@@ -163,6 +183,11 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
     warn("Warning: Skill '" + def.id +
          "' has a negative cast time; using 0 (instant).");
     def.activation.castSeconds = 0.0f;
+  }
+  if (def.activation.castRangeTiles < 0.0f) {
+    warn("Warning: Skill '" + def.id +
+         "' has a negative cast range; using the activation range.");
+    def.activation.castRangeTiles = 0.0f;
   }
   if (!def.activation.projectile.empty() &&
       !def.activation.requiresTarget) {
@@ -410,6 +435,7 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
       activation.erase("gcdSeconds");
     }
     activation["autoCast"] = def->activation.autoCast;
+    activation["hidden"] = def->activation.hidden;
     activation["canCastWhileMoving"] = def->activation.canCastWhileMoving;
     // Always emitted, including false: the Content Editor's generic form can
     // only show a field the document actually carries.
@@ -417,10 +443,25 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
     activation["xpPerUse"] = def->activation.xpPerUse;
     activation["requiresTarget"] = def->activation.requiresTarget;
     activation["cast"] = def->activation.castSeconds;
+    activation["castRange"] = def->activation.castRangeTiles;
+    activation["refundCooldownOnCancel"] =
+        def->activation.refundCooldownOnCancel;
+    activation["refundResourceOnCancel"] =
+        def->activation.refundResourceOnCancel;
+    activation["refundGCDOnCancel"] = def->activation.refundGCDOnCancel;
     activation["interruptible"] = def->activation.interruptible;
     activation["interrupts"] = def->activation.interrupts;
     activation["projectile"] = def->activation.projectile;
     activation["skillshot"] = def->activation.skillshot;
+    if (!def->activation.applyStatus.empty()) {
+      activation["applyStatus"] = {
+          {"id", def->activation.applyStatus},
+          {"duration", def->activation.statusDuration},
+      };
+      if (def->activation.hasStatusColor) {
+        activation["applyStatus"]["color"] = def->activation.statusColor;
+      }
+    }
     if (!def->activation.surface.empty()) {
       activation["surface"] = {{"id", def->activation.surface},
                                {"duration", def->activation.surfaceDuration},

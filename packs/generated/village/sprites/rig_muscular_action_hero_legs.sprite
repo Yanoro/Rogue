@@ -1,0 +1,54 @@
+sprite 32x32
+kind object
+material iron
+
+// Belt and waistline (y=20..21)
+rect (12,20) (21,21) color=ink.base
+rect (13,20) (20,20) color=iron.1
+pixel (16,20) color=iron.4
+pixel (17,20) color=iron.3
+pixel (13,21) color=iron.2
+pixel (20,21) color=iron.2
+
+// Pants base silhouette & outline
+rect (12,21) (21,26) color=ink.base
+rect (12,22) (16,26) color=iron.1
+rect (17,22) (21,26) color=iron.1
+// Crotch divider outline
+line (16,23) (17,26) color=ink.base
+
+// Trousers shading and cargo pocket highlights (lit from top-left)
+// Left leg (canvas left)
+line (13,22) (13,25) color=iron.2
+pixel (14,22) color=iron.3
+pixel (14,24) color=iron.2
+// Right leg (canvas right)
+line (18,22) (18,25) color=iron.2
+pixel (19,22) color=iron.2
+
+// Heavy combat boots (y=26..31)
+// Outer dark boot blocks
+rect (12,26) (16,30) color=ink.base
+rect (17,26) (21,30) color=ink.base
+
+// Boot leather shading
+rect (13,27) (15,29) color=iron.1
+rect (18,27) (20,29) color=iron.1
+
+// Boot highlights & laces
+pixel (14,27) color=iron.3
+pixel (14,28) color=iron.2
+pixel (19,27) color=iron.3
+pixel (19,28) color=iron.2
+
+// Front toe caps & thick soles
+rect (12,30) (16,31) color=ink.base
+rect (17,30) (21,31) color=ink.base
+rect (13,30) (15,30) color=iron.2
+rect (18,30) (20,30) color=iron.1
+line (12,31) (16,31) color=iron.0
+line (17,31) (21,31) color=iron.0
+
+// Sole bottom tread highlights
+pixel (13,31) color=iron.1
+pixel (18,31) color=iron.1

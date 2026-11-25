@@ -101,6 +101,7 @@ struct JsonFormOptions {
   std::string *actorSpriteFilter = nullptr;
   bool *showActorSpritesWithoutArt = nullptr;
   const CombatStrategyRegistry *combatStrategies = nullptr;
+  const BehaviorRegistry *behaviors = nullptr;
   const IconRegistry *icons = nullptr;
   std::string *iconFilter = nullptr;
   const SurfaceSpriteRegistry *surfaceSprites = nullptr;
@@ -163,6 +164,48 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
       }
       for (const CombatStrategyDef *definition :
            options.combatStrategies->GetAll()) {
+        if (ImGui::Selectable(definition->name.c_str(),
+                              current == definition->id)) {
+          value = definition->id;
+          return true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    return false;
+  }
+
+  if (depth == 1 && key == "disposition" && value.is_string()) {
+    const std::string current = value.get<std::string>();
+    const char *values[] = {"neutral", "aggressive"};
+    const char *labels[] = {"Neutral", "Aggressive"};
+    const char *shown = current.c_str();
+    for (int i = 0; i < 2; ++i) {
+      if (current == values[i]) shown = labels[i];
+    }
+    if (ImGui::BeginCombo("##disposition", shown)) {
+      for (int i = 0; i < 2; ++i) {
+        if (ImGui::Selectable(labels[i], current == values[i])) {
+          value = values[i];
+          return true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    return false;
+  }
+
+  if (depth == 1 && key == "behavior" && value.is_string() &&
+      options.behaviors != nullptr) {
+    const std::string current = value.get<std::string>();
+    if (ImGui::BeginCombo("##behavior",
+                          current.empty() ? "None (legacy controller)"
+                                          : current.c_str())) {
+      if (ImGui::Selectable("None (legacy controller)", current.empty())) {
+        value = "";
+        return true;
+      }
+      for (const BehaviorDef *definition : options.behaviors->GetAll()) {
         if (ImGui::Selectable(definition->name.c_str(),
                               current == definition->id)) {
           value = definition->id;
@@ -374,11 +417,15 @@ ContentKinds::World ContentEditorWindow::World_() {
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
       game->iconRegistry, game->rigRegistry, game->movementRegistry,
       game->itemRegistry, game->skillRegistry, game->npcTemplateRegistry,
-      game->brainTemplateRegistry, game->surfaceSpriteRegistry,
+      game->brainTemplateRegistry, game->behaviorRegistry,
+      game->surfaceSpriteRegistry,
       game->surfaceRegistry, game->statusEffectRegistry, game->effectRegistry,
       game->resourceRegistry, game->artStyleRegistry,
       game->bodySilhouetteRegistry, game->debugLog.get(),
-      [this]() { game->RefreshPlayerSkillBar(); }};
+      [this]() { game->RefreshPlayerSkillBar(); },
+      [this](const std::string &id) {
+        game->RefreshNpcTemplateAppearance(id);
+      }};
 }
 
 const ContentKinds::Kind *ContentEditorWindow::Kind() const {
@@ -408,7 +455,7 @@ void ContentEditorWindow::Save() {
   if (kind == nullptr || game == nullptr) return;
   const bool newable = kind->id == "icons" || kind->id == "surfaces" ||
                        kind->id == "status_effects" || kind->id == "effects" ||
-                       kind->id == "resources";
+                       kind->id == "resources" || kind->id == "behaviors";
   if (entryId.empty() && !newable) return;
 
   const std::string directory =
@@ -568,6 +615,24 @@ void ContentEditorWindow::DrawKindAndList() {
       entryId.clear();
       dirty = true;
       status = "Name the resource. Races/templates choose whether it is vital and primary.";
+      statusIsError = false;
+    }
+  }
+  if (kind->id == "behaviors") {
+    if (ImGui::Button("New behavior")) {
+      document = nlohmann::json::object();
+      document["name"] = "New Behavior";
+      document["description"] = std::string();
+      document["maxTargetDistance"] = 12.0f;
+      document["repathSeconds"] = 0.5f;
+      document["movement"] = nlohmann::json::object();
+      document["movement"]["default"] = {
+          {"mode", "chase"}, {"desiredRange", 1.0f}, {"tolerance", 0.0f}};
+      document["movement"]["rules"] = nlohmann::json::array();
+      document["actions"] = nlohmann::json::array();
+      entryId.clear();
+      dirty = true;
+      status = "Name the behavior and add movement rules/actions, then Save.";
       statusIsError = false;
     }
   }
@@ -1435,6 +1500,7 @@ void ContentEditorWindow::DrawDocumentPane() {
     options.actorSpriteFilter = &npcSpriteFilter;
     options.showActorSpritesWithoutArt = &showActorSpritesWithoutArt;
     options.combatStrategies = &game->combatStrategyRegistry;
+    options.behaviors = &game->behaviorRegistry;
   }
   if (kind->id == "skills" || kind->id == "status_effects" ||
       kind->id == "resources" || kind->id == "body_silhouettes") {

@@ -1,0 +1,47 @@
+{
+  "name": "Grab",
+  "description": "Seize a target and hold it in place for five seconds.",
+  "icon": "",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "baseline": 0,
+  "scale": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 0,
+    "cooldown": 30.0,
+    "range": 1,
+    "gcd": true,
+    "autoCast": false,
+    "requiresTarget": true,
+    "cast": 0,
+    "interruptible": true,
+    "applyStatus": {
+      "id": "immobilized",
+      "duration": 5.0,
+      "color": [
+        200,
+        140,
+        255,
+        255
+      ]
+    },
+    "hidden": true
+  }
+}

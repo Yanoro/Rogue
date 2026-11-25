@@ -1,0 +1,72 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  out = stone.0
+  mid = stone.2
+  lit = stone.4
+}
+
+// === Foot Silhouette & Shading ===
+// Outer base profile of the leg, ankle, heel, and foot
+polygon (11,4) (17,4) (17,14) (26,17) (27,21) (26,24) (7,24) (7,18) (11,14) color=out
+
+// Core interior fill
+polygon (12,5) (16,5) (16,14) (25,17) (26,20) (25,23) (8,23) (8,18) (12,14) color=lit
+
+// Lower-half interior shadow on sole and lower arch
+rect (9,21) (25,23) color=mid
+pixel (8,20) color=mid
+pixel (8,19) color=mid
+pixel (17,18) color=mid
+pixel (18,17) color=mid
+
+// Ankle/instep contour
+line (12,14) (15,16) color=mid
+
+// === Vines Binding the Foot ===
+// Vine 1: Upper leg coil
+line (10,8) (17,11) color=out
+line (10,9) (17,12) color=out
+line (11,9) (16,11) color=mid
+pixel (11,8) color=lit
+pixel (13,9) color=lit
+pixel (15,10) color=lit
+
+// Vine 1 thorns / leaves
+pixel (9,8) color=out
+pixel (18,12) color=out
+
+// Vine 2: Around the ankle / instep
+line (9,15) (20,17) color=out
+line (9,16) (20,18) color=out
+line (10,16) (19,17) color=mid
+pixel (11,15) color=lit
+pixel (14,16) color=lit
+pixel (17,16) color=lit
+
+// Vine 2 thorns / curl
+pixel (8,16) color=out
+pixel (21,17) color=out
+pixel (21,16) color=out
+
+// Vine 3: Around the arch / toes pinning the foot down
+line (13,20) (25,22) color=out
+line (13,21) (25,23) color=out
+line (14,21) (24,22) color=mid
+pixel (15,20) color=lit
+pixel (18,21) color=lit
+pixel (22,21) color=lit
+
+// Vine 3 root trailing to the ground
+line (12,23) (10,25) color=out
+line (11,24) (9,25) color=out
+pixel (11,24) color=mid
+pixel (8,25) color=out
+pixel (26,22) color=out
+pixel (27,23) color=out
+
+// Tendril loop hanging beneath the arch
+line (14,24) (17,25) color=out
+line (17,25) (19,24) color=out

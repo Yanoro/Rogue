@@ -1,0 +1,17 @@
+{
+  "name": "Zombie",
+  "description": "A shambling body that grabs and bites.",
+  "sprite": "",
+  "disposition": "neutral",
+  "retaliates": true,
+  "behavior": "zombie_shambler",
+  "skills": {
+    "bite": {
+      "level": 1
+    },
+    "grab": {
+      "level": 1
+    }
+  },
+  "portrait": ""
+}

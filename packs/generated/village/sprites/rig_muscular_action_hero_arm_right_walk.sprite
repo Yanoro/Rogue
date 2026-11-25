@@ -1,0 +1,112 @@
+sprite 32x32
+kind object
+material sand
+
+frame "f1" {
+  // Shoulder / Deltoid
+  rect (22,13) (25,16) color=sand.2
+  pixel (22,13) color=sand.3
+  pixel (23,13) color=sand.3
+  pixel (25,16) color=sand.1
+  // Bicep / Tricep flexed
+  rect (22,16) (25,18) color=sand.2
+  pixel (22,17) color=sand.3
+  pixel (25,18) color=sand.1
+  // Forearm & wrist angled forward
+  rect (23,19) (26,21) color=sand.2
+  pixel (23,19) color=sand.3
+  pixel (26,21) color=sand.1
+  // Open grip hand
+  rect (23,22) (26,23) color=sand.2
+  pixel (24,22) color=sand.0
+  pixel (23,23) color=sand.3
+  // Outline
+  line (22,12) (25,12) color=ink.base
+  line (26,13) (26,18) color=ink.base
+  line (27,19) (27,23) color=ink.base
+  line (23,24) (26,24) color=ink.base
+  line (22,22) (22,23) color=ink.base
+  pixel (21,13) color=ink.base
+  pixel (21,18) color=ink.base
+}
+
+frame "f2" {
+  // Shoulder / Deltoid (body rises 1px)
+  rect (22,12) (25,15) color=sand.2
+  pixel (22,12) color=sand.3
+  pixel (23,12) color=sand.3
+  pixel (25,15) color=sand.1
+  // Bicep
+  rect (22,15) (25,18) color=sand.2
+  pixel (22,16) color=sand.3
+  pixel (25,17) color=sand.1
+  // Forearm (vertical passing)
+  rect (22,19) (25,21) color=sand.2
+  pixel (22,19) color=sand.3
+  pixel (25,21) color=sand.1
+  // Open grip hand
+  rect (22,22) (25,23) color=sand.2
+  pixel (23,22) color=sand.0
+  pixel (22,23) color=sand.3
+  // Outline
+  line (22,11) (25,11) color=ink.base
+  line (26,12) (26,23) color=ink.base
+  line (22,24) (25,24) color=ink.base
+  pixel (21,12) color=ink.base
+  pixel (21,18) color=ink.base
+  pixel (21,22) color=ink.base
+}
+
+frame "f3" {
+  // Shoulder / Deltoid (arm swings backward, slightly upward)
+  rect (22,13) (25,16) color=sand.2
+  pixel (22,13) color=sand.3
+  pixel (23,13) color=sand.3
+  pixel (25,16) color=sand.1
+  // Bicep trailing back
+  rect (21,16) (24,18) color=sand.2
+  pixel (21,17) color=sand.3
+  pixel (24,18) color=sand.1
+  // Forearm swung back
+  rect (21,19) (24,21) color=sand.2
+  pixel (21,19) color=sand.3
+  pixel (24,21) color=sand.1
+  // Open grip hand
+  rect (21,22) (24,23) color=sand.2
+  pixel (22,22) color=sand.0
+  pixel (21,23) color=sand.3
+  // Outline
+  line (22,12) (25,12) color=ink.base
+  line (26,13) (26,16) color=ink.base
+  line (25,17) (25,23) color=ink.base
+  line (21,24) (24,24) color=ink.base
+  line (20,17) (20,23) color=ink.base
+  pixel (21,13) color=ink.base
+}
+
+frame "f4" {
+  // Shoulder / Deltoid (body rises 1px, passing forward)
+  rect (22,12) (25,15) color=sand.2
+  pixel (22,12) color=sand.3
+  pixel (23,12) color=sand.3
+  pixel (25,15) color=sand.1
+  // Bicep
+  rect (22,15) (25,18) color=sand.2
+  pixel (22,16) color=sand.3
+  pixel (25,17) color=sand.1
+  // Forearm
+  rect (22,19) (25,21) color=sand.2
+  pixel (22,19) color=sand.3
+  pixel (25,21) color=sand.1
+  // Open grip hand
+  rect (22,22) (25,23) color=sand.2
+  pixel (23,22) color=sand.0
+  pixel (22,23) color=sand.3
+  // Outline
+  line (22,11) (25,11) color=ink.base
+  line (26,12) (26,23) color=ink.base
+  line (22,24) (25,24) color=ink.base
+  pixel (21,12) color=ink.base
+  pixel (21,18) color=ink.base
+  pixel (21,22) color=ink.base
+}

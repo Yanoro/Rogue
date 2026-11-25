@@ -1,0 +1,97 @@
+sprite 32x32
+kind object
+material sand
+
+palette {
+  dark = #181819
+  skin_shadow = #a56f44
+  skin_mid = #cf925b
+  skin_light = #e4ab74
+  skin_highlight = #f3c79a
+  belt_dark = #24160e
+  belt_mid = #4a2d1d
+  buckle = #d8b858
+  buckle_highlight = #fff0a0
+}
+
+// Silhouette outline
+rect (10,11) (22,22) color=dark
+erase rect (10,11) (11,11)
+erase rect (21,11) (22,11)
+erase rect (10,18) (11,22)
+erase rect (21,18) (22,22)
+
+// Base skin fill
+rect (12,12) (20,18) color=skin_mid
+pixel (11,12) color=skin_mid
+pixel (21,12) color=skin_mid
+pixel (11,13) color=skin_mid
+pixel (21,13) color=skin_mid
+pixel (11,14) color=skin_mid
+pixel (21,14) color=skin_mid
+pixel (11,15) color=skin_mid
+pixel (21,15) color=skin_mid
+pixel (11,16) color=skin_mid
+pixel (21,16) color=skin_mid
+pixel (11,17) color=skin_mid
+pixel (21,17) color=skin_mid
+
+// Traps / neck connection
+pixel (13,11) color=skin_mid
+pixel (14,11) color=skin_light
+pixel (15,11) color=skin_light
+pixel (16,11) color=skin_mid
+pixel (17,11) color=skin_mid
+pixel (18,11) color=skin_shadow
+
+// Pecs definition (chest line, highlight and shadow)
+// Left pec (viewer's left - lit side)
+rect (12,12) (15,14) color=skin_light
+pixel (13,12) color=skin_highlight
+pixel (14,12) color=skin_highlight
+pixel (13,13) color=skin_highlight
+
+// Right pec (viewer's right - shadowed side)
+rect (17,12) (20,14) color=skin_mid
+pixel (17,12) color=skin_light
+pixel (18,12) color=skin_light
+rect (19,13) (21,15) color=skin_shadow
+
+// Sternum & pec underline
+line (16,12) (16,15) color=skin_shadow
+line (12,15) (15,15) color=skin_shadow
+line (17,15) (20,15) color=skin_shadow
+
+// Abdominal muscles (abs)
+// Upper abs
+rect (13,16) (15,16) color=skin_light
+rect (17,16) (19,16) color=skin_mid
+pixel (16,16) color=skin_shadow
+pixel (20,16) color=skin_shadow
+pixel (12,16) color=skin_mid
+
+// Mid abs
+line (13,17) (19,17) color=skin_shadow
+pixel (13,17) color=skin_light
+pixel (14,17) color=skin_light
+pixel (15,17) color=skin_mid
+pixel (17,17) color=skin_mid
+pixel (18,17) color=skin_shadow
+pixel (19,17) color=skin_shadow
+
+// Obliques & outer torso shading
+line (11,14) (11,17) color=skin_mid
+line (21,14) (21,17) color=skin_shadow
+
+// Thick dark leather belt (rows 18 to 21)
+rect (11,18) (21,21) color=belt_dark
+line (12,19) (20,20) color=belt_mid
+
+// Heavy belt buckle
+rect (14,18) (18,21) color=dark
+rect (15,19) (17,20) color=buckle
+pixel (15,19) color=buckle_highlight
+pixel (16,20) color=dark
+
+// Lower belt edge / shadow against legs
+line (12,22) (20,22) color=dark

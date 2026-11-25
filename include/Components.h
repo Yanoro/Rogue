@@ -1000,6 +1000,8 @@ struct StatusEffectInstance {
   std::string id;
   float remaining = 0.0f;
   float tickTimer = 0.0f;
+  // Remaining suppression before this status may warn again on refresh.
+  float calloutCooldown = 0.0f;
   EffectOrigin origin;
 };
 
@@ -1376,6 +1378,16 @@ struct SkillCooldowns {
     return RemainingFor(skillId) <= 0.0f;
   }
 
+  void Reset(const std::string &skillId) {
+    for (SkillCooldown &entry : cooldowns) {
+      if (entry.skillId == skillId) {
+        entry.remaining = 0.0f;
+        entry.duration = 0.0f;
+        return;
+      }
+    }
+  }
+
   void Start(const std::string &skillId, float seconds) {
     for (SkillCooldown &entry : cooldowns) {
       if (entry.skillId == skillId) {
@@ -1462,6 +1474,15 @@ struct CastAction {
   // that target may move before the cast is canceled.
   bool requiresTarget = false;
   float rangeTiles = 0.0f;
+  // Cast-range snapshot: target may not move farther than this while the cast
+  // runs. 0 means use rangeTiles (the activation range).
+  float castRangeTiles = 0.0f;
+
+  // Refund policy copied from the skill at cast start. Inline NPC casts leave
+  // these false; they have no skill cost to refund.
+  bool refundCooldownOnCancel = false;
+  bool refundResourceOnCancel = false;
+  bool refundGCDOnCancel = false;
 
   // Surface created at the target tile when this cast lands. Copied at cast
   // start for the same reason as the range: a content reload mid-wind-up must
@@ -1537,6 +1558,52 @@ struct NpcDisposition {
   Disposition value = Disposition::Neutral;
 };
 
+// Which NpcTemplate this character was spawned from. Runtime-only: it is the
+// link that lets a Content Editor template save refresh appearance on live
+// instances instead of only on the next map load.
+struct NpcTemplateId {
+  std::string id;
+};
+
+// Behavior definition this NPC uses in combat. Runtime-only; the definition
+// lives in the BehaviorRegistry.
+struct NpcBehaviorId {
+  std::string id;
+};
+
+struct NpcBehaviorRuleCooldown {
+  std::string id;
+  float remaining = 0.0f;
+};
+
+// Per-instance state for the behavior controller. The active movement rule is
+// held here so hysteresis survives across frames; the cooldowns prevent a rule
+// from immediately re-entering after it exits.
+struct NpcBehaviorState {
+  std::string activeRule;
+  float activeSeconds = 0.0f;
+  std::vector<NpcBehaviorRuleCooldown> ruleCooldowns;
+  float repathTimer = 0.0f;
+  bool inCombat = false;
+
+  float CooldownFor(const std::string &ruleId) const {
+    for (const NpcBehaviorRuleCooldown &entry : ruleCooldowns) {
+      if (entry.id == ruleId) return entry.remaining;
+    }
+    return 0.0f;
+  }
+
+  void SetCooldown(const std::string &ruleId, float seconds) {
+    for (NpcBehaviorRuleCooldown &entry : ruleCooldowns) {
+      if (entry.id == ruleId) {
+        entry.remaining = seconds;
+        return;
+      }
+    }
+    ruleCooldowns.push_back({ruleId, seconds});
+  }
+};
+
 // A tag, not a field: "will fight back when attacked". It is what makes a
 // Neutral character defensive rather than harmless. Aggressive characters do
 // not need it, but keeping it on them is harmless and lets the window toggle
@@ -1560,8 +1627,12 @@ struct CombatStrategy {
 };
 
 class CombatStrategyRegistry;
+class BehaviorRegistry;
 struct CombatStrategyRegistryResource {
   const CombatStrategyRegistry *registry = nullptr;
+};
+struct BehaviorRegistryResource {
+  const BehaviorRegistry *registry = nullptr;
 };
 
 // A projectile in flight: the delivery, not the effect. It carries a copy of

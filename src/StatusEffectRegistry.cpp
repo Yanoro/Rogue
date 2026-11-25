@@ -88,6 +88,14 @@ bool StatusEffectRegistry::AddOrReplace(const nlohmann::json &document,
   definition.name = document.value("name", definition.id);
   definition.description = document.value("description", std::string());
   definition.icon = document.value("icon", std::string());
+  if (document.contains("color") && document["color"].is_array() &&
+      (document["color"].size() == 3 || document["color"].size() == 4)) {
+    for (size_t i = 0; i < document["color"].size(); ++i) {
+      definition.color[i] = document["color"][i].get<int>();
+    }
+  }
+  definition.reapplyWarningSeconds =
+      std::max(0.0f, document.value("reapplyWarningSeconds", 0.0f));
   definition.durationSeconds = document.value("duration", 5.0f);
   definition.tickSeconds = document.value("tickSeconds", 1.0f);
   definition.stacking = document.value("stacking", "refresh");
@@ -148,7 +156,10 @@ nlohmann::json StatusEffectRegistry::ToJson(
   j["name"] = definition.name;
   if (!definition.description.empty()) j["description"] = definition.description;
   j["tags"] = definition.tags;
-  if (!definition.icon.empty()) j["icon"] = definition.icon;
+  // Always emit icon so the Content Editor always offers the icon picker.
+  j["icon"] = definition.icon;
+  j["color"] = definition.color;
+  j["reapplyWarningSeconds"] = definition.reapplyWarningSeconds;
   j["duration"] = definition.durationSeconds;
   j["tickSeconds"] = definition.tickSeconds;
   j["stacking"] = definition.stacking;

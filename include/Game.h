@@ -36,6 +36,7 @@
 #include "BodySilhouetteRegistry.h"
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
+#include "BehaviorRegistry.h"
 #include "CombatStrategyRegistry.h"
 #include "SurfaceSystem.h"
 #include "EffectSystem.h"
@@ -320,6 +321,7 @@ private:
   ProjectileRegistry projectileRegistry;
   SkillshotRegistry skillshotRegistry;
   CombatStrategyRegistry combatStrategyRegistry;
+  BehaviorRegistry behaviorRegistry;
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
@@ -334,6 +336,7 @@ private:
   // them afterwards. Brains are separate because a body can have none.
   NpcTemplateRegistry npcTemplateRegistry;
   BrainTemplateRegistry brainTemplateRegistry;
+  std::vector<StartingSkill> playerStartingSkills;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;
@@ -675,6 +678,8 @@ private:
   friend void ApplyEffectAt(flecs::world world, const EffectOrigin &origin,
                             const std::string &effectId, flecs::entity target,
                             GamePosition position);
+  friend void ApplySkillStatus(flecs::entity actor, flecs::entity target,
+                               const SkillDef &def);
   friend class TaskBoardWindow;
   friend class SystemOneWindow;
   friend class VisionChatWindow;
@@ -782,6 +787,14 @@ private:
   std::unique_ptr<InputHandler> inputHandler;
 
   void LoadMap(std::string mapPath, bool spawnNPCs = false);
+  void LoadPlayerTemplate();
+
+  // Behavior controller for skill-driven NPCs. The condition evaluator is
+  // recursive and side-effect free; the updater owns movement/action choice.
+  bool BehaviorConditionMatches(const BehaviorCondition &condition,
+                                flecs::entity self,
+                                flecs::entity target) const;
+  void UpdateNpcBehaviors(float dt);
 
 
   // Opens a read-only window showing the items the entity holds (a Storage
@@ -810,6 +823,8 @@ private:
   // after a skill save so a type/activation change appears immediately; it keeps
   // existing "Always casts" choices and adds new auto-cast defaults.
   void RefreshPlayerSkillBar();
+  // Re-applies a template's body/portrait to every live instance using it.
+  void RefreshNpcTemplateAppearance(const std::string &templateId);
 
   // One NPC through the whole spawn path: resolve the template, create the body
   // and brain (or deliberately no brain), and spawn the authored inventory.
@@ -831,7 +846,8 @@ private:
   bool CellHasSurfaceTag(GamePosition position, const std::string &tag) const;
   void ApplyStatus(flecs::entity target, const std::string &statusId,
                    const EffectOrigin &origin,
-                   float durationOverride = 0.0f);
+                   float durationOverride = 0.0f,
+                   Color calloutColor = Color{0, 0, 0, 0});
   void RemoveStatus(flecs::entity target, const std::string &statusId);
   bool HasStatusTag(flecs::entity target, const std::string &tag) const;
   void ProcessSurfaceTransitions();

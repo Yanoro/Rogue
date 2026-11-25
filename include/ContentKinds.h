@@ -17,6 +17,7 @@ class RigRegistry;
 class MovementRegistry;
 class SkillRegistry;
 class NpcTemplateRegistry;
+class BehaviorRegistry;
 class BrainTemplateRegistry;
 class SurfaceSpriteRegistry;
 class SurfaceRegistry;
@@ -59,6 +60,7 @@ struct World {
   SkillRegistry &skills;
   NpcTemplateRegistry &npcs;
   BrainTemplateRegistry &brains;
+  BehaviorRegistry &behaviors;
   SurfaceSpriteRegistry &surfaceSprites;
   SurfaceRegistry &surfaces;
   StatusEffectRegistry &statusEffects;
@@ -71,6 +73,9 @@ struct World {
   // skills kind uses it to rebuild the player's ability bar immediately; kinds
   // that do not touch per-character state leave it empty.
   std::function<void()> onApplied;
+  // Called after an NPC template is replaced, with its registry id. Live NPCs
+  // spawned from that template need their body/portrait re-applied immediately.
+  std::function<void(const std::string &)> onNpcTemplateApplied;
 };
 
 // One entry in a kind's list.

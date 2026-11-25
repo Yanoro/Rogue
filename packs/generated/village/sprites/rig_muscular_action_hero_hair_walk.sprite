@@ -1,0 +1,149 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  ink = #181819
+  hair_dark = #221a16
+  hair_mid = #3b2c24
+  hair_lit = #594237
+  bandana_dark = #781414
+  bandana_base = #ad2323
+  bandana_lit = #d94141
+}
+
+frame "f1" {
+  // Lowest bob (Y + 1)
+  // Hair outline / volume
+  rect (12,3) (20,6) color=ink
+  rect (11,4) (21,7) color=ink
+  rect (10,6) (12,9) color=ink
+  rect (20,6) (22,9) color=ink
+
+  // Hair fill & texture
+  rect (13,4) (19,5) color=hair_mid
+  pixel (14,3) color=hair_lit
+  pixel (17,3) color=hair_lit
+  pixel (12,5) color=hair_dark
+  pixel (20,5) color=hair_dark
+  rect (11,6) (11,8) color=hair_dark
+  rect (21,6) (21,8) color=hair_dark
+
+  // Red bandana wrap
+  rect (11,7) (21,8) color=bandana_base
+  line (11,9) (21,9) color=bandana_dark
+  line (12,7) (19,7) color=bandana_lit
+  line (11,6) (21,6) color=ink
+  line (11,10) (21,10) color=ink
+
+  // Bandana knot and trailing cloth at side
+  pixel (21,7) color=bandana_lit
+  rect (22,7) (23,8) color=bandana_base
+  pixel (23,9) color=bandana_dark
+  pixel (24,10) color=bandana_dark
+  pixel (22,9) color=ink
+  pixel (24,9) color=ink
+  pixel (24,11) color=ink
+}
+
+frame "f2" {
+  // Base height (Y + 0)
+  // Hair outline / volume
+  rect (12,2) (20,5) color=ink
+  rect (11,3) (21,6) color=ink
+  rect (10,5) (12,8) color=ink
+  rect (20,5) (22,8) color=ink
+
+  // Hair fill & texture
+  rect (13,3) (19,4) color=hair_mid
+  pixel (14,2) color=hair_lit
+  pixel (17,2) color=hair_lit
+  pixel (12,4) color=hair_dark
+  pixel (20,4) color=hair_dark
+  rect (11,5) (11,7) color=hair_dark
+  rect (21,5) (21,7) color=hair_dark
+
+  // Red bandana wrap
+  rect (11,6) (21,7) color=bandana_base
+  line (11,8) (21,8) color=bandana_dark
+  line (12,6) (19,6) color=bandana_lit
+  line (11,5) (21,5) color=ink
+  line (11,9) (21,9) color=ink
+
+  // Bandana knot and trailing cloth at side
+  pixel (21,6) color=bandana_lit
+  rect (22,6) (23,7) color=bandana_base
+  pixel (23,8) color=bandana_dark
+  pixel (24,9) color=bandana_dark
+  pixel (22,8) color=ink
+  pixel (24,8) color=ink
+  pixel (24,10) color=ink
+}
+
+frame "f3" {
+  // Lowest bob (Y + 1)
+  // Hair outline / volume
+  rect (12,3) (20,6) color=ink
+  rect (11,4) (21,7) color=ink
+  rect (10,6) (12,9) color=ink
+  rect (20,6) (22,9) color=ink
+
+  // Hair fill & texture
+  rect (13,4) (19,5) color=hair_mid
+  pixel (14,3) color=hair_lit
+  pixel (17,3) color=hair_lit
+  pixel (12,5) color=hair_dark
+  pixel (20,5) color=hair_dark
+  rect (11,6) (11,8) color=hair_dark
+  rect (21,6) (21,8) color=hair_dark
+
+  // Red bandana wrap
+  rect (11,7) (21,8) color=bandana_base
+  line (11,9) (21,9) color=bandana_dark
+  line (12,7) (19,7) color=bandana_lit
+  line (11,6) (21,6) color=ink
+  line (11,10) (21,10) color=ink
+
+  // Bandana knot and trailing cloth at side
+  pixel (21,7) color=bandana_lit
+  rect (22,7) (23,8) color=bandana_base
+  pixel (23,9) color=bandana_dark
+  pixel (24,10) color=bandana_dark
+  pixel (22,9) color=ink
+  pixel (24,9) color=ink
+  pixel (24,11) color=ink
+}
+
+frame "f4" {
+  // Base height (Y + 0), slight cloth swing
+  // Hair outline / volume
+  rect (12,2) (20,5) color=ink
+  rect (11,3) (21,6) color=ink
+  rect (10,5) (12,8) color=ink
+  rect (20,5) (22,8) color=ink
+
+  // Hair fill & texture
+  rect (13,3) (19,4) color=hair_mid
+  pixel (14,2) color=hair_lit
+  pixel (17,2) color=hair_lit
+  pixel (12,4) color=hair_dark
+  pixel (20,4) color=hair_dark
+  rect (11,5) (11,7) color=hair_dark
+  rect (21,5) (21,7) color=hair_dark
+
+  // Red bandana wrap
+  rect (11,6) (21,7) color=bandana_base
+  line (11,8) (21,8) color=bandana_dark
+  line (12,6) (19,6) color=bandana_lit
+  line (11,5) (21,5) color=ink
+  line (11,9) (21,9) color=ink
+
+  // Bandana knot and trailing cloth at side (shifted trailing tail)
+  pixel (21,6) color=bandana_lit
+  rect (22,6) (23,7) color=bandana_base
+  pixel (23,8) color=bandana_dark
+  pixel (23,9) color=bandana_dark
+  pixel (22,8) color=ink
+  pixel (24,8) color=ink
+  pixel (23,10) color=ink
+}

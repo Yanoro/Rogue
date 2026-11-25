@@ -1,0 +1,14 @@
+{
+  "name": "Bandit",
+  "description": "A melee cutthroat who runs when badly wounded.",
+  "sprite": "zweihander_human_warrior",
+  "disposition": "neutral",
+  "retaliates": true,
+  "behavior": "bandit_melee",
+  "skills": {
+    "slash": {
+      "level": 2
+    }
+  },
+  "portrait": ""
+}

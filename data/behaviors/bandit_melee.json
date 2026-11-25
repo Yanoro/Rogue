@@ -1,0 +1,23 @@
+{
+  "name": "Bandit Melee",
+  "description": "Press the attack until badly wounded, then run.",
+  "maxTargetDistance": 12,
+  "repathSeconds": 0.5,
+  "movement": {
+    "default": { "mode": "chase", "desiredRange": 1, "tolerance": 0 },
+    "rules": [
+      {
+        "id": "low_health_flee",
+        "priority": 100,
+        "enterWhen": { "self.health.pctBelow": 0.30 },
+        "exitWhen": { "self.health.pctAbove": 0.45 },
+        "minDuration": 2.0,
+        "cooldown": 5.0,
+        "policy": { "mode": "flee", "allowActions": false }
+      }
+    ]
+  },
+  "actions": [
+    { "skill": "slash", "priority": 10 }
+  ]
+}

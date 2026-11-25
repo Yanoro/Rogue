@@ -1,0 +1,37 @@
+{
+  "name": "Pounce",
+  "description": "Leap at a target from just outside claw range.",
+  "icon": "",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "baseline": 0,
+  "scale": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 10,
+    "cooldown": 6.0,
+    "range": 3,
+    "gcd": true,
+    "autoCast": false,
+    "requiresTarget": true,
+    "cast": 0,
+    "interruptible": true,
+    "hidden": true
+  }
+}

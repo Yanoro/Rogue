@@ -1,0 +1,73 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  glove_dark = #8a1c14
+  glove_base = #bf2d22
+  glove_light = #e85d43
+}
+
+// Base stand and spring post
+rect (9,28) (22,30) color=ink.base
+rect (10,29) (21,29) color=iron.2
+pixel (11,28) color=iron.4
+pixel (12,28) color=iron.3
+rect (13,24) (18,28) color=ink.base
+rect (14,24) (17,27) color=iron.1
+line (14,25) (17,25) color=iron.3
+line (14,27) (17,27) color=iron.2
+
+// Body & Torso (Burlap/straw bag strapped to iron armature)
+rect (9,12) (22,23) color=ink.base
+rect (10,13) (21,22) color=sand.1
+rect (11,13) (20,21) color=sand.2
+rect (11,14) (15,20) color=sand.3
+
+// Straw texture and wear on torso
+scatter color=sand.4,soil.1 density=0.15 seed=42 cluster=1 inside
+line (11,17) (20,17) color=iron.1
+line (11,18) (20,18) color=iron.0
+pixel (13,17) color=iron.3
+pixel (18,17) color=iron.3
+
+// Head / Helmet (Iron helm with straw showing through face opening)
+rect (10,2) (21,11) color=ink.base
+rect (11,3) (20,10) color=iron.1
+rect (12,3) (19,9) color=iron.2
+line (12,3) (18,3) color=iron.4
+pixel (12,4) color=iron.4
+pixel (19,4) color=iron.1
+
+// Face cut-out showing stuffed straw
+rect (13,6) (18,9) color=ink.base
+rect (14,7) (17,8) color=sand.2
+pixel (14,7) color=sand.4
+pixel (15,7) color=ink.base
+pixel (17,7) color=ink.base
+
+// Neck mounting hinge
+rect (14,11) (17,12) color=ink.base
+rect (15,11) (16,12) color=iron.3
+
+// Left Boxing Glove (viewer's left, raised defensively)
+rect (4,11) (10,18) color=ink.base
+rect (5,12) (9,17) color=glove_base
+rect (5,12) (8,14) color=glove_light
+rect (6,16) (9,17) color=glove_dark
+line (8,18) (11,18) color=ink.base
+line (8,17) (11,17) color=iron.2
+
+// Right Boxing Glove (viewer's right, raised ready)
+rect (21,11) (27,18) color=ink.base
+rect (22,12) (26,17) color=glove_base
+rect (22,12) (24,14) color=glove_light
+rect (23,16) (26,17) color=glove_dark
+line (20,18) (23,18) color=ink.base
+line (20,17) (23,17) color=iron.2
+
+// Highlights and finishing touches
+pixel (13,2) color=iron.4
+pixel (14,2) color=iron.4
+pixel (6,13) color=#ffffff
+pixel (23,13) color=#ffffff

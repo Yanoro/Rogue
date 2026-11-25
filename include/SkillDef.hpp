@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cctype>
 #include <string>
 #include <vector>
@@ -125,6 +126,10 @@ struct SkillActivation {
   // a later slice, the agent) is deciding.
   bool autoCast = false;
 
+  // Creature-only skills stay in the registry and are usable by NPC behaviors,
+  // but do not appear on the player's action bar.
+  bool hidden = false;
+
   // XP granted to the skill itself on a successful use, so an active skill
   // levels by being used exactly the way a passive one levels by being done.
   // 0 disables training for this skill.
@@ -152,6 +157,17 @@ struct SkillActivation {
   // out of range or interrupt it. That is what makes a telegraph a decision
   // rather than a slower button.
   float castSeconds = 0.0f;
+
+  // Maximum tile distance the target may be from the caster while this cast is
+  // running. 0 means "use rangeTiles". The cast is canceled as soon as the
+  // target is farther away, independently of whether the cast could still land.
+  float castRangeTiles = 0.0f;
+
+  // What a canceled cast gives back. These are deliberately independent:
+  // a spell can refund its resource but keep its cooldown, or vice versa.
+  bool refundCooldownOnCancel = false;
+  bool refundResourceOnCancel = false;
+  bool refundGCDOnCancel = false;
 
   // Whether a cast of this skill can be interrupted. Most attacks can; a
   // deliberate "uninterruptible" cast is the exception, and the HUD marks it.
@@ -187,6 +203,15 @@ struct SkillActivation {
   float costAmount = 0.0f;
 
   HeldSkillData held;
+
+  // Status applied to the target when the skill lands. The status definition
+  // owns its effects and tick; the skill only says which id and for how long.
+  std::string applyStatus;
+  float statusDuration = 0.0f;
+  // Optional callout color for this application. When unset, the status
+  // definition's fallback color is used.
+  std::array<int, 4> statusColor = {0, 0, 0, 0};
+  bool hasStatusColor = false;
 
   // SurfaceRegistry id created at the impact tile, if any. The surface owns its
   // own triggers and lifetime; the skill only says where it is born.

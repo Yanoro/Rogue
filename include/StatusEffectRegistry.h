@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -18,6 +19,11 @@ struct StatusEffectDef {
   // IconRegistry id used by the HUD and Content Editor. A status icon is UI art,
   // not a separate sprite registry.
   std::string icon;
+  // Fallback color for sources that are not skills. RGBA, 0..255.
+  std::array<int, 4> color = {225, 235, 255, 255};
+  // Seconds between repeat warning callouts when the status is refreshed. 0
+  // warns on every application; a longer value keeps low-urgency statuses quiet.
+  float reapplyWarningSeconds = 0.0f;
   float durationSeconds = 5.0f;
   // Atomic EffectRegistry ids applied on each tick and at the edges of the
   // status. A tick effect can be damage, healing, another status, or a surface;

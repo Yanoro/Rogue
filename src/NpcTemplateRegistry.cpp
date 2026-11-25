@@ -110,7 +110,15 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
   out.retaliates = document.value("retaliates", false);
   out.attackDamage = document.value("attackDamage", 8.0f);
   out.attackInterval = document.value("attackInterval", 6.0f);
+  out.attackRange = document.value("attackRange", 1.0f);
+  out.attackCastSeconds = document.value("attackCastSeconds", 2.0f);
+  out.attackFirstDelay = document.value("attackFirstDelay", 2.0f);
+  out.attackLabel = document.value("attackLabel", std::string("Strike"));
+  out.trainingDummy = document.value("trainingDummy", false);
+  out.obstacle = document.value("obstacle", false);
+  out.armor = document.value("armor", 0.0f);
   out.combatStrategy = document.value("combatStrategy", std::string());
+  out.behavior = document.value("behavior", std::string());
   for (char &c : out.combatStrategy) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
   }
@@ -123,6 +131,25 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
     Warn("Template '" + out.name + "' has non-positive attackInterval; using 6",
          warnings);
     out.attackInterval = 6.0f;
+  }
+  if (out.attackRange <= 0.0f) {
+    Warn("Template '" + out.name + "' has non-positive attackRange; using 1",
+         warnings);
+    out.attackRange = 1.0f;
+  }
+  if (out.attackCastSeconds < 0.0f) {
+    Warn("Template '" + out.name +
+         "' has negative attackCastSeconds; using 0 (instant)", warnings);
+    out.attackCastSeconds = 0.0f;
+  }
+  if (out.attackFirstDelay < 0.0f) {
+    Warn("Template '" + out.name +
+         "' has negative attackFirstDelay; using 0", warnings);
+    out.attackFirstDelay = 0.0f;
+  }
+  if (out.armor < 0.0f) {
+    Warn("Template '" + out.name + "' has negative armor; using 0", warnings);
+    out.armor = 0.0f;
   }
 
   if (document.contains("slots")) {
@@ -261,7 +288,15 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   document["retaliates"] = definition.retaliates;
   document["attackDamage"] = definition.attackDamage;
   document["attackInterval"] = definition.attackInterval;
+  document["attackRange"] = definition.attackRange;
+  document["attackCastSeconds"] = definition.attackCastSeconds;
+  document["attackFirstDelay"] = definition.attackFirstDelay;
+  document["attackLabel"] = definition.attackLabel;
+  document["trainingDummy"] = definition.trainingDummy;
+  document["obstacle"] = definition.obstacle;
+  document["armor"] = definition.armor;
   document["combatStrategy"] = definition.combatStrategy;
+  document["behavior"] = definition.behavior;
   if (!definition.slots.empty()) {
     nlohmann::json slots = nlohmann::json::array();
     for (const SlotSpec& slot : definition.slots) {

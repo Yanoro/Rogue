@@ -45,6 +45,7 @@
 #include "InteractionRegistry.h"
 #include "PathFinding.h"
 #include "EffectResolver.hpp"
+#include "EffectSystem.h"
 #include "CombatResolver.hpp"
 #include "Equipment.hpp"
 #include "EquipmentRuntime.hpp"
@@ -383,6 +384,30 @@ std::string CooldownLabel(float seconds) {
 // It reports whether the skill was used and a human-readable line; it logs
 // nothing itself, because auto-cast has to stay silent when an attack is merely
 // out of range and a manual use has to say why it did nothing.
+// Gives back only the parts of a canceled skill the content asked to refund.
+// The skill id is empty for inline NPC strikes, which have no cooldown/resource
+// ledger to refund.
+void RefundCanceledCast(flecs::entity actor, const CastAction &cast) {
+  if (!actor.is_alive() || cast.skillId.empty()) return;
+  if (cast.refundCooldownOnCancel) {
+    if (SkillCooldowns *cooldowns = actor.get_mut<SkillCooldowns>()) {
+      cooldowns->Reset(cast.skillId);
+    }
+  }
+  if (cast.refundGCDOnCancel) {
+    if (GlobalCooldown *gcd = actor.get_mut<GlobalCooldown>()) {
+      gcd->remaining = 0.0f;
+    }
+  }
+  if (cast.refundResourceOnCancel) {
+    const SkillDef *def = FindSkillDef(actor.world(), cast.skillId);
+    if (def != nullptr && !def->activation.costResource.empty()) {
+      Resources::Grant(actor, def->activation.costResource,
+                       def->activation.costAmount);
+    }
+  }
+}
+
 // Cancels a cast on `target`. Returns true when there was an interruptible cast
 // to cancel.
 //
@@ -396,6 +421,11 @@ bool InterruptCast(flecs::entity target) {
     return false;
   }
   const flecs::entity action = casting->actionEntity;
+  if (action.is_alive()) {
+    if (const CastAction* cast = action.get<CastAction>()) {
+      RefundCanceledCast(target, *cast);
+    }
+  }
   target.remove<Casting>();
   SpawnFloatingCallout(target, "Interrupted!",
                        DEFAULT_INTERRUPT_CALL_OUT_COLOR);
@@ -418,14 +448,19 @@ bool InterruptCast(flecs::entity target) {
 // Cancels a committed cast for a reason other than damage: the target moved out
 // of range or vanished. This is intentionally not gated on `interruptible` --
 // interruptibility is about damage, while an invalid target is a hard range
-// requirement. The cooldown already started at cast start and is not refunded,
-// matching damage interrupts and the existing "a cast spends the skill" rule.
+// requirement. Cooldown, resource and GCD refunds are applied when the skill
+// opts into them; otherwise the committed costs remain spent.
 bool CancelCast(flecs::entity target, const std::string &callout) {
   Casting *casting = target.get_mut<Casting>();
   if (casting == nullptr) {
     return false;
   }
   const flecs::entity action = casting->actionEntity;
+  if (action.is_alive()) {
+    if (const CastAction* cast = action.get<CastAction>()) {
+      RefundCanceledCast(target, *cast);
+    }
+  }
   target.remove<Casting>();
   SpawnFloatingCallout(target, callout, DEFAULT_INTERRUPT_CALL_OUT_COLOR);
   if (const Busy *busy = target.get<Busy>()) {
@@ -735,6 +770,28 @@ bool SpawnSkillshot(flecs::entity actor, const SkillDef &def, float damage,
 // cooldown and GCD start immediately, the caster is marked Casting, and an
 // action entity carries the timer. CastResolutionSystem applies the effect when
 // the timer completes.
+void ApplySkillStatus(flecs::entity actor, flecs::entity target,
+                          const SkillDef &def) {
+  if (def.activation.applyStatus.empty() || !target.is_alive()) return;
+  auto runtime = actor.world().get<GameRuntimeResource>();
+  if (!runtime || runtime->game == nullptr) return;
+  Color calloutColor{0, 0, 0, 0};
+  if (def.activation.hasStatusColor) {
+    calloutColor = Color{
+        static_cast<unsigned char>(def.activation.statusColor[0]),
+        static_cast<unsigned char>(def.activation.statusColor[1]),
+        static_cast<unsigned char>(def.activation.statusColor[2]),
+        static_cast<unsigned char>(def.activation.statusColor[3])};
+  }
+  runtime->game->ApplyStatus(
+      target, def.activation.applyStatus,
+      MakeEffectOrigin(actor, def.id, {}),
+      def.activation.statusDuration > 0.0f
+          ? def.activation.statusDuration
+          : 0.0f,
+      calloutColor);
+}
+
 SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                          flecs::entity target, bool secondPerson,
                          bool announce, Vector2 direction) {
@@ -750,6 +807,11 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   }
   if (!SkillIsActivatable(def->type)) {
     outcome.message = def->name + " is a passive skill and has no button.";
+    return outcome;
+  }
+  const SkillBlock *known = actor.get<SkillBlock>();
+  if (known == nullptr || !known->Knows(skillId)) {
+    outcome.message = "You do not know " + def->name + ".";
     return outcome;
   }
   if (def->activation.held.enabled) {
@@ -894,6 +956,14 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                           def->activation.interruptible, secondPerson, aim};
     committed.requiresTarget = def->activation.requiresTarget;
     committed.rangeTiles = def->activation.rangeTiles;
+    committed.castRangeTiles = def->activation.castRangeTiles > 0.0f
+                                   ? def->activation.castRangeTiles
+                                   : def->activation.rangeTiles;
+    committed.refundCooldownOnCancel =
+        def->activation.refundCooldownOnCancel;
+    committed.refundResourceOnCancel =
+        def->activation.refundResourceOnCancel;
+    committed.refundGCDOnCancel = def->activation.refundGCDOnCancel;
     committed.surfaceId = def->activation.surface;
     committed.surfaceDuration = def->activation.surfaceDuration;
     committed.surfaceRadius = def->activation.surfaceRadius;
@@ -964,6 +1034,7 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   if (def->activation.requiresTarget) {
     outcome.message = ApplyHit(actor, target, baseDamage, skillId, def->name,
                                secondPerson, def->activation.interrupts);
+    ApplySkillStatus(actor, target, *def);
   } else {
     outcome.message =
         actorLabel + (secondPerson ? " use " : " uses ") + def->name + ".";
@@ -1123,22 +1194,55 @@ void Game::RefreshPlayerSkillBar() {
   SkillBar bar;
   AutoCastSkills autoCast;
   const AutoCastSkills *previous = playerEntity.get<AutoCastSkills>();
-  for (const SkillDef *def : skillRegistry.GetAll()) {
-    if (!SkillIsActivatable(def->type)) {
-      continue;
-    }
-    bar.ids.push_back(def->id);
-    // Preserve the human's "Always casts" choices exactly. The component only
-    // records ON skills, so re-seeding from the authored autoCast default here
-    // would turn the basic attack back on after the player deliberately turned
-    // it off, every time any skill was saved.
-    if (previous != nullptr && previous->Has(def->id)) {
-      autoCast.ids.push_back(def->id);
+  const SkillBlock *known = playerEntity.get<SkillBlock>();
+  if (known != nullptr) {
+    for (const SkillValue &value : known->values) {
+      if (value.level <= 0) continue;
+      const SkillDef *def = skillRegistry.Get(value.id);
+      if (def == nullptr || !SkillIsActivatable(def->type) ||
+          def->activation.hidden) {
+        continue;
+      }
+      bar.ids.push_back(def->id);
+      // Preserve the human's "Always casts" choices exactly. The component only
+      // records ON skills, so re-seeding from the authored autoCast default here
+      // would turn the basic attack back on after the player deliberately turned
+      // it off, every time any skill is saved.
+      if (previous != nullptr && previous->Has(def->id)) {
+        autoCast.ids.push_back(def->id);
+      }
     }
   }
 
   playerEntity.set<SkillBar>(std::move(bar));
   playerEntity.set<AutoCastSkills>(std::move(autoCast));
+}
+
+void Game::RefreshNpcTemplateAppearance(const std::string &templateId) {
+  const NpcTemplate *definition = npcTemplateRegistry.Get(templateId);
+  if (definition == nullptr) {
+    return;
+  }
+  std::vector<flecs::entity> targets;
+  ecs.filter<NpcTemplateId>().each(
+      [&](flecs::entity entity, NpcTemplateId &reference) {
+        if (reference.id == templateId && entity.is_alive()) {
+          targets.push_back(entity);
+        }
+      });
+  for (flecs::entity entity : targets) {
+    // Remove first: GiveBody only attaches a Sprite when the new reference
+    // resolves. Without this, a sprite changed to empty or invalid would leave
+    // the old picture on the live entity.
+    entity.remove<Sprite>();
+    GiveBody(entity, &raceRegistry, definition->race, definition->slots,
+             definition->sprite, resourceManager, debugLog.get());
+    if (definition->portrait.empty()) {
+      entity.remove<Portrait>();
+    } else {
+      entity.set<Portrait>({definition->portrait});
+    }
+  }
 }
 
 bool Game::ActivatePlayerSkill(int index, Vector2 direction) {
@@ -1178,14 +1282,84 @@ int Game::RunCombatSelfCheck() {
   ecs.filter<GamePosition, ResourcePools>().each(
       [&](flecs::entity entity, const GamePosition &, ResourcePools &) {
         Resources::EnsureInitialized(entity);
+        const NpcDisposition* disposition = entity.get<NpcDisposition>();
         if (!dummy.is_alive() && entity.has<TrainingDummy>() &&
-            !entity.has<Aggressive>()) {
+            (disposition == nullptr ||
+             disposition->value == Disposition::Neutral)) {
           dummy = entity;
         }
       });
   if (!dummy.is_alive()) {
     std::cout << "combat-check: this map has no training dummy\n";
     return 1;
+  }
+
+  // The three dummies are NPC templates now. Verify the behaviours that used
+  // to live on their object templates survived the conversion.
+  bool dummyNpcTemplates = false;
+  {
+    bool training = false;
+    bool armoured = false;
+    bool sparring = false;
+    ecs.filter<ResourcePools>().each(
+        [&](flecs::entity entity, ResourcePools&) {
+          if (!entity.has<TrainingDummy>()) return;
+          const bool health500 = Resources::Max(entity, "health") == 500.0f;
+          const NpcDisposition* disposition = entity.get<NpcDisposition>();
+          const Aggressive* aggressive = entity.get<Aggressive>();
+          if (health500 && entity.has<Armor>() &&
+              entity.get<Armor>()->value == 4.0f) {
+            armoured = true;
+          }
+          if (health500 && disposition != nullptr &&
+              disposition->value == Disposition::Neutral &&
+              !entity.has<Armor>()) {
+            training = true;
+          }
+          if (health500 && aggressive != nullptr &&
+              aggressive->label == "Straw Strike" &&
+              aggressive->castSeconds == 2.0f && aggressive->range == 1.0f) {
+            sparring = true;
+          }
+        });
+    dummyNpcTemplates = training && armoured && sparring;
+  }
+
+  // A template sprite edit must refresh the live NPC immediately, not on the
+  // next map load. Exercise the same registry + refresh path used by the
+  // Content Editor, then restore the template.
+  bool npcSpriteRefresh = false;
+  {
+    const NpcTemplateId *reference = dummy.get<NpcTemplateId>();
+    const NpcTemplate *definition =
+        reference != nullptr ? npcTemplateRegistry.Get(reference->id) : nullptr;
+    if (definition != nullptr) {
+      const std::string originalSprite = definition->sprite;
+      const std::string changedSprite =
+          originalSprite == "training_dummy" ? "armored_training_dummy"
+                                             : "training_dummy";
+      nlohmann::json document = npcTemplateRegistry.ToJson(*definition);
+      document["sprite"] = changedSprite;
+      std::string error;
+      std::vector<std::string> warnings;
+      if (npcTemplateRegistry.AddOrReplace(document, "(combat check)", &error,
+                                           &warnings)) {
+        RefreshNpcTemplateAppearance(reference->id);
+        const Sprite *changed = dummy.get<Sprite>();
+        const bool changedApplied =
+            changed != nullptr &&
+            changed->path.find(changedSprite) != std::string::npos;
+        document["sprite"] = originalSprite;
+        if (npcTemplateRegistry.AddOrReplace(document, "(combat check)",
+                                             &error, &warnings)) {
+          RefreshNpcTemplateAppearance(reference->id);
+          const Sprite *restored = dummy.get<Sprite>();
+          npcSpriteRefresh =
+              changedApplied && restored != nullptr &&
+              restored->path.find(originalSprite) != std::string::npos;
+        }
+      }
+    }
   }
 
   // Stand next to it, because every attack is a range check and a check that
@@ -1313,6 +1487,73 @@ int Game::RunCombatSelfCheck() {
       }
       clearCooldowns();
     }
+  }
+
+  // An inline NPC strike uses the same cast-range contract now. The empty skill
+  // id no longer exempts it from the range-cancel system.
+  bool inlineCastRangeCanceled = false;
+  {
+    const GamePosition originalPlayer = *playerEntity.get<GamePosition>();
+    flecs::entity action =
+        ecs.entity()
+            .set<ActionTimer>({1.0f})
+            .set<ActionActor>({dummy})
+            .set<ActionTarget>({playerEntity});
+    CastAction inlineCast;
+    inlineCast.label = "Inline Cast";
+    inlineCast.requiresTarget = true;
+    inlineCast.rangeTiles = 1.0f;
+    inlineCast.castRangeTiles = 1.0f;
+    action.set<CastAction>(inlineCast);
+    dummy.set<Casting>({action, std::string(), "Inline Cast", true});
+    const GamePosition far = {beside.x + 6, beside.y + 6};
+    playerEntity.set<GamePosition>(far);
+    if (map != nullptr) {
+      playerEntity.set<ScreenPosition>(
+          map->GameCoordsToScreenCoords(far.x, far.y));
+    }
+    ecs.progress();
+    inlineCastRangeCanceled = !dummy.has<Casting>();
+    playerEntity.set<GamePosition>(originalPlayer);
+    if (map != nullptr) {
+      playerEntity.set<ScreenPosition>(map->GameCoordsToScreenCoords(
+          originalPlayer.x, originalPlayer.y));
+    }
+  }
+
+  // Refund policy is independent per cost. Synthetic cast so the check does not
+  // need a second content skill with refunds enabled.
+  bool refundsOnCancel = false;
+  {
+    flecs::entity action =
+        ecs.entity()
+            .set<ActionTimer>({1.0f})
+            .set<ActionActor>({playerEntity})
+            .set<ActionTarget>({dummy});
+    CastAction cast;
+    cast.skillId = "heavy_swing";
+    cast.label = "Refund Test";
+    cast.requiresTarget = true;
+    cast.rangeTiles = 1.0f;
+    cast.castRangeTiles = 1.0f;
+    cast.refundCooldownOnCancel = true;
+    cast.refundGCDOnCancel = true;
+    action.set<CastAction>(cast);
+    playerEntity.set<Casting>({action, cast.skillId, cast.label, true});
+    if (SkillCooldowns *cooldowns = playerEntity.get_mut<SkillCooldowns>()) {
+      cooldowns->Start(cast.skillId, 5.0f);
+    }
+    if (GlobalCooldown *gcd = playerEntity.get_mut<GlobalCooldown>()) {
+      gcd->remaining = 1.0f;
+    }
+    const bool canceled = CancelCast(playerEntity, "Refund Test");
+    const SkillCooldowns *cooldowns = playerEntity.get<SkillCooldowns>();
+    const GlobalCooldown *gcd = playerEntity.get<GlobalCooldown>();
+    refundsOnCancel =
+        canceled && cooldowns != nullptr && gcd != nullptr &&
+        cooldowns->RemainingFor(cast.skillId) <= 0.0f &&
+        gcd->remaining <= 0.0f && !playerEntity.has<Casting>();
+    clearCooldowns();
   }
 
   // A movement-locked cast is canceled by resuming movement. Synthetic because
@@ -1800,6 +2041,98 @@ int Game::RunCombatSelfCheck() {
     RemoveSurface(beside);
   }
 
+  // Behavior stress check: activate the test mobs that the map spawned and
+  // verify the controller enters combat, uses a skill, and switches movement
+  // policy from live resource state.
+  const SkillBlock *playerSkills = playerEntity.get<SkillBlock>();
+  const bool playerSkillOwnership =
+      playerSkills != nullptr && playerSkills->Knows("attack") &&
+      playerSkills->Knows("fireball") && !playerSkills->Knows("claw") &&
+      !playerSkills->Knows("bolt");
+
+  bool behaviorWolf = false;
+  bool behaviorBanditFlee = false;
+  bool behaviorMageLowMana = false;
+  bool behaviorZombieGrab = false;
+  bool statusCallout = false;
+  {
+    auto findMob = [&](const std::string &templateId) {
+      flecs::entity found = flecs::entity::null();
+      ecs.filter<NpcTemplateId>().each(
+          [&](flecs::entity entity, NpcTemplateId &reference) {
+            if (!found.is_alive() && reference.id == templateId) {
+              found = entity;
+            }
+          });
+      return found;
+    };
+    auto makeAggressive = [](flecs::entity entity) {
+      NpcDisposition *disposition = entity.get_mut<NpcDisposition>();
+      if (disposition != nullptr) disposition->value = Disposition::Aggressive;
+    };
+
+    flecs::entity wolf = findMob("grey_wolf");
+    if (wolf.is_alive()) {
+      makeAggressive(wolf);
+      ecs.progress();
+      const NpcBehaviorState *state = wolf.get<NpcBehaviorState>();
+      const SkillCooldowns *cooldowns = wolf.get<SkillCooldowns>();
+      behaviorWolf =
+          state != nullptr && state->inCombat && cooldowns != nullptr &&
+          (cooldowns->RemainingFor("pounce") > 0.0f ||
+           cooldowns->RemainingFor("claw") > 0.0f);
+    }
+
+    flecs::entity zombie = findMob("zombie");
+    if (zombie.is_alive()) {
+      makeAggressive(zombie);
+      const GamePosition originalPlayer = *playerEntity.get<GamePosition>();
+      const GamePosition adjacent = {11, 7};
+      playerEntity.set<GamePosition>(adjacent);
+      if (map != nullptr) {
+        playerEntity.set<ScreenPosition>(
+            map->GameCoordsToScreenCoords(adjacent.x, adjacent.y));
+      }
+      ecs.progress();
+      const StatusEffects *statuses = playerEntity.get<StatusEffects>();
+      behaviorZombieGrab =
+          statuses != nullptr && statuses->Has("immobilized");
+      ecs.filter<FloatingText>().each(
+          [&](flecs::entity, const FloatingText &floating) {
+            if (floating.target == playerEntity &&
+                floating.text == "Immobilized" && floating.color.a > 0) {
+              statusCallout = true;
+            }
+          });
+      playerEntity.set<GamePosition>(originalPlayer);
+      if (map != nullptr) {
+        playerEntity.set<ScreenPosition>(
+            map->GameCoordsToScreenCoords(originalPlayer.x, originalPlayer.y));
+      }
+    }
+
+    flecs::entity bandit = findMob("bandit");
+    if (bandit.is_alive()) {
+      makeAggressive(bandit);
+      const std::string vital = Resources::PrimaryVital(bandit);
+      Resources::Set(bandit, vital, Resources::Max(bandit, vital) * 0.2f);
+      ecs.progress();
+      const NpcBehaviorState *state = bandit.get<NpcBehaviorState>();
+      behaviorBanditFlee =
+          state != nullptr && state->activeRule == "low_health_flee";
+    }
+
+    flecs::entity mage = findMob("mage");
+    if (mage.is_alive()) {
+      makeAggressive(mage);
+      Resources::Set(mage, "mana", 0.0f);
+      ecs.progress();
+      const NpcBehaviorState *state = mage.get<NpcBehaviorState>();
+      behaviorMageLowMana =
+          state != nullptr && state->activeRule == "low_mana_melee";
+    }
+  }
+
   // Print the combat lines the two calls produced, so the output shows the same
   // text a player would read in the Log window.
   if (debugLog) {
@@ -1837,6 +2170,8 @@ int Game::RunCombatSelfCheck() {
             << " (expected 0: cooldown)\n";
   std::cout << "combat-check: cast started=" << castStarted
             << " resolved=" << castResolved
+            << " inline-range-cancel=" << inlineCastRangeCanceled
+            << " refunds=" << refundsOnCancel
             << " range-indicator=" << castRangeIndicator
             << " range-cancel-started=" << castRangeStarted
             << " range-canceled=" << castRangeCanceled
@@ -1870,6 +2205,14 @@ int Game::RunCombatSelfCheck() {
   std::cout << "combat-check: water-ball used=" << waterBallUsed
             << " surface=" << waterBallSurface
             << " abilities=" << surfaceAbilities << "\n";
+  std::cout << "combat-check: dummy-templates=" << dummyNpcTemplates
+            << " sprite-refresh=" << npcSpriteRefresh << "\n";
+  std::cout << "combat-check: behavior-wolf=" << behaviorWolf
+            << " behavior-bandit-flee=" << behaviorBanditFlee
+            << " behavior-mage-low-mana=" << behaviorMageLowMana
+            << " behavior-zombie-grab=" << behaviorZombieGrab
+            << " status-callout=" << statusCallout
+            << " player-skills=" << playerSkillOwnership << "\n";
   std::cout << "combat-check: surfaces loaded=" << surfaceDefinitionsReady
             << " sprites=" << surfaceSpritesReady
             << " enter-damage=" << surfaceEnterDamage
@@ -1884,6 +2227,7 @@ int Game::RunCombatSelfCheck() {
   const bool ok = first && !second && healthAfter < healthBefore &&
                   castStarted && castResolved && !playerEntity.has<Casting>() &&
                   castRangeIndicator && castRangeStarted && castRangeCanceled &&
+                  inlineCastRangeCanceled && refundsOnCancel &&
                   movementCanceled && slidingSurvives && kickUsed && interrupted &&
                   fireballUsed && fireballHit && iceUsed && iceHit &&
                   iceCooldownClear && npcSpawned && npcRetaliated &&
@@ -1893,6 +2237,9 @@ int Game::RunCombatSelfCheck() {
                   corpseSpawned && corpseNonInteractable && corpseHoldsLoot &&
                   corpseHasDeathSprite && deathIconSwitch &&
                   iconRegistryReady && iconFallback &&
+                  dummyNpcTemplates && npcSpriteRefresh &&
+                  behaviorWolf && behaviorBanditFlee && behaviorMageLowMana &&
+                  behaviorZombieGrab && statusCallout && playerSkillOwnership &&
                   surfaceDefinitionsReady && surfaceSpritesReady &&
                   surfaceEnterDamage && surfaceStayDamage &&
                   surfaceAppliedStatus && surfaceReaction &&

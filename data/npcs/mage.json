@@ -1,0 +1,28 @@
+{
+  "name": "Mage",
+  "description": "A ranged caster who kites until mana runs dry.",
+  "sprite": "purple_wizard",
+  "disposition": "neutral",
+  "retaliates": true,
+  "behavior": "mage_kiter",
+  "skills": {
+    "bolt": {
+      "level": 2
+    }
+  },
+  "portrait": "",
+  "resources": [
+    {
+      "id": "health",
+      "vital": true,
+      "primary": true,
+      "max": 60
+    },
+    {
+      "id": "mana",
+      "vital": false,
+      "primary": false,
+      "max": 50
+    }
+  ]
+}

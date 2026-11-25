@@ -1083,6 +1083,13 @@ void Game::handleInput() {
   if (const Casting *casting = playerEntity.get<Casting>()) {
     suppressMovement = casting->movementLocked && !casting->movementInputArmed;
   }
+  if (HasStatusTag(playerEntity, "immobilized")) {
+    suppressMovement = true;
+    playerEntity.remove<MOVE_THROUGH_PATH_ACTION>();
+    if (Velocity *velocity = playerEntity.get_mut<Velocity>()) {
+      *velocity = {0.0f, 0.0f};
+    }
+  }
   if (!suppressMovement) {
     for (Command *cmd : commands) {
       if (cmd) {
@@ -1362,6 +1369,35 @@ void Game::BeginSpriteGap(const Blueprint &design, const MissingMaterial &gap,
   }
 }
 
+void Game::LoadPlayerTemplate() {
+  playerStartingSkills.clear();
+  const std::string path = Settings().content.player;
+  if (path.empty()) return;
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    if (debugLog) {
+      debugLog->LogWarning("Player template not found: " + path +
+                           "; the player gets only the universal attack.");
+    }
+    return;
+  }
+  nlohmann::json document;
+  try {
+    file >> document;
+  } catch (const std::exception &e) {
+    if (debugLog) {
+      debugLog->LogWarning("Player template " + path + " is not JSON: " +
+                           e.what());
+    }
+    return;
+  }
+  const auto warn = [this](const std::string &message) {
+    if (debugLog) debugLog->LogWarning(message);
+    else std::cerr << message << std::endl;
+  };
+  ParseStartingSkills(document["skills"], "player", playerStartingSkills, warn);
+}
+
 void Game::LoadContentOverrides() {
   const GameSettings &settings = Settings();
   const std::filesystem::path root = settings.content.editor;
@@ -1530,6 +1566,7 @@ void Game::LoadContentOverrides() {
                         label + " override(s) applied");
     }
   };
+  loadRegistryOverrides(root / "behaviors", "behavior", behaviorRegistry);
   loadRegistryOverrides(root / "npcs", "npc template", npcTemplateRegistry);
   loadRegistryOverrides(root / "brains", "brain", brainTemplateRegistry);
   loadRegistryOverrides(root / "icons", "icon", iconRegistry);

@@ -1157,3 +1157,158 @@ headlessly.
 ## Movement-locked casting
 
 See [cast-movement-lock.md](cast-movement-lock.md): a cast started while moving ignores the already-held movement key until it returns to neutral, then new movement cancels it.
+
+---
+
+## 26. Dummy NPCs and cast-range/refund controls
+
+### 26.1 Dummies are NPC templates
+
+`Training Dummy`, `Armoured Dummy` and `Sparring Dummy` now live in
+`data/npcs/*.json`. The training and oakhaven maps spawn them through their
+`npcs` arrays; the old object templates are retained as legacy definitions but
+are no longer used by those maps.
+
+The NPC template carries the dummy-specific fields:
+
+- `trainingDummy` — adds `TrainingDummy`, so damage resets the dummy instead of
+  killing it;
+- `obstacle` — adds the same solid `Obstacle` the object form had;
+- `armor` — adds `Armor`; the armoured dummy uses 4;
+- `attackRange`, `attackCastSeconds`, `attackFirstDelay` and `attackLabel` — the
+  sparring dummy's authored strike profile;
+- `resources` with Health 500 preserves the old health pool.
+
+Disposition is authored as `neutral`/`aggressive`; the Content Editor now draws
+that field as a dropdown containing both values.
+
+### 26.2 Cast range
+
+Cast-time skills have a new `castRange` field, measured in **tiles**. It is the
+maximum distance the target may be from the caster while the cast is running.
+`0` means “use the skill's activation range”.
+
+The value is copied into `CastAction` at cast start. `CastRangeCancelSystem`
+checks it every frame for every targeted cast, including inline NPC strikes such
+as the wolf's and the sparring dummy's. If the target is farther away, the cast
+is canceled immediately. Target loss still cancels regardless.
+
+### 26.3 Refunds
+
+A skill can independently opt into refunding:
+
+- `refundCooldownOnCancel`;
+- `refundResourceOnCancel`;
+- `refundGCDOnCancel`.
+
+The same refund path runs for movement cancellation, range cancellation, target
+loss and damage interrupts. The skill's own cooldown entry is reset, the spent
+resource is granted back, and the global cooldown is cleared only when the
+corresponding flag is true. Inline NPC strikes have no skill ledger and do not
+refund.
+
+All three fields are editable in the Content Editor and round-trip through
+`data/skills/*.json`.
+
+### 26.4 Verification
+
+The combat check verifies the dummy template conversion, inline cast-range
+cancellation, and cooldown/GCD refunding:
+
+```text
+combat-check: ... inline-range-cancel=1 refunds=1
+combat-check: dummy-templates=1
+combat-check: OK
+```
+
+### 26.5 Live NPC appearance refresh
+
+Every NPC spawned from a template carries `NpcTemplateId`. Saving an NPC
+template in the Content Editor now calls `Game::RefreshNpcTemplateAppearance` for
+that template id. Live instances have their old `Sprite` removed and their body,
+sprite and portrait re-applied through `GiveBody`, so a sprite change is visible
+on the next frame rather than after a map reload.
+
+The refresh is tested by changing a live dummy's template sprite, re-applying it,
+and confirming the entity's `Sprite` path changed and then restored:
+
+```text
+combat-check: dummy-templates=1 sprite-refresh=1
+```
+
+---
+
+## 27. NPC behavior
+
+Skill-driven NPC combat behavior is documented separately in
+[npc-behavior-system.md](npc-behavior-system.md). It covers movement policies,
+reactive health/resource rules, condition syntax, strict action priority, the
+four stress-test archetypes, and the Content Editor support.
+
+---
+
+## 28. Character skills and status feedback
+
+### 28.1 Skill ownership
+
+`SkillBlock` is now the authoritative list of skills a character knows. A missing
+entry means "does not have this skill"; a level-0 entry is a known placeholder
+that cannot be used. `UseSkill` and the player ability bar both require a
+positive level.
+
+The player's starting kit is [data/player.json](../data/player.json), loaded
+through `content.player` and the same `skills` syntax as NPC templates. It grants
+the current non-mob active skills: attack, heavy swing, kick, power strike,
+fireball, ice lance, water ball and running.
+
+The basic attack is universal: `GiveUniversalSkills` gives every character
+attack at level 1 before its template grants anything else. NPC templates grant
+only the skills they list; older NPC templates with no skills therefore end up
+with the basic attack alone, as requested.
+
+Profession/passive skills are not universal and are intended to be learned
+separately later.
+
+### 28.2 Status callouts
+
+Applying a status now spawns a plain floating text with the status display name
+over the target.
+
+- A skill's `applyStatus.color` is used when present.
+- Otherwise the status definition's `color` is the fallback.
+- `reapplyWarningSeconds` on the status definition controls how often a refresh
+  may repeat the callout. `0` warns on every application; a larger value keeps
+  low-urgency statuses quiet.
+- Reapplying the same status refreshes an existing same-text callout instead of
+  stacking duplicate text.
+
+RGBA arrays are used in JSON, e.g.:
+
+```json
+"applyStatus": {
+  "id": "immobilized",
+  "duration": 5.0,
+  "color": [200, 140, 255, 255]
+}
+```
+
+### 28.3 Status HUD and editor
+
+The combat HUD's player and target portrait panels now show active status icons
+below the portrait:
+
+- 20 px icons in application order;
+- a `MM:SS` countdown below each icon;
+- tooltip with the status name;
+- missing/empty icons fall back to the registry's missing icon.
+
+`StatusEffectRegistry::ToJson` always emits `icon`, even when empty, so the
+Content Editor always offers the icon picker for a status. Status definitions
+also expose `color` and `reapplyWarningSeconds` in the same generic form.
+
+### 28.4 Verification
+
+```text
+combat-check: ... status-callout=1 player-skills=1
+combat-check: OK
+```

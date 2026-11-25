@@ -1,0 +1,18 @@
+{
+  "name": "Armoured Dummy",
+  "description": "A training post in a battered mail coat. The same blows, noticeably less of them land.",
+  "sprite": "armored_training_dummy",
+  "portrait": "training_dummy",
+  "disposition": "neutral",
+  "trainingDummy": true,
+  "obstacle": true,
+  "armor": 4,
+  "resources": [
+    {
+      "id": "health",
+      "vital": true,
+      "primary": true,
+      "max": 500
+    }
+  ]
+}

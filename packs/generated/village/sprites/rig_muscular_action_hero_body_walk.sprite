@@ -1,0 +1,155 @@
+sprite 32x32
+kind object
+material sand
+
+frame "f1" {
+  // Outline & Torso Base (Bob lowest: y=12..22)
+  rect (10,12) (22,22) color=ink.base
+  rect (11,13) (21,21) color=sand.1
+
+  // Shoulder and trap definition
+  pixel (10,12) color=#00000000
+  pixel (22,12) color=#00000000
+  rect (13,12) (19,13) color=sand.2
+
+  // Broad Chest / Pecs
+  rect (11,14) (15,16) color=sand.3
+  rect (17,14) (21,16) color=sand.2
+  // Pec underline & sternum shadow
+  line (11,17) (15,17) color=sand.0
+  line (17,17) (21,17) color=sand.0
+  line (16,14) (16,17) color=sand.0
+  // Highlights on upper pecs
+  line (12,14) (14,14) color=sand.4
+
+  // Six-pack Abs & Obliques
+  line (16,18) (16,20) color=sand.0
+  line (13,19) (15,19) color=sand.0
+  line (17,19) (19,19) color=sand.0
+  rect (13,18) (15,18) color=sand.2
+  rect (17,18) (19,18) color=sand.1
+  rect (13,20) (15,20) color=sand.2
+  rect (17,20) (19,20) color=sand.1
+  line (12,18) (12,20) color=sand.0
+  line (20,18) (20,20) color=sand.0
+
+  // Dark leather belt & buckle
+  rect (11,21) (21,22) color=soil.0
+  rect (14,21) (17,22) color=iron.3
+  pixel (15,21) color=iron.4
+  pixel (16,22) color=iron.1
+}
+
+frame "f2" {
+  // Outline & Torso Base (Bob rising: y=11..21)
+  rect (10,11) (22,21) color=ink.base
+  rect (11,12) (21,20) color=sand.1
+
+  // Shoulder and trap definition
+  pixel (10,11) color=#00000000
+  pixel (22,11) color=#00000000
+  rect (13,11) (19,12) color=sand.2
+
+  // Broad Chest / Pecs
+  rect (11,13) (15,15) color=sand.3
+  rect (17,13) (21,15) color=sand.2
+  // Pec underline & sternum shadow
+  line (11,16) (15,16) color=sand.0
+  line (17,16) (21,16) color=sand.0
+  line (16,13) (16,16) color=sand.0
+  // Highlights on upper pecs
+  line (12,13) (14,13) color=sand.4
+
+  // Six-pack Abs & Obliques (slight weight shift right)
+  line (16,17) (16,19) color=sand.0
+  line (13,18) (15,18) color=sand.0
+  line (17,18) (19,18) color=sand.0
+  rect (13,17) (15,17) color=sand.2
+  rect (17,17) (19,17) color=sand.1
+  rect (13,19) (15,19) color=sand.2
+  rect (17,19) (19,19) color=sand.1
+  line (12,17) (12,19) color=sand.0
+  line (20,17) (20,19) color=sand.0
+
+  // Dark leather belt & buckle (angled slightly for right hip lift)
+  rect (11,20) (21,21) color=soil.0
+  rect (15,20) (18,21) color=iron.3
+  pixel (16,20) color=iron.4
+  pixel (17,21) color=iron.1
+}
+
+frame "f3" {
+  // Outline & Torso Base (Bob lowest: y=12..22)
+  rect (10,12) (22,22) color=ink.base
+  rect (11,13) (21,21) color=sand.1
+
+  // Shoulder and trap definition
+  pixel (10,12) color=#00000000
+  pixel (22,12) color=#00000000
+  rect (13,12) (19,13) color=sand.2
+
+  // Broad Chest / Pecs
+  rect (11,14) (15,16) color=sand.3
+  rect (17,14) (21,16) color=sand.2
+  // Pec underline & sternum shadow
+  line (11,17) (15,17) color=sand.0
+  line (17,17) (21,17) color=sand.0
+  line (16,14) (16,17) color=sand.0
+  // Highlights on upper pecs
+  line (12,14) (14,14) color=sand.4
+
+  // Six-pack Abs & Obliques
+  line (16,18) (16,20) color=sand.0
+  line (13,19) (15,19) color=sand.0
+  line (17,19) (19,19) color=sand.0
+  rect (13,18) (15,18) color=sand.2
+  rect (17,18) (19,18) color=sand.1
+  rect (13,20) (15,20) color=sand.2
+  rect (17,20) (19,20) color=sand.1
+  line (12,18) (12,20) color=sand.0
+  line (20,18) (20,20) color=sand.0
+
+  // Dark leather belt & buckle
+  rect (11,21) (21,22) color=soil.0
+  rect (14,21) (17,22) color=iron.3
+  pixel (15,21) color=iron.4
+  pixel (16,22) color=iron.1
+}
+
+frame "f4" {
+  // Outline & Torso Base (Bob rising: y=11..21)
+  rect (10,11) (22,21) color=ink.base
+  rect (11,12) (21,20) color=sand.1
+
+  // Shoulder and trap definition
+  pixel (10,11) color=#00000000
+  pixel (22,11) color=#00000000
+  rect (13,11) (19,12) color=sand.2
+
+  // Broad Chest / Pecs
+  rect (11,13) (15,15) color=sand.3
+  rect (17,13) (21,15) color=sand.2
+  // Pec underline & sternum shadow
+  line (11,16) (15,16) color=sand.0
+  line (17,16) (21,16) color=sand.0
+  line (16,13) (16,16) color=sand.0
+  // Highlights on upper pecs
+  line (12,13) (14,13) color=sand.4
+
+  // Six-pack Abs & Obliques (slight weight shift left)
+  line (16,17) (16,19) color=sand.0
+  line (13,18) (15,18) color=sand.0
+  line (17,18) (19,18) color=sand.0
+  rect (13,17) (15,17) color=sand.2
+  rect (17,17) (19,17) color=sand.1
+  rect (13,19) (15,19) color=sand.2
+  rect (17,19) (19,19) color=sand.1
+  line (12,17) (12,19) color=sand.0
+  line (20,17) (20,19) color=sand.0
+
+  // Dark leather belt & buckle (angled slightly for left hip lift)
+  rect (11,20) (21,21) color=soil.0
+  rect (13,20) (16,21) color=iron.3
+  pixel (14,20) color=iron.4
+  pixel (15,21) color=iron.1
+}

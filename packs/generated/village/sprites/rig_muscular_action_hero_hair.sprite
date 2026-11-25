@@ -1,0 +1,77 @@
+sprite 32x32
+kind object
+
+palette {
+  dark_hair = #211c27
+  hair_shadow = #15121b
+  hair_mid = #362f3d
+  hair_light = #4f4457
+  red_dark = #691515
+  red_base = #a82323
+  red_light = #d43d3d
+  red_hi = #f26b6b
+  outline = ink.base
+}
+
+// Dark short hair volume on top of the head (y=2 to y=6)
+rect (12,2) (20,3) color=outline
+rect (11,3) (21,5) color=outline
+rect (10,5) (22,7) color=outline
+
+// Fill base dark hair
+rect (12,3) (20,4) color=dark_hair
+rect (11,4) (21,5) color=dark_hair
+rect (10,6) (22,6) color=dark_hair
+
+// Hair shading and highlights (messy/spiky cropped hero hair)
+pixel (13,3) color=hair_mid
+pixel (14,3) color=hair_light
+pixel (15,3) color=hair_light
+pixel (17,3) color=hair_mid
+pixel (18,3) color=hair_light
+pixel (12,4) color=hair_mid
+pixel (16,4) color=hair_shadow
+pixel (20,4) color=hair_shadow
+
+// Sideburns / hair tufts framing temples
+pixel (10,7) color=outline
+pixel (10,8) color=dark_hair
+pixel (10,9) color=hair_shadow
+pixel (22,7) color=outline
+pixel (22,8) color=dark_hair
+
+// Red bandana band across the forehead (y=6 to y=8)
+// Band outline
+rect (10,6) (22,8) color=outline
+
+// Band fill
+rect (11,6) (21,7) color=red_base
+line (11,8) (21,8) color=red_dark
+
+// Band highlights (light from above-left)
+line (12,6) (18,6) color=red_light
+pixel (13,6) color=red_hi
+pixel (14,6) color=red_hi
+pixel (11,7) color=red_light
+pixel (20,7) color=red_dark
+pixel (21,7) color=red_dark
+
+// Bandana knot and trailing ties on the right temple (x=21-24, y=7-11)
+// Knot
+rect (21,6) (23,8) color=outline
+pixel (22,7) color=red_light
+pixel (22,8) color=red_base
+
+// Trailing ribbon / cloth ends
+pixel (23,8) color=outline
+pixel (24,9) color=outline
+pixel (23,9) color=red_base
+pixel (23,10) color=red_light
+pixel (24,10) color=outline
+pixel (23,11) color=red_dark
+pixel (24,11) color=outline
+pixel (23,12) color=outline
+
+// Little loose hair strand peeking below bandana at center forehead
+pixel (16,8) color=outline
+pixel (16,9) color=dark_hair

@@ -7,5 +7,12 @@
   ],
   "duration": 10,
   "icon": "status_wet",
-  "tick": []
+  "tick": [],
+  "color": [
+    90,
+    160,
+    255,
+    255
+  ],
+  "reapplyWarningSeconds": 4.0
 }

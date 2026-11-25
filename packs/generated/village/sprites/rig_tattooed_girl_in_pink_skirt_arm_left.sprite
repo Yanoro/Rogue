@@ -1,0 +1,52 @@
+sprite 32x32
+kind object
+material soil
+
+palette {
+  dark = #181819
+  skin_shadow = #5a3821
+  skin_base = #845334
+  skin_light = #a86c44
+  vine = #2d5a1b
+  rose = #a8222a
+  rose_light = #d43d47
+}
+
+// Arm base silhouette and outline
+rect (7,12) (10,22) color=dark
+pixel (8,23) color=dark
+pixel (9,23) color=dark
+
+// Base skin fill
+rect (8,13) (9,21) color=skin_base
+pixel (8,12) color=skin_base
+pixel (9,12) color=skin_base
+pixel (8,22) color=skin_base
+pixel (9,22) color=skin_base
+
+// Shading and highlights (light from top-left, shadow on right edge)
+line (8,13) (8,21) color=skin_light
+line (9,13) (9,21) color=skin_shadow
+
+// Tattoo: Green vines wrapping down the arm
+pixel (8,14) color=vine
+pixel (9,15) color=vine
+pixel (8,17) color=vine
+pixel (9,18) color=vine
+pixel (8,19) color=vine
+
+// Tattoo: Red rose blossoms
+pixel (9,14) color=rose
+pixel (8,15) color=rose_light
+pixel (8,18) color=rose
+pixel (9,19) color=rose_light
+
+// Open hand details (palm, wrist, and thumb/finger separation)
+pixel (8,21) color=skin_light
+pixel (9,21) color=skin_base
+pixel (7,22) color=dark
+pixel (7,21) color=skin_light
+pixel (8,22) color=skin_light
+pixel (9,22) color=skin_shadow
+pixel (8,23) color=skin_light
+pixel (9,23) color=skin_base

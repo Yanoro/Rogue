@@ -1,0 +1,163 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  dark = #181819
+  bandana_dark = #801015
+  bandana_base = #b81c24
+  bandana_light = #e03b3b
+  hair = #2a201c
+  skin_shadow = #a05c32
+  skin_base = #d48b55
+  skin_mid = #e8a670
+  skin_high = #f5c49b
+  pants_dark = #1b1c20
+  pants_base = #282a30
+  pants_high = #3e414d
+  belt = #4f3b26
+  buckle = #cfb044
+  boot = #141416
+}
+
+// === Silhouettes & Outlines ===
+
+// Head & Hair base
+rect (11,3) (20,11) color=dark
+rect (12,2) (19,12) color=dark
+
+// Torso / Muscular Arms silhouette
+rect (7,12) (24,20) color=dark
+rect (6,13) (25,19) color=dark
+rect (8,20) (23,22) color=dark
+
+// Pants silhouette
+rect (9,21) (22,27) color=dark
+rect (10,28) (21,29) color=dark
+
+// Boots
+rect (10,29) (14,31) color=dark
+rect (17,29) (21,31) color=dark
+
+// === Head & Face Details ===
+
+// Hair (top showing above bandana)
+rect (12,3) (19,4) color=hair
+pixel (11,4) color=hair
+pixel (20,4) color=hair
+
+// Red Bandana
+rect (11,5) (20,6) color=bandana_base
+line (12,5) (19,5) color=bandana_light
+line (11,6) (20,6) color=bandana_dark
+// Knot tails on left side
+pixel (10,6) color=bandana_base
+pixel (9,7) color=bandana_base
+pixel (9,8) color=bandana_dark
+
+// Face base
+rect (12,7) (19,11) color=skin_base
+rect (13,12) (18,12) color=skin_shadow
+
+// Black Sunglasses
+rect (12,7) (19,8) color=dark
+line (13,8) (15,8) color=#2c2d33
+line (17,8) (18,8) color=#2c2d33
+pixel (13,7) color=#40434d
+pixel (17,7) color=#40434d
+
+// Nose and mouth / jawline
+pixel (15,9) color=skin_shadow
+pixel (16,9) color=skin_shadow
+line (14,10) (17,10) color=skin_mid
+pixel (15,11) color=skin_shadow
+pixel (16,11) color=skin_shadow
+
+// Ears
+pixel (11,8) color=skin_shadow
+pixel (20,8) color=skin_base
+
+// === Muscular Body & Arms ===
+
+// Neck
+rect (14,12) (17,13) color=skin_shadow
+
+// Upper Traps & Shoulders
+line (10,13) (13,13) color=skin_high
+line (18,13) (21,13) color=skin_base
+pixel (8,14) color=skin_high
+pixel (23,14) color=skin_base
+
+// Broad Chest / Pecs
+rect (11,14) (20,16) color=skin_base
+rect (11,14) (15,15) color=skin_high
+// Pec crease and center line
+line (15,14) (15,17) color=skin_shadow
+line (11,16) (14,16) color=skin_shadow
+line (16,16) (19,16) color=skin_shadow
+
+// Abs & Ribs
+rect (12,17) (19,20) color=skin_base
+// Left side ab highlights
+pixel (13,17) color=skin_high
+pixel (14,17) color=skin_high
+pixel (13,19) color=skin_high
+pixel (14,19) color=skin_high
+// Ab shadows / definition
+pixel (15,18) color=skin_shadow
+pixel (16,18) color=skin_shadow
+pixel (15,20) color=skin_shadow
+pixel (16,20) color=skin_shadow
+line (12,18) (14,18) color=skin_shadow
+line (17,18) (19,18) color=skin_shadow
+
+// Left Arm (lit side, on spectator's left)
+rect (7,14) (9,18) color=skin_base
+line (7,14) (7,18) color=skin_high
+line (8,15) (8,18) color=skin_high
+line (9,16) (9,18) color=skin_mid
+rect (7,19) (9,21) color=skin_base
+pixel (7,21) color=skin_high
+pixel (9,21) color=skin_shadow
+
+// Right Arm (shadow side, on spectator's right)
+rect (22,14) (24,18) color=skin_shadow
+line (22,14) (22,17) color=skin_base
+line (23,15) (23,18) color=skin_mid
+rect (22,19) (24,21) color=skin_shadow
+pixel (22,21) color=skin_base
+
+// === Belt & Black Pants ===
+
+// Belt
+line (11,21) (20,21) color=belt
+pixel (15,21) color=buckle
+pixel (16,21) color=buckle
+
+// Pants - thighs and legs
+rect (10,22) (21,27) color=pants_base
+line (15,23) (16,28) color=dark
+
+// Left leg highlights and volume
+line (11,23) (11,27) color=pants_high
+line (12,23) (14,27) color=pants_base
+pixel (13,25) color=pants_high
+
+// Right leg darker / folds
+line (17,23) (17,27) color=pants_base
+line (18,23) (20,27) color=pants_dark
+pixel (19,25) color=pants_base
+
+// Lower legs / cuffs
+rect (11,28) (14,28) color=pants_dark
+rect (17,28) (20,28) color=pants_dark
+
+// === Boots ===
+rect (11,29) (14,31) color=boot
+rect (17,29) (20,31) color=boot
+// Boot highlights
+line (11,30) (13,30) color=pants_base
+line (17,30) (19,30) color=pants_base
+// Soles
+line (10,31) (14,31) color=dark
+line (17,31) (21,31) color=dark

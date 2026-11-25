@@ -1,0 +1,18 @@
+{
+  "name": "Immobilized",
+  "description": "Held in place. Movement is impossible until the status expires.",
+  "tags": [
+    "control",
+    "immobilized"
+  ],
+  "duration": 5,
+  "icon": "",
+  "tick": [],
+  "color": [
+    200,
+    140,
+    255,
+    255
+  ],
+  "reapplyWarningSeconds": 2.0
+}

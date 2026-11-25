@@ -11,6 +11,7 @@
 #include "MovementRegistry.h"
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
+#include "BehaviorRegistry.h"
 #include "NpcTemplateRegistry.h"
 #include "Game.h"
 #include "IconRegistry.h"
@@ -508,11 +509,41 @@ nlohmann::json ReadNpc(const World &world, const std::string &id) {
 
 bool ApplyNpc(const World &world, const nlohmann::json &document,
               std::string *error, std::vector<std::string> *warnings) {
-  return world.npcs.AddOrReplace(document, "(content editor)", error, warnings);
+  const bool ok =
+      world.npcs.AddOrReplace(document, "(content editor)", error, warnings);
+  if (ok && world.onNpcTemplateApplied) {
+    world.onNpcTemplateApplied(NpcTemplateRegistry::IdFor(document));
+  }
+  return ok;
 }
 
 std::string NpcFileName(const nlohmann::json &document) {
   return NpcTemplateRegistry::IdFor(document);
+}
+
+// ---- behaviors -------------------------------------------------------------
+
+std::vector<Entry> ListBehaviors(const World &world) {
+  std::vector<Entry> out;
+  for (const BehaviorDef *definition : world.behaviors.GetAll()) {
+    out.push_back({definition->id, definition->name, "behavior"});
+  }
+  return out;
+}
+
+nlohmann::json ReadBehavior(const World &world, const std::string &id) {
+  return world.behaviors.ToJson(id);
+}
+
+bool ApplyBehavior(const World &world, const nlohmann::json &document,
+                   std::string *error,
+                   std::vector<std::string> *warnings) {
+  return world.behaviors.AddOrReplace(document, "(content editor)", error,
+                                      warnings);
+}
+
+std::string BehaviorFileName(const nlohmann::json &document) {
+  return BehaviorRegistry::IdFor(document);
 }
 
 // ---- brains ---------------------------------------------------------------
@@ -742,6 +773,16 @@ void RegisterBuiltinKinds() {
           &ReadStatusEffect,
           &ApplyStatusEffect,
           &StatusEffectFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "behaviors",
+          "Behaviors",
+          /*hasSprites=*/false,
+          &ListBehaviors,
+          &ReadBehavior,
+          &ApplyBehavior,
+          &BehaviorFileName,
           nullptr,
     });
     Registry().Register({

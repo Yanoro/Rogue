@@ -109,18 +109,14 @@ void GiveDefaultStats(flecs::entity character,
 // full stat list at baseline. An absent skill means the same thing as level 0 --
 // untrained, and therefore neutral -- so this exists for visibility and to keep
 // the block's shape uniform, not because the effect system requires it.
-void GiveStartingSkills(flecs::entity character,
-                               const SkillRegistry *registry) {
-  if (!registry) {
-    return;
-  }
+void GiveUniversalSkills(flecs::entity character,
+                         const SkillRegistry *registry) {
+  if (!registry) return;
   SkillBlock block;
-  for (const SkillDef *def : registry->GetAll()) {
-    SkillValue value;
-    value.id = def->id;
-    value.level = 0;
-    value.xp = 0;
-    block.values.push_back(value);
+  // Every body can swing: the basic attack is the one universally known skill.
+  // Level 1 makes it usable; level 0 is a placeholder by convention.
+  if (const SkillDef *attack = registry->Get("attack")) {
+    block.values.push_back({attack->id, 1, 0});
   }
   character.set<SkillBlock>(block);
 }
@@ -190,6 +186,9 @@ void ApplyStartingSkills(flecs::entity character,
       warn("Warning: Starting skill '" + spec.id +
            "' is not a known skill; skipping it.");
       continue;
+    }
+    if (block->Find(spec.id) == nullptr) {
+      block->values.push_back({spec.id, 0, 0});
     }
     std::string reason;
     if (!ApplyStartingSkill(*block, *def, spec, &reason)) {
@@ -331,8 +330,18 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       data.retaliates = definition->retaliates;
       data.attackDamage = definition->attackDamage;
       data.attackInterval = definition->attackInterval;
+      data.attackRange = definition->attackRange;
+      data.attackCastSeconds = definition->attackCastSeconds;
+      data.attackFirstDelay = definition->attackFirstDelay;
+      data.attackLabel = definition->attackLabel;
+      data.trainingDummy = definition->trainingDummy;
+      data.obstacle = definition->obstacle;
+      data.armor = definition->armor;
       if (!data.suppressCombatStrategy && data.combatStrategy.empty()) {
         data.combatStrategy = definition->combatStrategy;
+      }
+      if (data.behavior.empty()) {
+        data.behavior = definition->behavior;
       }
     }
   }
@@ -483,6 +492,24 @@ flecs::entity Game::createNPC(const NPCData &data) {
           .add<BlocksTile>();
 
   entity.add<Actor>();
+  if (!data.npcTemplate.empty()) {
+    entity.set<NpcTemplateId>({data.npcTemplate});
+  }
+  if (!data.behavior.empty()) {
+    entity.set<NpcBehaviorId>({data.behavior});
+    entity.set<NpcBehaviorState>({});
+    entity.set<SkillCooldowns>({});
+    entity.set<GlobalCooldown>({});
+  }
+  if (data.trainingDummy) {
+    entity.add<TrainingDummy>();
+  }
+  if (data.obstacle) {
+    entity.add<Obstacle>();
+  }
+  if (data.armor > 0.0f) {
+    entity.set<Armor>({data.armor});
+  }
 
   // The agent phase of docs/spatial-memory-design.md: an NPC perceives through
   // the same `Vision` + `SpatialMemory` pair the player does. It is not told
@@ -498,7 +525,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
                        debugLog.get());
   }
   if (auto skillRes = ecs.get<SkillRegistryResource>()) {
-    GiveStartingSkills(entity, skillRes->registry);
+    GiveUniversalSkills(entity, skillRes->registry);
     // Authored proficiency goes on top of the untrained block, before the brain
     // exists, so the first action the agent takes already resolves against it.
     ApplyStartingSkills(entity, skillRes->registry, data.startingSkills,
@@ -566,6 +593,12 @@ flecs::entity Game::createNPC(const NPCData &data) {
   Aggressive attack;
   attack.damage = data.attackDamage > 0.0f ? data.attackDamage : 8.0f;
   attack.interval = data.attackInterval > 0.0f ? data.attackInterval : 6.0f;
+  attack.range = data.attackRange > 0.0f ? data.attackRange : 1.0f;
+  attack.castSeconds =
+      data.attackCastSeconds >= 0.0f ? data.attackCastSeconds : 2.0f;
+  attack.timer =
+      data.attackFirstDelay >= 0.0f ? data.attackFirstDelay : 2.0f;
+  attack.label = data.attackLabel.empty() ? "Strike" : data.attackLabel;
   entity.set<Aggressive>(attack);
 
   // The tactic layer is for brainless bodies only: a brain-driven character's
@@ -1602,6 +1635,13 @@ void Game::ECSInitActionSystems() {
       .each([this](flecs::entity entity, Velocity &vel, Acceleration &accel,
                    const GamePosition &currPos, const ScreenPosition &screenPos,
                    const Hitbox &hitbox, MOVE_THROUGH_PATH_ACTION &tPath) {
+        if (HasStatusTag(entity, "immobilized")) {
+          tPath.path.clear();
+          entity.remove<MOVE_THROUGH_PATH_ACTION>();
+          vel = {0.0f, 0.0f};
+          accel = {0.0f, 0.0f};
+          return;
+        }
         if (tPath.path.empty()) {
           std::string name = entity.name().c_str();
           debugLog->LogInfo("Entity " + name + " has finished it's path");

@@ -1,0 +1,111 @@
+sprite 32x32
+kind object
+material sand
+
+palette {
+  dark = #181819
+  skin_shadow = sand.1
+  skin_mid = sand.2
+  skin_lit = sand.3
+  skin_high = sand.4
+}
+
+frame "f1" {
+  // Swung back (body low, arm angled slightly back/out)
+  // Outline
+  rect (7,13) (10,22) color=dark
+  rect (6,14) (9,21) color=dark
+
+  // Deltoid & Bicep
+  rect (7,14) (9,17) color=skin_mid
+  pixel (8,14) color=skin_lit
+  pixel (7,14) color=skin_high
+  pixel (9,15) color=skin_shadow
+  pixel (9,16) color=skin_shadow
+
+  // Forearm & Clenched Fist
+  rect (7,18) (9,21) color=skin_mid
+  pixel (7,18) color=skin_lit
+  pixel (8,19) color=skin_lit
+  pixel (9,18) color=skin_shadow
+  pixel (9,19) color=skin_shadow
+  pixel (8,21) color=skin_shadow
+  pixel (7,21) color=skin_mid
+}
+
+frame "f2" {
+  // Passing (body rising, arm hanging straight at side)
+  // Outline
+  rect (7,12) (10,22) color=dark
+
+  // Deltoid
+  rect (8,13) (9,15) color=skin_mid
+  pixel (8,13) color=skin_high
+  pixel (8,14) color=skin_lit
+  pixel (9,15) color=skin_shadow
+
+  // Bulging Bicep
+  rect (7,16) (9,18) color=skin_mid
+  pixel (7,16) color=skin_lit
+  pixel (8,16) color=skin_lit
+  pixel (9,17) color=skin_shadow
+  pixel (9,18) color=skin_shadow
+
+  // Forearm & Fist
+  rect (8,19) (9,21) color=skin_mid
+  pixel (8,19) color=skin_lit
+  pixel (8,20) color=skin_lit
+  pixel (9,20) color=skin_shadow
+  pixel (8,21) color=skin_shadow
+}
+
+frame "f3" {
+  // Swung forward (left arm swinging forward, elbow bent, fist raised)
+  // Outline
+  rect (6,13) (10,21) color=dark
+  rect (7,12) (10,14) color=dark
+
+  // Flexed Deltoid & Bicep
+  rect (7,13) (9,16) color=skin_mid
+  pixel (8,13) color=skin_high
+  pixel (7,14) color=skin_lit
+  pixel (8,14) color=skin_high
+  pixel (9,15) color=skin_shadow
+  pixel (9,16) color=skin_shadow
+
+  // Forearm angled forward with clenched fist
+  rect (7,17) (9,20) color=skin_mid
+  rect (6,18) (8,20) color=skin_mid
+  pixel (6,18) color=skin_high
+  pixel (7,18) color=skin_lit
+  pixel (6,19) color=skin_lit
+  pixel (8,19) color=skin_shadow
+  pixel (8,20) color=skin_shadow
+  pixel (7,20) color=skin_shadow
+}
+
+frame "f4" {
+  // Passing (body rising, arm moving backward through neutral)
+  // Outline
+  rect (7,12) (10,22) color=dark
+
+  // Shoulder / Deltoid
+  rect (8,13) (9,15) color=skin_mid
+  pixel (8,13) color=skin_high
+  pixel (8,14) color=skin_lit
+  pixel (9,14) color=skin_shadow
+
+  // Bicep
+  rect (7,16) (9,18) color=skin_mid
+  pixel (7,16) color=skin_high
+  pixel (8,16) color=skin_lit
+  pixel (9,17) color=skin_shadow
+  pixel (9,18) color=skin_shadow
+
+  // Forearm & Clenched Fist
+  rect (8,19) (9,21) color=skin_mid
+  pixel (8,19) color=skin_lit
+  pixel (8,20) color=skin_lit
+  pixel (9,20) color=skin_shadow
+  pixel (8,21) color=skin_shadow
+}

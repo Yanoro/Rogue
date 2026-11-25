@@ -1,0 +1,54 @@
+{
+  "clips": [
+    {
+      "brief": "A relaxed humanoid walk: a small body bob, the arms swinging opposite the legs, the head and hair following the bob.",
+      "fps": 8,
+      "frames": 4,
+      "id": "walk",
+      "loop": true,
+      "movement": "walk",
+      "poses": [
+        "contact: left leg forward, right arm forward, body at its lowest",
+        "passing: legs together, right leg lifting, body rising",
+        "contact: right leg forward, left arm forward, body at its lowest",
+        "passing: legs together, left leg lifting, body rising"
+      ]
+    }
+  ],
+  "description": "A brown-skinned girl in a blue shirt and pink skirt, featuring an intricate rose sleeve tattoo.",
+  "height": 32,
+  "name": "Tattooed Girl in Pink Skirt",
+  "parts": [
+    {
+      "id": "legs",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_legs",
+      "z": 10
+    },
+    {
+      "id": "body",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_body",
+      "z": 20
+    },
+    {
+      "id": "arm_left",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_arm_left",
+      "z": 25
+    },
+    {
+      "id": "arm_right",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_arm_right",
+      "z": 25
+    },
+    {
+      "id": "head",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_head",
+      "z": 30
+    },
+    {
+      "id": "hair",
+      "sprite": "rig_tattooed_girl_in_pink_skirt_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

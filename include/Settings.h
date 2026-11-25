@@ -713,6 +713,9 @@ struct GameSettings {
     // race, body slots, look and brain. A map names one with "template" and may
     // override any field; nothing here is enforced at runtime.
     std::string npcs = "data/npcs";
+    // Player starter template. Same "skills" syntax as NPC templates; the
+    // player's appearance/resources remain in the player settings section.
+    std::string player = "data/player.json";
     // What drives an NPC: background, life goals and the model profile to talk
     // to. Separate from the body so one brain can drive many templates and a
     // template can be spawned with no brain at all.
@@ -727,6 +730,7 @@ struct GameSettings {
     std::string projectiles = "data/projectiles";
     std::string skillshots = "data/skillshots";
     std::string combatStrategies = "data/combat_strategies";
+    std::string behaviors = "data/behaviors";
     std::string surfaceSprites = "data/surface_sprites";
     std::string surfaces = "data/surfaces";
     std::string statusEffects = "data/status_effects";
