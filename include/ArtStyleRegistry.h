@@ -41,6 +41,25 @@ struct ResolvedArtStyle {
   std::string source;
 };
 
+// The value that means "no art style at all", as an asset's own `style` field or as the
+// generation override.
+//
+// It exists because "no style" and "inherit" are different choices and only the second
+// one can be spelled with an empty string: an empty `style` already means "use the family
+// default", which is the resolver's last step. An asset that should be drawn with no style
+// prose, palette, reference or proportions has to say so, and saying it must stop the
+// fallback rather than trigger it.
+//
+// It is a reserved value, not a registered style: the registry refuses a theme whose id
+// slugs to this (`ArtStyleRegistry::AddOrReplace`), so a document carrying it can never
+// resolve to a theme by accident. It survives slugging unchanged on purpose -- a value
+// with punctuation in it would be stripped into something else on the way in.
+inline constexpr const char *kNoArtStyle = "none";
+
+inline bool IsNoArtStyle(const std::string &styleId) {
+  return styleId == kNoArtStyle;
+}
+
 // A prose style profile for generated art. It is deliberately prompt data, not a
 // renderer: the sprite DSL still owns the pixels. Styles are layered by the prompt
 // builder (global direction is authored in the sprite prompt; this is the family

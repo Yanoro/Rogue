@@ -293,16 +293,32 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
   if (depth == 1 && key == "style" && value.is_string() &&
       options.artStyles != nullptr) {
     const std::string current = value.get<std::string>();
+    // Three distinct choices, which is why the field is not just "empty or an id":
+    // empty inherits the family style, an id overrides it, and kNoArtStyle asks for
+    // nothing at all.
+    const bool noStyle = IsNoArtStyle(current);
     const ArtStyleDef *selectedStyle = options.artStyles->Get(current);
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::BeginCombo("##art-style",
-                          selectedStyle != nullptr
-                              ? selectedStyle->name.c_str()
-                              : "Default (family style)")) {
+                          noStyle ? "No style"
+                                  : selectedStyle != nullptr
+                                        ? selectedStyle->name.c_str()
+                                        : "Default (family style)")) {
       if (ImGui::Selectable("Default (family style)", current.empty())) {
         value = "";
         return true;
       }
+      if (ImGui::Selectable("No style", noStyle)) {
+        value = kNoArtStyle;
+        return true;
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip(
+            "This asset has no art style: generation skips the style prose, palette, "
+            "reference document and proportions, and does not fall back to the family "
+            "default. Leave the field on Default to inherit one instead.");
+      }
+      ImGui::Separator();
       for (const ArtStyleDef *style : options.artStyles->GetAll()) {
         if (ImGui::Selectable(style->name.c_str(), current == style->id)) {
           value = style->id;
@@ -313,7 +329,11 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     }
     ImGui::NewLine();
     ImGui::PushTextWrapPos(ImGui::GetWindowContentRegionMax().x);
-    if (selectedStyle != nullptr) {
+    if (noStyle) {
+      ImGui::TextDisabled(
+          "No style: art for this asset is asked for with no style at all, not with "
+          "the family default.");
+    } else if (selectedStyle != nullptr) {
       if (!selectedStyle->description.empty()) {
         ImGui::TextDisabled("%s", selectedStyle->description.c_str());
       }
@@ -1036,22 +1056,44 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
                                                : convention.c_str());
   // The theme this generation uses. Empty means the global default; the content's own
   // style field remains the persistent override, and the visual type's theme is the
-  // resolution fallback.
+  // resolution fallback. "No style" is the third choice: it is not "inherit", it is
+  // "nothing", so it suppresses every one of those fallbacks for this request.
   ImGui::TextDisabled("Art style for generation");
   ImGui::SameLine();
   const ArtStyleDef *generationStyle = generationTheme.empty()
                                            ? nullptr
                                            : game->artStyleRegistry.Get(generationTheme);
+  // What the ask carries: a theme id, the asset's own style, or the reserved "none".
+  const std::string generationStyleId =
+      generationNoStyle ? std::string(kNoArtStyle)
+                        : (generationTheme.empty() ? styleId : generationTheme);
   ImGui::SetNextItemWidth(220.0f);
-  if (ImGui::BeginCombo("##generation_theme",
-                        generationStyle ? generationStyle->name.c_str()
-                                        : "(global default)")) {
-    if (ImGui::Selectable("(global default)", generationTheme.empty())) {
+  const char *generationPreview =
+      generationNoStyle ? "No style"
+                        : (generationStyle ? generationStyle->name.c_str()
+                                           : "(global default)");
+  if (ImGui::BeginCombo("##generation_theme", generationPreview)) {
+    if (ImGui::Selectable("(global default)",
+                          !generationNoStyle && generationTheme.empty())) {
       generationTheme.clear();
+      generationNoStyle = false;
     }
+    if (ImGui::Selectable("No style", generationNoStyle)) {
+      generationTheme.clear();
+      generationNoStyle = true;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Ask for this asset with no art style at all: no style prose, palette, "
+          "reference document or proportions, and no fallback to the global default. "
+          "The result follows only the request.");
+    }
+    ImGui::Separator();
     for (const ArtStyleDef *theme : game->artStyleRegistry.GetAll()) {
-      if (ImGui::Selectable(theme->name.c_str(), theme->id == generationTheme)) {
+      if (ImGui::Selectable(theme->name.c_str(),
+                            !generationNoStyle && theme->id == generationTheme)) {
         generationTheme = theme->id;
+        generationNoStyle = false;
       }
     }
     ImGui::EndCombo();
@@ -1114,7 +1156,7 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(
           requestName, spriteKind, artRequirement, /*redesign=*/true, std::string(),
-          generationTheme.empty() ? styleId : generationTheme);
+          generationStyleId);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
@@ -1175,7 +1217,7 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(
           requestName, spriteKind, artRequirement, /*redesign=*/false, spriteEditBuffer,
-          generationTheme.empty() ? styleId : generationTheme);
+          generationStyleId);
       status = "asked the Designer to edit this sprite; the previous version is in the "
                "list below and the edited one lands as a new generated version";
       statusIsError = false;

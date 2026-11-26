@@ -879,20 +879,32 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
       }
     }
   }
+  // "No style" is an explicit choice, not a missing one, so it stops the whole fallback
+  // chain instead of letting the family default fill in. Both spellings are honoured --
+  // the generation dropdown's override and the asset's own field -- because a person sets
+  // one or the other depending on whether the asset has a document yet.
+  const bool noStyle = IsNoArtStyle(styleOverride) || IsNoArtStyle(requestedStyle);
   const ArtStyleDef *style = nullptr;
-  if (!styleOverride.empty()) {
-    style = game->artStyleRegistry.Get(styleOverride);
-  }
-  if (style == nullptr && !requestedStyle.empty()) {
-    style = game->artStyleRegistry.Get(requestedStyle);
-  }
-  if (style == nullptr && game != nullptr) {
-    if (const VisualAssetDef *visualType = game->visualAssets.Find(resolvedRole)) {
-      if (!visualType->theme.empty()) style = game->artStyleRegistry.Get(visualType->theme);
+  if (!noStyle) {
+    if (!styleOverride.empty()) {
+      style = game->artStyleRegistry.Get(styleOverride);
+    }
+    if (style == nullptr && !requestedStyle.empty()) {
+      style = game->artStyleRegistry.Get(requestedStyle);
+    }
+    if (style == nullptr && game != nullptr) {
+      if (const VisualAssetDef *visualType = game->visualAssets.Find(resolvedRole)) {
+        if (!visualType->theme.empty()) style = game->artStyleRegistry.Get(visualType->theme);
+      }
+    }
+    if (style == nullptr) {
+      style = game->artStyleRegistry.DefaultTheme();
     }
   }
-  if (style == nullptr) {
-    style = game->artStyleRegistry.DefaultTheme();
+  if (noStyle) {
+    // The request's own "follow the style's section" line would be asking for a section
+    // that no longer exists, so it goes with the style.
+    artBrief.styleRole.clear();
   }
   if (style != nullptr) {
     const ResolvedArtStyle resolved =
@@ -903,10 +915,6 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
     artBrief.stylePalette = resolved.palette;
     if (width <= 0 && resolved.width > 0) width = resolved.width;
     if (height <= 0 && resolved.height > 0) height = resolved.height;
-    if (width <= 0) width = 32;
-    if (height <= 0) height = 32;
-    artBrief.width = width;
-    artBrief.height = height;
     if (!resolved.reference.empty()) {
       const SpriteDSLDocument reference = FindSpriteDSLDocument(resolved.reference);
       if (reference.found && !reference.path.empty()) {
@@ -918,6 +926,12 @@ void DesignerWindow::RequestSpriteDocument(const std::string &name,
       }
     }
   }
+  // Outside the style block: a request with no style still has to name a canvas, and the
+  // model cannot declare one from nothing.
+  if (width <= 0) width = 32;
+  if (height <= 0) height = 32;
+  artBrief.width = width;
+  artBrief.height = height;
 
   // The designer's own description wins over the catalog's. A requested asset is not in
   // the catalog at all yet, so there is nothing to look up -- and when an existing asset
