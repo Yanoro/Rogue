@@ -238,7 +238,8 @@ inline bool DrawWorld(const ActorRig &rig, ResourceManager &resources,
                       const std::vector<WornLayer> &worn, float x, float y,
                       float width, float height,
                       const AnimationState *animation = nullptr,
-                      const RigGeometry &geometry = RigGeometry{}) {
+                      const RigGeometry &geometry = RigGeometry{},
+                      Color tint = WHITE) {
   bool drew = false;
   for (const Layer &layer : Order(rig, resources, worn, nullptr, animation)) {
     if (layer.texture == nullptr) continue;
@@ -254,7 +255,8 @@ inline bool DrawWorld(const ActorRig &rig, ResourceManager &resources,
                               static_cast<float>(layer.texture->width),
                               static_cast<float>(layer.texture->height)};
     const Rectangle destination = {fit.x, fit.y, fit.width, fit.height};
-    DrawTexturePro(*layer.texture, source, destination, {0.0f, 0.0f}, 0.0f, WHITE);
+    DrawTexturePro(*layer.texture, source, destination, {0.0f, 0.0f}, 0.0f,
+                   tint);
     drew = true;
   }
   return drew;

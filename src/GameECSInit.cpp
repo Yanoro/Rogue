@@ -499,6 +499,10 @@ void Game::ECSInit() {
   behaviorRegistry.SetDebugLog(debugLog.get());
   behaviorRegistry.Load(settings.content.behaviors);
   ecs.set<BehaviorRegistryResource>({&behaviorRegistry});
+  behaviorProfileRegistry.Load("data/behavior_profiles");
+  ecs.set<BehaviorProfileRegistryResource>({&behaviorProfileRegistry});
+  damageFeedbackRegistry.Load("data/damage_feedback");
+  ecs.set<DamageFeedbackRegistryResource>({&damageFeedbackRegistry});
   ecs.set<CombatStrategyRegistryResource>({&combatStrategyRegistry});
 
   iconRegistry.SetDebugLog(debugLog.get());
@@ -2144,7 +2148,6 @@ void Game::ECSInit() {
       static_cast<size_t>(map->GetTileWidth()),
       static_cast<size_t>(map->GetTileHeight()),
   });
-  playerEntity.set<WindowOnClick>({WindowType::EntityInfoWindowType});
   playerEntity.add<Actor>();
   playerEntity.add<PlayerControlled>();
   if (auto registryRes = ecs.get<StatRegistryResource>()) {

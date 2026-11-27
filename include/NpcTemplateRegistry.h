@@ -51,6 +51,19 @@ struct NpcTemplate {
   // initiate, and only fights back when it also has `retaliates`.
   std::string disposition = "neutral";
   bool retaliates = false;
+  // Solid body for actor collision. The Content Editor can turn this off for a
+  // ghost, a decorative creature, or an NPC the player should be able to walk
+  // through.
+  bool blocksMovement = true;
+  // Whether other actors can push this NPC. Defaults off; opt in per template.
+  bool pushable = false;
+  // IconRegistry id used for this NPC's death sprite. Empty keeps the global
+  // combat.deathIcon fallback.
+  std::string deathIcon;
+  // Constant path speed in pixels per second. NPCs do not accelerate toward it;
+  // they move at this value, with only the final-waypoint slow-down retained.
+  // Matches the player's default max speed. Authored in the Content Editor.
+  float velocity = 100.0f;
   // The simple melee controller's profile. These are per-instance values once
   // spawned; editing them never writes back to the template unless the user
   // saves through the Content Editor.
@@ -73,6 +86,21 @@ struct NpcTemplate {
   // BehaviorRegistry id used by the skill-driven combat controller. Empty falls
   // back to the old Aggressive/CombatStrategy layers.
   std::string behavior;
+  // BehaviorRegistry id used while this NPC is neutral. Empty keeps the legacy
+  // idle behavior.
+  std::string neutralBehavior;
+  // One profile that maps neutral/aggressive roles to atomic behaviors.
+  std::string behaviorProfile;
+  // DamageFeedbackRegistry id used for hit flash/shake/clip overrides.
+  std::string damageFeedback;
+  // Wander controls. Waits are seconds; radius is in tiles and is measured from
+  // the NPC's current position each time it chooses a destination.
+  float wanderMinWait = 2.0f;
+  float wanderMaxWait = 6.0f;
+  float wanderRadius = 6.0f;
+  // NPC template id this patroller turns hostile against. "player" is accepted
+  // as a special id for the player.
+  std::string patrolHostileTemplate;
   std::vector<SlotSpec> slots;
   std::vector<ItemStack> inventory;
   std::vector<StartingSkill> startingSkills;

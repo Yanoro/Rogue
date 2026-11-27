@@ -32,10 +32,16 @@ using ChunksSection = GameSettings::ChunksSection;
 using WindowSection = GameSettings::WindowSection;
 using RenderSection = GameSettings::RenderSection;
 using UiSection = GameSettings::UiSection;
+using UiCombatSection = GameSettings::UiSection::CombatSection;
+using UiHighlightSection = GameSettings::UiSection::CombatSection::HighlightSection;
+using UiStatusEffectsSection = GameSettings::UiSection::CombatSection::StatusEffectsSection;
+using UiHitFeedbackSection = GameSettings::UiSection::CombatSection::HitFeedbackSection;
 using PlayerSection = GameSettings::PlayerSection;
 using CombatSection = GameSettings::CombatSection;
+using MovementSection = GameSettings::MovementSection;
 using HudSection = GameSettings::HudSection;
 using PortraitSection = GameSettings::HudSection::PortraitSection;
+using NameplateSection = GameSettings::HudSection::NameplateSection;
 using WorldSection = GameSettings::WorldSection;
 using ContentSection = GameSettings::ContentSection;
 using ArtSection = GameSettings::ArtSection;
@@ -630,11 +636,17 @@ const std::vector<SectionSpec> &Sections() {
       {"chunks", "chunks", "Fixed world chunk grid and the agent-facing area card/route strip.", ""},
       {"window", "window", "Window creation.", ""},
       {"render", "render", "Font and starting camera.", ""},
-      {"ui", "ui", "ImGui window backgrounds: colour and transparency.", ""},
+      {"ui", "ui", "ImGui window backgrounds and global floating-text defaults.", ""},
+      {"ui.combat", "Combat UI", "Player skill-use callout.", ""},
+      {"ui.combat.highlight", "Target highlight", "How the player's current target is outlined.", ""},
+      {"ui.combat.statusEffects", "Status effects", "World-space status display over characters.", ""},
+      {"ui.combat.hitFeedback", "Hit feedback", "Global damage flash, shake and hit-animation defaults.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
       {"combat", "combat", "Aimed skills: indicator-first or instant at the cursor.", ""},
+      {"movement", "Movement", "NPC locomotion model. The player always keeps acceleration and friction.", ""},
       {"hud", "HUD", "Player-facing HUD layout.", ""},
       {"hud.portrait", "Player portrait", "Which resources the player portrait shows, in what order, and how much of each row is drawn.", ""},
+      {"hud.nameplate", "NPC nameplates", "Floating name-tag colours for neutral and aggressive NPCs.", ""},
       {"world", "world", "World generation.", ""},
       {"content", "content", "Where each content registry loads its definitions from.", ""},
       {"art", "art", "The art pack and its generated overlay. Convention sprites resolve from `<pack>/sprites/` first, then the generated layer.", ""},
@@ -1227,6 +1239,21 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "ImGui popup background, #RRGGBB or #RRGGBBAA. Alpha is the popup transparency.",
             &GameSettings::ui, &UiSection::popupColor))
         .Default("#000000FF");
+    add(Field<ValueType::Float>("ui", "ui.floatingTextSize",
+            "Default font size for every floating text. Scenarios and skills may override it.",
+            &GameSettings::ui, &UiSection::floatingTextSize))
+        .Between(8.0, 64.0);
+    add(Field<ValueType::EnumString>("ui", "ui.floatingTextMotion",
+            "Default floating-text motion: rise and fade, or stationary and fully opaque.",
+            &GameSettings::ui, &UiSection::floatingTextMotion))
+        .Enum({"rise", "stationary"});
+    add(Field<ValueType::Bool>("ui", "ui.floatingTextBackground",
+            "Default black background for floating text. A scenario may override it.",
+            &GameSettings::ui, &UiSection::floatingTextBackground));
+    add(Field<ValueType::EnumString>("ui", "ui.floatingTextPosition",
+            "Default floating-text position relative to its target.",
+            &GameSettings::ui, &UiSection::floatingTextPosition))
+        .Enum({"above", "center", "below"});
 
     // --- player -----------------------------------------------------------
     add(Field<ValueType::String>("player", "player.name",
@@ -1264,6 +1291,122 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "Draw the cast range of targeted skills, plus the positions that keep the target in range while a movement-enabled cast is active.", &GameSettings::combat, &CombatSection::showSkillRanges));
     add(Field<ValueType::String>("combat", "combat.deathIcon",
             "IconRegistry id used as the corpse visual for every NPC death.", &GameSettings::combat, &CombatSection::deathIcon));
+    add(Field<ValueType::Float>("combat", "combat.castCancelTextSize",
+            "Font size of the centered warning shown when a cast is canceled.",
+            &GameSettings::combat, &CombatSection::castCancelTextSize))
+        .Between(8.0, 64.0);
+    add(Field<ValueType::String>("combat", "combat.castCancelTextColor",
+            "RGBA hex colour of the centered cast-canceled warning.",
+            &GameSettings::combat, &CombatSection::castCancelTextColor))
+        .Default("#FFFFFFFF");
+    add(Field<ValueType::Bool>("combat", "combat.castCancelTextBackground",
+            "Draw a dark strip behind the cast-canceled warning. Turn off for plain text.",
+            &GameSettings::combat, &CombatSection::castCancelTextBackground));
+    // --- ui.combat --------------------------------------------------------
+    add(Field<ValueType::Float>("ui.combat", "ui.combat.skillUsedTextSize",
+            "Font size of the player skill-use callout. 0 uses the global floating-text size.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::skillUsedTextSize))
+        .Between(0.0, 64.0);
+    add(Field<ValueType::String>("ui.combat", "ui.combat.skillUsedTextColor",
+            "RGBA hex colour of the player skill-use callout when the skill has no override.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::skillUsedTextColor))
+        .Default("#E1EBFFFF");
+    add(Field<ValueType::Bool>("ui.combat", "ui.combat.skillUsedTextBackground",
+            "Draw a dark strip behind the player skill-use callout.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::skillUsedTextBackground));
+    add(Field<ValueType::EnumString>("ui.combat", "ui.combat.skillUsedTextPosition",
+            "Where the player skill-use callout is drawn.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::skillUsedTextPosition))
+        .Enum({"above", "center", "below"});
+
+    // --- ui.combat.highlight ----------------------------------------------
+    add(Field<ValueType::Bool>("ui.combat.highlight", "ui.combat.highlight.enabled",
+            "Draw a coloured outline around the player's current target.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::highlight, &UiHighlightSection::enabled));
+    add(Field<ValueType::String>("ui.combat.highlight", "ui.combat.highlight.color",
+            "Target outline colour, #RRGGBB or #RRGGBBAA.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::highlight, &UiHighlightSection::color))
+        .Default("#FF0000FF");
+    add(Field<ValueType::EnumString>("ui.combat.highlight", "ui.combat.highlight.style",
+            "Rectangular border or per-pixel silhouette outline. Rigs use the rectangle fallback.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::highlight, &UiHighlightSection::style))
+        .Enum({"silhouette", "rectangle"});
+
+    // --- ui.combat.hitFeedback --------------------------------------------
+    add(Field<ValueType::Bool>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.flashEnabled",
+            "Tint the damaged visual when actual damage is applied.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::flashEnabled));
+    add(Field<ValueType::String>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.flashColor",
+            "Damage flash colour, #RRGGBB or #RRGGBBAA.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::flashColor))
+        .Default("#FF3C3CFF");
+    add(Field<ValueType::EnumString>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.flashStyle",
+            "Damage flash style. Filled silhouette is the current implementation.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::flashStyle))
+        .Enum({"silhouette"});
+    add(Field<ValueType::Float>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.flashSeconds",
+            "Duration of the damage flash.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::flashSeconds))
+        .Between(0.0, 2.0);
+    add(Field<ValueType::Bool>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.shakeEnabled",
+            "Apply a short local body shake when damaged.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::shakeEnabled));
+    add(Field<ValueType::Float>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.shakeMagnitude",
+            "Shake amplitude in pixels.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::shakeMagnitude))
+        .Between(0.0, 32.0);
+    add(Field<ValueType::Float>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.shakeSeconds",
+            "Duration of the damage shake.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::shakeSeconds))
+        .Between(0.0, 2.0);
+    add(Field<ValueType::String>("ui.combat.hitFeedback",
+            "ui.combat.hitFeedback.hitClip",
+            "Rig clip used as the whole-body hit overlay. Empty disables it.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::hitFeedback, &UiHitFeedbackSection::hitClip));
+
+    // --- ui.combat.statusEffects ------------------------------------------
+    add(Field<ValueType::Bool>("ui.combat.statusEffects",
+            "ui.combat.statusEffects.showAboveHead",
+            "Draw status icons over each character's head in the world.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::statusEffects,
+            &UiStatusEffectsSection::showAboveHead));
+    add(Field<ValueType::EnumString>("ui.combat.statusEffects",
+            "ui.combat.statusEffects.position",
+            "Draw the world status row above or below the character.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::statusEffects,
+            &UiStatusEffectsSection::position))
+        .Enum({"above", "below"});
+    add(Field<ValueType::Float>("ui.combat.statusEffects",
+            "ui.combat.statusEffects.distance",
+            "Distance in pixels between the character and the world status row.",
+            &GameSettings::ui, &GameSettings::UiSection::combat,
+            &UiCombatSection::statusEffects,
+            &UiStatusEffectsSection::distance))
+        .Between(0.0, 200.0);
 
     // --- hud.portrait -----------------------------------------------------
     add(Field<ValueType::Bool>("hud.portrait", "hud.portrait.showIcons",
@@ -1285,6 +1428,16 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Json>("hud.portrait", "hud.portrait.resources",
             "Ordered resource rows. Each entry is {id, visible, showIcon}; the array order is the portrait order. The Settings window edits this list directly.",
             &GameSettings::hud, &HudSection::portrait, &PortraitSection::resources));
+
+    // --- hud.nameplate ----------------------------------------------------
+    add(Field<ValueType::String>("hud.nameplate", "hud.nameplate.neutralColor",
+            "Name-tag colour for neutral NPCs, #RRGGBB or #RRGGBBAA.",
+            &GameSettings::hud, &HudSection::nameplate, &NameplateSection::neutralColor))
+        .Default("#FFFFFFFF");
+    add(Field<ValueType::String>("hud.nameplate", "hud.nameplate.aggressiveColor",
+            "Name-tag colour for aggressive NPCs, #RRGGBB or #RRGGBBAA.",
+            &GameSettings::hud, &HudSection::nameplate, &NameplateSection::aggressiveColor))
+        .Default("#FF0000FF");
 
     // --- world ------------------------------------------------------------
     add(Field<ValueType::UInt64>("world", "world.seed",

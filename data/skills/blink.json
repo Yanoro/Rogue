@@ -1,0 +1,46 @@
+{
+  "name": "Blink",
+  "description": "Step through space to a tile within range.",
+  "icon": "",
+  "type": "active",
+  "stages": [
+    "Initiate",
+    "Journeyman",
+    "Adept",
+    "Master",
+    "Grandmaster"
+  ],
+  "levelsPerStage": 9,
+  "baseline": 0,
+  "scale": 9,
+  "xpPerStage": [
+    100,
+    300,
+    900,
+    2700,
+    8100
+  ],
+  "trainedBy": [
+    "use"
+  ],
+  "activation": {
+    "baseDamage": 0,
+    "cooldown": 5.0,
+    "range": 6,
+    "gcd": true,
+    "autoCast": false,
+    "requiresTarget": false,
+    "cast": 0,
+    "interruptible": true,
+    "blink": {
+      "unavailableMessage": "You cannot blink there."
+    },
+    "floatingTextColor": [
+      140,
+      220,
+      255,
+      255
+    ],
+    "floatingTextSize": 0.0
+  }
+}

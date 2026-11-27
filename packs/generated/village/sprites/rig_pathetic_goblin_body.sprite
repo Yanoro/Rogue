@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+material wood
+
+palette {
+  out = #1A1210
+  goblin_base = #6BA336
+  goblin_light = #8CD147
+  goblin_shadow = #497324
+  twine = #D6B265
+  cloth_base = #7A4A2E
+  cloth_shadow = #4A2A1C
+  cloth_light = #A8673E
+}
+
+// Outline silhouette for the torso, belly, and loincloth within (10,11)-(22,22)
+rect (12,11) (20,21) color=out
+rect (11,13) (21,20) color=out
+rect (10,14) (22,19) color=out
+
+// Tattered bottom edge outline of loincloth
+pixel (12,22) color=out
+pixel (14,22) color=out
+pixel (17,22) color=out
+pixel (19,22) color=out
+
+// Base green skin fill for the upper chest and potbelly
+rect (12,12) (20,18) color=goblin_base
+rect (11,14) (21,17) color=goblin_base
+
+// Potbelly roundness & volume (shadow beneath, highlight top-left)
+rect (12,17) (20,18) color=goblin_shadow
+pixel (11,16) color=goblin_shadow
+pixel (21,16) color=goblin_shadow
+rect (13,13) (17,14) color=goblin_light
+pixel (13,15) color=goblin_light
+
+// Navel / belly button
+pixel (16,16) color=goblin_shadow
+
+// Twine belt tied snugly under the belly
+line (11,18) (21,18) color=twine
+pixel (15,19) color=twine
+pixel (15,20) color=twine
+
+// Tattered leather loincloth underneath the belly
+rect (12,19) (20,20) color=cloth_base
+rect (12,21) (19,21) color=cloth_base
+
+// Loincloth shadow and ragged fringe
+line (12,21) (20,21) color=cloth_shadow
+pixel (12,22) color=cloth_shadow
+pixel (14,22) color=cloth_base
+pixel (17,22) color=cloth_shadow
+pixel (19,22) color=cloth_base
+
+// Leather texture and highlight
+pixel (13,19) color=cloth_light
+pixel (14,20) color=cloth_light
+pixel (18,20) color=cloth_shadow

@@ -200,7 +200,7 @@ void DebugConsoleWindow::Draw() {
   ImGui::SameLine();
 
   bool showAscii = game->drawAsciiToggleWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("DrawAscii Toggle", &showAscii)) {
+  if (ImGui::Checkbox("Collision Debug", &showAscii)) {
     if (showAscii) {
       game->drawAsciiToggleWindowEntity.set<ActiveWindow>({std::make_shared<DrawAsciiDebugWindow>(game)});
     } else {
@@ -1368,14 +1368,14 @@ DrawAsciiDebugWindow::DrawAsciiDebugWindow(Game* game) : game(game) {}
 void DrawAsciiDebugWindow::Draw() {
   bool isOpen = true;
   ImGui::SetNextWindowSize(ImVec2(340, 220), ImGuiCond_FirstUseEver);
-  ImGui::Begin("DrawAscii Debug", &isOpen, ImGuiWindowFlags_None);
+  ImGui::Begin("Collision Debug", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     game->drawAsciiToggleWindowEntity.remove<ActiveWindow>();
     ImGui::End();
     return;
   }
 
-  ImGui::Text("DrawAscii Rectangle Toggles");
+  ImGui::Text("Collision and visual bounds");
   ImGui::Separator();
 
   bool showOuter = DrawAsciiDebug::GetShowOuterRectangles();
@@ -1390,9 +1390,25 @@ void DrawAsciiDebugWindow::Draw() {
     game->debugLog->LogInfo(showInner ? "Inner rectangles enabled" : "Inner rectangles disabled");
   }
 
+  bool showHit = DrawAsciiDebug::GetShowHitboxes();
+  if (ImGui::Checkbox("Show Hitboxes (Cyan)", &showHit)) {
+    DrawAsciiDebug::SetShowHitboxes(showHit);
+  }
+  bool showPick = DrawAsciiDebug::GetShowPickboxes();
+  if (ImGui::Checkbox("Show Pickboxes (Magenta)", &showPick)) {
+    DrawAsciiDebug::SetShowPickboxes(showPick);
+  }
+  bool showCaps = DrawAsciiDebug::GetShowCapsules();
+  if (ImGui::Checkbox("Show Capsules (Green)", &showCaps)) {
+    DrawAsciiDebug::SetShowCapsules(showCaps);
+  }
+
   ImGui::Separator();
   ImGui::Text("Red: Tile boundaries");
   ImGui::Text("Blue: Text boundaries");
+  ImGui::Text("Cyan: alpha-tight Hitbox (AABB)");
+  ImGui::Text("Magenta: click Pickbox (AABB)");
+  ImGui::Text("Green: movement Capsule");
 
   ImGui::End();
 }

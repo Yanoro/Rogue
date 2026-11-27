@@ -17,6 +17,8 @@
 #include "RequiresParsing.h"
 #include "ResourceManager.h"
 #include "SpritePaths.hpp"
+#include "SpriteBounds.hpp"
+#include "SpriteDraw.hpp"
 #include "TrainingParsing.h"
 
 ObjectFactory::ObjectFactory() {
@@ -854,6 +856,42 @@ bool ObjectFactory::ApplyTemplate(flecs::entity obj, const std::string& type, Ma
       }
     }
     AttachSprite(obj, explicitSprite, type, *resourceManager, debugLog);
+  }
+
+  // A raster object gets the same alpha-tight picking box as a sprite actor.
+  // Movement collision for static objects remains conservative/tile-based in
+  // this slice; this makes clicking match the art.
+  if (const Sprite *sprite = obj.get<Sprite>();
+      sprite != nullptr && !sprite->path.empty() && resourceManager != nullptr) {
+    if (raylib::Texture *texture = resourceManager->GetTexture(sprite->path)) {
+      const SpriteAlphaBounds &bounds =
+          GetSpriteAlphaBounds(sprite->path, *resourceManager);
+      if (bounds.valid && bounds.width > 0 && bounds.height > 0) {
+        const DrawAscii *ascii = obj.get<DrawAscii>();
+        const float cellWidth =
+            ascii != nullptr ? static_cast<float>(ascii->width) : 32.0f;
+        const float cellHeight =
+            ascii != nullptr ? static_cast<float>(ascii->height) : 32.0f;
+        const SpriteRect fit =
+            SpriteFitRect(*texture, 0.0f, 0.0f, cellWidth, cellHeight);
+        if (fit.width > 0.0f && fit.height > 0.0f) {
+          const float scale = fit.width / static_cast<float>(texture->width);
+          const float width = static_cast<float>(bounds.width) * scale;
+          const float height = static_cast<float>(bounds.height) * scale;
+          if (width > 0.0f && height > 0.0f) {
+            const float offsetX = fit.x + static_cast<float>(bounds.x) * scale;
+            const float offsetY = fit.y + static_cast<float>(bounds.y) * scale;
+            obj.set<Pickbox>(
+                {static_cast<size_t>(std::max(1.0f, width)),
+                 static_cast<size_t>(std::max(1.0f, height)), offsetX, offsetY});
+            const float radius = width * 0.5f;
+            obj.set<CapsuleCollider>(
+                {radius, std::max(0.0f, height - width),
+                 offsetX + width * 0.5f, offsetY + radius});
+          }
+        }
+      }
+    }
   }
 
   // Assign Name

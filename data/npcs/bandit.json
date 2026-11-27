@@ -4,11 +4,16 @@
   "sprite": "zweihander_human_warrior",
   "disposition": "neutral",
   "retaliates": true,
-  "behavior": "bandit_melee",
   "skills": {
     "slash": {
       "level": 2
     }
   },
-  "portrait": ""
+  "portrait": "",
+  "pushable": true,
+  "wanderMinWait": 2.0,
+  "wanderMaxWait": 5.0,
+  "wanderRadius": 5.0,
+  "behaviorProfile": "bandit_behavior",
+  "damageFeedback": "flesh"
 }

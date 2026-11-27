@@ -36,6 +36,13 @@
       "duration": 20,
       "radius": 0
     },
-    "animation": "spell_cast"
-}
+    "animation": "spell_cast",
+    "floatingTextColor": [
+      255,
+      130,
+      50,
+      255
+    ],
+    "floatingTextSize": 0.0
+  }
 }

@@ -1,0 +1,40 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  dark_outline = #1a1210
+  goblin_base  = #62a838
+  goblin_hi    = #8ed44b
+  goblin_shad  = #3f7324
+  claw_tone    = #dbb98b
+}
+
+// Shoulder connection & upper arm
+rect (8,12) (10,16) color=dark_outline
+rect (8,13) (9,16) color=goblin_base
+pixel (8,13) color=goblin_hi
+pixel (9,15) color=goblin_shad
+
+// Bony elbow jutting slightly outwards to the left
+pixel (7,16) color=dark_outline
+pixel (7,17) color=dark_outline
+rect (8,16) (10,18) color=dark_outline
+pixel (8,16) color=goblin_hi
+pixel (8,17) color=goblin_base
+pixel (9,17) color=goblin_shad
+
+// Forearm - slender and tapering downward
+rect (8,18) (10,20) color=dark_outline
+pixel (9,18) color=goblin_base
+pixel (9,19) color=goblin_base
+pixel (8,19) color=goblin_hi
+
+// Wrist and limp clawed hand hanging downward
+rect (8,21) (10,23) color=dark_outline
+pixel (8,21) color=goblin_base
+pixel (9,21) color=goblin_shad
+pixel (8,22) color=claw_tone
+pixel (9,22) color=claw_tone
+pixel (9,23) color=dark_outline
+pixel (8,23) color=claw_tone

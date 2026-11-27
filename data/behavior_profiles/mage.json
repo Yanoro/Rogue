@@ -1,0 +1,11 @@
+{
+  "name": "Mage Behavior",
+  "description": "Kite at range, then fall back to melee when mana is exhausted.",
+  "initial": "aggressive",
+  "behaviors": {
+    "aggressive": "mage_kiter"
+  },
+  "transitions": [
+    {"on": "damaged", "from": "neutral", "to": "aggressive"}
+  ]
+}

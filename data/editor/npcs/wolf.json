@@ -1,9 +1,22 @@
 {
+  "armor": 0.0,
+  "attackCastSeconds": 2.0,
   "attackDamage": 8.0,
+  "attackFirstDelay": 2.0,
   "attackInterval": 6.0,
+  "attackLabel": "Strike",
+  "attackRange": 1.0,
+  "behavior": "",
+  "blocksMovement": true,
+  "combatStrategy": "chase",
+  "deathIcon": "",
   "description": "A quick, lean animal. Spawned without a brain on purpose: it is a body, and the pack behaviour that drives it is a C++ system, not data.",
   "disposition": "neutral",
   "name": "Wolf",
+  "neutralBehavior": "wander",
+  "obstacle": false,
+  "patrolHostileTemplate": "",
+  "pushable": false,
   "retaliates": false,
   "skills": {
     "attack": {
@@ -16,5 +29,9 @@
     "dexterity": 14.0,
     "strength": 12.0
   },
-  "combatStrategy": "chase"
+  "trainingDummy": false,
+  "velocity": 100.0,
+  "wanderMaxWait": 6.0,
+  "wanderMinWait": 2.0,
+  "wanderRadius": 6.0
 }

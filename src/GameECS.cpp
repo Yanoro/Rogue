@@ -13,6 +13,7 @@
 #include "ActorArt.hpp"
 #include "AsciiArtDraw.hpp"
 #include "SpriteDraw.hpp"
+#include "SpriteBounds.hpp"
 #include "RigRender.hpp"
 #include "RigGrip.hpp"
 #include "SpritePaths.hpp"
@@ -30,6 +31,7 @@
 #include "EntityInfoWindow.h"
 #include "StorageWindow.h"
 #include "Game.h"
+#include "UiStyle.hpp"
 #include "ObjectDesigner.hpp"
 #include "TileDesigner.hpp"
 #include "ContentEditorWindow.h"
@@ -331,6 +333,9 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       }
       data.disposition = definition->disposition;
       data.retaliates = definition->retaliates;
+      data.blocksMovement = definition->blocksMovement;
+      data.pushable = definition->pushable;
+      data.velocity = definition->velocity;
       data.attackDamage = definition->attackDamage;
       data.attackInterval = definition->attackInterval;
       data.attackRange = definition->attackRange;
@@ -345,6 +350,21 @@ void Game::ResolveNpcTemplate(NPCData &data) const {
       }
       if (data.behavior.empty()) {
         data.behavior = definition->behavior;
+      }
+      if (data.neutralBehavior.empty()) {
+        data.neutralBehavior = definition->neutralBehavior;
+      }
+      if (data.behaviorProfile.empty()) {
+        data.behaviorProfile = definition->behaviorProfile;
+      }
+      if (data.damageFeedback.empty()) {
+        data.damageFeedback = definition->damageFeedback;
+      }
+      data.wanderMinWait = definition->wanderMinWait;
+      data.wanderMaxWait = definition->wanderMaxWait;
+      data.wanderRadius = definition->wanderRadius;
+      if (data.patrolHostileTemplate.empty()) {
+        data.patrolHostileTemplate = definition->patrolHostileTemplate;
       }
     }
   }
@@ -429,6 +449,144 @@ bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
 }
 
 
+void Game::ApplySpriteHitboxes(flecs::entity entity) {
+  if (!entity.is_alive() || entity.has<RigBody>()) return;
+  const Sprite *sprite = entity.get<Sprite>();
+  if (sprite == nullptr || sprite->path.empty()) return;
+  raylib::Texture *texture = resourceManager.GetTexture(sprite->path);
+  if (texture == nullptr || texture->id == 0) return;
+  const DrawAscii *ascii = entity.get<DrawAscii>();
+  if (ascii == nullptr) return;
+  const SpriteAlphaBounds &bounds =
+      GetSpriteAlphaBounds(sprite->path, resourceManager);
+  if (!bounds.valid || bounds.width <= 0 || bounds.height <= 0) return;
+  const SpriteRect fit = SpriteFitRect(*texture, 0.0f, 0.0f,
+                                       static_cast<float>(ascii->width),
+                                       static_cast<float>(ascii->height));
+  if (fit.width <= 0.0f || fit.height <= 0.0f) return;
+  const float scale = fit.width / static_cast<float>(texture->width);
+  const float width = static_cast<float>(bounds.width) * scale;
+  const float height = static_cast<float>(bounds.height) * scale;
+  if (width <= 0.0f || height <= 0.0f) return;
+  const float offsetX = fit.x + static_cast<float>(bounds.x) * scale;
+  const float offsetY = fit.y + static_cast<float>(bounds.y) * scale;
+  entity.set<Hitbox>(
+      {static_cast<size_t>(std::max(1.0f, width)),
+       static_cast<size_t>(std::max(1.0f, height)), offsetX, offsetY});
+  entity.set<Pickbox>(
+      {static_cast<size_t>(std::max(1.0f, width)),
+       static_cast<size_t>(std::max(1.0f, height)), offsetX, offsetY});
+  const float radius = width * 0.5f;
+  entity.set<CapsuleCollider>(
+      {radius, std::max(0.0f, height - width), offsetX + width * 0.5f,
+       offsetY + radius});
+}
+
+namespace {
+
+std::vector<Vector2> ConvexHull(std::vector<Vector2> points) {
+  if (points.size() < 3) return points;
+  std::sort(points.begin(), points.end(),
+            [](const Vector2 &a, const Vector2 &b) {
+              return a.x == b.x ? a.y < b.y : a.x < b.x;
+            });
+  const auto cross = [](const Vector2 &o, const Vector2 &a,
+                        const Vector2 &b) {
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  };
+  std::vector<Vector2> hull;
+  for (const Vector2 &point : points) {
+    while (hull.size() >= 2 &&
+           cross(hull[hull.size() - 2], hull.back(), point) <= 0.0f) {
+      hull.pop_back();
+    }
+    hull.push_back(point);
+  }
+  const size_t lower = hull.size();
+  for (auto it = points.rbegin() + 1; it != points.rend(); ++it) {
+    while (hull.size() > lower &&
+           cross(hull[hull.size() - 2], hull.back(), *it) <= 0.0f) {
+      hull.pop_back();
+    }
+    hull.push_back(*it);
+  }
+  hull.pop_back();
+  return hull;
+}
+
+struct PolygonCollision {
+  bool hit = false;
+  Vector2 axis{1.0f, 0.0f};
+  float depth = 0.0f;
+};
+
+std::vector<Vector2> RectangleCorners(const Rectangle &rect) {
+  return {{rect.x, rect.y},
+          {rect.x + rect.width, rect.y},
+          {rect.x + rect.width, rect.y + rect.height},
+          {rect.x, rect.y + rect.height}};
+}
+
+PolygonCollision PolygonSAT(const std::vector<Vector2> &a,
+                            const std::vector<Vector2> &b) {
+  PolygonCollision collision;
+  if (a.size() < 3 || b.size() < 3) return collision;
+  collision.hit = true;
+  collision.depth = 1e30f;
+  const auto testAxes = [&](const std::vector<Vector2> &polygon,
+                            const std::vector<Vector2> &other) {
+    for (size_t i = 0; i < polygon.size(); ++i) {
+      const Vector2 &p = polygon[i];
+      const Vector2 &q = polygon[(i + 1) % polygon.size()];
+      Vector2 axis{-(q.y - p.y), q.x - p.x};
+      const float length = std::sqrt(axis.x * axis.x + axis.y * axis.y);
+      if (length <= 0.0001f) continue;
+      axis.x /= length;
+      axis.y /= length;
+      float minA = 1e30f, maxA = -1e30f;
+      float minB = 1e30f, maxB = -1e30f;
+      for (const Vector2 &point : a) {
+        const float projection = point.x * axis.x + point.y * axis.y;
+        minA = std::min(minA, projection);
+        maxA = std::max(maxA, projection);
+      }
+      for (const Vector2 &point : other) {
+        const float projection = point.x * axis.x + point.y * axis.y;
+        minB = std::min(minB, projection);
+        maxB = std::max(maxB, projection);
+      }
+      const float overlap = std::min(maxA, maxB) - std::max(minA, minB);
+      if (overlap <= 0.0f) {
+        collision.hit = false;
+        return;
+      }
+      if (overlap < collision.depth) {
+        collision.depth = overlap;
+        collision.axis = axis;
+      }
+    }
+  };
+  testAxes(a, b);
+  if (!collision.hit) return collision;
+  testAxes(b, a);
+  if (!collision.hit) return collision;
+  return collision;
+}
+
+std::vector<Vector2> WorldHull(flecs::entity entity,
+                               const ScreenPosition &position) {
+  std::vector<Vector2> points;
+  if (const RigHitboxes *rig = entity.get<RigHitboxes>()) {
+    points.reserve(rig->hull.size());
+    for (const Vector2 &point : rig->hull) {
+      points.push_back({position.x + point.x, position.y + point.y});
+    }
+  }
+  return points;
+}
+
+}  // namespace
+
 void Game::ApplyRigFootprint(flecs::entity e, const ActorRig &rig) {
   const RigGeometry geometry = artStyleRegistry.GeometryFor(rig);
   const DrawAscii *ascii = e.get<DrawAscii>();
@@ -454,6 +612,127 @@ void Game::ApplyRigFootprint(flecs::entity e, const ActorRig &rig) {
   pick.offsetX = (cellWidth - static_cast<float>(pickWidth)) * 0.5f;
   pick.offsetY = cellHeight - static_cast<float>(pickHeight);
   e.set<Pickbox>(pick);
+  const float capsuleWidth = static_cast<float>(pickWidth);
+  const float capsuleHeight = static_cast<float>(pickHeight);
+  e.set<CapsuleCollider>(
+      {capsuleWidth * 0.5f, std::max(0.0f, capsuleHeight - capsuleWidth),
+       pick.offsetX + capsuleWidth * 0.5f, pick.offsetY + capsuleWidth * 0.5f});
+
+  // Static base-pose boxes, one per declared part. Equipment and animation are
+  // deliberately excluded; this is the body's collision/selection shape.
+  e.remove<RigHitboxes>();
+  const DrawAscii *rigAscii = e.get<DrawAscii>();
+  const ScreenPosition *screen = e.get<ScreenPosition>();
+  if (rigAscii == nullptr || screen == nullptr) return;
+  const float footX = screen->x + static_cast<float>(rigAscii->width) * 0.5f;
+  const float footY = screen->y + static_cast<float>(rigAscii->height);
+  const float rigX = footX - static_cast<float>(geometry.footX);
+  const float rigY = footY - static_cast<float>(geometry.footY);
+  RigHitboxes hitboxes;
+  std::vector<Vector2> corners;
+  for (const RigPart &part : rig.parts) {
+    const Texture2D *texture =
+        RigRender::ResolveRigSprite(part.sprite, resourceManager);
+    if (texture == nullptr || texture->id == 0 || texture->width <= 0 ||
+        texture->height <= 0) {
+      continue;
+    }
+    const SpriteAlphaBounds &bounds = GetTextureAlphaBounds(*texture);
+    if (!bounds.valid || bounds.width <= 0 || bounds.height <= 0) continue;
+    const SpriteRect fit = SpriteFitRect(
+        *texture, rigX, rigY, static_cast<float>(geometry.width),
+        static_cast<float>(geometry.height));
+    if (fit.width <= 0.0f || fit.height <= 0.0f) continue;
+    const float scale = fit.width / static_cast<float>(texture->width);
+    const Rectangle local{
+        fit.x - screen->x + static_cast<float>(bounds.x) * scale,
+        fit.y - screen->y + static_cast<float>(bounds.y) * scale,
+        static_cast<float>(bounds.width) * scale,
+        static_cast<float>(bounds.height) * scale};
+    hitboxes.parts.push_back({part.id, local, part.z});
+    corners.push_back({local.x, local.y});
+    corners.push_back({local.x + local.width, local.y});
+    corners.push_back({local.x, local.y + local.height});
+    corners.push_back(
+        {local.x + local.width, local.y + local.height});
+  }
+  if (!hitboxes.parts.empty()) {
+    hitboxes.hull = ConvexHull(std::move(corners));
+    e.set<RigHitboxes>(std::move(hitboxes));
+  }
+}
+
+void Game::TriggerHitFeedback(flecs::entity target, float amount) {
+  if (!target.is_alive() || amount <= 0.0f) return;
+  const GameSettings::UiSection::CombatSection::HitFeedbackSection &global =
+      Settings().ui.combat.hitFeedback;
+  bool flashEnabled = global.flashEnabled;
+  std::string flashColor = global.flashColor;
+  float flashSeconds = global.flashSeconds;
+  bool shakeEnabled = global.shakeEnabled;
+  float shakeMagnitude = global.shakeMagnitude;
+  float shakeSeconds = global.shakeSeconds;
+  std::string hitClip = global.hitClip;
+  if (const DamageFeedbackId *id = target.get<DamageFeedbackId>()) {
+    if (const DamageFeedbackDef *profile = damageFeedbackRegistry.Get(id->id)) {
+      flashEnabled = profile->flashEnabled;
+      flashColor = profile->flashColor;
+      flashSeconds = profile->flashSeconds;
+      shakeEnabled = profile->shakeEnabled;
+      shakeMagnitude = profile->shakeMagnitude;
+      shakeSeconds = profile->shakeSeconds;
+      hitClip = profile->hitClip;
+    }
+  }
+  if (!flashEnabled) flashSeconds = 0.0f;
+  if (!shakeEnabled) shakeSeconds = 0.0f;
+  if (flashSeconds <= 0.0f && shakeSeconds <= 0.0f && hitClip.empty()) return;
+
+  const ImVec4 parsed = UiStyle::ParseColor(
+      flashColor, ImVec4(1.0f, 0.24f, 0.24f, 1.0f));
+  const Color color = {
+      static_cast<unsigned char>(std::clamp(parsed.x * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.y * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.z * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.w * 255.0f, 0.0f, 255.0f))};
+
+  HitReaction *reaction =
+      target.has<HitReaction>() ? target.get_mut<HitReaction>() : nullptr;
+  if (reaction == nullptr) {
+    target.set<HitReaction>({});
+    reaction = target.get_mut<HitReaction>();
+  }
+  if (reaction == nullptr) return;
+  reaction->seed = static_cast<std::uint32_t>(target.id()) * 2654435761u + 1u;
+  if (flashSeconds > 0.0f) {
+    reaction->flashDuration = std::max(reaction->flashDuration, flashSeconds);
+    reaction->flashRemaining = std::max(reaction->flashRemaining, flashSeconds);
+    reaction->flashColor = color;
+  }
+  if (shakeSeconds > 0.0f) {
+    reaction->shakeDuration = std::max(reaction->shakeDuration, shakeSeconds);
+    reaction->shakeRemaining = std::max(reaction->shakeRemaining, shakeSeconds);
+    reaction->shakeMagnitude = std::max(reaction->shakeMagnitude, shakeMagnitude);
+  }
+  if (!hitClip.empty()) {
+    const RigBody *body = target.get<RigBody>();
+    const ActorRig *rig = body != nullptr ? rigRegistry.Get(body->rig) : nullptr;
+    if (rig != nullptr) {
+      for (const RigClip &clip : rig->clips) {
+        if (clip.id != hitClip) continue;
+        const float duration =
+            clip.fps > 0 ? clip.frames / static_cast<float>(clip.fps) : 0.0f;
+        if (duration <= 0.0f) break;
+        if (reaction->overlayClip != hitClip ||
+            reaction->overlayTime >= reaction->overlayDuration) {
+          reaction->overlayClip = hitClip;
+          reaction->overlayTime = 0.0f;
+          reaction->overlayDuration = duration;
+        }
+        break;
+      }
+    }
+  }
 }
 
 bool Game::ApplyPlayerRig(const std::string &rigId, std::string &message) {
@@ -536,7 +815,6 @@ flecs::entity Game::createNPC(const NPCData &data) {
               static_cast<size_t>(map->GetTileWidth()),
               static_cast<size_t>(map->GetTileHeight()),
           })
-          .set<WindowOnClick>({WindowType::EntityInfoWindowType})
           .set<Velocity>({0, 0})
           // Authored here rather than attached lazily by the facing system, for
           // the same reason Velocity is: a character without it would be a
@@ -554,17 +832,50 @@ flecs::entity Game::createNPC(const NPCData &data) {
   if (!data.npcTemplate.empty()) {
     entity.set<NpcTemplateId>({data.npcTemplate});
   }
+  if (!data.damageFeedback.empty()) {
+    entity.set<DamageFeedbackId>({data.damageFeedback});
+  }
   if (!data.behavior.empty()) {
-    entity.set<NpcBehaviorId>({data.behavior});
-    entity.set<NpcBehaviorState>({});
+    entity.set<NpcAggressiveBehaviorId>({data.behavior});
+  }
+  if (!data.neutralBehavior.empty()) {
+    entity.set<NpcNeutralBehaviorId>({data.neutralBehavior});
+  }
+  std::string activeBehavior =
+      !data.neutralBehavior.empty() ? data.neutralBehavior : data.behavior;
+  if (!data.behaviorProfile.empty()) {
+    entity.set<NpcBehaviorProfileId>({data.behaviorProfile});
+    if (const BehaviorProfileDef *profile =
+            behaviorProfileRegistry.Get(data.behaviorProfile)) {
+      const auto found = profile->behaviors.find(profile->initial);
+      if (found != profile->behaviors.end()) activeBehavior = found->second;
+      else if (!profile->behaviors.empty()) {
+        activeBehavior = profile->behaviors.begin()->second;
+      }
+    }
+  }
+  if (!activeBehavior.empty()) {
+    entity.set<NpcBehaviorId>({activeBehavior});
+    NpcBehaviorState state;
+    state.randomState = static_cast<uint32_t>(entity.id()) * 2654435761u + 1u;
+    entity.set<NpcBehaviorState>(state);
     entity.set<SkillCooldowns>({});
     entity.set<GlobalCooldown>({});
   }
   if (data.trainingDummy) {
     entity.add<TrainingDummy>();
   }
-  if (data.obstacle) {
+  // Training dummies are fixed posts even if an old local override says
+  // obstacle=false. They must still block pathfinding like the authored
+  // templates intend.
+  if (data.obstacle || data.trainingDummy) {
     entity.add<Obstacle>();
+  }
+  if (data.blocksMovement) {
+    entity.add<BlocksMovement>();
+  }
+  if (data.pushable) {
+    entity.add<Pushable>();
   }
   if (data.armor > 0.0f) {
     entity.set<Armor>({data.armor});
@@ -608,6 +919,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
   // the character actually has.
   GiveBody(entity, &raceRegistry, data.race, data.slots, data.sprite,
            resourceManager, debugLog.get());
+  ApplySpriteHitboxes(entity);
 
   // Authored starting equipment. Each id is spawned as a real held item and put
   // on through the same planner [EQUIP] uses, so a too-small body, an unknown
@@ -648,7 +960,7 @@ flecs::entity Game::createNPC(const NPCData &data) {
     }
     Resources::Initialize(entity, specs, true);
   }
-  entity.set<MaxSpeed>({DEFAULT_MAXSPEED});
+  entity.set<MaxSpeed>({data.velocity});
 
   Disposition stance = Disposition::Neutral;
   if (data.disposition == "aggressive") {
@@ -887,6 +1199,19 @@ void Game::KillEntity(flecs::entity entity) {
 
   if (corpse.is_alive()) {
     corpse.add<Corpse>();
+    // The corpse object was spawned at the death tile; move its visual anchor to
+    // the exact screen point where the body stopped, not the tile centre.
+    if (const ScreenPosition *screen = entity.get<ScreenPosition>()) {
+      corpse.set<ScreenPosition>(*screen);
+    }
+    if (const NpcTemplateId *templateId = entity.get<NpcTemplateId>()) {
+      if (const NpcTemplate *definition =
+              npcTemplateRegistry.Get(templateId->id)) {
+        if (!definition->deathIcon.empty()) {
+          corpse.set<CorpseDeathIcon>({definition->deathIcon});
+        }
+      }
+    }
     std::vector<flecs::entity> held;
     entity.each<Holds>([&](flecs::entity child) { held.push_back(child); });
     for (flecs::entity child : held) {
@@ -981,17 +1306,178 @@ void Game::DrawEntitiesSorted() {
                             b.position.y + b.ascii.height;
                    });
   for (const Entry &entry : entries) {
-    DrawEntityVisual(entry.entity, entry.ascii, entry.position);
+    ScreenPosition drawPosition = entry.position;
+    const HitReaction *reaction = entry.entity.get<HitReaction>();
+    if (reaction != nullptr && reaction->shakeRemaining > 0.0f &&
+        reaction->shakeDuration > 0.0f) {
+      const float t = 1.0f - reaction->shakeRemaining / reaction->shakeDuration;
+      const float wave = std::sin(
+          (reaction->seed & 0xFFFFu) * 0.01f + t * 38.0f);
+      drawPosition.x += wave * reaction->shakeMagnitude *
+                        (1.0f - t);
+      drawPosition.y += std::cos((reaction->seed & 0x7FFFu) * 0.013f +
+                                 t * 31.0f) *
+                        reaction->shakeMagnitude * 0.6f * (1.0f - t);
+    }
+    DrawEntityVisual(entry.entity, entry.ascii, drawPosition);
   }
+}
+
+const Texture2D *Game::TargetSilhouetteTexture(const std::string &spritePath) {
+  if (spritePath.empty()) return nullptr;
+  const auto cached = targetSilhouetteCache.find(spritePath);
+  if (cached != targetSilhouetteCache.end()) {
+    return cached->second.id != 0 ? &cached->second : nullptr;
+  }
+
+  raylib::Texture *texture = resourceManager.GetTexture(spritePath);
+  if (texture == nullptr || texture->id == 0 || texture->width <= 0 ||
+      texture->height <= 0) {
+    targetSilhouetteCache.emplace(spritePath, Texture2D{});
+    return nullptr;
+  }
+
+  Image image = LoadImageFromTexture(*texture);
+  ImageFormat(&image, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+  if (image.data == nullptr || image.width <= 0 || image.height <= 0) {
+    UnloadImage(image);
+    targetSilhouetteCache.emplace(spritePath, Texture2D{});
+    return nullptr;
+  }
+
+  // One transparent pixel of padding on every side gives the outline room to
+  // exist outside a sprite whose opaque pixels touch the texture edge.
+  Image outline = GenImageColor(image.width + 2, image.height + 2, BLANK);
+  const Color *source = static_cast<const Color *>(image.data);
+  Color *destination = static_cast<Color *>(outline.data);
+  bool anyOpaque = false;
+  const auto opaque = [&](int x, int y) {
+    if (x < 0 || y < 0 || x >= image.width || y >= image.height) return false;
+    return source[y * image.width + x].a > 8;
+  };
+
+  for (int y = 0; y < image.height; ++y) {
+    for (int x = 0; x < image.width; ++x) {
+      if (!opaque(x, y)) continue;
+      anyOpaque = true;
+    }
+  }
+  if (!anyOpaque) {
+    UnloadImage(image);
+    UnloadImage(outline);
+    targetSilhouetteCache.emplace(spritePath, Texture2D{});
+    return nullptr;
+  }
+
+  for (int y = 0; y < outline.height; ++y) {
+    for (int x = 0; x < outline.width; ++x) {
+      const int sourceX = x - 1;
+      const int sourceY = y - 1;
+      if (opaque(sourceX, sourceY)) continue;
+      bool edge = false;
+      for (int dy = -1; dy <= 1 && !edge; ++dy) {
+        for (int dx = -1; dx <= 1 && !edge; ++dx) {
+          if (dx == 0 && dy == 0) continue;
+          edge = opaque(sourceX + dx, sourceY + dy);
+        }
+      }
+      if (edge) {
+        destination[y * outline.width + x] = WHITE;
+      }
+    }
+  }
+
+  UnloadImage(image);
+  Texture2D result = LoadTextureFromImage(outline);
+  UnloadImage(outline);
+  SetTextureFilter(result, TEXTURE_FILTER_POINT);
+  targetSilhouetteCache.emplace(spritePath, result);
+  return result.id != 0 ? &targetSilhouetteCache[spritePath] : nullptr;
 }
 
 void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
                             const ScreenPosition &screenPos) {
+  const HitReaction *hitReaction = e.get<HitReaction>();
+  const auto drawHitFlash = [&](const Rectangle &bounds) {
+    if (hitReaction == nullptr || hitReaction->flashRemaining <= 0.0f ||
+        hitReaction->flashDuration <= 0.0f || bounds.width <= 0.0f ||
+        bounds.height <= 0.0f) {
+      return;
+    }
+    const float ratio =
+        std::clamp(hitReaction->flashRemaining / hitReaction->flashDuration,
+                   0.0f, 1.0f);
+    Color flash = hitReaction->flashColor;
+    flash.a = static_cast<unsigned char>(flash.a * ratio * 0.75f);
+    DrawRectangleRec(bounds, flash);
+  };
+  const auto hitFlashColor = [&]() -> Color {
+    Color color = hitReaction != nullptr ? hitReaction->flashColor
+                                         : Color{255, 60, 60, 0};
+    if (hitReaction != nullptr && hitReaction->flashDuration > 0.0f) {
+      const float ratio =
+          std::clamp(hitReaction->flashRemaining / hitReaction->flashDuration,
+                     0.0f, 1.0f);
+      color.a = static_cast<unsigned char>(color.a * ratio * 0.75f);
+    }
+    return color;
+  };
+
+  // Debug bounds are drawn before any early-return art path. A rigged body
+  // returns from DrawRigEntity, so keeping these below that return hid the
+  // player's and every rigged NPC's hitboxes.
+  if (DrawAsciiDebug::GetShowHitboxes()) {
+    if (const RigHitboxes *rig = e.get<RigHitboxes>()) {
+      for (const RigPartHitbox &part : rig->parts) {
+        DrawRectangleLinesEx(
+            {screenPos.x + part.rect.x, screenPos.y + part.rect.y,
+             part.rect.width, part.rect.height},
+            1.0f, SKYBLUE);
+      }
+      for (size_t i = 1; i < rig->hull.size(); ++i) {
+        DrawLineV({screenPos.x + rig->hull[i - 1].x,
+                   screenPos.y + rig->hull[i - 1].y},
+                  {screenPos.x + rig->hull[i].x,
+                   screenPos.y + rig->hull[i].y},
+                  GREEN);
+      }
+      if (rig->hull.size() > 1) {
+        DrawLineV({screenPos.x + rig->hull.back().x,
+                   screenPos.y + rig->hull.back().y},
+                  {screenPos.x + rig->hull.front().x,
+                   screenPos.y + rig->hull.front().y},
+                  GREEN);
+      }
+    } else if (const Hitbox *hitbox = e.get<Hitbox>()) {
+      DrawRectangleLinesEx(HitboxRectangle(screenPos, *hitbox), 1.5f, SKYBLUE);
+    }
+  }
+  if (DrawAsciiDebug::GetShowPickboxes()) {
+    if (const Pickbox *pick = e.get<Pickbox>()) {
+      DrawRectangleLinesEx(PickboxRectangle(screenPos, *pick), 1.5f, MAGENTA);
+    }
+  }
+  if (DrawAsciiDebug::GetShowCapsules()) {
+    if (const CapsuleCollider *capsule = e.get<CapsuleCollider>()) {
+      const float centerX = screenPos.x + capsule->centerX;
+      const float topY = screenPos.y + capsule->topY;
+      const float bottomY = topY + capsule->segment;
+      DrawCircleLines(static_cast<int>(centerX), static_cast<int>(topY),
+                      capsule->radius, GREEN);
+      DrawCircleLines(static_cast<int>(centerX), static_cast<int>(bottomY),
+                      capsule->radius, GREEN);
+      DrawLineV({centerX, topY}, {centerX, bottomY}, GREEN);
+    }
+  }
+
   // A rig wins over both: it is several layers with worn equipment over them. It only
   // handles the fall-through when the rig itself cannot draw, in which case the sprite (or
   // the unknown placeholder) is still the honest answer.
   if (const RigBody *body = e.get<RigBody>()) {
     if (DrawRigEntity(e, *body, screenPos, ascii)) {
+      if (hitReaction != nullptr && hitReaction->flashRemaining > 0.0f) {
+        DrawRigEntity(e, *body, screenPos, ascii, hitFlashColor());
+      }
       return;
     }
   }
@@ -1006,8 +1492,10 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
   // whether the plate is drawn at all -- see the comment on it below.
   const Sprite *sprite = e.get<Sprite>();
   Rectangle spriteRect = {0.0f, 0.0f, 0.0f, 0.0f};
+  const Texture2D *drawnTexture = nullptr;
   if (sprite != nullptr) {
     if (raylib::Texture *texture = resourceManager.GetTexture(sprite->path)) {
+      drawnTexture = texture;
       spriteRect = DrawSpriteFitted(*texture, screenPos.x, screenPos.y,
                                     static_cast<float>(ascii.width),
                                     static_cast<float>(ascii.height));
@@ -1022,9 +1510,27 @@ void Game::DrawEntityVisual(flecs::entity e, const DrawAscii &ascii,
   // placeholder too, or the cell would be blank.
   if (spriteRect.width <= 0.0f) {
     if (raylib::Texture *unknown = resourceManager.GetTexture(UnknownSpritePath())) {
+      drawnTexture = unknown;
       spriteRect = DrawSpriteFitted(*unknown, screenPos.x, screenPos.y,
                                     static_cast<float>(ascii.width),
                                     static_cast<float>(ascii.height));
+    }
+  }
+
+  if (hitReaction != nullptr && hitReaction->flashRemaining > 0.0f) {
+    if (drawnTexture != nullptr && spriteRect.width > 0.0f) {
+      const Rectangle source = {0.0f, 0.0f,
+                                static_cast<float>(drawnTexture->width),
+                                static_cast<float>(drawnTexture->height)};
+      DrawTexturePro(*drawnTexture, source, spriteRect, {0.0f, 0.0f}, 0.0f,
+                     hitFlashColor());
+    } else {
+      Rectangle fallbackBounds = {screenPos.x, screenPos.y, ascii.width,
+                                  ascii.height};
+      if (const Hitbox *hitbox = e.get<Hitbox>()) {
+        fallbackBounds = HitboxRectangle(screenPos, *hitbox);
+      }
+      drawHitFlash(fallbackBounds);
     }
   }
 
@@ -1060,7 +1566,8 @@ const RigGrip::ArmGrip &Game::RigGripFor(const std::string &sprite) {
 }
 
 bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
-                         const ScreenPosition &screenPos, const DrawAscii &ascii) {
+                         const ScreenPosition &screenPos, const DrawAscii &ascii,
+                         Color tint) {
   const ActorRig *rig = rigRegistry.Get(body.rig);
   if (rig == nullptr) return false;
 
@@ -1092,16 +1599,25 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
 
   RigRender::AnimationState animation;
   const RigClip *clip = nullptr;
-  if (const RigAnim *anim = e.get<RigAnim>()) {
-    for (const RigClip &candidate : rig->clips) {
-      if (candidate.id == anim->clip) {
-        clip = &candidate;
-        break;
-      }
-    }
-    animation.clip = clip;
-    animation.time = anim->time;
+  const HitReaction *hitReaction = e.get<HitReaction>();
+  std::string animationClip;
+  float animationTime = 0.0f;
+  if (hitReaction != nullptr && hitReaction->overlayTime <
+                                      hitReaction->overlayDuration) {
+    animationClip = hitReaction->overlayClip;
+    animationTime = hitReaction->overlayTime;
+  } else if (const RigAnim *anim = e.get<RigAnim>()) {
+    animationClip = anim->clip;
+    animationTime = anim->time;
   }
+  for (const RigClip &candidate : rig->clips) {
+    if (candidate.id == animationClip) {
+      clip = &candidate;
+      break;
+    }
+  }
+  animation.clip = clip;
+  animation.time = animationTime;
 
   // Larger-than-cell rigs are drawn from the foot, not from the tile's top-left. The
   // world cell stays the collision/selection cell; the art may extend above it.
@@ -1113,7 +1629,7 @@ bool Game::DrawRigEntity(flecs::entity e, const RigBody &body,
   const bool drew = RigRender::DrawWorld(
       *rig, resourceManager, worn, rigX, rigY,
       static_cast<float>(geometry.width), static_cast<float>(geometry.height),
-      clip != nullptr ? &animation : nullptr, geometry);
+      clip != nullptr ? &animation : nullptr, geometry, tint);
 
   if (gripItems.empty()) return drew;
 
@@ -1203,7 +1719,24 @@ void Game::ECSInitOverlaySystems() {
         }
 
         Color tagColor = BLACK;
-        if (e.has<NameTagColor>()) {
+        if (const NpcDisposition *disposition = e.get<NpcDisposition>()) {
+          const GameSettings::HudSection::NameplateSection &nameplate =
+              Settings().hud.nameplate;
+          const std::string &hex = disposition->value == Disposition::Aggressive
+                                        ? nameplate.aggressiveColor
+                                        : nameplate.neutralColor;
+          const ImVec4 parsed =
+              UiStyle::ParseColor(hex, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+          tagColor = Color{
+              static_cast<unsigned char>(
+                  std::clamp(parsed.x * 255.0f, 0.0f, 255.0f)),
+              static_cast<unsigned char>(
+                  std::clamp(parsed.y * 255.0f, 0.0f, 255.0f)),
+              static_cast<unsigned char>(
+                  std::clamp(parsed.z * 255.0f, 0.0f, 255.0f)),
+              static_cast<unsigned char>(
+                  std::clamp(parsed.w * 255.0f, 0.0f, 255.0f))};
+        } else if (e.has<NameTagColor>()) {
           tagColor = e.get<NameTagColor>()->color;
         }
 
@@ -1219,6 +1752,140 @@ void Game::ECSInitOverlaySystems() {
         
         ScreenPosition TextPos = {pos.x + entityWidth / 2.0f - textWidth / 2.0f, pos.y - 20.0f};
         DrawText(displayName.name.c_str(), TextPos.x, TextPos.y, fontSize, tagColor);
+      });
+
+  // Optional world-space status strip over each character's head. This is a
+  // presentation-only view of the same StatusEffects the portrait HUD reads.
+  ecs.system<ScreenPosition, StatusEffects>("StatusOverheadRenderSystem")
+      .with<Actor>()
+      .kind<Render>()
+      .each([this](flecs::entity entity, const ScreenPosition &position,
+                   const StatusEffects &statuses) {
+        if (!Settings().ui.combat.statusEffects.showAboveHead) return;
+        std::vector<const StatusEffectDef *> visible;
+        for (const StatusEffectInstance &status : statuses.effects) {
+          if (status.remaining <= 0.0f) continue;
+          if (const StatusEffectDef *definition =
+                  statusEffectRegistry.Get(status.id)) {
+            visible.push_back(definition);
+          }
+        }
+        if (visible.empty()) return;
+        float entityWidth = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+        if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
+          entityWidth = static_cast<float>(ascii->width);
+        } else if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+          entityWidth = static_cast<float>(hitbox->width);
+        }
+        constexpr float kIcon = 18.0f;
+        constexpr float kGap = 2.0f;
+        const float rowWidth =
+            static_cast<float>(visible.size()) * kIcon +
+            static_cast<float>(visible.size() - 1) * kGap;
+        float entityHeight = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
+        if (const DrawAscii *ascii = entity.get<DrawAscii>()) {
+          entityHeight = static_cast<float>(ascii->height);
+        } else if (const Hitbox *hitbox = entity.get<Hitbox>()) {
+          entityHeight = static_cast<float>(hitbox->height);
+        }
+        float x = position.x + entityWidth * 0.5f - rowWidth * 0.5f;
+        const float distance =
+            Settings().ui.combat.statusEffects.distance;
+        const bool below =
+            Settings().ui.combat.statusEffects.position == "below";
+        const float y = below ? position.y + entityHeight + distance
+                              : position.y - distance;
+        for (const StatusEffectDef *definition : visible) {
+          const std::string iconId =
+              definition->icon.empty() ? "missing" : definition->icon;
+          if (const Texture2D *icon = IconPaths::ResolveIconTexture(
+                  iconRegistry, resourceManager, iconId, debugLog.get())) {
+            const Rectangle source = {
+                0.0f, 0.0f, static_cast<float>(icon->width),
+                static_cast<float>(icon->height)};
+            const Rectangle destination = {x, y, kIcon, kIcon};
+            DrawTexturePro(*icon, source, destination, Vector2{0.0f, 0.0f},
+                           0.0f, WHITE);
+          }
+          x += kIcon + kGap;
+        }
+      });
+
+  // The player's current combat target. The silhouette style traces the sprite's
+  // alpha mask pixel by pixel; the rectangle style keeps the old bounding border.
+  // Both are drawn from the player's LockedTarget inside the camera-space render
+  // pass, and the colour/selection is live from Settings.
+  ecs.system<LockedTarget>("TargetHighlightRenderSystem")
+      .with<PlayerControlled>()
+      .kind<Render>()
+      .each([this](flecs::entity, const LockedTarget &lock) {
+        const GameSettings &settings = Settings();
+        if (!settings.ui.combat.highlight.enabled) return;
+        if (!lock.target.is_alive() || lock.target == playerEntity) return;
+        const ScreenPosition *screen = lock.target.get<ScreenPosition>();
+        if (screen == nullptr) return;
+
+        const ImVec4 parsed = UiStyle::ParseColor(
+            settings.ui.combat.highlight.color,
+            ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
+        const Color color = {
+            static_cast<unsigned char>(
+                std::clamp(parsed.x * 255.0f, 0.0f, 255.0f)),
+            static_cast<unsigned char>(
+                std::clamp(parsed.y * 255.0f, 0.0f, 255.0f)),
+            static_cast<unsigned char>(
+                std::clamp(parsed.z * 255.0f, 0.0f, 255.0f)),
+            static_cast<unsigned char>(
+                std::clamp(parsed.w * 255.0f, 0.0f, 255.0f))};
+
+        // A rig is a composited set of layers, not one alpha mask. It keeps the
+        // rectangular Pickbox outline until there is a composite render pass for
+        // silhouette tracing.
+        if (settings.ui.combat.highlight.style == "silhouette" &&
+            !lock.target.has<RigBody>()) {
+          if (const Sprite *sprite = lock.target.get<Sprite>();
+              sprite != nullptr && !sprite->path.empty()) {
+            if (const DrawAscii *ascii = lock.target.get<DrawAscii>()) {
+              if (raylib::Texture *texture =
+                      resourceManager.GetTexture(sprite->path)) {
+                const SpriteRect fit = SpriteFitRect(
+                    *texture, screen->x, screen->y,
+                    static_cast<float>(ascii->width),
+                    static_cast<float>(ascii->height));
+                if (fit.width > 0.0f && fit.height > 0.0f) {
+                  if (const Texture2D *outline =
+                          TargetSilhouetteTexture(sprite->path)) {
+                    const Rectangle source = {
+                        0.0f, 0.0f, static_cast<float>(outline->width),
+                        static_cast<float>(outline->height)};
+                    const Rectangle destination = {
+                        fit.x - 1.0f, fit.y - 1.0f, fit.width + 2.0f,
+                        fit.height + 2.0f};
+                    DrawTexturePro(*outline, source, destination,
+                                   Vector2{0.0f, 0.0f}, 0.0f, color);
+                    return;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Rectangle fallback: Pickbox is the rig silhouette box; a sprite actor
+        // uses its cell-sized DrawAscii bounds so the border does not collapse to
+        // the smaller collision Hitbox.
+        Rectangle rect = {screen->x, screen->y, 0.0f, 0.0f};
+        if (const Pickbox *pick = lock.target.get<Pickbox>();
+            pick != nullptr && pick->width > 0 && pick->height > 0) {
+          rect = PickboxRectangle(*screen, *pick);
+        } else if (const DrawAscii *ascii = lock.target.get<DrawAscii>()) {
+          rect = {screen->x, screen->y, static_cast<float>(ascii->width),
+                  static_cast<float>(ascii->height)};
+        } else if (const Hitbox *hitbox = lock.target.get<Hitbox>()) {
+          rect = HitboxRectangle(*screen, *hitbox);
+        }
+        if (rect.width <= 0.0f || rect.height <= 0.0f) return;
+        DrawRectangleLinesEx(rect, 2.0f, color);
       });
 
   // Progress bar for timed actions (e.g. harvesting). The action entity carries
@@ -1429,6 +2096,7 @@ void Game::ECSInitOverlaySystems() {
         Vector2 anchor = floating.anchor;
         bool haveAnchor = floating.anchored;
         float entityWidth = static_cast<float>(DEFAULT_ENTITY_VISUAL_WIDTH);
+        float entityHeight = static_cast<float>(DEFAULT_ENTITY_VISUAL_HEIGHT);
         if (floating.target.is_alive()) {
           if (const ScreenPosition *pos = floating.target.get<ScreenPosition>()) {
             anchor = {pos->x, pos->y};
@@ -1436,8 +2104,10 @@ void Game::ECSInitOverlaySystems() {
           }
           if (const DrawAscii *ascii = floating.target.get<DrawAscii>()) {
             entityWidth = static_cast<float>(ascii->width);
+            entityHeight = static_cast<float>(ascii->height);
           } else if (const Hitbox *hitbox = floating.target.get<Hitbox>()) {
             entityWidth = static_cast<float>(hitbox->width);
+            entityHeight = static_cast<float>(hitbox->height);
           }
         }
         // Nothing to hang the number on: an entity that never had a screen
@@ -1446,20 +2116,52 @@ void Game::ECSInitOverlaySystems() {
           return;
         }
 
-        const FloatingTextMotion motion = EvaluateFloatingTextMotion(
+        FloatingTextMotion motion = EvaluateFloatingTextMotion(
             floating.elapsed, floating.lifetime, floating.rise,
             floating.stackIndex, DEFAULT_FLOATING_TEXT_FAN_SPACING,
             DEFAULT_FLOATING_TEXT_FADE_START);
+        const GameSettings &uiSettings = Settings();
+        int vertical = floating.vertical;
+        if (vertical < 0) {
+          if (uiSettings.ui.floatingTextPosition == "center") vertical = 1;
+          else if (uiSettings.ui.floatingTextPosition == "below") vertical = 2;
+          else vertical = 0;
+        }
+        const bool stationary =
+            floating.centered ||
+            (floating.motion >= 0
+                 ? floating.motion != 0
+                 : uiSettings.ui.floatingTextMotion == "stationary");
+        if (floating.centered || vertical != 0 || stationary) {
+          motion.rise = 0.0f;
+          motion.fan = 0.0f;
+        }
+        if (stationary) {
+          motion.alpha = 1.0f;
+        }
 
-        const Vector2 textSize =
-            MeasureTextEx(gameFont, floating.text.c_str(),
-                          DEFAULT_FLOATING_TEXT_FONT_SIZE, 0);
+        const float fontSize = floating.fontSize > 0.0f
+                                   ? floating.fontSize
+                                   : Settings().ui.floatingTextSize;
+        const Vector2 textSize = MeasureTextEx(
+            gameFont, floating.text.c_str(), fontSize, 0);
 
         const float centerX = anchor.x + entityWidth / 2.0f + motion.fan;
-        const Vector2 textPos = {
-            std::round(centerX - textSize.x / 2.0f),
-            std::round(anchor.y - DEFAULT_FLOATING_TEXT_OFFSET_Y - textSize.y -
-                       motion.rise)};
+        const float centerY = anchor.y + entityHeight / 2.0f;
+        Vector2 textPos;
+        if (floating.centered || vertical == 1) {
+          textPos = Vector2{std::round(centerX - textSize.x / 2.0f),
+                            std::round(centerY - textSize.y / 2.0f)};
+        } else if (vertical == 2) {
+          textPos = Vector2{std::round(centerX - textSize.x / 2.0f),
+                            std::round(anchor.y + entityHeight +
+                                       DEFAULT_FLOATING_TEXT_OFFSET_Y)};
+        } else {
+          textPos = Vector2{
+              std::round(centerX - textSize.x / 2.0f),
+              std::round(anchor.y - DEFAULT_FLOATING_TEXT_OFFSET_Y -
+                         textSize.y - motion.rise)};
+        }
 
         Color color = floating.color;
         color.a = static_cast<unsigned char>(std::clamp(
@@ -1467,7 +2169,10 @@ void Game::ECSInitOverlaySystems() {
 
         // An ability call-out carries its own strip. It fades with the word, so
         // the bar cannot outlive the text it explains.
-        if (floating.background) {
+        const bool showBackground = floating.backgroundOverride
+                                        ? floating.background
+                                        : uiSettings.ui.floatingTextBackground;
+        if (showBackground) {
           const Color background = {
               DEFAULT_CAST_LABEL_BACKGROUND.r,
               DEFAULT_CAST_LABEL_BACKGROUND.g,
@@ -1489,10 +2194,9 @@ void Game::ECSInitOverlaySystems() {
         // tile without needing a full outline pass.
         const Color shadow = {0, 0, 0, color.a};
         DrawTextEx(gameFont, floating.text.c_str(),
-                   {textPos.x + 1.0f, textPos.y + 1.0f},
-                   DEFAULT_FLOATING_TEXT_FONT_SIZE, 0, shadow);
-        DrawTextEx(gameFont, floating.text.c_str(), textPos,
-                   DEFAULT_FLOATING_TEXT_FONT_SIZE, 0, color);
+                   {textPos.x + 1.0f, textPos.y + 1.0f}, fontSize, 0, shadow);
+        DrawTextEx(gameFont, floating.text.c_str(), textPos, fontSize, 0,
+                   color);
       });
 }
 
@@ -1513,7 +2217,15 @@ float GetDistanceRecs(Rectangle rec1, Rectangle rec2) {
 
 void Game::ECSInitPhysicsSystems() {
   ecs.system<Velocity, Acceleration, Friction>().each(
-      [](Velocity &vel, Acceleration &accel, const Friction &friction) {
+      [](flecs::entity entity, Velocity &vel, Acceleration &accel,
+         const Friction &friction) {
+        // In constant-velocity mode NPCs have no friction; only the player (and
+        // NPCs in the old movement mode) keeps the accelerate/friction model.
+        if (!entity.has<PlayerControlled>() &&
+            Settings().movement.npcConstantVelocity) {
+          accel = {};
+          return;
+        }
         if (vel.Length() > 3.0f) {
           float gravity = 9.8f;
           accel += vel.Normalize().Scale(-gravity * friction.value);
@@ -1537,69 +2249,345 @@ void Game::ECSInitPhysicsSystems() {
       });
 
   // Collision system
+  //
+  // Work in screen rectangles, not in "neighbours around the current tile".
+  // The tile-neighbour version was direction-dependent: entering the blocker's
+  // own cell removed it from the neighbour list, so west/north approaches could
+  // pass through while east/south stopped. Testing the destination rectangle
+  // against every blocked tile it covers is symmetric.
   ecs.system<Velocity, Hitbox, ScreenPosition>().without<Intangible>().each(
-      [this](Velocity &vel, const Hitbox &hitbox,
+      [this](flecs::entity entity, Velocity &vel, const Hitbox &hitbox,
              const ScreenPosition &origScreenPos) {
+        if (map == nullptr || entity.has<RigHitboxes>()) return;
         ScreenPosition newScreenPos = origScreenPos + (vel * GetFrameTime());
-        // TODO: Why are we taking the min here?
-        size_t hitboxSize = std::min(hitbox.width, hitbox.height);
+
+        const float tileWidth = static_cast<float>(map->GetTileWidth());
+        const float tileHeight = static_cast<float>(map->GetTileHeight());
+        const auto overlapsBlocked = [&](const raylib::Rectangle &rect) {
+          if (rect.width <= 0.0f || rect.height <= 0.0f) return false;
+          const float epsilon = 0.001f;
+          const int firstX = static_cast<int>(
+              std::floor(rect.x / tileWidth));
+          const int lastX = static_cast<int>(
+              std::floor((rect.x + rect.width - epsilon) / tileWidth));
+          const int firstY = static_cast<int>(
+              std::floor(rect.y / tileHeight));
+          const int lastY = static_cast<int>(
+              std::floor((rect.y + rect.height - epsilon) / tileHeight));
+          for (int y = firstY; y <= lastY; ++y) {
+            for (int x = firstX; x <= lastX; ++x) {
+              if (map->IsBlocked(x, y)) return true;
+            }
+          }
+          return false;
+        };
 
         bool nullXVector = false;
         bool nullYVector = false;
 
-        const float baseX = newScreenPos.x + hitbox.offsetX;
-        const float baseY = newScreenPos.y + hitbox.offsetY;
-        const float previousBaseY = origScreenPos.y + hitbox.offsetY;
-        const float previousBaseX = origScreenPos.x + hitbox.offsetX;
-        if ((baseX < 0.0f) ||
-            (baseX + static_cast<float>(hitbox.width) > map->GetMapWidthPx())) {
+        const raylib::Rectangle currentRect(
+            origScreenPos.x + hitbox.offsetX,
+            origScreenPos.y + hitbox.offsetY,
+            static_cast<float>(hitbox.width),
+            static_cast<float>(hitbox.height));
+        const raylib::Rectangle destinationXRect(
+            newScreenPos.x + hitbox.offsetX,
+            origScreenPos.y + hitbox.offsetY,
+            static_cast<float>(hitbox.width),
+            static_cast<float>(hitbox.height));
+        const raylib::Rectangle destinationYRect(
+            origScreenPos.x + hitbox.offsetX,
+            newScreenPos.y + hitbox.offsetY,
+            static_cast<float>(hitbox.width),
+            static_cast<float>(hitbox.height));
+
+        // A body already overlapping a blocker is allowed to move out. Normal
+        // approaches are blocked before they reach the overlap.
+        const bool alreadyOverlapping = overlapsBlocked(currentRect);
+        if (!alreadyOverlapping) {
+          nullXVector = overlapsBlocked(destinationXRect);
+          nullYVector = overlapsBlocked(destinationYRect);
+        }
+
+        if ((newScreenPos.x + hitbox.offsetX < 0.0f) ||
+            (newScreenPos.x + hitbox.offsetX + hitbox.width >
+             map->GetMapWidthPx())) {
           nullXVector = true;
         }
-        if ((baseY < 0.0f) ||
-            (baseY + static_cast<float>(hitbox.height) > map->GetMapHeightPx())) {
+        if ((newScreenPos.y + hitbox.offsetY < 0.0f) ||
+            (newScreenPos.y + hitbox.offsetY + hitbox.height >
+             map->GetMapHeightPx())) {
           nullYVector = true;
         }
 
-        raylib::Rectangle deltaXRect(baseX, previousBaseY, hitboxSize, hitboxSize);
-        raylib::Rectangle deltaYRect(previousBaseX, baseY, hitboxSize, hitboxSize);
+        vel.x = nullXVector ? 0.0f : vel.x;
+        vel.y = nullYVector ? 0.0f : vel.y;
+      });
 
-        GamePosition gamePos =
-            map->ScreenCoordsToGameCoords(origScreenPos.x, origScreenPos.y);
-        static const int dx[] = {-1, 0, 1, -1, 1, -1, 0, 1};
-        static const int dy[] = {-1, -1, -1, 0, 0, 1, 1, 1};
-
-        for (int i = 0; i < 8; ++i) {
-          if (nullXVector && nullYVector) {
-            break;
+  // Rigged bodies collide through the static base-pose convex hull, not the
+  // authored AABB. Axis-separated, matching the player/NPC movement model.
+  ecs.system<Velocity, ScreenPosition, RigHitboxes>(
+      "RigHullTileCollision")
+      .without<Intangible>()
+      .each([this](flecs::entity entity, Velocity &vel,
+                   const ScreenPosition &origScreenPos,
+                   const RigHitboxes &rig) {
+        if (map == nullptr || rig.hull.size() < 3) return;
+        const auto blocked = [this](const std::vector<Vector2> &poly) {
+          float minX = poly[0].x, maxX = poly[0].x;
+          float minY = poly[0].y, maxY = poly[0].y;
+          for (const Vector2 &point : poly) {
+            minX = std::min(minX, point.x);
+            maxX = std::max(maxX, point.x);
+            minY = std::min(minY, point.y);
+            maxY = std::max(maxY, point.y);
           }
-
-          int currX = gamePos.x + dx[i];
-          int currY = gamePos.y + dy[i];
-
-          if (!map->IsBlocked(currX, currY)) {
-            continue;
+          const float tileW = static_cast<float>(map->GetTileWidth());
+          const float tileH = static_cast<float>(map->GetTileHeight());
+          const int firstX = static_cast<int>(std::floor(minX / tileW));
+          const int lastX = static_cast<int>(std::floor(maxX / tileW));
+          const int firstY = static_cast<int>(std::floor(minY / tileH));
+          const int lastY = static_cast<int>(std::floor(maxY / tileH));
+          for (int y = firstY; y <= lastY; ++y) {
+            for (int x = firstX; x <= lastX; ++x) {
+              if (!map->IsBlocked(x, y)) continue;
+              const Vector2 tileMin{x * tileW, y * tileH};
+              const Vector2 tileMax{(x + 1) * tileW, (y + 1) * tileH};
+              // SAT: polygon edge normals plus the tile's x/y axes.
+              const auto axisOverlap = [&](Vector2 axis) {
+                float pMin = 1e30f, pMax = -1e30f;
+                for (const Vector2 &point : poly) {
+                  const float projection = point.x * axis.x + point.y * axis.y;
+                  pMin = std::min(pMin, projection);
+                  pMax = std::max(pMax, projection);
+                }
+                float rMin = 1e30f, rMax = -1e30f;
+                for (int corner = 0; corner < 4; ++corner) {
+                  const Vector2 point{corner & 1 ? tileMax.x : tileMin.x,
+                                      corner & 2 ? tileMax.y : tileMin.y};
+                  const float projection = point.x * axis.x + point.y * axis.y;
+                  rMin = std::min(rMin, projection);
+                  rMax = std::max(rMax, projection);
+                }
+                return !(pMax < rMin || rMax < pMin);
+              };
+              bool separated = false;
+              for (size_t i = 0; i < poly.size() && !separated; ++i) {
+                const Vector2 &a = poly[i];
+                const Vector2 &b = poly[(i + 1) % poly.size()];
+                const Vector2 edge{b.x - a.x, b.y - a.y};
+                const Vector2 normal{-edge.y, edge.x};
+                separated = !axisOverlap(normal);
+              }
+              if (!separated) separated = !axisOverlap({1.0f, 0.0f});
+              if (!separated) separated = !axisOverlap({0.0f, 1.0f});
+              if (!separated) return true;
+            }
           }
-          ScreenPosition currTileScreenPos =
-              map->GameCoordsToScreenCoords(currX, currY);
-          raylib::Rectangle currRect(currTileScreenPos.x, currTileScreenPos.y,
-                                     (float)map->GetTileWidth(),
-                                     (float)map->GetTileHeight());
-          if (deltaXRect.CheckCollision(currRect)) {
-            nullXVector = true;
+          return false;
+        };
+        const auto shifted = [](const RigHitboxes &rig,
+                                const ScreenPosition &position) {
+          std::vector<Vector2> points;
+          points.reserve(rig.hull.size());
+          for (const Vector2 &point : rig.hull) {
+            points.push_back({position.x + point.x, position.y + point.y});
           }
-          if (deltaYRect.CheckCollision(currRect)) {
-            nullYVector = true;
-          }
+          return points;
+        };
+        const ScreenPosition newScreen =
+            origScreenPos + vel * GetFrameTime();
+        const std::vector<Vector2> current = shifted(rig, origScreenPos);
+        const bool alreadyOverlapping = blocked(current);
+        bool nullX = false;
+        bool nullY = false;
+        if (!alreadyOverlapping) {
+          nullX = blocked(shifted(rig, {newScreen.x, origScreenPos.y}));
+          nullY = blocked(shifted(rig, {origScreenPos.x, newScreen.y}));
         }
-
-        vel.x = (nullXVector) ? 0 : vel.x;
-        vel.y = (nullYVector) ? 0 : vel.y;
+        if (nullX) vel.x = 0.0f;
+        if (nullY) vel.y = 0.0f;
       });
 
   ecs.system<Velocity, ScreenPosition>().each(
       [](const Velocity &vel, ScreenPosition &pos) {
         pos += vel * GetFrameTime();
       });
+
+  // Dynamic actor bodies. NPCs are solid by default (the CE can disable it) and
+  // the player is solid implicitly. A* deliberately ignores these moving bodies;
+  // this pass only resolves the overlap after integration, so a body cannot walk
+  // through another character. Tight alpha-derived Hitboxes make the boundary
+  // follow the art rather than the whole cell.
+  ecs.system("ActorBodySeparation").iter([this](flecs::iter &) {
+    std::vector<flecs::entity> bodies;
+    ecs.filter<Actor, ScreenPosition, Hitbox>().each(
+        [&bodies](flecs::entity entity, const Actor &,
+                  const ScreenPosition &, const Hitbox &) {
+          if (!entity.is_alive()) return;
+          if (entity.has<PlayerControlled>() ||
+              entity.has<BlocksMovement>()) {
+            bodies.push_back(entity);
+          }
+        });
+    for (size_t i = 0; i < bodies.size(); ++i) {
+      for (size_t j = i + 1; j < bodies.size(); ++j) {
+        flecs::entity a = bodies[i];
+        flecs::entity b = bodies[j];
+        if (!a.is_alive() || !b.is_alive()) continue;
+        ScreenPosition *aPos = a.get_mut<ScreenPosition>();
+        ScreenPosition *bPos = b.get_mut<ScreenPosition>();
+        const Hitbox *aBox = a.get<Hitbox>();
+        const Hitbox *bBox = b.get<Hitbox>();
+        if (aPos == nullptr || bPos == nullptr || aBox == nullptr ||
+            bBox == nullptr) {
+          continue;
+        }
+        const bool aRigged = a.has<RigHitboxes>();
+        const bool bRigged = b.has<RigHitboxes>();
+        if (aRigged || bRigged) {
+          std::vector<Vector2> polyA =
+              aRigged ? WorldHull(a, *aPos)
+                      : RectangleCorners(HitboxRectangle(*aPos, *aBox));
+          std::vector<Vector2> polyB =
+              bRigged ? WorldHull(b, *bPos)
+                      : RectangleCorners(HitboxRectangle(*bPos, *bBox));
+          if (polyA.size() < 3) polyA = RectangleCorners(HitboxRectangle(*aPos, *aBox));
+          if (polyB.size() < 3) polyB = RectangleCorners(HitboxRectangle(*bPos, *bBox));
+          PolygonCollision collision = PolygonSAT(polyA, polyB);
+          if (!collision.hit) continue;
+          const auto centerOf = [](const std::vector<Vector2> &points) {
+            Vector2 center{0.0f, 0.0f};
+            for (const Vector2 &point : points) {
+              center.x += point.x;
+              center.y += point.y;
+            }
+            center.x /= static_cast<float>(points.size());
+            center.y /= static_cast<float>(points.size());
+            return center;
+          };
+          const Vector2 aCenter = centerOf(polyA);
+          const Vector2 bCenter = centerOf(polyB);
+          if ((aCenter.x - bCenter.x) * collision.axis.x +
+                  (aCenter.y - bCenter.y) * collision.axis.y <
+              0.0f) {
+            collision.axis.x = -collision.axis.x;
+            collision.axis.y = -collision.axis.y;
+          }
+          const auto isAggressive = [](flecs::entity entity) {
+            const NpcDisposition *disposition = entity.get<NpcDisposition>();
+            return disposition != nullptr &&
+                   disposition->value == Disposition::Aggressive;
+          };
+          const bool aPushable = a.has<Pushable>() && !isAggressive(a);
+          const bool bPushable = b.has<Pushable>() && !isAggressive(b);
+          float aShare = 0.0f;
+          float bShare = 0.0f;
+          if (aPushable && bPushable) {
+            aShare = 0.5f;
+            bShare = 0.5f;
+          } else if (aPushable) {
+            aShare = 1.0f;
+          } else if (bPushable) {
+            bShare = 1.0f;
+          } else {
+            const Velocity *av = a.get<Velocity>();
+            const Velocity *bv = b.get<Velocity>();
+            const bool aMoving = av != nullptr &&
+                                 (std::abs(av->x) > 0.01f ||
+                                  std::abs(av->y) > 0.01f);
+            const bool bMoving = bv != nullptr &&
+                                 (std::abs(bv->x) > 0.01f ||
+                                  std::abs(bv->y) > 0.01f);
+            if (aMoving && !bMoving) aShare = 1.0f;
+            else if (bMoving && !aMoving) bShare = 1.0f;
+            else { aShare = 0.5f; bShare = 0.5f; }
+          }
+          aPos->x += collision.axis.x * collision.depth * aShare;
+          aPos->y += collision.axis.y * collision.depth * aShare;
+          bPos->x -= collision.axis.x * collision.depth * bShare;
+          bPos->y -= collision.axis.y * collision.depth * bShare;
+          continue;
+        }
+        const CapsuleCollider *aCapsule = a.get<CapsuleCollider>();
+        const CapsuleCollider *bCapsule = b.get<CapsuleCollider>();
+        if (aCapsule != nullptr && bCapsule != nullptr) {
+          const float ax = aPos->x + aCapsule->centerX;
+          const float ay0 = aPos->y + aCapsule->topY;
+          const float ay1 = ay0 + aCapsule->segment;
+          const float bx = bPos->x + bCapsule->centerX;
+          const float by0 = bPos->y + bCapsule->topY;
+          const float by1 = by0 + bCapsule->segment;
+          const float dx = ax - bx;
+          const float gapY = ay1 < by0 ? by0 - ay1 : (by1 < ay0 ? ay0 - by1 : 0.0f);
+          const float reach = aCapsule->radius + bCapsule->radius;
+          if (dx * dx + gapY * gapY >= reach * reach) continue;
+        }
+        const raylib::Rectangle ar = HitboxRectangle(*aPos, *aBox);
+        const raylib::Rectangle br = HitboxRectangle(*bPos, *bBox);
+        const float overlapX =
+            std::min(ar.x + ar.width, br.x + br.width) -
+            std::max(ar.x, br.x);
+        const float overlapY =
+            std::min(ar.y + ar.height, br.y + br.height) -
+            std::max(ar.y, br.y);
+        if (overlapX <= 0.0f || overlapY <= 0.0f) continue;
+
+        const auto isAggressive = [](flecs::entity entity) {
+          const NpcDisposition *disposition = entity.get<NpcDisposition>();
+          return disposition != nullptr &&
+                 disposition->value == Disposition::Aggressive;
+        };
+        const bool aPushable = a.has<Pushable>() && !isAggressive(a);
+        const bool bPushable = b.has<Pushable>() && !isAggressive(b);
+        float aShare = 0.0f;
+        float bShare = 0.0f;
+        if (aPushable && bPushable) {
+          aShare = 0.5f;
+          bShare = 0.5f;
+        } else if (aPushable) {
+          aShare = 1.0f;
+        } else if (bPushable) {
+          bShare = 1.0f;
+        } else {
+          // Neither body accepts pushing. Resolve by moving only the body that
+          // is actually moving into the other; a player pushing a static dummy
+          // therefore stops against it instead of moving the dummy.
+          const Velocity *aVelocity = a.get<Velocity>();
+          const Velocity *bVelocity = b.get<Velocity>();
+          const bool aMoving = aVelocity != nullptr &&
+                               (std::abs(aVelocity->x) > 0.01f ||
+                                std::abs(aVelocity->y) > 0.01f);
+          const bool bMoving = bVelocity != nullptr &&
+                               (std::abs(bVelocity->x) > 0.01f ||
+                                std::abs(bVelocity->y) > 0.01f);
+          if (aMoving && !bMoving) {
+            aShare = 1.0f;
+          } else if (bMoving && !aMoving) {
+            bShare = 1.0f;
+          } else {
+            aShare = 0.5f;
+            bShare = 0.5f;
+          }
+        }
+
+        const float overlap = overlapX < overlapY ? overlapX : overlapY;
+        if (overlapX < overlapY) {
+          const float aCenter = ar.x + ar.width * 0.5f;
+          const float bCenter = br.x + br.width * 0.5f;
+          const float sign = aCenter < bCenter ? -1.0f : 1.0f;
+          aPos->x += sign * overlap * aShare;
+          bPos->x -= sign * overlap * bShare;
+        } else {
+          const float aCenter = ar.y + ar.height * 0.5f;
+          const float bCenter = br.y + br.height * 0.5f;
+          const float sign = aCenter < bCenter ? -1.0f : 1.0f;
+          aPos->y += sign * overlap * aShare;
+          bPos->y -= sign * overlap * bShare;
+        }
+      }
+    }
+  });
 
   // Save and reset variables used in the physics simulation
   ecs.system<Acceleration>().each([this](Acceleration &accel) {
@@ -1663,6 +2651,28 @@ void Game::ECSInitPhysicsSystems() {
 }
 
 void Game::ECSInitLogicSystems() {
+  ecs.system<HitReaction>("HitReactionUpdateSystem")
+      .each([](flecs::entity entity, HitReaction &reaction) {
+        const float dt = std::min(GetFrameTime(), 0.1f);
+        reaction.flashRemaining =
+            std::max(0.0f, reaction.flashRemaining - dt);
+        reaction.shakeRemaining =
+            std::max(0.0f, reaction.shakeRemaining - dt);
+        if (!reaction.overlayClip.empty()) {
+          reaction.overlayTime += dt;
+          if (reaction.overlayTime >= reaction.overlayDuration) {
+            reaction.overlayClip.clear();
+            reaction.overlayTime = 0.0f;
+            reaction.overlayDuration = 0.0f;
+          }
+        }
+        if (reaction.flashRemaining <= 0.0f &&
+            reaction.shakeRemaining <= 0.0f &&
+            reaction.overlayClip.empty()) {
+          entity.remove<HitReaction>();
+        }
+      });
+
   ecs.system<GamePosition, ScreenPosition>().each(
       [this](flecs::entity e, const GamePosition oldGamePos,
              const ScreenPosition &screenPos) {
@@ -1933,10 +2943,11 @@ void SendNewPrompt(flecs::entity entity, std::string prompt) {
 void Game::ECSInitActionSystems() {
   // Steer system through a path
   ecs.system<Velocity, Acceleration, GamePosition, ScreenPosition, Hitbox,
-             MOVE_THROUGH_PATH_ACTION>()
+             MOVE_THROUGH_PATH_ACTION, MaxSpeed>()
       .each([this](flecs::entity entity, Velocity &vel, Acceleration &accel,
                    const GamePosition &currPos, const ScreenPosition &screenPos,
-                   const Hitbox &hitbox, MOVE_THROUGH_PATH_ACTION &tPath) {
+                   const Hitbox &hitbox, MOVE_THROUGH_PATH_ACTION &tPath,
+                   const MaxSpeed &maxSpeed) {
         if (HasStatusTag(entity, "immobilized")) {
           tPath.path.clear();
           entity.remove<MOVE_THROUGH_PATH_ACTION>();
@@ -2019,6 +3030,24 @@ void Game::ECSInitActionSystems() {
         float targetDistance =
             entCenterScreenPos.Distance(currWaypointScreenPos);
 
+        if (Settings().movement.npcConstantVelocity &&
+            !entity.has<PlayerControlled>()) {
+          // Constant NPC speed: write the desired velocity directly instead of
+          // accumulating acceleration and friction. The final-waypoint slow
+          // factor remains so arrivals do not overshoot.
+          float speed = std::max(0.0f, maxSpeed.value);
+          if (const SpeedMultiplier *multiplier =
+                  entity.get<SpeedMultiplier>()) {
+            speed *= std::max(0.0f, multiplier->value);
+          }
+          vel = desiredVelocity * speed * slowFactor;
+          accel = {};
+          if (targetDistance < DEFAULT_MINIMUM_WAYPOINT_DISTANCE) {
+            tPath.path.erase(tPath.path.begin());
+          }
+          return;
+        }
+
         if (vel.Length() > 0 && vel.Length() < DEFAULT_MINIMUM_WAYPOINT_SPEED &&
             targetDistance > DEFAULT_MINIMUM_WAYPOINT_SPEED) {
           vel = vel.Normalize() * DEFAULT_MINIMUM_WAYPOINT_SPEED;
@@ -2078,6 +3107,69 @@ void Game::ECSInitActionSystems() {
         if (targetDistance < DEFAULT_MINIMUM_WAYPOINT_DISTANCE) {
           tPath.path.erase(tPath.path.begin());
         }
+      });
+
+  // NPCs have no friction to bleed off a finished path, so stop them explicitly
+  // once the path action is gone. The player keeps its acceleration/friction
+  // model and is excluded.
+  ecs.system<Velocity>("NpcStopWithoutPath")
+      .with<Actor>()
+      .without<PlayerControlled>()
+      .without<MOVE_THROUGH_PATH_ACTION>()
+      .each([](flecs::entity, Velocity &vel) {
+        // Only the constant-velocity model needs this explicit stop. In the old
+        // model friction bleeds the velocity off, as it does for the player.
+        if (Settings().movement.npcConstantVelocity) vel = {};
+      });
+
+  // Skill-driven straight-line dash. Direct screen movement keeps the burst
+  // independent of Velocity/Acceleration, so it is neither a teleport nor a
+  // normal walk. The hit is resolved only on the frame the destination is
+  // reached, and only if the target is still within stopDistance.
+  ecs.system<DashState, ScreenPosition>("DashMovementSystem")
+      .each([this](flecs::entity entity, DashState &dash,
+                   ScreenPosition &screen) {
+        if (dash.speed <= 0.0f || map == nullptr) {
+          entity.remove<DashState>();
+          return;
+        }
+        const raylib::Vector2 destination = {dash.destinationScreen.x,
+                                            dash.destinationScreen.y};
+        const raylib::Vector2 current = {screen.x, screen.y};
+        const raylib::Vector2 delta = destination - current;
+        const float distance = delta.Length();
+        const float step = dash.speed * GetFrameTime();
+        const bool reached = distance <= step;
+        if (reached) {
+          screen = dash.destinationScreen;
+        } else if (distance > 0.0f) {
+          const raylib::Vector2 movement = delta * (step / distance);
+          screen = ScreenPosition{screen.x + movement.x, screen.y + movement.y};
+        }
+        entity.set<GamePosition>(
+            map->ScreenCoordsToGameCoords(screen.x, screen.y));
+        if (!reached) return;
+
+        if (dash.target.is_alive()) {
+          const GamePosition *casterPosition = entity.get<GamePosition>();
+          const GamePosition *targetPosition =
+              dash.target.get<GamePosition>();
+          if (casterPosition != nullptr && targetPosition != nullptr &&
+              static_cast<float>(GridSteps(*casterPosition, *targetPosition)) <=
+                  dash.stopDistance) {
+            const SkillDef *def = FindSkillDef(entity.world(), dash.skillId);
+            if (def != nullptr) {
+              ApplyHit(entity, dash.target, dash.baseDamage, dash.skillId,
+                       def->name, dash.secondPerson, def->activation.interrupts);
+              ApplySkillStatus(entity, dash.target, *def);
+              FinalizeSkillUse(entity, *def);
+            } else {
+              ApplyHit(entity, dash.target, dash.baseDamage, dash.skillId,
+                       "Dash", dash.secondPerson, false);
+            }
+          }
+        }
+        entity.remove<DashState>();
       });
 
   // In case someone is moving towards an moving target

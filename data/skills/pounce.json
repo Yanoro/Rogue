@@ -26,12 +26,24 @@
   "activation": {
     "baseDamage": 10,
     "cooldown": 6.0,
-    "range": 3,
+    "range": 6,
     "gcd": true,
     "autoCast": false,
     "requiresTarget": true,
     "cast": 0,
     "interruptible": true,
-    "hidden": true
+    "dash": {
+      "speed": 500.0,
+      "stopDistance": 1.0,
+      "minDistance": 3,
+      "unavailableMessage": "No line of sight."
+    },
+    "floatingTextColor": [
+      255,
+      215,
+      110,
+      255
+    ],
+    "floatingTextSize": 0.0
   }
 }

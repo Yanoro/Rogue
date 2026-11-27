@@ -4,9 +4,11 @@
   "sprite": "purple_wizard",
   "disposition": "neutral",
   "retaliates": true,
-  "behavior": "mage_kiter",
   "skills": {
     "bolt": {
+      "level": 2
+    },
+    "fireball": {
       "level": 2
     }
   },
@@ -24,5 +26,8 @@
       "primary": false,
       "max": 50
     }
-  ]
+  ],
+  "pushable": true,
+  "behaviorProfile": "mage_behavior",
+  "damageFeedback": "flesh"
 }

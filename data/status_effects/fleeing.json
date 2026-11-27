@@ -1,0 +1,15 @@
+{
+  "name": "Fleeing",
+  "description": "Running from danger.",
+  "icon": "skill_running",
+  "color": [255, 215, 120, 255],
+  "reapplyWarningSeconds": 0,
+  "duration": 6.0,
+  "tickSeconds": 1.0,
+  "stacking": "refresh",
+  "maxStacks": 1,
+  "tags": ["fleeing"],
+  "onApply": [],
+  "onExpire": [],
+  "tick": []
+}

@@ -7,7 +7,37 @@
   },
   "ui": {
     "windowColor": "#000000D9",
-    "popupColor": "#000000FF"
+    "popupColor": "#000000FF",
+    "floatingTextSize": 16.0,
+    "floatingTextMotion": "rise",
+    "combat": {
+      "skillUsedTextSize": 0.0,
+      "skillUsedTextColor": "#E1EBFFFF",
+      "skillUsedTextBackground": true,
+      "skillUsedTextPosition": "above",
+      "highlight": {
+        "enabled": true,
+        "color": "#FF0000FF",
+        "style": "silhouette"
+      },
+      "statusEffects": {
+        "showAboveHead": false,
+        "position": "above",
+        "distance": 40.0
+      },
+      "hitFeedback": {
+        "flashEnabled": true,
+        "flashColor": "#FF3C3CFF",
+        "flashSeconds": 0.12,
+        "shakeEnabled": true,
+        "shakeMagnitude": 3.0,
+        "shakeSeconds": 0.14,
+        "hitClip": "hit",
+        "flashStyle": "silhouette"
+      }
+    },
+    "floatingTextBackground": true,
+    "floatingTextPosition": "above"
   },
   "art": {
     "generation": {
@@ -213,12 +243,19 @@
           "showIcon": true
         }
       ]
+    },
+    "nameplate": {
+      "neutralColor": "#FFFFFFFF",
+      "aggressiveColor": "#FF0000FF"
     }
   },
   "combat": {
     "instantSkillshots": false,
     "showSkillRanges": true,
-    "deathIcon": "death"
+    "deathIcon": "death",
+    "castCancelTextSize": 16.0,
+    "castCancelTextColor": "#FFFFFFFF",
+    "castCancelTextBackground": true
   },
   "world": {
     "seed": 0
@@ -249,5 +286,8 @@
     "windowStateFile": "./debug_windows_state.json",
     "restServer": true,
     "logMaxEntries": 1000
+  },
+  "movement": {
+    "npcConstantVelocity": true
   }
 }

@@ -1,0 +1,48 @@
+sprite 32x32
+kind object
+material grass
+
+palette {
+  outl = #1A1210
+  skin_base = #6cb33f
+  skin_hi = #9ee053
+  skin_sha = #478028
+  claw = #e5e0ba
+}
+
+// Shoulder / Upper arm outline & base (22,12) to (24,16)
+rect (22,12) (24,16) color=outl
+rect (22,13) (23,16) color=skin_base
+pixel (22,13) color=skin_hi
+pixel (23,16) color=skin_sha
+
+// Bony knobby elbow at (24,16)-(25,18)
+rect (23,16) (25,18) color=outl
+pixel (24,17) color=skin_hi
+pixel (23,17) color=skin_base
+pixel (24,18) color=skin_sha
+
+// Forearm angling down to hand (22,18)-(24,21)
+rect (22,18) (24,21) color=outl
+rect (23,19) (23,20) color=skin_base
+pixel (22,19) color=skin_hi
+pixel (24,20) color=skin_sha
+
+// Gripping clawed hand around weapon grip point (24,22)
+// Silhouette boundary
+rect (22,21) (25,23) color=outl
+
+// Hand inner core
+rect (23,21) (24,22) color=skin_base
+pixel (23,21) color=skin_hi
+pixel (24,22) color=skin_sha
+
+// Knuckles / Claws curled ready to grasp
+pixel (25,22) color=claw
+pixel (24,23) color=claw
+pixel (22,22) color=skin_sha
+
+// Clean outer contour
+pixel (25,21) color=outl
+pixel (25,23) color=outl
+pixel (23,23) color=outl

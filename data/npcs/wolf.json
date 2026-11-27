@@ -12,5 +12,6 @@
       "level": 2
     }
   },
-  "combatStrategy": "chase"
+  "combatStrategy": "chase",
+  "pushable": true
 }

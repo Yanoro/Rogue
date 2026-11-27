@@ -30,7 +30,14 @@
     "gcd": true,
     "autoCast": false,
     "xpPerUse": 10,
-    "skillshot": "ice_lance"
+    "skillshot": "ice_lance",
+    "floatingTextColor": [
+      135,
+      205,
+      255,
+      255
+    ],
+    "floatingTextSize": 0.0
   },
   "animation": "spell_cast"
 }

@@ -1,0 +1,18 @@
+{
+  "name": "Patrol",
+  "description": "Walk the walkable corners of the map in a fixed loop.",
+  "kind": "patrol",
+  "maxTargetDistance": 12,
+  "repathSeconds": 0.5,
+  "movement": {
+    "default": {
+      "mode": "hold",
+      "desiredRange": 0,
+      "tolerance": 0,
+      "allowActions": false
+    },
+    "rules": []
+  },
+  "actions": [],
+  "type": "neutral"
+}

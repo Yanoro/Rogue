@@ -215,6 +215,22 @@ bool ParseBehavior(const nlohmann::json &document, BehaviorDef &out,
     return false;
   }
   out.description = document.value("description", std::string());
+  out.type = document.value("type", std::string("aggressive"));
+  out.kind = document.value("kind", std::string("combat"));
+  std::transform(out.type.begin(), out.type.end(), out.type.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (out.type != "neutral" && out.type != "aggressive") {
+    Warn("Behavior '" + out.name + "' has unknown type '" + out.type +
+             "'; using aggressive", warnings);
+    out.type = "aggressive";
+  }
+  std::transform(out.kind.begin(), out.kind.end(), out.kind.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  if (out.kind != "combat" && out.kind != "wander" && out.kind != "patrol") {
+    Warn("Behavior '" + out.name + "' has unknown kind '" + out.kind +
+             "'; using combat", warnings);
+    out.kind = "combat";
+  }
   out.maxTargetDistance = document.value("maxTargetDistance", 12.0f);
   out.repathSeconds = document.value("repathSeconds", 0.5f);
   if (out.maxTargetDistance <= 0.0f) {

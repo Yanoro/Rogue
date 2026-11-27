@@ -1,0 +1,52 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  g_skin = #72A832
+  g_light = #98D048
+  g_shadow = #4D7620
+  dirt = #5A3A22
+  dirt_dark = #3B2414
+}
+
+// Left leg outline (bow-legged stance, viewer's left: x ~ 12..15)
+rect (12,20) (15,31) color=out
+// Right leg outline (viewer's right: x ~ 18..21)
+rect (18,20) (21,31) color=out
+
+// Cut inner crotch transparency between legs
+erase rect (15,20) (18,28)
+
+// Left leg fill & shading
+rect (13,21) (14,30) color=g_skin
+line (13,21) (13,29) color=g_light
+line (14,21) (14,29) color=g_shadow
+// Knobby left knee
+pixel (12,25) color=out
+pixel (13,25) color=g_light
+
+// Right leg fill & shading
+rect (19,21) (20,30) color=g_skin
+line (19,21) (19,29) color=g_light
+line (20,21) (20,29) color=g_shadow
+// Knobby right knee
+pixel (21,25) color=out
+pixel (20,25) color=g_light
+
+// Dirt-caked feet (soles at y=31)
+// Left foot
+rect (12,29) (15,31) color=out
+rect (12,30) (14,30) color=dirt
+pixel (13,30) color=dirt_dark
+pixel (14,30) color=dirt
+// Right foot
+rect (18,29) (21,31) color=out
+rect (19,30) (21,30) color=dirt
+pixel (20,30) color=dirt_dark
+pixel (19,30) color=dirt
+
+// Feet baseline contour (soles along y=31)
+line (12,31) (15,31) color=out
+line (18,31) (21,31) color=out

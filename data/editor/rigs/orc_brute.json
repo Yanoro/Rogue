@@ -190,7 +190,7 @@
       ]
     },
     {
-      "activeVariant": "v1",
+      "activeVariant": "v3",
       "brief": "A forward run: a longer stride than the walk, a deeper forward lean, arms bent and driving, and both feet off the ground at the flight poses.",
       "fps": 12,
       "frames": 6,
@@ -314,6 +314,116 @@
               "rig_orc_brute_legs_run_v1_f6"
             ]
           }
+        },
+        {
+          "created": "2026-11-05 06:33",
+          "id": "v2",
+          "name": "Generation 2",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_run_v2_f1",
+              "rig_orc_brute_arm_left_run_v2_f2",
+              "rig_orc_brute_arm_left_run_v2_f3",
+              "rig_orc_brute_arm_left_run_v2_f4",
+              "rig_orc_brute_arm_left_run_v2_f5",
+              "rig_orc_brute_arm_left_run_v2_f6"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_run_v2_f1",
+              "rig_orc_brute_arm_right_run_v2_f2",
+              "rig_orc_brute_arm_right_run_v2_f3",
+              "rig_orc_brute_arm_right_run_v2_f4",
+              "rig_orc_brute_arm_right_run_v2_f5",
+              "rig_orc_brute_arm_right_run_v2_f6"
+            ],
+            "body": [
+              "rig_orc_brute_body_run_v2_f1",
+              "rig_orc_brute_body_run_v2_f2",
+              "rig_orc_brute_body_run_v2_f3",
+              "rig_orc_brute_body_run_v2_f4",
+              "rig_orc_brute_body_run_v2_f5",
+              "rig_orc_brute_body_run_v2_f6"
+            ],
+            "hair": [
+              "rig_orc_brute_hair_run_v2_f1",
+              "rig_orc_brute_hair_run_v2_f2",
+              "rig_orc_brute_hair_run_v2_f3",
+              "rig_orc_brute_hair_run_v2_f4",
+              "rig_orc_brute_hair_run_v2_f5",
+              "rig_orc_brute_hair_run_v2_f6"
+            ],
+            "head": [
+              "rig_orc_brute_head_run_v2_f1",
+              "rig_orc_brute_head_run_v2_f2",
+              "rig_orc_brute_head_run_v2_f3",
+              "rig_orc_brute_head_run_v2_f4",
+              "rig_orc_brute_head_run_v2_f5",
+              "rig_orc_brute_head_run_v2_f6"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_run_v2_f1",
+              "rig_orc_brute_legs_run_v2_f2",
+              "rig_orc_brute_legs_run_v2_f3",
+              "rig_orc_brute_legs_run_v2_f4",
+              "rig_orc_brute_legs_run_v2_f5",
+              "rig_orc_brute_legs_run_v2_f6"
+            ]
+          }
+        },
+        {
+          "created": "2026-11-05 06:38",
+          "id": "v3",
+          "name": "Generation 3",
+          "parts": {
+            "arm_left": [
+              "rig_orc_brute_arm_left_run_v3_f1",
+              "rig_orc_brute_arm_left_run_v3_f2",
+              "rig_orc_brute_arm_left_run_v3_f3",
+              "rig_orc_brute_arm_left_run_v3_f4",
+              "rig_orc_brute_arm_left_run_v3_f5",
+              "rig_orc_brute_arm_left_run_v3_f6"
+            ],
+            "arm_right": [
+              "rig_orc_brute_arm_right_run_v3_f1",
+              "rig_orc_brute_arm_right_run_v3_f2",
+              "rig_orc_brute_arm_right_run_v3_f3",
+              "rig_orc_brute_arm_right_run_v3_f4",
+              "rig_orc_brute_arm_right_run_v3_f5",
+              "rig_orc_brute_arm_right_run_v3_f6"
+            ],
+            "body": [
+              "rig_orc_brute_body_run_v3_f1",
+              "rig_orc_brute_body_run_v3_f2",
+              "rig_orc_brute_body_run_v3_f3",
+              "rig_orc_brute_body_run_v3_f4",
+              "rig_orc_brute_body_run_v3_f5",
+              "rig_orc_brute_body_run_v3_f6"
+            ],
+            "hair": [
+              "rig_orc_brute_hair_run_v3_f1",
+              "rig_orc_brute_hair_run_v3_f2",
+              "rig_orc_brute_hair_run_v3_f3",
+              "rig_orc_brute_hair_run_v3_f4",
+              "rig_orc_brute_hair_run_v3_f5",
+              "rig_orc_brute_hair_run_v3_f6"
+            ],
+            "head": [
+              "rig_orc_brute_head_run_v3_f1",
+              "rig_orc_brute_head_run_v3_f2",
+              "rig_orc_brute_head_run_v3_f3",
+              "rig_orc_brute_head_run_v3_f4",
+              "rig_orc_brute_head_run_v3_f5",
+              "rig_orc_brute_head_run_v3_f6"
+            ],
+            "legs": [
+              "rig_orc_brute_legs_run_v3_f1",
+              "rig_orc_brute_legs_run_v3_f2",
+              "rig_orc_brute_legs_run_v3_f3",
+              "rig_orc_brute_legs_run_v3_f4",
+              "rig_orc_brute_legs_run_v3_f5",
+              "rig_orc_brute_legs_run_v3_f6"
+            ]
+          }
         }
       ]
     }
@@ -330,12 +440,12 @@
           "rig_orc_brute_legs_kick_f3"
         ],
         "run": [
-          "rig_orc_brute_legs_run_v1_f1",
-          "rig_orc_brute_legs_run_v1_f2",
-          "rig_orc_brute_legs_run_v1_f3",
-          "rig_orc_brute_legs_run_v1_f4",
-          "rig_orc_brute_legs_run_v1_f5",
-          "rig_orc_brute_legs_run_v1_f6"
+          "rig_orc_brute_legs_run_v3_f1",
+          "rig_orc_brute_legs_run_v3_f2",
+          "rig_orc_brute_legs_run_v3_f3",
+          "rig_orc_brute_legs_run_v3_f4",
+          "rig_orc_brute_legs_run_v3_f5",
+          "rig_orc_brute_legs_run_v3_f6"
         ],
         "walk": [
           "rig_orc_brute_legs_walk_f1",
@@ -356,12 +466,12 @@
           "rig_orc_brute_body_kick_f3"
         ],
         "run": [
-          "rig_orc_brute_body_run_v1_f1",
-          "rig_orc_brute_body_run_v1_f2",
-          "rig_orc_brute_body_run_v1_f3",
-          "rig_orc_brute_body_run_v1_f4",
-          "rig_orc_brute_body_run_v1_f5",
-          "rig_orc_brute_body_run_v1_f6"
+          "rig_orc_brute_body_run_v3_f1",
+          "rig_orc_brute_body_run_v3_f2",
+          "rig_orc_brute_body_run_v3_f3",
+          "rig_orc_brute_body_run_v3_f4",
+          "rig_orc_brute_body_run_v3_f5",
+          "rig_orc_brute_body_run_v3_f6"
         ],
         "spell_cast": [
           "rig_orc_brute_body_spell_cast_f1",
@@ -394,12 +504,12 @@
           "rig_orc_brute_arm_left_kick_f3"
         ],
         "run": [
-          "rig_orc_brute_arm_left_run_v1_f1",
-          "rig_orc_brute_arm_left_run_v1_f2",
-          "rig_orc_brute_arm_left_run_v1_f3",
-          "rig_orc_brute_arm_left_run_v1_f4",
-          "rig_orc_brute_arm_left_run_v1_f5",
-          "rig_orc_brute_arm_left_run_v1_f6"
+          "rig_orc_brute_arm_left_run_v3_f1",
+          "rig_orc_brute_arm_left_run_v3_f2",
+          "rig_orc_brute_arm_left_run_v3_f3",
+          "rig_orc_brute_arm_left_run_v3_f4",
+          "rig_orc_brute_arm_left_run_v3_f5",
+          "rig_orc_brute_arm_left_run_v3_f6"
         ],
         "spell_cast": [
           "rig_orc_brute_arm_left_spell_cast_f1",
@@ -432,12 +542,12 @@
           "rig_orc_brute_arm_right_kick_f3"
         ],
         "run": [
-          "rig_orc_brute_arm_right_run_v1_f1",
-          "rig_orc_brute_arm_right_run_v1_f2",
-          "rig_orc_brute_arm_right_run_v1_f3",
-          "rig_orc_brute_arm_right_run_v1_f4",
-          "rig_orc_brute_arm_right_run_v1_f5",
-          "rig_orc_brute_arm_right_run_v1_f6"
+          "rig_orc_brute_arm_right_run_v3_f1",
+          "rig_orc_brute_arm_right_run_v3_f2",
+          "rig_orc_brute_arm_right_run_v3_f3",
+          "rig_orc_brute_arm_right_run_v3_f4",
+          "rig_orc_brute_arm_right_run_v3_f5",
+          "rig_orc_brute_arm_right_run_v3_f6"
         ],
         "spell_cast": [
           "rig_orc_brute_arm_right_spell_cast_f1",
@@ -465,12 +575,12 @@
     {
       "clips": {
         "run": [
-          "rig_orc_brute_head_run_v1_f1",
-          "rig_orc_brute_head_run_v1_f2",
-          "rig_orc_brute_head_run_v1_f3",
-          "rig_orc_brute_head_run_v1_f4",
-          "rig_orc_brute_head_run_v1_f5",
-          "rig_orc_brute_head_run_v1_f6"
+          "rig_orc_brute_head_run_v3_f1",
+          "rig_orc_brute_head_run_v3_f2",
+          "rig_orc_brute_head_run_v3_f3",
+          "rig_orc_brute_head_run_v3_f4",
+          "rig_orc_brute_head_run_v3_f5",
+          "rig_orc_brute_head_run_v3_f6"
         ],
         "spell_cast": [
           "rig_orc_brute_head_spell_cast_f1",
@@ -492,12 +602,12 @@
     {
       "clips": {
         "run": [
-          "rig_orc_brute_hair_run_v1_f1",
-          "rig_orc_brute_hair_run_v1_f2",
-          "rig_orc_brute_hair_run_v1_f3",
-          "rig_orc_brute_hair_run_v1_f4",
-          "rig_orc_brute_hair_run_v1_f5",
-          "rig_orc_brute_hair_run_v1_f6"
+          "rig_orc_brute_hair_run_v3_f1",
+          "rig_orc_brute_hair_run_v3_f2",
+          "rig_orc_brute_hair_run_v3_f3",
+          "rig_orc_brute_hair_run_v3_f4",
+          "rig_orc_brute_hair_run_v3_f5",
+          "rig_orc_brute_hair_run_v3_f6"
         ],
         "walk": [
           "rig_orc_brute_hair_walk_f1",

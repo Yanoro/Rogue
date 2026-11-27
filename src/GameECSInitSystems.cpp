@@ -196,8 +196,9 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
     for (auto i : it) {
       flecs::entity entity = it.entity(i);
       const NpcDisposition *disposition = entity.get<NpcDisposition>();
-      if (entity.has<NpcBehaviorId>() && disposition != nullptr &&
-          disposition->value == Disposition::Aggressive) {
+      if (entity.has<DashState>() ||
+          (entity.has<NpcBehaviorId>() && disposition != nullptr &&
+           disposition->value == Disposition::Aggressive)) {
         continue;
       }
       brains[i].agBrain.get()->update(dt);
@@ -375,7 +376,8 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         if (!targetLost && !outOfRange) {
           return;
         }
-        if (!CancelCast(actor, targetLost ? "Target lost!" : "Out of range!")) {
+        if (!CancelCast(actor, targetLost ? "Skill Canceled: Target Lost"
+                                          : "Skill Canceled: Out of Range")) {
           return;
         }
         if (debugLog) {
@@ -422,7 +424,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
         } else if (!input && !path && !actualMovement) {
           return;
         }
-        if (!CancelCast(actor, "Movement!")) {
+        if (!CancelCast(actor, "Skill Canceled: Moved")) {
           return;
         }
         if (debugLog) {
@@ -450,6 +452,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
       "CombatStrategySystem")
       .without<AgentBrainWrapper>()
       .without<NpcBehaviorId>()
+      .without<DashState>()
       .iter([this](flecs::iter& it, CombatStrategy* strategies,
                    Aggressive*, GamePosition* positions, ResourcePools*) {
         if (!playerEntity.is_alive()) {
@@ -517,11 +520,14 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   // The corpse visual is a setting, not a property baked into the death event.
   ecs.system<Corpse>("CorpseIconSystem")
       .each([this](flecs::entity entity, const Corpse&) {
+        std::string iconId = Settings().combat.deathIcon;
+        if (const CorpseDeathIcon *custom = entity.get<CorpseDeathIcon>();
+            custom != nullptr && !custom->icon.empty()) {
+          iconId = custom->icon;
+        }
         std::string iconPath;
-        if (!IconPaths::ResolveIconPath(iconRegistry,
-                                        Settings().combat.deathIcon,
-                                        resourceManager, debugLog.get(),
-                                        &iconPath)) {
+        if (!IconPaths::ResolveIconPath(iconRegistry, iconId, resourceManager,
+                                        debugLog.get(), &iconPath)) {
           return;
         }
         const Sprite *current = entity.get<Sprite>();
@@ -612,6 +618,7 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
   // LLM path; a real hostile agent will not carry this component.
   ecs.system<Aggressive, ResourcePools, GamePosition>("AggressiveCombatSystem")
       .without<NpcBehaviorId>()
+      .without<DashState>()
       .iter([this](flecs::iter& it, Aggressive* aggressive, ResourcePools*,
                    GamePosition* positions) {
         if (!playerEntity.is_alive()) {
@@ -1172,10 +1179,171 @@ bool Game::BehaviorConditionMatches(const BehaviorCondition &condition,
   return false;
 }
 
+bool Game::NpcCanSeeTarget(flecs::entity entity,
+                           flecs::entity target) const {
+  if (!entity.is_alive() || !target.is_alive()) return false;
+  const GamePosition *from = entity.get<GamePosition>();
+  const GamePosition *to = target.get<GamePosition>();
+  if (from == nullptr || to == nullptr) return false;
+  const Vision *vision = entity.get<Vision>();
+  const float range = vision != nullptr ? vision->range
+                                        : Settings().perception.range;
+  if (static_cast<float>(GridSteps(*from, *to)) > range) return false;
+  std::unordered_set<std::uint64_t> opaque;
+  ecs.filter<const BlocksVision, const GamePosition>().each(
+      [&opaque](const BlocksVision &, const GamePosition &position) {
+        opaque.insert(VisionQuery::CellKey(position));
+      });
+  return !VisionQuery::PathIsOpaque(opaque, *from, *to);
+}
+
+flecs::entity Game::FindPatrolHostileTarget(
+    flecs::entity entity, const std::string &templateId) const {
+  if (templateId.empty()) return flecs::entity::null();
+  if (templateId == "player") {
+    if (playerEntity.is_alive() && NpcCanSeeTarget(entity, playerEntity)) {
+      return playerEntity;
+    }
+    return flecs::entity::null();
+  }
+  flecs::entity found = flecs::entity::null();
+  ecs.filter<const NpcTemplateId, const GamePosition>().each(
+      [&](flecs::entity other, const NpcTemplateId &id, const GamePosition &) {
+        if (found.is_alive() || other == entity || id.id != templateId) return;
+        if (!Resources::IsAlive(other)) return;
+        if (NpcCanSeeTarget(entity, other)) found = other;
+      });
+  return found;
+}
+
+void Game::UpdateNeutralNpcBehavior(flecs::entity entity,
+                                    const BehaviorDef &definition,
+                                    NpcBehaviorState &state, float dt) {
+  if (map == nullptr) return;
+  const GamePosition *self = entity.get<GamePosition>();
+  if (self == nullptr) return;
+
+  auto nextRandom = [&]() -> std::uint32_t {
+    if (state.randomState == 0) {
+      state.randomState = static_cast<std::uint32_t>(entity.id()) * 2654435761u + 1u;
+    }
+    state.randomState = state.randomState * 1664525u + 1013904223u;
+    return state.randomState;
+  };
+  const auto random01 = [&]() {
+    return static_cast<float>(nextRandom() & 0x00FFFFFFu) /
+           static_cast<float>(0x01000000u);
+  };
+  auto walkTo = [&](const GamePosition &destination) {
+    if (destination == *self || map->IsBlocked(destination.x, destination.y)) {
+      return false;
+    }
+    const std::vector<GamePosition> path =
+        AStar(map.get(), *self, destination);
+    if (path.empty()) return false;
+    entity.set<MOVE_THROUGH_PATH_ACTION>({path});
+    state.neutralDestination = destination;
+    state.neutralTravelling = true;
+    return true;
+  };
+  auto finishTrip = [&]() {
+    state.neutralTravelling = false;
+    const NpcTemplateId *templateId = entity.get<NpcTemplateId>();
+    const NpcTemplate *npc = templateId != nullptr
+                                 ? npcTemplateRegistry.Get(templateId->id)
+                                 : nullptr;
+    const float minWait = npc != nullptr ? npc->wanderMinWait : 2.0f;
+    const float maxWait = npc != nullptr ? npc->wanderMaxWait : 6.0f;
+    state.neutralWait = minWait + random01() * std::max(0.0f, maxWait - minWait);
+  };
+
+  if (definition.kind == "wander") {
+    if (state.neutralTravelling) {
+      if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) finishTrip();
+      return;
+    }
+    if (state.neutralWait > 0.0f) {
+      state.neutralWait = std::max(0.0f, state.neutralWait - dt);
+      return;
+    }
+    const NpcTemplateId *templateId = entity.get<NpcTemplateId>();
+    const NpcTemplate *npc = templateId != nullptr
+                                 ? npcTemplateRegistry.Get(templateId->id)
+                                 : nullptr;
+    const float radius = npc != nullptr ? std::max(1.0f, npc->wanderRadius) : 6.0f;
+    const int maxX = static_cast<int>(map->GetWidth()) - 1;
+    const int maxY = static_cast<int>(map->GetHeight()) - 1;
+    for (int attempt = 0; attempt < 24; ++attempt) {
+      const float angle = random01() * 6.2831853f;
+      const float distance = std::sqrt(random01()) * radius;
+      const GamePosition destination{
+          std::clamp(self->x + static_cast<int>(std::lround(std::cos(angle) * distance)),
+                     0, maxX),
+          std::clamp(self->y + static_cast<int>(std::lround(std::sin(angle) * distance)),
+                     0, maxY)};
+      if (walkTo(destination)) return;
+    }
+    finishTrip();
+    state.neutralWait = std::max(0.5f, state.neutralWait);
+    return;
+  }
+
+  if (definition.kind != "patrol") return;
+
+  const auto nearestWalkable = [&](int x, int y) {
+    const int maxX = static_cast<int>(map->GetWidth()) - 1;
+    const int maxY = static_cast<int>(map->GetHeight()) - 1;
+    for (int radius = 0; radius < 64; ++radius) {
+      for (int dy = -radius; dy <= radius; ++dy) {
+        for (int dx = -radius; dx <= radius; ++dx) {
+          if (std::max(std::abs(dx), std::abs(dy)) != radius) continue;
+          const int px = std::clamp(x + dx, 0, maxX);
+          const int py = std::clamp(y + dy, 0, maxY);
+          if (!map->IsBlocked(px, py)) return GamePosition{px, py};
+        }
+      }
+    }
+    return GamePosition{x, y};
+  };
+
+  if (state.patrolRoute.empty()) {
+    const int maxX = static_cast<int>(map->GetWidth()) - 1;
+    const int maxY = static_cast<int>(map->GetHeight()) - 1;
+    const GamePosition corners[] = {
+        nearestWalkable(0, 0), nearestWalkable(maxX, 0),
+        nearestWalkable(maxX, maxY), nearestWalkable(0, maxY)};
+    for (const GamePosition &corner : corners) {
+      if (map->IsBlocked(corner.x, corner.y)) continue;
+      if (!state.patrolRoute.empty() &&
+          state.patrolRoute.back() == corner) {
+        continue;
+      }
+      state.patrolRoute.push_back(corner);
+    }
+    state.patrolIndex = 0;
+  }
+  if (state.patrolRoute.empty()) return;
+
+  if (state.neutralTravelling) {
+    if (!entity.has<MOVE_THROUGH_PATH_ACTION>()) {
+      state.neutralTravelling = false;
+      state.patrolIndex = (state.patrolIndex + 1) % state.patrolRoute.size();
+    }
+    return;
+  }
+
+  const GamePosition waypoint = state.patrolRoute[state.patrolIndex];
+  if (waypoint == *self) {
+    state.patrolIndex = (state.patrolIndex + 1) % state.patrolRoute.size();
+    return;
+  }
+  if (!walkTo(waypoint)) {
+    state.patrolIndex = (state.patrolIndex + 1) % state.patrolRoute.size();
+  }
+}
+
 void Game::UpdateNpcBehaviors(float dt) {
-  if (!playerEntity.is_alive() || map == nullptr) return;
-  const GamePosition *targetPosition = playerEntity.get<GamePosition>();
-  if (targetPosition == nullptr) return;
+  if (map == nullptr) return;
 
   std::vector<flecs::entity> actors;
   ecs.filter<NpcBehaviorId>().each(
@@ -1193,16 +1361,169 @@ void Game::UpdateNpcBehaviors(float dt) {
     }
     const BehaviorDef *definition = behaviorRegistry.Get(behaviorId->id);
     if (definition == nullptr) continue;
+
+    const NpcBehaviorProfileId *profileId =
+        entity.get<NpcBehaviorProfileId>();
+    const BehaviorProfileDef *profile =
+        profileId != nullptr ? behaviorProfileRegistry.Get(profileId->id)
+                             : nullptr;
+    const auto profileBehavior = [&](const std::string &role) -> std::string {
+      if (profile == nullptr) return {};
+      const auto found = profile->behaviors.find(role);
+      return found != profile->behaviors.end() ? found->second : std::string();
+    };
+    if (profile != nullptr) {
+      const bool neutral =
+          disposition != nullptr &&
+          disposition->value == Disposition::Neutral;
+      std::string desired = neutral ? profileBehavior("neutral")
+                                    : profileBehavior("aggressive");
+      if (desired.empty() && neutral) desired = profileBehavior(profile->initial);
+      if (desired.empty() && !profile->behaviors.empty()) {
+        desired = profile->behaviors.begin()->second;
+      }
+      if (!desired.empty() && behaviorId->id != desired) {
+        entity.set<NpcBehaviorId>({desired});
+        behaviorId = entity.get<NpcBehaviorId>();
+        definition = behaviorRegistry.Get(desired);
+        state->activeRule.clear();
+        state->activeSeconds = 0.0f;
+        state->ruleCooldowns.clear();
+        state->repathTimer = 0.0f;
+        state->neutralTravelling = false;
+        state->patrolRoute.clear();
+        state->patrolIndex = 0;
+      }
+    }
+    const NpcNeutralBehaviorId *neutralId =
+        entity.get<NpcNeutralBehaviorId>();
+    const NpcAggressiveBehaviorId *aggressiveId =
+        entity.get<NpcAggressiveBehaviorId>();
+    if (profile == nullptr && neutralId != nullptr) {
+      const std::string desired =
+          disposition != nullptr &&
+                  disposition->value == Disposition::Neutral
+              ? neutralId->id
+              : (aggressiveId != nullptr ? aggressiveId->id : neutralId->id);
+      if (behaviorId->id != desired) {
+        entity.set<NpcBehaviorId>({desired});
+        behaviorId = entity.get<NpcBehaviorId>();
+        definition = behaviorRegistry.Get(desired);
+        state->activeRule.clear();
+        state->activeSeconds = 0.0f;
+        state->ruleCooldowns.clear();
+        state->repathTimer = 0.0f;
+        state->neutralTravelling = false;
+        state->patrolRoute.clear();
+        state->patrolIndex = 0;
+      }
+    }
+    if (definition == nullptr) continue;
+
+    // A patrol looks for its configured template while neutral. On detection it
+    // stores the target and switches to its aggressive behavior.
+    if (disposition != nullptr &&
+        disposition->value == Disposition::Neutral &&
+        definition->kind == "patrol") {
+      const NpcTemplateId *templateId = entity.get<NpcTemplateId>();
+      const NpcTemplate *npcTemplate =
+          templateId != nullptr ? npcTemplateRegistry.Get(templateId->id)
+                                : nullptr;
+      if (npcTemplate != nullptr &&
+          !npcTemplate->patrolHostileTemplate.empty()) {
+        flecs::entity found = FindPatrolHostileTarget(
+            entity, npcTemplate->patrolHostileTemplate);
+        if (found.is_alive()) {
+          entity.set<NpcCombatTarget>({found});
+          if (NpcDisposition *mutableDisposition =
+                  entity.get_mut<NpcDisposition>()) {
+            mutableDisposition->value = Disposition::Aggressive;
+          }
+          const std::string aggressiveBehavior =
+              profileBehavior("aggressive").empty()
+                  ? (aggressiveId != nullptr ? aggressiveId->id : std::string())
+                  : profileBehavior("aggressive");
+          if (!aggressiveBehavior.empty()) {
+            entity.set<NpcBehaviorId>({aggressiveBehavior});
+            behaviorId = entity.get<NpcBehaviorId>();
+            definition = behaviorRegistry.Get(aggressiveBehavior);
+          }
+          state->activeRule.clear();
+          state->activeSeconds = 0.0f;
+          state->ruleCooldowns.clear();
+          state->repathTimer = 0.0f;
+          state->neutralTravelling = false;
+          state->patrolRoute.clear();
+          state->patrolIndex = 0;
+          if (debugLog) {
+            debugLog->LogCombat("Patrol spotted a hostile target.");
+          }
+        }
+      }
+    }
+
+    // If a patrol's target dies or leaves sight, drop the target and return to
+    // the neutral behavior. Check the component first: get_mut on flecs would
+    // add an empty target to every NPC and immediately reset its disposition.
+    if (entity.has<NpcCombatTarget>()) {
+      NpcCombatTarget *combatTarget = entity.get_mut<NpcCombatTarget>();
+      if (combatTarget == nullptr ||
+          !combatTarget->target.is_alive() ||
+          !NpcCanSeeTarget(entity, combatTarget->target)) {
+        entity.remove<NpcCombatTarget>();
+        if (NpcDisposition *mutableDisposition =
+                entity.get_mut<NpcDisposition>()) {
+          mutableDisposition->value = Disposition::Neutral;
+        }
+        const std::string neutralBehavior =
+            profileBehavior("neutral").empty()
+                ? (neutralId != nullptr ? neutralId->id : std::string())
+                : profileBehavior("neutral");
+        if (!neutralBehavior.empty()) {
+          entity.set<NpcBehaviorId>({neutralBehavior});
+          behaviorId = entity.get<NpcBehaviorId>();
+          definition = behaviorRegistry.Get(neutralBehavior);
+        }
+        state->activeRule.clear();
+        state->activeSeconds = 0.0f;
+        state->ruleCooldowns.clear();
+        state->repathTimer = 0.0f;
+        state->neutralTravelling = false;
+        state->patrolRoute.clear();
+        state->patrolIndex = 0;
+        continue;
+      }
+    }
+
     if (disposition == nullptr ||
         disposition->value == Disposition::Neutral) {
+      if (definition->kind == "wander" || definition->kind == "patrol") {
+        state->inCombat = false;
+        UpdateNeutralNpcBehavior(entity, *definition, *state, dt);
+        continue;
+      }
       entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      if (entity.has<StatusEffects>()) {
+        RemoveStatus(entity, "fleeing");
+      }
       state->inCombat = false;
       state->activeRule.clear();
       continue;
     }
     if (!Resources::IsAlive(entity)) continue;
 
+    flecs::entity target = playerEntity;
+    if (const NpcCombatTarget *storedTarget = entity.get<NpcCombatTarget>()) {
+      if (storedTarget->target.is_alive()) target = storedTarget->target;
+    }
+    const GamePosition *targetPosition = target.get<GamePosition>();
+    if (targetPosition == nullptr) continue;
+
     state->inCombat = true;
+    if (entity.has<DashState>()) {
+      entity.remove<MOVE_THROUGH_PATH_ACTION>();
+      continue;
+    }
     if (entity.has<Casting>()) {
       entity.remove<MOVE_THROUGH_PATH_ACTION>();
       continue;
@@ -1226,13 +1547,17 @@ void Game::UpdateNpcBehaviors(float dt) {
     if (activeRule != nullptr) {
       state->activeSeconds += dt;
       const bool enter =
-          BehaviorConditionMatches(activeRule->enterWhen, entity, playerEntity);
+          BehaviorConditionMatches(activeRule->enterWhen, entity, target);
       const bool exit =
           activeRule->hasExit
               ? BehaviorConditionMatches(activeRule->exitWhen, entity,
-                                         playerEntity)
+                                         target)
               : !enter;
-      if (state->activeSeconds >= activeRule->minDuration && exit) {
+      const bool expired =
+          activeRule->duration > 0.0f &&
+          state->activeSeconds >= activeRule->duration;
+      if (expired ||
+          (state->activeSeconds >= activeRule->minDuration && exit)) {
         state->SetCooldown(activeRule->id, activeRule->cooldown);
         state->activeRule.clear();
         state->activeSeconds = 0.0f;
@@ -1242,7 +1567,7 @@ void Game::UpdateNpcBehaviors(float dt) {
     if (activeRule == nullptr) {
       for (const BehaviorMovementRule &rule : definition->rules) {
         if (state->CooldownFor(rule.id) > 0.0f) continue;
-        if (!BehaviorConditionMatches(rule.enterWhen, entity, playerEntity)) {
+        if (!BehaviorConditionMatches(rule.enterWhen, entity, target)) {
           continue;
         }
         state->activeRule = rule.id;
@@ -1254,6 +1579,22 @@ void Game::UpdateNpcBehaviors(float dt) {
 
     const MovementPolicy &policy =
         activeRule != nullptr ? activeRule->policy : definition->defaultMovement;
+
+    // A visible, purely informational marker for the player. The behavior owns
+    // its lifetime; the status itself has no effects.
+    if (policy.mode == "flee") {
+      const StatusEffects *statuses = entity.get<StatusEffects>();
+      if (statuses == nullptr || !statuses->Has("fleeing")) {
+        const float duration =
+            activeRule != nullptr && activeRule->duration > 0.0f
+                ? activeRule->duration
+                : 10.0f;
+        ApplyStatus(entity, "fleeing",
+                    MakeEffectOrigin(entity, "behavior:flee", {}), duration);
+      }
+    } else if (entity.has<StatusEffects>()) {
+      RemoveStatus(entity, "fleeing");
+    }
 
     // Choose one action by strict priority. The skill owns its maximum range;
     // the behavior can only raise the minimum (pounce must not fire at 1 tile).
@@ -1270,11 +1611,11 @@ void Game::UpdateNpcBehaviors(float dt) {
             static_cast<float>(targetDistance) < action.minRange) {
           continue;
         }
-        if (!BehaviorConditionMatches(action.when, entity, playerEntity)) {
+        if (!BehaviorConditionMatches(action.when, entity, target)) {
           continue;
         }
         const SkillUseOutcome outcome =
-            UseSkill(entity, action.skillId, playerEntity, false, false);
+            UseSkill(entity, action.skillId, target, false, false);
         if (!outcome.used) continue;
         entity.remove<MOVE_THROUGH_PATH_ACTION>();
         state->repathTimer = 0.0f;
@@ -1349,7 +1690,40 @@ void Game::UpdateNpcBehaviors(float dt) {
         clearPath();
       }
     } else if (policy.mode == "flee") {
-      walkTo(awayDestination(std::max(6.0f, policy.desiredRange)));
+      // Flee is a sustained state, not "run to one point and stop". Keep
+      // choosing a far point away from the target on every repath; if the direct
+      // away direction hits the map edge or a wall, fan out to alternate angles.
+      const int mapWidth = static_cast<int>(map->GetWidth());
+      const int mapHeight = static_cast<int>(map->GetHeight());
+      const int step = std::max(8, std::max(mapWidth, mapHeight));
+      int awayX = selfPosition->x - targetPosition->x;
+      int awayY = selfPosition->y - targetPosition->y;
+      if (awayX == 0 && awayY == 0) awayX = 1;
+      const float baseAngle = std::atan2(
+          static_cast<float>(awayY), static_cast<float>(awayX));
+      static const float kAngles[] = {0.0f,  0.785f,  -0.785f,
+                                      1.571f, -1.571f, 2.356f,
+                                      -2.356f, 3.141f};
+      bool fled = false;
+      for (float offset : kAngles) {
+        const float angle = baseAngle + offset;
+        const int destX = std::clamp(
+            selfPosition->x +
+                static_cast<int>(std::lround(std::cos(angle) * step)),
+            0, mapWidth - 1);
+        const int destY = std::clamp(
+            selfPosition->y +
+                static_cast<int>(std::lround(std::sin(angle) * step)),
+            0, mapHeight - 1);
+        if (destX == selfPosition->x && destY == selfPosition->y) continue;
+        if (map->IsBlocked(destX, destY)) continue;
+        const GamePosition destination{destX, destY};
+        if (AStar(map.get(), *selfPosition, destination).empty()) continue;
+        walkTo(destination);
+        fled = true;
+        break;
+      }
+      if (!fled) clearPath();
     }
   }
 }

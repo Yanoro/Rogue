@@ -4,7 +4,6 @@
   "sprite": "",
   "disposition": "neutral",
   "retaliates": true,
-  "behavior": "zombie_shambler",
   "skills": {
     "bite": {
       "level": 1
@@ -13,5 +12,8 @@
       "level": 1
     }
   },
-  "portrait": ""
+  "portrait": "",
+  "pushable": true,
+  "behaviorProfile": "zombie_behavior",
+  "damageFeedback": "undead"
 }

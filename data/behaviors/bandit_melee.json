@@ -4,20 +4,36 @@
   "maxTargetDistance": 12,
   "repathSeconds": 0.5,
   "movement": {
-    "default": { "mode": "chase", "desiredRange": 1, "tolerance": 0 },
+    "default": {
+      "mode": "chase",
+      "desiredRange": 1,
+      "tolerance": 0
+    },
     "rules": [
       {
         "id": "low_health_flee",
         "priority": 100,
-        "enterWhen": { "self.health.pctBelow": 0.30 },
-        "exitWhen": { "self.health.pctAbove": 0.45 },
+        "enterWhen": {
+          "self.health.pctBelow": 0.3
+        },
+        "exitWhen": {
+          "self.health.pctAbove": 0.45
+        },
         "minDuration": 2.0,
         "cooldown": 5.0,
-        "policy": { "mode": "flee", "allowActions": false }
+        "policy": {
+          "mode": "flee",
+          "allowActions": false
+        },
+        "duration": 6.0
       }
     ]
   },
   "actions": [
-    { "skill": "slash", "priority": 10 }
-  ]
+    {
+      "skill": "slash",
+      "priority": 10
+    }
+  ],
+  "type": "aggressive"
 }

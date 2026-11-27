@@ -13,5 +13,7 @@
       "primary": true,
       "max": 500
     }
-  ]
+  ],
+  "pushable": false,
+  "damageFeedback": "construct"
 }

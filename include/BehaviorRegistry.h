@@ -61,6 +61,9 @@ struct BehaviorMovementRule {
   BehaviorCondition exitWhen;
   bool hasExit = false;
   float minDuration = 0.0f;
+  // Maximum time an active rule stays active. 0 means no maximum. The exit
+  // condition can still end the rule earlier once minDuration has passed.
+  float duration = 0.0f;
   float cooldown = 0.0f;
   MovementPolicy policy;
 };
@@ -69,6 +72,10 @@ struct BehaviorDef {
   std::string id;
   std::string name;
   std::string description;
+  // aggressive or neutral. This is the role the profile selects by mode.
+  std::string type = "aggressive";
+  // combat, wander or patrol. The implementation used by the behavior.
+  std::string kind = "combat";
   float maxTargetDistance = 12.0f;
   float repathSeconds = 0.5f;
   MovementPolicy defaultMovement;

@@ -532,7 +532,8 @@ void Game::DrawCombatHud() {
         ImGui::SetCursorScreenPos(a);
         ImGui::InvisibleButton("##slot", ImVec2(kSlotSize, kSlotSize));
         const bool hovered = ImGui::IsItemHovered();
-        const bool clicked = ImGui::IsItemClicked(ImGuiMouseButton_Left);
+        const bool clicked = ImGui::IsMouseReleased(ImGuiMouseButton_Left) &&
+                             hovered && skillBarDragSlot < 0;
         const bool rightClicked = ImGui::IsItemClicked(ImGuiMouseButton_Right);
 
         const SkillDef *def = nullptr;
@@ -544,6 +545,32 @@ void Game::DrawCombatHud() {
             def = nullptr;
           }
         }
+        if (def != nullptr &&
+            ImGui::BeginDragDropSource(
+                ImGuiDragDropFlags_SourceAllowNullID)) {
+          ImGui::SetDragDropPayload("SKILL_BAR_SLOT", &i, sizeof(int));
+          ImGui::TextUnformatted(def->name.c_str());
+          ImGui::EndDragDropSource();
+          skillBarDragSlot = i;
+        }
+        if (def != nullptr && ImGui::BeginDragDropTarget()) {
+          if (const ImGuiPayload *payload =
+                  ImGui::AcceptDragDropPayload("SKILL_BAR_SLOT")) {
+            if (payload->DataSize == sizeof(int)) {
+              const int source = *static_cast<const int *>(payload->Data);
+              SkillBar *editable = playerEntity.get_mut<SkillBar>();
+              if (editable != nullptr && source >= 0 &&
+                  source < static_cast<int>(editable->ids.size()) &&
+                  i < static_cast<int>(editable->ids.size()) &&
+                  source != i) {
+                std::swap(editable->ids[static_cast<size_t>(source)],
+                          editable->ids[static_cast<size_t>(i)]);
+              }
+            }
+          }
+          ImGui::EndDragDropTarget();
+        }
+
         const bool ready =
             def != nullptr &&
             (cooldowns == nullptr || cooldowns->IsReady(skillId));
@@ -551,6 +578,10 @@ void Game::DrawCombatHud() {
             (def != nullptr && cooldowns != nullptr)
                 ? cooldowns->RemainingFor(skillId)
                 : 0.0f;
+        std::string blockReason;
+        if (def != nullptr && def->activation.dash.enabled) {
+          blockReason = SkillBlockReason(playerEntity, *def, target);
+        }
 
         DrawSlotFrame(draw, a, b, style, def != nullptr, hovered, ready);
 
@@ -601,6 +632,10 @@ void Game::DrawCombatHud() {
                        a.y + (kSlotSize - labelSize.y) * 0.5f + 6.0f),
                 palette.name, label.c_str());
           }
+        }
+
+        if (def != nullptr && !blockReason.empty()) {
+          draw->AddRectFilled(a, b, IM_COL32(0, 0, 0, 135));
         }
 
         if (def != nullptr && remaining > 0.0f) {
@@ -677,10 +712,18 @@ void Game::DrawCombatHud() {
           if (!def->activation.skillshot.empty()) {
             ImGui::TextDisabled("Skillshot: aimed");
           }
+          if (!blockReason.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.35f, 1.0f),
+                               "Cannot cast: %s", blockReason.c_str());
+          }
           ImGui::TextDisabled("Right-click: Always casts");
           ImGui::EndTooltip();
         }
         ImGui::PopID();
+      }
+
+      if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        skillBarDragSlot = -1;
       }
 
       // A grip along the top strip, so the bar has an obvious place to drag from

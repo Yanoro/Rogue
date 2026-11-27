@@ -1,0 +1,11 @@
+{
+  "name": "Grey Wolf Behavior",
+  "description": "Pack hunter; neutral until threatened.",
+  "initial": "aggressive",
+  "behaviors": {
+    "aggressive": "wolf_pack"
+  },
+  "transitions": [
+    {"on": "damaged", "from": "neutral", "to": "aggressive"}
+  ]
+}

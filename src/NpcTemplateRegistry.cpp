@@ -109,6 +109,10 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
     out.disposition = "neutral";
   }
   out.retaliates = document.value("retaliates", false);
+  out.blocksMovement = document.value("blocksMovement", true);
+  out.pushable = document.value("pushable", false);
+  out.deathIcon = document.value("deathIcon", std::string());
+  out.velocity = document.value("velocity", 100.0f);
   out.attackDamage = document.value("attackDamage", 8.0f);
   out.attackInterval = document.value("attackInterval", 6.0f);
   out.attackRange = document.value("attackRange", 1.0f);
@@ -120,8 +124,23 @@ bool ParseTemplate(const nlohmann::json& document, NpcTemplateRegistry* /*regist
   out.armor = document.value("armor", 0.0f);
   out.combatStrategy = document.value("combatStrategy", std::string());
   out.behavior = document.value("behavior", std::string());
+  out.neutralBehavior = document.value("neutralBehavior", std::string());
+  out.behaviorProfile = document.value("behaviorProfile", std::string());
+  out.damageFeedback = document.value("damageFeedback", std::string());
+  out.wanderMinWait = std::max(0.0f, document.value("wanderMinWait", 2.0f));
+  out.wanderMaxWait = std::max(out.wanderMinWait,
+                               document.value("wanderMaxWait", 6.0f));
+  out.wanderRadius = std::max(1.0f, document.value("wanderRadius", 6.0f));
+  out.patrolHostileTemplate =
+      document.value("patrolHostileTemplate", std::string());
   for (char &c : out.combatStrategy) {
     c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  if (out.velocity <= 0.0f) {
+    Warn("Template '" + out.name +
+         "' has non-positive velocity; using 100",
+         warnings);
+    out.velocity = 100.0f;
   }
   if (out.attackDamage <= 0.0f) {
     Warn("Template '" + out.name + "' has non-positive attackDamage; using 8",
@@ -288,6 +307,10 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   if (!definition.brain.empty()) document["brain"] = definition.brain;
   document["disposition"] = definition.disposition;
   document["retaliates"] = definition.retaliates;
+  document["blocksMovement"] = definition.blocksMovement;
+  document["pushable"] = definition.pushable;
+  document["deathIcon"] = definition.deathIcon;
+  document["velocity"] = definition.velocity;
   document["attackDamage"] = definition.attackDamage;
   document["attackInterval"] = definition.attackInterval;
   document["attackRange"] = definition.attackRange;
@@ -298,7 +321,18 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   document["obstacle"] = definition.obstacle;
   document["armor"] = definition.armor;
   document["combatStrategy"] = definition.combatStrategy;
-  document["behavior"] = definition.behavior;
+  if (!definition.behavior.empty()) {
+    document["behavior"] = definition.behavior;
+  }
+  if (!definition.neutralBehavior.empty()) {
+    document["neutralBehavior"] = definition.neutralBehavior;
+  }
+  document["behaviorProfile"] = definition.behaviorProfile;
+  document["damageFeedback"] = definition.damageFeedback;
+  document["wanderMinWait"] = definition.wanderMinWait;
+  document["wanderMaxWait"] = definition.wanderMaxWait;
+  document["wanderRadius"] = definition.wanderRadius;
+  document["patrolHostileTemplate"] = definition.patrolHostileTemplate;
   if (!definition.slots.empty()) {
     nlohmann::json slots = nlohmann::json::array();
     for (const SlotSpec& slot : definition.slots) {

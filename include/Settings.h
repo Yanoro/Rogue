@@ -613,6 +613,53 @@ struct GameSettings {
   struct UiSection {
     std::string windowColor = "#000000D9";
     std::string popupColor = "#000000FF";
+    // Default size for every floating-text callout. A scenario or skill may
+    // override it.
+    float floatingTextSize = 16.0f;
+    // "rise" keeps the historical upward motion and fade; "stationary" keeps
+    // the text in place and holds it fully opaque for its lifetime.
+    std::string floatingTextMotion = "rise";
+    // Global fallback for callouts/numbers unless the scenario overrides it.
+    bool floatingTextBackground = true;
+    // above, center, below
+    std::string floatingTextPosition = "above";
+
+    struct CombatSection {
+      struct HighlightSection {
+        bool enabled = true;
+        std::string color = "#FF0000FF";
+        // rectangle or silhouette
+        std::string style = "silhouette";
+      } highlight;
+
+      // Player skill-use callout. The text is the skill's display name.
+      float skillUsedTextSize = 0.0f;
+      std::string skillUsedTextColor = "#E1EBFFFF";
+      bool skillUsedTextBackground = true;
+      // above, center, below
+      std::string skillUsedTextPosition = "above";
+
+      struct HitFeedbackSection {
+        bool flashEnabled = true;
+        std::string flashColor = "#FF3C3CFF";
+        // Filled alpha tint. Outline is a future style.
+        std::string flashStyle = "silhouette";
+        float flashSeconds = 0.12f;
+        bool shakeEnabled = true;
+        float shakeMagnitude = 3.0f;
+        float shakeSeconds = 0.14f;
+        std::string hitClip = "hit";
+      } hitFeedback;
+
+      struct StatusEffectsSection {
+        // Draw status icons over every character's head in the world.
+        bool showAboveHead = false;
+        // above or below
+        std::string position = "above";
+        // Pixels between the character's bounds and the icon row.
+        float distance = 40.0f;
+      } statusEffects;
+    } combat;
   } ui;
 
   // Acquisition field for every character's Vision. Named `perception` rather
@@ -699,6 +746,11 @@ struct GameSettings {
     // IconRegistry id used as the corpse visual. Read every frame by the corpse
     // icon system, so existing corpses change with the setting.
     std::string deathIcon = "death";
+    // Center-of-body warning shown when a committed cast is canceled.
+    float castCancelTextSize = 16.0f;
+    std::string castCancelTextColor = "#FFFFFFFF";
+    // Draw the dark strip behind the cancellation warning. Off means plain text.
+    bool castCancelTextBackground = true;
   } combat;
 
   // Player portrait layout. Resources are referenced by id, so a race that later
@@ -714,7 +766,22 @@ struct GameSettings {
       // "every current resource, in registry order".
       nlohmann::json resources = nlohmann::json::array();
     } portrait;
+
+    // Floating name-tag colours for NPCs. These are keyed to disposition rather
+    // than ever baked into a spawned entity, so retaliation recolours the plate
+    // on the same frame the disposition changes.
+    struct NameplateSection {
+      std::string neutralColor = "#FFFFFFFF";
+      std::string aggressiveColor = "#FF0000FF";
+    } nameplate;
   } hud;
+
+  // NPC locomotion model. The player always keeps acceleration and friction.
+  struct MovementSection {
+    // true: NPC path movement writes its MaxSpeed-derived velocity directly.
+    // false: NPCs use the old acceleration/friction/wall-repel path model.
+    bool npcConstantVelocity = true;
+  } movement;
 
   struct WorldSection {
     // 0 seeds from the clock, so every run differs. Any other value makes the run

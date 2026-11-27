@@ -31,7 +31,14 @@
     "autoCast": false,
     "xpPerUse": 8,
     "cast": 1.2,
-    "interruptible": true
+    "interruptible": true,
+    "floatingTextColor": [
+      255,
+      180,
+      90,
+      255
+    ],
+    "floatingTextSize": 0.0
   },
   "animation": "sword_swing"
 }

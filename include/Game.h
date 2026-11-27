@@ -39,6 +39,8 @@
 #include "ProjectileRegistry.h"
 #include "SkillshotRegistry.h"
 #include "BehaviorRegistry.h"
+#include "BehaviorProfileRegistry.h"
+#include "DamageFeedbackRegistry.h"
 #include "CombatStrategyRegistry.h"
 #include "SurfaceSystem.h"
 #include "EffectSystem.h"
@@ -122,6 +124,9 @@ public:
 
   void UpdateGUI();
   void Update();
+  // Drains CastCancelNotice after the ECS progress, outside the deferred system
+  // context, so cancellation callouts are actually created before the render pass.
+  void FlushCastCancelNotices();
   // Applies a finished digest and asks for a new one when it is stale. Called once
   // a frame; does nothing when the feature is off or no backend is available.
   void UpdateMemoryDigest();
@@ -152,6 +157,12 @@ public:
   // Returns false when the slot is empty, unknown, or the use was refused.
   // `direction` aims a skillshot; other skills ignore it.
   bool ActivatePlayerSkill(int index, Vector2 direction = {});
+
+  // Why the player's current target cannot receive this skill right now, or an
+  // empty string when there is no dash-specific blocker. Used by both UseSkill
+  // and the ability bar so the greyed slot and the refusal cannot disagree.
+  std::string SkillBlockReason(flecs::entity actor, const SkillDef &def,
+                               flecs::entity target) const;
 
   // The input-facing entry point: an aimed skill starts its indicator here
   // unless combat.instantSkillshots is on, in which case it fires at the cursor
@@ -338,6 +349,8 @@ private:
   SkillshotRegistry skillshotRegistry;
   CombatStrategyRegistry combatStrategyRegistry;
   BehaviorRegistry behaviorRegistry;
+  BehaviorProfileRegistry behaviorProfileRegistry;
+  DamageFeedbackRegistry damageFeedbackRegistry;
   // The actor-sprite catalogue: art for beings, keyed by sprite id. The `Actor` tag is
   // what marks an entity as living; this holds appearance only.
   ActorSpriteRegistry actorSpriteRegistry;
@@ -390,6 +403,9 @@ private:
   // headless check that only calls Init/Shutdown cannot overwrite the player's
   // layout with defaults.
   bool combatHudDrawn = false;
+  // Slot currently being dragged in the ability bar, or -1. Kept on the Game so
+  // the press/release/drop sequence can span frames without activating a skill.
+  int skillBarDragSlot = -1;
   void LoadCombatHudState();
   void SaveCombatHudState();
 
@@ -797,6 +813,10 @@ public:
   // The active profile, or null when neither the resolved list nor the active id
   // survived (which is a startup bug rather than a runtime state).
   const SystemOne::ModelProfile *ActiveSystemOneProfile() const;
+  // Actual-damage presentation. Refreshes an existing reaction with an intensity
+  // cap; it never changes resources or collision.
+  void TriggerHitFeedback(flecs::entity target, float amount);
+
 
   // Health of one profile, defaulting to "untested" for an id nobody has probed.
   SystemOne::SystemOneProfileStatus SystemOneStatusFor(const std::string &id) const;
@@ -814,6 +834,25 @@ private:
                                 flecs::entity self,
                                 flecs::entity target) const;
   void UpdateNpcBehaviors(float dt);
+  void UpdateNeutralNpcBehavior(flecs::entity entity,
+                                const BehaviorDef &definition,
+                                NpcBehaviorState &state, float dt);
+  bool NpcCanSeeTarget(flecs::entity entity, flecs::entity target) const;
+  flecs::entity FindPatrolHostileTarget(flecs::entity entity,
+                                        const std::string &templateId) const;
+
+
+  // Lazily builds a padded, white silhouette outline for one sprite path. The
+  // world tints it with the target-highlight colour at draw time, so changing
+  // the setting does not rebuild the mask. Returns null when the sprite has no
+  // usable pixels (or no texture), which makes the caller fall back to the
+  // rectangle.
+  const Texture2D *TargetSilhouetteTexture(const std::string &spritePath);
+  std::unordered_map<std::string, Texture2D> targetSilhouetteCache;
+
+  // Replaces a sprite actor's cell-sized hit/pick boxes with the alpha-tight
+  // bounds of its art. Rigs keep their authored RigGeometry footprint.
+  void ApplySpriteHitboxes(flecs::entity entity);
 
 
   // Opens a read-only window showing the items the entity holds (a Storage
@@ -890,7 +929,8 @@ private:
   // false when the rig is unknown or nothing drew, so the caller can still fall back to
   // the single-image look.
   bool DrawRigEntity(flecs::entity e, const RigBody &body,
-                     const ScreenPosition &screenPos, const DrawAscii &ascii);
+                     const ScreenPosition &screenPos, const DrawAscii &ascii,
+                     Color tint = WHITE);
 
   // The world's DrawEntityLayer pass: collect the drawable entities, sort by their feet,
   // then draw. A taller-than-cell rig extends above its cell, so the creation order is

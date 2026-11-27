@@ -12,6 +12,8 @@
 #include "RigRegistry.h"
 #include "BrainTemplateRegistry.h"
 #include "BehaviorRegistry.h"
+#include "BehaviorProfileRegistry.h"
+#include "DamageFeedbackRegistry.h"
 #include "NpcTemplateRegistry.h"
 #include "Game.h"
 #include "IconRegistry.h"
@@ -571,6 +573,54 @@ std::string BehaviorFileName(const nlohmann::json &document) {
   return BehaviorRegistry::IdFor(document);
 }
 
+// ---- damage feedback ------------------------------------------------------
+
+std::vector<Entry> ListDamageFeedback(const World &world) {
+  std::vector<Entry> out;
+  for (const DamageFeedbackDef *definition : world.damageFeedback.GetAll()) {
+    out.push_back({definition->id, definition->name, "damage feedback"});
+  }
+  return out;
+}
+nlohmann::json ReadDamageFeedback(const World &world, const std::string &id) {
+  return world.damageFeedback.ToJson(id);
+}
+bool ApplyDamageFeedback(const World &world, const nlohmann::json &document,
+                         std::string *error,
+                         std::vector<std::string> *warnings) {
+  return world.damageFeedback.AddOrReplace(document, "(content editor)", error,
+                                           warnings);
+}
+std::string DamageFeedbackFileName(const nlohmann::json &document) {
+  return DamageFeedbackRegistry::IdFor(document);
+}
+
+// ---- behavior profiles ----------------------------------------------------
+
+std::vector<Entry> ListBehaviorProfiles(const World &world) {
+  std::vector<Entry> out;
+  for (const BehaviorProfileDef *profile :
+       world.behaviorProfiles.GetAll()) {
+    out.push_back({profile->id, profile->name, "behavior profile"});
+  }
+  return out;
+}
+
+nlohmann::json ReadBehaviorProfile(const World &world, const std::string &id) {
+  return world.behaviorProfiles.ToJson(id);
+}
+
+bool ApplyBehaviorProfile(const World &world, const nlohmann::json &document,
+                          std::string *error,
+                          std::vector<std::string> *warnings) {
+  return world.behaviorProfiles.AddOrReplace(document, "(content editor)",
+                                             error, warnings);
+}
+
+std::string BehaviorProfileFileName(const nlohmann::json &document) {
+  return BehaviorProfileRegistry::IdFor(document);
+}
+
 // ---- brains ---------------------------------------------------------------
 
 std::vector<Entry> ListBrains(const World &world) {
@@ -819,6 +869,26 @@ void RegisterBuiltinKinds() {
           &ReadBehavior,
           &ApplyBehavior,
           &BehaviorFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "behavior_profiles",
+          "Behavior profiles",
+          /*hasSprites=*/false,
+          &ListBehaviorProfiles,
+          &ReadBehaviorProfile,
+          &ApplyBehaviorProfile,
+          &BehaviorProfileFileName,
+          nullptr,
+    });
+    Registry().Register({
+          "damage_feedback",
+          "Damage feedback",
+          /*hasSprites=*/false,
+          &ListDamageFeedback,
+          &ReadDamageFeedback,
+          &ApplyDamageFeedback,
+          &DamageFeedbackFileName,
           nullptr,
     });
     Registry().Register({

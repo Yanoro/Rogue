@@ -1,13 +1,35 @@
 {
   "name": "Player",
   "skills": {
-    "attack": { "level": 1 },
-    "heavy_swing": { "level": 1 },
-    "kick": { "level": 1 },
-    "power_strike": { "level": 1 },
-    "fireball": { "level": 1 },
-    "ice_lance": { "level": 1 },
-    "water_ball": { "level": 1 },
-    "running": { "level": 1 }
+    "attack": {
+      "level": 1
+    },
+    "heavy_swing": {
+      "level": 1
+    },
+    "kick": {
+      "level": 1
+    },
+    "power_strike": {
+      "level": 1
+    },
+    "fireball": {
+      "level": 1
+    },
+    "ice_lance": {
+      "level": 1
+    },
+    "water_ball": {
+      "level": 1
+    },
+    "running": {
+      "level": 1
+    },
+    "pounce": {
+      "level": 1
+    },
+    "blink": {
+      "level": 1
+    }
   }
 }

@@ -30,6 +30,13 @@ struct NPCData {
   // ResolveNpcTemplate, then overridden per instance where needed.
   std::string disposition = "neutral";
   bool retaliates = false;
+  // Solid body for actor collision. Copied from the template; the map does not
+  // author a per-instance override.
+  bool blocksMovement = true;
+  bool pushable = false;
+  // Constant path speed for this NPC. Filled from its NpcTemplate; the map does
+  // not author a per-instance override.
+  float velocity = 100.0f;
   float attackDamage = 8.0f;
   float attackInterval = 6.0f;
   float attackRange = 1.0f;
@@ -44,6 +51,13 @@ struct NPCData {
   std::string combatStrategy;
   bool suppressCombatStrategy = false;
   std::string behavior;
+  std::string neutralBehavior;
+  std::string behaviorProfile;
+  std::string damageFeedback;
+  float wanderMinWait = 2.0f;
+  float wanderMaxWait = 6.0f;
+  float wanderRadius = 6.0f;
+  std::string patrolHostileTemplate;
   // Starting stat values from "stats": {"strength": 14}. Applied over the
   // registry baselines GiveDefaultStats stamps, before the brain exists.
   std::vector<StatValue> startingStats;

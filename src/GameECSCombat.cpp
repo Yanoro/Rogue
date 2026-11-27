@@ -22,6 +22,7 @@
 #include "DebugLog.h"
 #include "DebugWindows.h"
 #include "Defaults.h"
+#include "UiStyle.hpp"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
 #include "StorageWindow.h"
@@ -428,8 +429,8 @@ bool InterruptCast(flecs::entity target) {
     }
   }
   target.remove<Casting>();
-  SpawnFloatingCallout(target, "Interrupted!",
-                       DEFAULT_INTERRUPT_CALL_OUT_COLOR);
+  target.set<CastCancelNotice>(
+      {"Interrupted", DEFAULT_INTERRUPT_CALL_OUT_COLOR});
   if (const Busy *busy = target.get<Busy>()) {
     if (busy->actionEntity == action) {
       target.remove<Busy>();
@@ -463,7 +464,8 @@ bool CancelCast(flecs::entity target, const std::string &callout) {
     }
   }
   target.remove<Casting>();
-  SpawnFloatingCallout(target, callout, DEFAULT_INTERRUPT_CALL_OUT_COLOR);
+  target.set<CastCancelNotice>(
+      {callout, DEFAULT_INTERRUPT_CALL_OUT_COLOR});
   if (const Busy *busy = target.get<Busy>()) {
     if (busy->actionEntity == action) {
       target.remove<Busy>();
@@ -506,7 +508,12 @@ void ApplyEffectDamage(flecs::entity source, flecs::entity target, float amount,
   Resources::EnsureInitialized(target);
   if (!Resources::IsDamageable(target)) return;
   Resources::Damage(source, target, amount, label);
-  SpawnFloatingDamage(target, std::max(1, static_cast<int>(std::lround(amount))));
+  const int effectPoints = std::max(1, static_cast<int>(std::lround(amount)));
+  SpawnFloatingDamage(target, effectPoints);
+  if (auto runtime = target.world().get<GameRuntimeResource>();
+      runtime != nullptr && runtime->game != nullptr) {
+    runtime->game->TriggerHitFeedback(target, static_cast<float>(effectPoints));
+  }
 
   if (Resources::IsAlive(target) && target.has<Retaliates>() &&
       source.is_alive() && source.has<PlayerControlled>()) {
@@ -565,6 +572,10 @@ std::string ApplyHit(flecs::entity actor, flecs::entity target, float baseDamage
 
   Resources::Damage(actor, target, static_cast<float>(points), label);
   SpawnFloatingDamage(target, points);
+  if (auto runtime = target.world().get<GameRuntimeResource>();
+      runtime != nullptr && runtime->game != nullptr) {
+    runtime->game->TriggerHitFeedback(target, static_cast<float>(points));
+  }
 
   std::string message = actorLabel + (secondPerson ? " hit " : " hits ") +
                         targetLabel + " with " + label + " for " +
@@ -771,6 +782,134 @@ bool SpawnSkillshot(flecs::entity actor, const SkillDef &def, float damage,
 // cooldown and GCD start immediately, the caster is marked Casting, and an
 // action entity carries the timer. CastResolutionSystem applies the effect when
 // the timer completes.
+namespace {
+
+// Bresenham cells from `from` to `to`, both inclusive. The dash is deliberately
+// a straight line rather than an A* route: an obstacle in the line makes the
+// skill unavailable instead of steering around it.
+std::vector<GamePosition> DashLineTiles(GamePosition from, GamePosition to) {
+  std::vector<GamePosition> tiles;
+  int x = from.x;
+  int y = from.y;
+  const int dx = std::abs(to.x - from.x);
+  const int dy = -std::abs(to.y - from.y);
+  const int stepX = from.x < to.x ? 1 : -1;
+  const int stepY = from.y < to.y ? 1 : -1;
+  int error = dx + dy;
+  for (;;) {
+    tiles.push_back({x, y});
+    if (x == to.x && y == to.y) break;
+    const int doubled = 2 * error;
+    if (doubled >= dy) {
+      error += dy;
+      x += stepX;
+    }
+    if (doubled <= dx) {
+      error += dx;
+      y += stepY;
+    }
+  }
+  return tiles;
+}
+
+GamePosition DashDestination(const std::vector<GamePosition> &line,
+                             float stopDistance) {
+  if (line.empty()) return {0, 0};
+  const int stop =
+      std::max(0, static_cast<int>(std::lround(stopDistance)));
+  const int index = std::max(0, static_cast<int>(line.size()) - 1 - stop);
+  return line[static_cast<size_t>(index)];
+}
+
+}  // namespace
+
+std::string Game::SkillBlockReason(flecs::entity actor, const SkillDef &def,
+                                   flecs::entity target) const {
+  if (!def.activation.dash.enabled) return {};
+  if (!target.is_alive() || target == actor) return "No target.";
+  Resources::EnsureInitialized(target);
+  if (!Resources::IsDamageable(target)) {
+    return "That is not something you can attack.";
+  }
+  const GamePosition *from = actor.get<GamePosition>();
+  const GamePosition *to = target.get<GamePosition>();
+  if (from == nullptr || to == nullptr) return "No target.";
+  if (map == nullptr) return "The map is not ready.";
+
+  const int distance = GridSteps(*from, *to);
+  if (static_cast<float>(distance) > def.activation.rangeTiles) {
+    return "Target is out of range.";
+  }
+  if (distance < def.activation.dash.minDistance) {
+    return "Target is too close.";
+  }
+
+  const std::vector<GamePosition> line = DashLineTiles(*from, *to);
+  for (const GamePosition &tile : line) {
+    // The dash stops before the target; the target's own tile is not traversed,
+    // so an obstacle target (a training dummy, for example) must not block the
+    // approach line.
+    if (tile == *to) continue;
+    if (map->IsBlocked(tile.x, tile.y)) {
+      return def.activation.dash.unavailableMessage.empty()
+                 ? "The path is blocked."
+                 : def.activation.dash.unavailableMessage;
+    }
+  }
+
+  // Sight is blocked by BlocksVision objects, exactly like the vision sampler;
+  // terrain blocking is handled above as a movement problem.
+  std::unordered_set<std::uint64_t> opaque;
+  ecs.filter<const BlocksVision, const GamePosition>().each(
+      [&opaque](const BlocksVision &, const GamePosition &position) {
+        opaque.insert(VisionQuery::CellKey(position));
+      });
+  if (VisionQuery::PathIsOpaque(opaque, *from, *to)) {
+    return def.activation.dash.unavailableMessage.empty()
+               ? "No line of sight."
+               : def.activation.dash.unavailableMessage;
+  }
+  return {};
+}
+
+namespace {
+
+void SpawnPlayerSkillUsedText(flecs::entity actor, const SkillDef &def) {
+  if (!actor.has<PlayerControlled>()) return;
+  const GameSettings &settings = Settings();
+  const std::string colorHex =
+      def.activation.hasFloatingTextColor
+          ? UiStyle::FormatColor(
+                ImVec4(def.activation.floatingTextColor[0] / 255.0f,
+                       def.activation.floatingTextColor[1] / 255.0f,
+                       def.activation.floatingTextColor[2] / 255.0f,
+                       def.activation.floatingTextColor[3] / 255.0f))
+          : settings.ui.combat.skillUsedTextColor;
+  const ImVec4 parsed = UiStyle::ParseColor(
+      colorHex, ImVec4(0.88f, 0.92f, 1.0f, 1.0f));
+  const Color color = {
+      static_cast<unsigned char>(std::clamp(parsed.x * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.y * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.z * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(std::clamp(parsed.w * 255.0f, 0.0f, 255.0f))};
+  int vertical = 0;
+  if (settings.ui.combat.skillUsedTextPosition == "center") vertical = 1;
+  else if (settings.ui.combat.skillUsedTextPosition == "below") vertical = 2;
+  float size = def.activation.floatingTextSize;
+  if (size <= 0.0f) size = settings.ui.combat.skillUsedTextSize;
+  if (size <= 0.0f) size = 0.0f;  // renderer falls back to ui.floatingTextSize
+  flecs::entity carrier = SpawnFloatingCallout(
+      actor, def.name, color, 0, size, false, vertical);
+  if (carrier.is_alive()) {
+    if (FloatingText *floating = carrier.get_mut<FloatingText>()) {
+      floating->background = settings.ui.combat.skillUsedTextBackground;
+      floating->backgroundOverride = true;
+    }
+  }
+}
+
+}  // namespace
+
 void ApplySkillStatus(flecs::entity actor, flecs::entity target,
                           const SkillDef &def) {
   if (def.activation.applyStatus.empty() || !target.is_alive()) return;
@@ -854,6 +993,10 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     outcome.message = "Hold Left Shift to run.";
     return outcome;
   }
+  if (actor.has<DashState>()) {
+    outcome.message = "You are already dashing.";
+    return outcome;
+  }
 
   SkillCooldowns *cooldowns = actor.get_mut<SkillCooldowns>();
   GlobalCooldown *globalCooldown = actor.get_mut<GlobalCooldown>();
@@ -895,6 +1038,59 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     if (!WithinActivationRange(actor, target, def->activation.rangeTiles)) {
       outcome.message = "You are too far away to use " + def->name + ".";
       return outcome;
+    }
+  }
+
+  if (def->activation.blink) {
+    const SkillshotAim *aim = actor.get<SkillshotAim>();
+    const GamePosition *from = actor.get<GamePosition>();
+    auto mapResource = actor.world().get<MapResource>();
+    if (aim == nullptr || from == nullptr || mapResource->map == nullptr) {
+      outcome.message = def->activation.blinkBlockedMessage;
+      if (secondPerson) {
+        SpawnFloatingCallout(actor, outcome.message,
+                             DEFAULT_ABILITY_CALL_OUT_COLOR);
+      }
+      return outcome;
+    }
+    const int distance = GridSteps(*from, aim->destination);
+    bool occupied = false;
+    actor.world().filter<Actor, GamePosition>().each(
+        [&](flecs::entity other, const Actor &, const GamePosition &position) {
+          if (other != actor && position == aim->destination) occupied = true;
+        });
+    if (distance > static_cast<int>(def->activation.rangeTiles) ||
+        distance <= 0 ||
+        mapResource->map->IsBlocked(aim->destination.x, aim->destination.y) ||
+        occupied) {
+      outcome.message = def->activation.blinkBlockedMessage;
+      if (secondPerson) {
+        SpawnFloatingCallout(actor, outcome.message,
+                             DEFAULT_ABILITY_CALL_OUT_COLOR);
+      }
+      return outcome;
+    }
+  }
+
+  const std::string actorLabel =
+      secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
+
+  // One player-facing skill-name callout for every accepted activation,
+  // regardless of delivery (direct, projectile, skillshot, dash or blink).
+  SpawnPlayerSkillUsedText(actor, *def);
+
+  if (def->activation.dash.enabled) {
+    auto runtime = actor.world().get<GameRuntimeResource>();
+    if (runtime != nullptr && runtime->game != nullptr) {
+      const std::string reason =
+          runtime->game->SkillBlockReason(actor, *def, target);
+      if (!reason.empty()) {
+        outcome.message = reason;
+        if (secondPerson) {
+          SpawnFloatingCallout(actor, reason, DEFAULT_ABILITY_CALL_OUT_COLOR);
+        }
+        return outcome;
+      }
     }
   }
 
@@ -960,6 +1156,78 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
             : DEFAULT_GLOBAL_COOLDOWN_SECONDS;
   }
 
+  if (def->activation.blink) {
+    const SkillshotAim *aim = actor.get<SkillshotAim>();
+    auto mapResource = actor.world().get<MapResource>();
+    if (aim == nullptr || mapResource->map == nullptr) {
+      outcome.message = def->activation.blinkBlockedMessage;
+      return outcome;
+    }
+    const GamePosition destination = aim->destination;
+    actor.set<GamePosition>(destination);
+    actor.set<ScreenPosition>(
+        mapResource->map->GameCoordsToScreenCoords(destination.x, destination.y));
+    actor.set<LastTile>({destination, true});
+    actor.remove<MOVE_THROUGH_PATH_ACTION>();
+    if (Velocity *velocity = actor.get_mut<Velocity>()) *velocity = {};
+    if (Acceleration *acceleration = actor.get_mut<Acceleration>()) {
+      *acceleration = {};
+    }
+    outcome.message = actorLabel + (secondPerson ? " blink." : " blinks.");
+    outcome.message += FinalizeSkillUse(actor, *def);
+    outcome.used = true;
+    return outcome;
+  }
+
+  if (def->activation.dash.enabled) {
+    auto runtime = actor.world().get<GameRuntimeResource>();
+    const GamePosition *from = actor.get<GamePosition>();
+    const GamePosition *to = target.get<GamePosition>();
+    auto mapResource = actor.world().get<MapResource>();
+    if (runtime == nullptr || runtime->game == nullptr || from == nullptr ||
+        to == nullptr || mapResource->map == nullptr) {
+      outcome.message = "The dash has nowhere to go.";
+      return outcome;
+    }
+    const std::vector<GamePosition> line = DashLineTiles(*from, *to);
+    const GamePosition destination =
+        DashDestination(line, def->activation.dash.stopDistance);
+
+    if (destination == *from) {
+      // minDistance 0 plus an already-adjacent target: the skill lands without
+      // needing a movement frame.
+      outcome.message = ApplyHit(actor, target, baseDamage, skillId, def->name,
+                                 secondPerson, def->activation.interrupts);
+      ApplySkillStatus(actor, target, *def);
+      outcome.message += FinalizeSkillUse(actor, *def);
+      outcome.used = true;
+      return outcome;
+    }
+
+    DashState dash;
+    dash.target = target;
+    dash.skillId = skillId;
+    dash.baseDamage = baseDamage;
+    dash.speed = def->activation.dash.speed;
+    dash.stopDistance = def->activation.dash.stopDistance;
+    dash.secondPerson = secondPerson;
+    dash.destinationTile = destination;
+    dash.destinationScreen =
+        mapResource->map->GameCoordsToScreenCoords(destination.x, destination.y);
+    actor.set<DashState>(dash);
+    actor.remove<MOVE_THROUGH_PATH_ACTION>();
+    if (Velocity *velocity = actor.get_mut<Velocity>()) {
+      *velocity = {};
+    }
+    if (Acceleration *acceleration = actor.get_mut<Acceleration>()) {
+      *acceleration = {};
+    }
+    outcome.used = true;
+    outcome.message = actorLabel + (secondPerson ? " begin " : " begins ") +
+                      def->name + ".";
+    return outcome;
+  }
+
   // An aimed skill needs a heading, not a target. A caller with no mouse (the
   // self-check, auto-cast) still gets a sensible one: toward the locked target,
   // then east as the last resort.
@@ -973,9 +1241,6 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
     aim = {1.0f, 0.0f};
   }
   aim = SkillshotNormalize(aim);
-
-  const std::string actorLabel =
-      secondPerson ? std::string("You") : EntityLabel(actor, "Someone");
 
   if (def->activation.requiresTarget && def->activation.rangeTiles > 0.0f) {
     SkillRangeIndicator indicator;
@@ -1042,9 +1307,6 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
       outcome.message = actorLabel + (secondPerson ? " hurl " : " hurls ") +
                         def->name + ".";
       outcome.message += FinalizeSkillUse(actor, *def);
-      if (announce) {
-        SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
-      }
     } else {
       outcome.message =
           "The " + def->name + " fizzles: its skillshot is not loaded.";
@@ -1063,9 +1325,6 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
                       def->name + " at " +
                       EntityLabel(target, "the target") + ".";
     outcome.message += FinalizeSkillUse(actor, *def);
-    if (announce) {
-      SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
-    }
     outcome.used = true;
     return outcome;
   }
@@ -1092,9 +1351,6 @@ SkillUseOutcome UseSkill(flecs::entity actor, const std::string &skillId,
   // A deliberate instant use says its name over the caster. Auto-cast passes
   // `announce == false`: the basic attack repeats every swing, and a name over
   // the head on every one of those is noise, not feedback.
-  if (announce) {
-    SpawnFloatingCallout(actor, def->name, DEFAULT_ABILITY_CALL_OUT_COLOR);
-  }
 
   outcome.used = true;
   return outcome;
@@ -1610,7 +1866,14 @@ int Game::RunCombatSelfCheck() {
     playerEntity.set<Velocity>({10.0f, 0.0f});
     ecs.progress();
     movementCanceled = !playerEntity.has<Casting>();
+    FlushCastCancelNotices();
+    int cancelCallouts = 0;
+    ecs.filter<FloatingText>().each(
+        [&](flecs::entity, const FloatingText &text) {
+          if (text.text == "Skill Canceled: Moved") ++cancelCallouts;
+        });
     playerEntity.set<Velocity>({0.0f, 0.0f});
+    std::cout << "combat-check: cancel-callouts=" << cancelCallouts << "\n";
   }
 
   // A sliding movement-locked cast must tolerate existing velocity. Only new
@@ -1881,6 +2144,11 @@ int Game::RunCombatSelfCheck() {
                 map->IsBlocked(candidate.x, candidate.y)) {
               continue;
             }
+            const GamePosition *playerHere = playerEntity.get<GamePosition>();
+            if (playerHere == nullptr ||
+                AStar(map.get(), candidate, *playerHere).empty()) {
+              continue;
+            }
             chasePos = candidate;
             found = true;
           }
@@ -2113,6 +2381,15 @@ int Game::RunCombatSelfCheck() {
     flecs::entity wolf = findMob("grey_wolf");
     if (wolf.is_alive()) {
       makeAggressive(wolf);
+      const GamePosition originalPlayer = *playerEntity.get<GamePosition>();
+      // Pounce now has a three-tile minimum. Put the player exactly at that
+      // distance so the wolf's priority order selects the dash, not a chase.
+      const GamePosition pounceRange = {13, 8};
+      playerEntity.set<GamePosition>(pounceRange);
+      if (map != nullptr) {
+        playerEntity.set<ScreenPosition>(
+            map->GameCoordsToScreenCoords(pounceRange.x, pounceRange.y));
+      }
       ecs.progress();
       const NpcBehaviorState *state = wolf.get<NpcBehaviorState>();
       const SkillCooldowns *cooldowns = wolf.get<SkillCooldowns>();
@@ -2120,6 +2397,11 @@ int Game::RunCombatSelfCheck() {
           state != nullptr && state->inCombat && cooldowns != nullptr &&
           (cooldowns->RemainingFor("pounce") > 0.0f ||
            cooldowns->RemainingFor("claw") > 0.0f);
+      playerEntity.set<GamePosition>(originalPlayer);
+      if (map != nullptr) {
+        playerEntity.set<ScreenPosition>(
+            map->GameCoordsToScreenCoords(originalPlayer.x, originalPlayer.y));
+      }
     }
 
     flecs::entity zombie = findMob("zombie");
@@ -2231,7 +2513,7 @@ int Game::RunCombatSelfCheck() {
             << " duplicate-name=" << npcDuplicateName
             << " sprite=" << npcSprite
             << " strategy=" << npcStrategy
-            << " entity-info=" << npcEntityInfoWindow
+            << " entity-info-disabled=" << !npcEntityInfoWindow
             << " brain-context=" << npcBrainContextWindow
             << " chase=" << npcChase
             << " corpse=" << corpseSpawned
@@ -2272,7 +2554,7 @@ int Game::RunCombatSelfCheck() {
                   iceCooldownClear && npcSpawned && npcRetaliated &&
                   npcBrainless && npcBrainDriven && npcPendingSpawn &&
                   npcDuplicateName && npcSprite && npcStrategy &&
-                  npcEntityInfoWindow && npcBrainContextWindow && npcChase &&
+                  !npcEntityInfoWindow && npcBrainContextWindow && npcChase &&
                   corpseSpawned && corpseNonInteractable && corpseHoldsLoot &&
                   corpseHasDeathSprite && deathIconSwitch &&
                   iconRegistryReady && iconFallback &&

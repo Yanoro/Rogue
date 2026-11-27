@@ -42,6 +42,13 @@
         255
       ]
     },
-    "hidden": true
+    "hidden": true,
+    "floatingTextColor": [
+      200,
+      140,
+      255,
+      255
+    ],
+    "floatingTextSize": 0.0
   }
 }

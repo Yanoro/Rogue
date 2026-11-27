@@ -29,7 +29,14 @@
     "range": 1,
     "gcd": true,
     "autoCast": false,
-    "xpPerUse": 8
+    "xpPerUse": 8,
+    "floatingTextColor": [
+      255,
+      120,
+      80,
+      255
+    ],
+    "floatingTextSize": 0.0
   },
   "animation": "sword_swing"
 }

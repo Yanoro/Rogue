@@ -14,6 +14,7 @@
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "FloatingText.hpp"
 #include "MapReloader.h"
 #include "ObjectDesigner.hpp"
 #include "PathFinding.h"
@@ -42,6 +43,7 @@
 #include <filesystem>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <iostream>
 #include <sstream>
 #include <unordered_map>
@@ -388,6 +390,11 @@ bool Game::TryActivatePlayerSkill(int index) {
     return false;
   }
 
+  if (def->activation.blink) {
+    CancelSkillshotAim();
+    return BeginSkillshotAim(index);
+  }
+
   if (def->activation.skillshot.empty()) {
     // A normal skill replaces any aim in progress; the player pressed a button
     // that does not want the mouse.
@@ -417,12 +424,14 @@ bool Game::BeginSkillshotAim(int index) {
   }
   const std::string skillId = bar->ids[static_cast<size_t>(index)];
   const SkillDef *def = skillRegistry.Get(skillId);
-  if (def == nullptr || def->activation.skillshot.empty()) {
+  const bool blink = def != nullptr && def->activation.blink;
+  if (def == nullptr ||
+      (!blink && def->activation.skillshot.empty())) {
     return false;
   }
   const SkillshotDef *skillshotDef =
-      skillshotRegistry.Get(def->activation.skillshot);
-  if (skillshotDef == nullptr) {
+      blink ? nullptr : skillshotRegistry.Get(def->activation.skillshot);
+  if (!blink && skillshotDef == nullptr) {
     if (debugLog) {
       debugLog->LogError("Skillshot '" + def->activation.skillshot +
                          "' is not loaded; " + def->name + " cannot be aimed.");
@@ -457,7 +466,8 @@ bool Game::BeginSkillshotAim(int index) {
   SkillshotAim aim;
   aim.skillId = skillId;
   aim.slot = index;
-  aim.width = skillshotDef->width;
+  aim.blink = blink;
+  aim.width = blink ? 2.0f : skillshotDef->width;
   playerEntity.set<SkillshotAim>(std::move(aim));
   UpdateSkillshotAim();
 
@@ -477,7 +487,8 @@ void Game::UpdateSkillshotAim() {
   const SkillDef *def = skillRegistry.Get(aim->skillId);
   const SkillshotDef *skillshotDef =
       def != nullptr ? skillshotRegistry.Get(def->activation.skillshot) : nullptr;
-  if (def == nullptr || skillshotDef == nullptr ||
+  if (def == nullptr ||
+      (!aim->blink && skillshotDef == nullptr) ||
       !playerEntity.has<ScreenPosition>()) {
     CancelSkillshotAim();
     return;
@@ -501,9 +512,27 @@ void Game::UpdateSkillshotAim() {
 
   const float tileWidth = map != nullptr ? map->GetTileWidth() : 32.0f;
   const float rangePixels = def->activation.rangeTiles * tileWidth;
-  aim->width = skillshotDef->width;
   aim->rangePixels = rangePixels;
   aim->direction = SkillshotNormalize(delta);
+
+  if (aim->blink) {
+    const float distance = static_cast<float>(std::sqrt(
+        delta.x * delta.x + delta.y * delta.y));
+    Vector2 endpoint = mouse;
+    if (distance > rangePixels && distance > 0.0f) {
+      endpoint = {origin.x + delta.x / distance * rangePixels,
+                  origin.y + delta.y / distance * rangePixels};
+    }
+    aim->path = {origin, endpoint};
+    if (map != nullptr) {
+      const GamePosition destination =
+          map->ScreenCoordsToGameCoords(endpoint.x, endpoint.y);
+      aim->destination = destination;
+    }
+    return;
+  }
+
+  aim->width = skillshotDef->width;
   aim->path = BuildSkillshotPath(*skillshotDef, origin, aim->direction,
                                  rangePixels);
 }
@@ -747,14 +776,29 @@ void Game::UpdateGUI() {
           if (!Resources::IsDamageable(entity)) return;
           bool hit = false;
           if (const ScreenPosition *screen = entity.get<ScreenPosition>()) {
-            raylib::Rectangle rect = {screen->x, screen->y, 0.0f, 0.0f};
-            if (const Pickbox *pick = entity.get<Pickbox>()) {
-              rect = PickboxRectangle(*screen, *pick);
-            } else if (const Hitbox *box = entity.get<Hitbox>()) {
-              rect = HitboxRectangle(*screen, *box);
+            if (const RigHitboxes *rig = entity.get<RigHitboxes>()) {
+              int bestZ = std::numeric_limits<int>::min();
+              for (const RigPartHitbox &part : rig->parts) {
+                const raylib::Rectangle rect{
+                    screen->x + part.rect.x, screen->y + part.rect.y,
+                    part.rect.width, part.rect.height};
+                if (part.rect.width > 0.0f && part.rect.height > 0.0f &&
+                    rect.CheckCollision(mouseWorldPos) && part.z >= bestZ) {
+                  bestZ = part.z;
+                  hit = true;
+                }
+              }
             }
-            if (rect.width > 0.0f && rect.CheckCollision(mouseWorldPos)) {
-              hit = true;
+            if (!hit) {
+              raylib::Rectangle rect = {screen->x, screen->y, 0.0f, 0.0f};
+              if (const Pickbox *pick = entity.get<Pickbox>()) {
+                rect = PickboxRectangle(*screen, *pick);
+              } else if (const Hitbox *box = entity.get<Hitbox>()) {
+                rect = HitboxRectangle(*screen, *box);
+              }
+              if (rect.width > 0.0f && rect.CheckCollision(mouseWorldPos)) {
+                hit = true;
+              }
             }
           }
           if (!hit && gPos == pos) {
@@ -968,7 +1012,44 @@ void Game::Update() {
     speechQueue->Update();
   }
   ecs.progress();
+  FlushCastCancelNotices();
   UpdateMemoryDigest();
+}
+
+void Game::FlushCastCancelNotices() {
+  std::vector<std::pair<flecs::entity, CastCancelNotice>> notices;
+  ecs.filter<CastCancelNotice>().each(
+      [&notices](flecs::entity entity, const CastCancelNotice &notice) {
+        notices.push_back({entity, notice});
+      });
+  const GameSettings &settings = Settings();
+  const ImVec4 parsed = UiStyle::ParseColor(
+      settings.combat.castCancelTextColor,
+      ImVec4(235.0f / 255.0f, 64.0f / 255.0f, 64.0f / 255.0f, 1.0f));
+  const Color color = {
+      static_cast<unsigned char>(
+          std::clamp(parsed.x * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(
+          std::clamp(parsed.y * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(
+          std::clamp(parsed.z * 255.0f, 0.0f, 255.0f)),
+      static_cast<unsigned char>(
+          std::clamp(parsed.w * 255.0f, 0.0f, 255.0f))};
+  for (const auto &[entity, notice] : notices) {
+    if (entity.is_alive()) {
+      flecs::entity carrier =
+          SpawnFloatingText(entity, notice.text, color, 0,
+                            settings.combat.castCancelTextSize, true);
+      if (carrier.is_alive()) {
+        if (FloatingText *floating = carrier.get_mut<FloatingText>()) {
+          floating->background = settings.combat.castCancelTextBackground;
+          floating->backgroundOverride = true;
+        }
+      }
+      flecs::entity target = entity;
+      target.remove<CastCancelNotice>();
+    }
+  }
 }
 
 double Game::SecondsUntilNextDigest() const {
@@ -1103,7 +1184,8 @@ void Game::handleInput() {
   if (const Casting *casting = playerEntity.get<Casting>()) {
     suppressMovement = casting->movementLocked && !casting->movementInputArmed;
   }
-  if (HasStatusTag(playerEntity, "immobilized")) {
+  if (HasStatusTag(playerEntity, "immobilized") ||
+      playerEntity.has<DashState>()) {
     suppressMovement = true;
     playerEntity.remove<MOVE_THROUGH_PATH_ACTION>();
     if (Velocity *velocity = playerEntity.get_mut<Velocity>()) {
@@ -1278,6 +1360,13 @@ void Game::Shutdown() {
   if (gameFont.glyphCount > 0) {
     UnloadFont(gameFont);
   }
+
+  // Silhouette masks are GPU textures built lazily from target sprites.
+  for (auto &[path, texture] : targetSilhouetteCache) {
+    (void)path;
+    if (texture.id != 0) UnloadTexture(texture);
+  }
+  targetSilhouetteCache.clear();
 
   // Where the player parked the combat HUD. Written here rather than every frame:
   // the position only has to survive a clean exit, and a per-frame write would

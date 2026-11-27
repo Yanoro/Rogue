@@ -93,6 +93,23 @@ struct HeldSkillData {
   float minResource = 10.0f;
 };
 
+// A straight-line burst of movement towards the skill's target. This is a
+// movement delivery, not a teleport: the caster is displaced along the line over
+// time and the hit lands only at the destination. Future dash, sidestep,
+// teleport-strike and similar skills can share the same block.
+struct DashSpec {
+  bool enabled = false;
+  // Pixels per second along the straight line.
+  float speed = 500.0f;
+  // Tile distance from the target at which the movement stops.
+  float stopDistance = 1.0f;
+  // Minimum tile distance from the target required before the skill may start.
+  // 0 allows an adjacent target; in that case the hit lands immediately.
+  int minDistance = 0;
+  // Shown over the caster when line of sight or the straight path is blocked.
+  std::string unavailableMessage = "No line of sight.";
+};
+
 struct SkillActivation {
   // Take base damage and the swing time from the equipped weapon. The basic
   // attack is the reason this exists: its numbers are the weapon's, not the
@@ -218,6 +235,21 @@ struct SkillActivation {
   std::string surface;
   float surfaceDuration = 0.0f;
   int surfaceRadius = 0;
+
+  // Straight-line movement delivery. The damage/status are applied when the
+  // caster reaches the final tile, not when the button is pressed.
+  DashSpec dash;
+
+  // Ground-target teleport. The player aims at a tile within rangeTiles and the
+  // caster is moved there instantly; no movement path is traversed.
+  bool blink = false;
+  std::string blinkBlockedMessage = "You cannot blink there.";
+
+  // Optional per-skill overrides for the player's skill-use callout. Size 0 and
+  // an absent colour mean "use the scenario/global UI defaults".
+  std::array<int, 4> floatingTextColor = {0, 0, 0, 0};
+  bool hasFloatingTextColor = false;
+  float floatingTextSize = 0.0f;
 };
 
 // Definition of one improvable skill, loaded from data/skills/<id>.json.

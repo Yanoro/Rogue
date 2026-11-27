@@ -897,7 +897,12 @@ int Map::GetIndex(int x, int y) const { return y * width + x; }
 void Map::RefreshBlockingObjects() {
   blockingObjects.clear();
   ecs.filter<const Obstacle, const GamePosition>().each(
-      [this](flecs::entity, const Obstacle &obstacle, const GamePosition &pos) {
+      [this](flecs::entity entity, const Obstacle &obstacle,
+             const GamePosition &pos) {
+        // Ordinary actor bodies are dynamic collisions and stay out of the A*
+        // tile cache. Actors authored as obstacles (training dummies, posts,
+        // etc.) are pathfinding blockers, so include those cells.
+        if (entity.has<Actor>() && !entity.has<Obstacle>()) return;
         if (obstacle.blocksMovement && IsInBounds(pos.x, pos.y)) {
           blockingObjects.insert(GetIndex(pos.x, pos.y));
         }

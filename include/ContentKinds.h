@@ -18,6 +18,8 @@ class MovementRegistry;
 class SkillRegistry;
 class NpcTemplateRegistry;
 class BehaviorRegistry;
+class BehaviorProfileRegistry;
+class DamageFeedbackRegistry;
 class BrainTemplateRegistry;
 class SurfaceSpriteRegistry;
 class SurfaceRegistry;
@@ -62,6 +64,8 @@ struct World {
   NpcTemplateRegistry &npcs;
   BrainTemplateRegistry &brains;
   BehaviorRegistry &behaviors;
+  BehaviorProfileRegistry &behaviorProfiles;
+  DamageFeedbackRegistry &damageFeedback;
   SurfaceSpriteRegistry &surfaceSprites;
   SurfaceRegistry &surfaces;
   StatusEffectRegistry &statusEffects;

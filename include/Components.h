@@ -665,6 +665,30 @@ struct Pickbox {
   float offsetY = 0.0f;
 };
 
+// Vertical capsule derived from the alpha-tight sprite bounds. The two circle
+// centres are at `centerX`, `topY` and `centerX`, `topY + segment`, relative to
+// the entity's ScreenPosition. Movement collision uses this shape; clicking
+// keeps the tighter-to-author AABB Pickbox.
+struct CapsuleCollider {
+  float radius = 0.0f;
+  float segment = 0.0f;
+  float centerX = 0.0f;
+  float topY = 0.0f;
+};
+
+// Static base-pose hitboxes for a rigged body. Coordinates are relative to
+// ScreenPosition. One box per declared rig part; hull is the convex hull of all
+// part-box corners and is what movement collision uses.
+struct RigPartHitbox {
+  std::string id;
+  Rectangle rect{0, 0, 0, 0};
+  int z = 0;
+};
+struct RigHitboxes {
+  std::vector<RigPartHitbox> parts;
+  std::vector<Vector2> hull;
+};
+
 inline raylib::Rectangle HitboxRectangle(const ScreenPosition &position,
                                          const Hitbox &hitbox) {
   return raylib::Rectangle(position.x + hitbox.offsetX,
@@ -1026,6 +1050,15 @@ struct AgentSleepTimer {
 // world will treat it as scenery.
 struct Actor {};
 
+// An actor with this tag is a solid body for the dynamic actor collision system.
+// The player is solid implicitly; NPCs get the tag unless their template disables
+// blocking in the Content Editor.
+struct BlocksMovement {};
+
+// An NPC with this tag can be displaced by the actor collision pass. NPCs are
+// immovable by default; the Content Editor opts an individual template in.
+struct Pushable {};
+
 // The last tile an actor occupied, used by the central tile-transition system.
 // Surfaces react to transitions; storing this on the actor means walking,
 // clicking a path and teleporting all produce the same enter/exit events.
@@ -1169,6 +1202,30 @@ struct DO_NOTHING_ACTION {
 struct MOVE_THROUGH_PATH_ACTION {
   std::vector<GamePosition> path;
 }; 
+
+// A cancellation callout waiting for the end of the ECS progress. Creating a
+// floating-text carrier from inside a cancel system is deferred and can be lost
+// before the render pass; this small mailbox is drained by Game::Update after
+// progress instead.
+struct CastCancelNotice {
+  std::string text;
+  Color color = {235, 64, 64, 255};
+};
+
+// A skill-driven straight-line dash in progress. The caster is moved directly by
+// DashMovementSystem rather than through Velocity/Acceleration; this is what
+// makes a dash rapid without teleporting and without inheriting the normal walk
+// model. The damage is applied only when destinationScreen is reached.
+struct DashState {
+  flecs::entity target = flecs::entity::null();
+  std::string skillId;
+  float baseDamage = 0.0f;
+  float speed = 0.0f;
+  float stopDistance = 1.0f;
+  bool secondPerson = false;
+  ScreenPosition destinationScreen{};
+  GamePosition destinationTile{0, 0};
+};
 
 struct MOVE_TO_CHARACTER_ACTION {
   std::string name;
@@ -1642,6 +1699,46 @@ struct NpcBehaviorRuleCooldown {
   float remaining = 0.0f;
 };
 
+// The aggressive behavior a neutral NPC switches to, and the neutral behavior it
+// returns to. NpcBehaviorId always names the currently active one.
+struct NpcAggressiveBehaviorId {
+  std::string id;
+};
+struct NpcNeutralBehaviorId {
+  std::string id;
+};
+// The single profile a role-typed NPC references. When present it supersedes
+// the legacy neutral/aggressive behavior-id pair.
+struct NpcBehaviorProfileId {
+  std::string id;
+};
+// Set by a patrol when it spots its configured hostile template. The combat
+// behavior then treats this entity as its target instead of the player.
+struct NpcCombatTarget {
+  flecs::entity target = flecs::entity::null();
+};
+
+// DamageFeedbackRegistry id selected by an NPC template. Empty means use the
+// global ui.combat.hitFeedback defaults.
+struct DamageFeedbackId {
+  std::string id;
+};
+
+// Short-lived presentation state for actual damage. It never affects collision
+// or resources.
+struct HitReaction {
+  float flashRemaining = 0.0f;
+  float flashDuration = 0.0f;
+  Color flashColor = {255, 60, 60, 255};
+  float shakeRemaining = 0.0f;
+  float shakeDuration = 0.0f;
+  float shakeMagnitude = 0.0f;
+  std::string overlayClip;
+  float overlayTime = 0.0f;
+  float overlayDuration = 0.0f;
+  std::uint32_t seed = 1;
+};
+
 // Per-instance state for the behavior controller. The active movement rule is
 // held here so hysteresis survives across frames; the cooldowns prevent a rule
 // from immediately re-entering after it exits.
@@ -1651,6 +1748,14 @@ struct NpcBehaviorState {
   std::vector<NpcBehaviorRuleCooldown> ruleCooldowns;
   float repathTimer = 0.0f;
   bool inCombat = false;
+
+  // Neutral movement. The wait is consumed after arriving at a wander point.
+  float neutralWait = 0.0f;
+  bool neutralTravelling = false;
+  GamePosition neutralDestination{0, 0};
+  std::vector<GamePosition> patrolRoute;
+  size_t patrolIndex = 0;
+  uint32_t randomState = 0;
 
   float CooldownFor(const std::string &ruleId) const {
     for (const NpcBehaviorRuleCooldown &entry : ruleCooldowns) {
@@ -1682,6 +1787,12 @@ struct Retaliates {};
 struct Dead {};
 struct Corpse {};
 
+// Per-NPC death visual chosen by its template. Empty means use the global
+// combat.deathIcon setting.
+struct CorpseDeathIcon {
+  std::string icon;
+};
+
 // The non-LLM tactic an NPC uses while Aggressive. Only bodies without an
 // AgentBrainWrapper execute it; an LLM character's own movement wins.
 //
@@ -1694,11 +1805,19 @@ struct CombatStrategy {
 
 class CombatStrategyRegistry;
 class BehaviorRegistry;
+class BehaviorProfileRegistry;
+class DamageFeedbackRegistry;
 struct CombatStrategyRegistryResource {
   const CombatStrategyRegistry *registry = nullptr;
 };
 struct BehaviorRegistryResource {
   const BehaviorRegistry *registry = nullptr;
+};
+struct BehaviorProfileRegistryResource {
+  const BehaviorProfileRegistry *registry = nullptr;
+};
+struct DamageFeedbackRegistryResource {
+  const DamageFeedbackRegistry *registry = nullptr;
 };
 
 // A projectile in flight: the delivery, not the effect. It carries a copy of
@@ -1767,6 +1886,10 @@ struct SkillshotAim {
   // final tangent is not its launch heading, so the cast must not read the last
   // segment of a crescent and fire along the tangent.
   Vector2 direction = {1.0f, 0.0f};
+  // Blink uses the same aim state for its range preview, but stores the chosen
+  // destination tile instead of a skillshot path.
+  bool blink = false;
+  GamePosition destination{0, 0};
 };
 
 class SkillshotRegistry;

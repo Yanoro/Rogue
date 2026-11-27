@@ -31,9 +31,15 @@
   },
   "actions": [
     {
+      "skill": "fireball",
+      "priority": 20,
+      "minRange": 2
+    },
+    {
       "skill": "bolt",
       "priority": 10,
       "minRange": 2
     }
-  ]
+  ],
+  "type": "aggressive"
 }

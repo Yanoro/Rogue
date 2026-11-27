@@ -1,0 +1,12 @@
+{
+  "name": "Construct",
+  "description": "Damage feedback profile.",
+  "flashEnabled": true,
+  "flashColor": "#FFD27AFF",
+  "flashSeconds": 0.12,
+  "shakeEnabled": true,
+  "shakeMagnitude": 3.0,
+  "shakeSeconds": 0.14,
+  "hitClip": "hit",
+  "flashStyle": "silhouette"
+}

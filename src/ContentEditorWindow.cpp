@@ -103,6 +103,8 @@ struct JsonFormOptions {
   bool *showActorSpritesWithoutArt = nullptr;
   const CombatStrategyRegistry *combatStrategies = nullptr;
   const BehaviorRegistry *behaviors = nullptr;
+  const BehaviorProfileRegistry *behaviorProfiles = nullptr;
+  const DamageFeedbackRegistry *damageFeedback = nullptr;
   const IconRegistry *icons = nullptr;
   std::string *iconFilter = nullptr;
   const SurfaceSpriteRegistry *surfaceSprites = nullptr;
@@ -182,13 +184,14 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     return DrawColourValue(value);
   }
 
-  if (depth == 1 && key == "icon" && value.is_string() &&
-      options.icons != nullptr && options.iconFilter != nullptr) {
+  if (depth == 1 && (key == "icon" || key == "deathIcon") &&
+      value.is_string() && options.icons != nullptr &&
+      options.iconFilter != nullptr) {
     const std::string current = value.get<std::string>();
     const std::optional<std::string> selected = IconPicker::Draw(
         *options.icons, *options.resources, current,
-        "##content-skill-icon", *options.iconFilter, /*allowNone=*/true,
-        options.debugLog);
+        key == "deathIcon" ? "##content-death-icon" : "##content-skill-icon",
+        *options.iconFilter, /*allowNone=*/true, options.debugLog);
     if (selected.has_value()) {
       value = *selected;
       return true;
@@ -199,23 +202,24 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
   if (depth == 1 && key == "combatStrategy" && value.is_string() &&
       options.combatStrategies != nullptr) {
     const std::string current = value.get<std::string>();
+    bool changed = false;
     if (ImGui::BeginCombo("##combatStrategy",
                           current.empty() ? "None (hold)" : current.c_str())) {
       if (ImGui::Selectable("None (hold)", current.empty())) {
         value = "";
-        return true;
+        changed = true;
       }
       for (const CombatStrategyDef *definition :
            options.combatStrategies->GetAll()) {
         if (ImGui::Selectable(definition->name.c_str(),
                               current == definition->id)) {
           value = definition->id;
-          return true;
+          changed = true;
         }
       }
       ImGui::EndCombo();
     }
-    return false;
+    return changed;
   }
 
   if (depth == 1 && key == "disposition" && value.is_string()) {
@@ -226,38 +230,92 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     for (int i = 0; i < 2; ++i) {
       if (current == values[i]) shown = labels[i];
     }
+    bool changed = false;
     if (ImGui::BeginCombo("##disposition", shown)) {
       for (int i = 0; i < 2; ++i) {
         if (ImGui::Selectable(labels[i], current == values[i])) {
           value = values[i];
-          return true;
+          changed = true;
         }
       }
       ImGui::EndCombo();
     }
-    return false;
+    return changed;
   }
 
-  if (depth == 1 && key == "behavior" && value.is_string() &&
-      options.behaviors != nullptr) {
+  if (depth == 1 && (key == "behavior" || key == "neutralBehavior") &&
+      value.is_string() && options.behaviors != nullptr) {
     const std::string current = value.get<std::string>();
-    if (ImGui::BeginCombo("##behavior",
+    const bool neutralPicker = key == "neutralBehavior";
+    bool changed = false;
+    if (ImGui::BeginCombo(neutralPicker ? "##neutralBehavior" : "##behavior",
                           current.empty() ? "None (legacy controller)"
                                           : current.c_str())) {
       if (ImGui::Selectable("None (legacy controller)", current.empty())) {
         value = "";
-        return true;
+        changed = true;
       }
       for (const BehaviorDef *definition : options.behaviors->GetAll()) {
+        const bool neutralType = definition->type == "neutral";
+        if (neutralPicker ? !neutralType : definition->type != "aggressive") {
+          continue;
+        }
         if (ImGui::Selectable(definition->name.c_str(),
                               current == definition->id)) {
           value = definition->id;
-          return true;
+          changed = true;
         }
       }
       ImGui::EndCombo();
     }
-    return false;
+    return changed;
+  }
+
+  if (depth == 1 && key == "behaviorProfile" && value.is_string() &&
+      options.behaviorProfiles != nullptr) {
+    const std::string current = value.get<std::string>();
+    bool changed = false;
+    if (ImGui::BeginCombo("##behaviorProfile",
+                          current.empty() ? "None (legacy controller)"
+                                          : current.c_str())) {
+      if (ImGui::Selectable("None (legacy controller)", current.empty())) {
+        value = "";
+        changed = true;
+      }
+      for (const BehaviorProfileDef *profile :
+           options.behaviorProfiles->GetAll()) {
+        if (ImGui::Selectable(profile->name.c_str(),
+                              current == profile->id)) {
+          value = profile->id;
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    return changed;
+  }
+
+  if (depth == 1 && key == "damageFeedback" && value.is_string() &&
+      options.damageFeedback != nullptr) {
+    const std::string current = value.get<std::string>();
+    bool changed = false;
+    if (ImGui::BeginCombo("##damageFeedback",
+                          current.empty() ? "Global default" : current.c_str())) {
+      if (ImGui::Selectable("Global default", current.empty())) {
+        value = "";
+        changed = true;
+      }
+      for (const DamageFeedbackDef *definition :
+           options.damageFeedback->GetAll()) {
+        if (ImGui::Selectable(definition->name.c_str(),
+                              current == definition->id)) {
+          value = definition->id;
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    return changed;
   }
 
   if (depth == 1 && key == "sprite" && value.is_string() &&
@@ -295,18 +353,19 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     const std::string current = value.get<std::string>();
     const ArtStyleDef *selectedStyle = options.artStyles->Get(current);
     ImGui::SetNextItemWidth(-1.0f);
+    bool changed = false;
     if (ImGui::BeginCombo("##art-style",
                           selectedStyle != nullptr
                               ? selectedStyle->name.c_str()
                               : "Default (family style)")) {
       if (ImGui::Selectable("Default (family style)", current.empty())) {
         value = "";
-        return true;
+        changed = true;
       }
       for (const ArtStyleDef *style : options.artStyles->GetAll()) {
         if (ImGui::Selectable(style->name.c_str(), current == style->id)) {
           value = style->id;
-          return true;
+          changed = true;
         }
       }
       ImGui::EndCombo();
@@ -329,7 +388,7 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
           "explicit.");
     }
     ImGui::PopTextWrapPos();
-    return false;
+    return changed;
   }
 
   if (depth == 1 && key == "source" && options.portraitSource) {
@@ -414,14 +473,127 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
     std::snprintf(label, sizeof(label), "{%zu key(s)}", value.size());
     if (ImGui::TreeNodeEx("##keys", ImGuiTreeNodeFlags_DefaultOpen, "%s", label)) {
       for (auto &entry : value.items()) {
-        ImGui::PushID(entry.key().c_str());
+        const std::string entryKey = entry.key();
+        const bool npcNeutralParameter =
+            (value.contains("neutralBehavior") ||
+             value.contains("behaviorProfile")) &&
+            (entryKey == "wanderMinWait" || entryKey == "wanderMaxWait" ||
+             entryKey == "wanderRadius" ||
+             entryKey == "patrolHostileTemplate");
+        if (npcNeutralParameter) continue;
+        ImGui::PushID(entryKey.c_str());
         ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(entry.key().c_str());
+        const char *label =
+            entryKey == "behavior"
+                ? "Aggressive behavior"
+                : (entryKey == "neutralBehavior"
+                       ? "Neutral behavior"
+                       : (entryKey == "behaviorProfile"
+                              ? "Behavior profile"
+                              : (entryKey == "damageFeedback"
+                                     ? "Damage feedback"
+                                     : entryKey.c_str())));
+        ImGui::TextUnformatted(label);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1.0f);
-        changed |= DrawJsonValue(entry.value(), entry.key(),
-                                 inPalette || KeyIsPalette(entry.key()), options,
+        changed |= DrawJsonValue(entry.value(), entryKey,
+                                 inPalette || KeyIsPalette(entryKey), options,
                                  depth + 1);
+
+        if (entryKey == "behaviorProfile" && value.contains("behaviorProfile") &&
+            value["behaviorProfile"].is_string() &&
+            options.behaviorProfiles != nullptr) {
+          const std::string profileId =
+              value["behaviorProfile"].get<std::string>();
+          const BehaviorProfileDef *profile =
+              options.behaviorProfiles->Get(profileId);
+          if (profile != nullptr && options.behaviors != nullptr) {
+            const auto neutral = profile->behaviors.find("neutral");
+            const BehaviorDef *neutralBehavior =
+                neutral != profile->behaviors.end()
+                    ? options.behaviors->Get(neutral->second)
+                    : nullptr;
+            const auto drawProfileParameter = [&](const char *field,
+                                                   const char *labelText) {
+              if (!value.contains(field) || !value[field].is_number()) {
+                value[field] = 0.0;
+              }
+              ImGui::PushID(field);
+              ImGui::AlignTextToFramePadding();
+              ImGui::TextUnformatted(labelText);
+              ImGui::SameLine();
+              ImGui::SetNextItemWidth(-1.0f);
+              changed |= DrawJsonValue(value[field], field, false, options,
+                                       depth + 1);
+              ImGui::PopID();
+            };
+            if (neutralBehavior != nullptr &&
+                neutralBehavior->kind == "wander") {
+              drawProfileParameter("wanderMinWait", "Minimum wait (seconds)");
+              drawProfileParameter("wanderMaxWait", "Maximum wait (seconds)");
+              drawProfileParameter("wanderRadius", "Wander radius (tiles)");
+            } else if (neutralBehavior != nullptr &&
+                       neutralBehavior->kind == "patrol") {
+              if (!value.contains("patrolHostileTemplate") ||
+                  !value["patrolHostileTemplate"].is_string()) {
+                value["patrolHostileTemplate"] = "";
+              }
+              ImGui::PushID("patrolHostileTemplate");
+              ImGui::AlignTextToFramePadding();
+              ImGui::TextUnformatted("Hostile template");
+              ImGui::SameLine();
+              ImGui::SetNextItemWidth(-1.0f);
+              changed |= DrawJsonValue(value["patrolHostileTemplate"],
+                                       "patrolHostileTemplate", false, options,
+                                       depth + 1);
+              ImGui::PopID();
+            }
+          }
+        }
+
+        // NPC templates expose the selected neutral behavior's variables under
+        // the selector, rather than as unrelated top-level fields.
+        if (entryKey == "neutralBehavior" && value.contains("neutralBehavior") &&
+            value["neutralBehavior"].is_string() && options.behaviors != nullptr) {
+          const std::string selected =
+              value["neutralBehavior"].get<std::string>();
+          const BehaviorDef *behavior = options.behaviors->Get(selected);
+          if (behavior != nullptr) {
+            const auto drawParameter = [&](const char *field,
+                                           const char *labelText) {
+              if (!value.contains(field) || !value[field].is_number()) {
+                value[field] = 0.0;
+              }
+              ImGui::PushID(field);
+              ImGui::AlignTextToFramePadding();
+              ImGui::TextUnformatted(labelText);
+              ImGui::SameLine();
+              ImGui::SetNextItemWidth(-1.0f);
+              changed |= DrawJsonValue(value[field], field, false, options,
+                                       depth + 1);
+              ImGui::PopID();
+            };
+            if (behavior->kind == "wander") {
+              drawParameter("wanderMinWait", "Minimum wait (seconds)");
+              drawParameter("wanderMaxWait", "Maximum wait (seconds)");
+              drawParameter("wanderRadius", "Wander radius (tiles)");
+            } else if (behavior->kind == "patrol") {
+              if (!value.contains("patrolHostileTemplate") ||
+                  !value["patrolHostileTemplate"].is_string()) {
+                value["patrolHostileTemplate"] = "";
+              }
+              ImGui::PushID("patrolHostileTemplate");
+              ImGui::AlignTextToFramePadding();
+              ImGui::TextUnformatted("Hostile template");
+              ImGui::SameLine();
+              ImGui::SetNextItemWidth(-1.0f);
+              changed |= DrawJsonValue(value["patrolHostileTemplate"],
+                                       "patrolHostileTemplate", false, options,
+                                       depth + 1);
+              ImGui::PopID();
+            }
+          }
+        }
         ImGui::PopID();
       }
       ImGui::TreePop();
@@ -458,6 +630,7 @@ ContentKinds::World ContentEditorWindow::World_() {
       game->iconRegistry, game->rigRegistry, game->movementRegistry,
       game->itemRegistry, game->skillRegistry, game->npcTemplateRegistry,
       game->brainTemplateRegistry, game->behaviorRegistry,
+      game->behaviorProfileRegistry, game->damageFeedbackRegistry,
       game->surfaceSpriteRegistry,
       game->surfaceRegistry, game->statusEffectRegistry, game->effectRegistry,
       game->resourceRegistry, game->artStyleRegistry,
@@ -2243,6 +2416,12 @@ void ContentEditorWindow::DrawDocumentPane() {
     options.showActorSpritesWithoutArt = &showActorSpritesWithoutArt;
     options.combatStrategies = &game->combatStrategyRegistry;
     options.behaviors = &game->behaviorRegistry;
+    options.behaviorProfiles = &game->behaviorProfileRegistry;
+    options.damageFeedback = &game->damageFeedbackRegistry;
+    options.icons = &game->iconRegistry;
+    options.resources = &game->resourceManager;
+    options.iconFilter = &skillIconFilter;
+    options.debugLog = game->debugLog.get();
   }
   if (kind->id == "skills" || kind->id == "status_effects" ||
       kind->id == "resources" || kind->id == "body_silhouettes") {

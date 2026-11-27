@@ -226,6 +226,8 @@ set(SOURCES
     src/SkillshotRegistry.cpp
     src/CombatStrategyRegistry.cpp
     src/BehaviorRegistry.cpp
+    src/BehaviorProfileRegistry.cpp
+    src/DamageFeedbackRegistry.cpp
     src/SurfaceSpriteRegistry.cpp
     src/SurfaceRegistry.cpp
     src/StatusEffectRegistry.cpp

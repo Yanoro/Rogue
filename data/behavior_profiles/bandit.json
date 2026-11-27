@@ -1,0 +1,13 @@
+{
+  "name": "Bandit Behavior",
+  "description": "Wander when calm; fight with a blade and flee when badly wounded.",
+  "initial": "neutral",
+  "behaviors": {
+    "neutral": "wander",
+    "aggressive": "bandit_melee"
+  },
+  "transitions": [
+    {"on": "damaged", "from": "neutral", "to": "aggressive"},
+    {"on": "lostTarget", "from": "aggressive", "to": "neutral"}
+  ]
+}

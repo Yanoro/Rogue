@@ -549,7 +549,13 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
     DrawDeathIconRow(field);
     return;
   }
-  if (field.path == "ui.windowColor" || field.path == "ui.popupColor") {
+  if (field.path == "ui.windowColor" || field.path == "ui.popupColor" ||
+      field.path == "hud.nameplate.neutralColor" ||
+      field.path == "hud.nameplate.aggressiveColor" ||
+      field.path == "ui.combat.highlight.color" ||
+      field.path == "ui.combat.hitFeedback.flashColor" ||
+      field.path == "combat.castCancelTextColor" ||
+      field.path == "ui.combat.skillUsedTextColor") {
     DrawUiColorRow(field);
     return;
   }
@@ -1352,8 +1358,26 @@ void SettingsWindow::DrawUiColorRow(
   GameSettings &settings = MutableSettings();
   std::string &hex = *static_cast<std::string *>(field.access(settings));
   ImVec4 color = UiStyle::ParseColor(hex, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-  const char *label = field.path == "ui.windowColor" ? "Window background"
-                                                     : "Popup background";
+  const bool isUiColor = field.path == "ui.windowColor" ||
+                         field.path == "ui.popupColor";
+  const char *label = "Colour";
+  if (field.path == "ui.windowColor") {
+    label = "Window background";
+  } else if (field.path == "ui.popupColor") {
+    label = "Popup background";
+  } else if (field.path == "hud.nameplate.neutralColor") {
+    label = "Neutral nameplate";
+  } else if (field.path == "hud.nameplate.aggressiveColor") {
+    label = "Aggressive nameplate";
+  } else if (field.path == "ui.combat.highlight.color") {
+    label = "Target outline";
+  } else if (field.path == "ui.combat.hitFeedback.flashColor") {
+    label = "Damage flash";
+  } else if (field.path == "combat.castCancelTextColor") {
+    label = "Canceled cast text";
+  } else if (field.path == "ui.combat.skillUsedTextColor") {
+    label = "Skill-used text";
+  }
   ImGui::PushID(field.path.c_str());
   ImGui::TextUnformatted(label);
   if (ImGui::IsItemHovered()) {
@@ -1365,13 +1389,16 @@ void SettingsWindow::DrawUiColorRow(
                         ImGuiColorEditFlags_AlphaBar |
                             ImGuiColorEditFlags_AlphaPreviewHalf)) {
     hex = UiStyle::FormatColor(color);
-    game->ApplyImGuiStyle();
+    if (isUiColor) game->ApplyImGuiStyle();
   }
   if (ImGui::IsItemDeactivatedAfterEdit()) {
     Commit(field, hex);
-    game->ApplyImGuiStyle();
+    if (isUiColor) game->ApplyImGuiStyle();
   }
-  ImGui::TextDisabled("RGBA; the alpha bar is the window transparency.");
+  ImGui::TextDisabled(
+      isUiColor
+          ? "RGBA; the alpha bar is the window transparency."
+          : "RGBA; the alpha bar is the opacity of the drawn colour.");
   ImGui::PopID();
 }
 

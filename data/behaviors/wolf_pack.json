@@ -4,11 +4,23 @@
   "maxTargetDistance": 12,
   "repathSeconds": 0.35,
   "movement": {
-    "default": { "mode": "chase", "desiredRange": 1, "tolerance": 0 },
+    "default": {
+      "mode": "chase",
+      "desiredRange": 1,
+      "tolerance": 0
+    },
     "rules": []
   },
   "actions": [
-    { "skill": "pounce", "priority": 20, "minRange": 2 },
-    { "skill": "claw", "priority": 10 }
-  ]
+    {
+      "skill": "pounce",
+      "priority": 20,
+      "minRange": 3
+    },
+    {
+      "skill": "claw",
+      "priority": 10
+    }
+  ],
+  "type": "aggressive"
 }

@@ -144,6 +144,43 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
           def.activation.surface = a["surface"].get<std::string>();
         }
       }
+      if (a.contains("floatingTextColor") &&
+          a["floatingTextColor"].is_array() &&
+          (a["floatingTextColor"].size() == 3 ||
+           a["floatingTextColor"].size() == 4)) {
+        for (size_t i = 0; i < a["floatingTextColor"].size(); ++i) {
+          def.activation.floatingTextColor[i] =
+              a["floatingTextColor"][i].get<int>();
+        }
+        def.activation.hasFloatingTextColor = true;
+      }
+      def.activation.floatingTextSize =
+          std::max(0.0f, a.value("floatingTextSize", 0.0f));
+      if (a.contains("blink")) {
+        if (a["blink"].is_boolean()) {
+          def.activation.blink = a["blink"].get<bool>();
+        } else if (a["blink"].is_object()) {
+          def.activation.blink = true;
+          def.activation.blinkBlockedMessage =
+              a["blink"].value("unavailableMessage",
+                               def.activation.blinkBlockedMessage);
+        }
+      }
+      if (a.contains("blinkBlockedMessage") &&
+          a["blinkBlockedMessage"].is_string()) {
+        def.activation.blinkBlockedMessage =
+            a["blinkBlockedMessage"].get<std::string>();
+      }
+      if (a.contains("dash") && a["dash"].is_object()) {
+        const auto &dash = a["dash"];
+        def.activation.dash.enabled = true;
+        def.activation.dash.speed = dash.value("speed", 500.0f);
+        def.activation.dash.stopDistance = dash.value("stopDistance", 1.0f);
+        def.activation.dash.minDistance = dash.value("minDistance", 0);
+        def.activation.dash.unavailableMessage =
+            dash.value("unavailableMessage",
+                       std::string("No line of sight."));
+      }
     }
   }
 
@@ -173,6 +210,23 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
     warn("Warning: Skill '" + def.id +
          "' has activation range <= 0; using 1 tile.");
     def.activation.rangeTiles = 1.0f;
+  }
+  if (def.activation.dash.enabled) {
+    if (def.activation.dash.speed <= 0.0f) {
+      warn("Warning: Skill '" + def.id +
+           "' has a dash with non-positive speed; using 500.");
+      def.activation.dash.speed = 500.0f;
+    }
+    if (def.activation.dash.stopDistance < 0.0f) {
+      warn("Warning: Skill '" + def.id +
+           "' has a negative dash stop distance; using 1 tile.");
+      def.activation.dash.stopDistance = 1.0f;
+    }
+    if (def.activation.dash.minDistance < 0) {
+      warn("Warning: Skill '" + def.id +
+           "' has a negative dash minimum distance; using 0.");
+      def.activation.dash.minDistance = 0;
+    }
   }
   if (def.activation.gcdSeconds < -1.0f) {
     warn("Warning: Skill '" + def.id +
@@ -466,6 +520,25 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
       activation["surface"] = {{"id", def->activation.surface},
                                {"duration", def->activation.surfaceDuration},
                                {"radius", def->activation.surfaceRadius}};
+    }
+    if (def->activation.hasFloatingTextColor) {
+      activation["floatingTextColor"] = def->activation.floatingTextColor;
+    }
+    if (def->activation.floatingTextSize > 0.0f) {
+      activation["floatingTextSize"] = def->activation.floatingTextSize;
+    }
+    if (def->activation.blink) {
+      activation["blink"] = {
+          {"unavailableMessage", def->activation.blinkBlockedMessage},
+      };
+    }
+    if (def->activation.dash.enabled) {
+      activation["dash"] = {
+          {"speed", def->activation.dash.speed},
+          {"stopDistance", def->activation.dash.stopDistance},
+          {"minDistance", def->activation.dash.minDistance},
+          {"unavailableMessage", def->activation.dash.unavailableMessage},
+      };
     }
     if (!def->activation.costResource.empty()) {
       activation["cost"] = {{"resource", def->activation.costResource},

@@ -32,6 +32,13 @@
     "requiresTarget": true,
     "cast": 0,
     "interruptible": true,
-    "hidden": true
+    "hidden": true,
+    "floatingTextColor": [
+      210,
+      220,
+      235,
+      255
+    ],
+    "floatingTextSize": 0.0
   }
 }

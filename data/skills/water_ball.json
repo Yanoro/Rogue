@@ -35,6 +35,13 @@
       "id": "water",
       "duration": 0,
       "radius": 0
-    }
+    },
+    "floatingTextColor": [
+      90,
+      160,
+      255,
+      255
+    ],
+    "floatingTextSize": 0.0
   }
 }

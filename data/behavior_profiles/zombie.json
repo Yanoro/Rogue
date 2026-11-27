@@ -1,0 +1,11 @@
+{
+  "name": "Zombie Behavior",
+  "description": "Shamble into reach and grab.",
+  "initial": "aggressive",
+  "behaviors": {
+    "aggressive": "zombie_shambler"
+  },
+  "transitions": [
+    {"on": "damaged", "from": "neutral", "to": "aggressive"}
+  ]
+}

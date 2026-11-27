@@ -5,7 +5,6 @@
   "portrait": "",
   "disposition": "neutral",
   "retaliates": true,
-  "behavior": "wolf_pack",
   "skills": {
     "claw": {
       "level": 2
@@ -13,5 +12,8 @@
     "pounce": {
       "level": 1
     }
-  }
+  },
+  "pushable": true,
+  "behaviorProfile": "grey_wolf_behavior",
+  "damageFeedback": "flesh"
 }

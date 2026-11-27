@@ -1,0 +1,64 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  outline = #1a1210
+  skin_base = #7a9a38
+  skin_light = #a2c44d
+  skin_shadow = #546e24
+  eye_yellow = #fcd038
+  eye_pupil = #362808
+  mouth_dark = #2b1a14
+}
+
+// Goblin ears (left and right protruding points)
+polygon (7,7) (11,5) (11,9) color=outline
+polygon (8,7) (11,6) (11,8) color=skin_shadow
+pixel (9,7) color=skin_light
+
+polygon (25,7) (21,5) (21,9) color=outline
+polygon (24,7) (21,6) (21,8) color=skin_shadow
+pixel (23,7) color=skin_base
+
+// Main head silhouette / outline
+rect (10,4) (22,12) color=outline
+pixel (10,4) color=#00000000
+pixel (22,4) color=#00000000
+pixel (10,12) color=#00000000
+pixel (22,12) color=#00000000
+
+// Head base skin fill
+rect (11,5) (21,11) color=skin_base
+
+// Top highlight
+line (12,5) (20,5) color=skin_light
+line (11,6) (13,6) color=skin_light
+
+// Lower jaw shadow
+line (11,11) (21,11) color=skin_shadow
+line (12,12) (20,12) color=outline
+
+// Sunken eye sockets & yellow beady eyes
+rect (12,7) (14,8) color=outline
+rect (18,7) (20,8) color=outline
+
+pixel (13,7) color=eye_yellow
+pixel (14,7) color=eye_yellow
+pixel (13,8) color=eye_pupil
+
+pixel (18,7) color=eye_yellow
+pixel (19,7) color=eye_yellow
+pixel (19,8) color=eye_pupil
+
+// Oversized hooked nose in center
+rect (15,6) (17,10) color=outline
+rect (15,7) (17,9) color=skin_light
+pixel (15,9) color=skin_base
+pixel (17,9) color=skin_shadow
+pixel (16,10) color=skin_shadow
+
+// Pathetic downturned mouth
+line (14,11) (18,11) color=mouth_dark
+pixel (14,12) color=mouth_dark
+pixel (18,12) color=mouth_dark

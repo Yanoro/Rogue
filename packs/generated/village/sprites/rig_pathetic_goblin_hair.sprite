@@ -1,0 +1,34 @@
+sprite 32x32
+kind object
+material grass
+
+rect (12,3) (20,8) color=ink.base
+rect (11,5) (21,8) color=ink.base
+
+rect (12,4) (20,8) color=grass.2
+rect (11,6) (21,8) color=grass.2
+
+rect (13,4) (19,5) color=grass.4
+pixel (12,5) color=grass.4
+
+line (11,7) (11,8) color=grass.1
+line (21,7) (21,8) color=grass.1
+pixel (12,8) color=grass.1
+pixel (20,8) color=grass.1
+
+pixel (12,2) color=iron.1
+pixel (12,3) color=ink.base
+pixel (10,4) color=iron.1
+pixel (11,4) color=ink.base
+
+pixel (15,2) color=iron.1
+pixel (15,3) color=ink.base
+pixel (16,1) color=iron.1
+pixel (16,2) color=ink.base
+pixel (17,3) color=iron.1
+
+pixel (19,2) color=iron.1
+pixel (19,3) color=ink.base
+pixel (21,4) color=iron.1
+pixel (22,5) color=ink.base
+pixel (21,5) color=iron.1

@@ -30,7 +30,14 @@
     "gcd": true,
     "autoCast": false,
     "xpPerUse": 6,
-    "interrupts": true
+    "interrupts": true,
+    "floatingTextColor": [
+      255,
+      220,
+      100,
+      255
+    ],
+    "floatingTextSize": 0.0
   },
   "animation": "kick"
 }

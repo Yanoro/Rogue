@@ -40,12 +40,24 @@ struct FloatingText {
   // small dark strip so the word stays readable over any tile. Numbers stay
   // plain: a bar behind every damage tick would be its own kind of noise.
   bool background = false;
+  // False means use ui.floatingTextBackground; true means the scenario chose.
+  bool backgroundOverride = false;
 
   // Seconds since spawn; advanced by FloatingTextLifetimeSystem.
   float elapsed = 0.0f;
 
   float lifetime = DEFAULT_FLOATING_TEXT_LIFETIME;
   float rise = DEFAULT_FLOATING_TEXT_RISE;
+
+  // A centered warning (cast cancel) is drawn over the middle of the body,
+  // without the rising motion of a number.
+  bool centered = false;
+  // 0 = above, 1 = center, 2 = below. centered (the cast-cancel warning) wins.
+  int vertical = -1;
+  // 0 means use the global UI floating-text size.
+  float fontSize = 0.0f;
+  // -1 uses the global UI motion setting; 0 rises, 1 stays stationary.
+  int motion = -1;
 
   // How many numbers already hung over this target when this one spawned. The
   // renderer fans them out sideways with it, so simultaneous numbers stay
@@ -68,7 +80,10 @@ struct FloatingText {
 // the count query below, so a caller that spawns several at once (one per trained
 // skill) should pass 0, 1, 2 ... to keep them apart.
 inline flecs::entity SpawnFloatingText(flecs::entity target, std::string text,
-                                       Color color, int extraStack = 0) {
+                                       Color color, int extraStack = 0,
+                                       float fontSize = 0.0f,
+                                       bool centered = false, int vertical = -1,
+                                       int motion = -1) {
   if (!target.is_alive() || text.empty()) {
     return flecs::entity::null();
   }
@@ -88,6 +103,10 @@ inline flecs::entity SpawnFloatingText(flecs::entity target, std::string text,
   floating.text = std::move(text);
   floating.color = color;
   floating.stackIndex = aliveOnTarget + extraStack;
+  floating.fontSize = fontSize;
+  floating.centered = centered;
+  floating.vertical = vertical;
+  floating.motion = motion;
 
   // Anchor immediately rather than waiting for the first update tick, so the
   // number is drawable on its first frame even if the target dies before then.
@@ -105,14 +124,13 @@ inline flecs::entity SpawnFloatingText(flecs::entity target, std::string text,
 // behind it. Kept as a wrapper rather than a parameter so existing number spawns
 // cannot accidentally acquire a background.
 inline flecs::entity SpawnFloatingCallout(flecs::entity target, std::string text,
-                                          Color color, int extraStack = 0) {
+                                          Color color, int extraStack = 0,
+                                          float fontSize = 0.0f,
+                                          bool centered = false, int vertical = -1,
+                                          int motion = -1) {
   flecs::entity carrier =
-      SpawnFloatingText(target, std::move(text), color, extraStack);
-  if (carrier.is_alive()) {
-    if (FloatingText *floating = carrier.get_mut<FloatingText>()) {
-      floating->background = true;
-    }
-  }
+      SpawnFloatingText(target, std::move(text), color, extraStack, fontSize,
+                        centered, vertical, motion);
   return carrier;
 }
 
