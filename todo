@@ -1,27 +1,87 @@
 High: 
-  Create farmer
-  Create blacksmith
+
+  Add tab targeting highlight, make it a visual asset
+  Rightclicking on npc, skill icon,tile,surface effect, equipment on inventory window,  shows Content Editor in dropdown.
+
+  Pathfinding can't handle corners with objects above and below
+  
+  Fix short term S1 memory 
+
+  Implement S1 perception, stop on sign
+
+  Create a script that is able to read settings.json and start running all local AIS that are enabled,
+  Makes sure they are all hot loaded
+
+  Merge designer and tile designer windows into one.
+
+  Implement Logs window
+
+  Add text to speech to ai profiles in settings
+
   Create cook
-  Create Mayor
+  Create Trader
+  Create blacksmith
+  Warn agent when equipment gets broken
 
 Medium:
+  Replay system for debugging
+
+  Currently we have to manually specify each content folder,
+  but we should implement a data/pack folder instead that contains all of them
+  
+  Sprite Designer is currently long messages, we could ask the model for a 2 stage response,
+  first a planning stage and then just send the plan back along with the json response
+
+  Use lighter weight local LLM for some of the easier tasks like spatial Memory
+  consolidation
+
+  Decouple NPCS from map
+
+  Memory System for agents, facts that should be remembered over the long term
+  Add character portraits generated my AI to the chat window
+  Allow multi-tile objects
+  Create roles, files that work somewhat like skills for agents. If an agent wants to learn how to farm he can query a datbase of files, find one that matches his interest, and add the skill to his prompt
+  Small number showing on charater on change (Damage, XP, etc)
+  Heap UAF when exiting game
   Make A* not take diagonal paths with walls on either end
-  Whenever an entity moving to a location changes tile, use A* again to find a better path
-  Add harvest timer
+  Hallucination checker AI, agents cannot refer to non existent objects or characters in the game world
+  Locations should be a per agent fact, not a fact of the world. Agents should be capable of asking each other locations for instance
+  Procedural Village generation
+  Make a prettier github page
 
 Low:
+ In the settings designerAI works for the blueprint ai and the tile one
+ Lighting system
  Improve map system, change from json to raw binary
  Make npc context inner window increase as the window increases
- Add sliding context window to AI so that it doesn't get dumber overtime
+ Implement memory system for long term retention.
+ Implement reputation system
+ Consolidate memory over long time horizons
+ Finally make the difference between item type and item name
+ Multiple party conversations
+ Off role conversation between agents to better coordinate roleplay
+ Add AI generated images of locations, characters
+ Use system 1 model to evaluate emotions of characters talking
+ Small bubble above NPCS head when they are acting upon the world
+ Allow some crafting station to change when used, for instance make the oven red when crafting on it
+
+
+Map (You are '@' at center):                                   
+    . . T . .                                                      
+    # . @ w w                                                      
+    . . . . w                                                      
+                                                                   
+    Legend:                                                        
+    . = Grass (Walkable)                                           
+    # = Chest (Walkable, Actions: Open, Store)
+    T = Tree (Actions: Choppable)                                  
+    w = Water (Impassable)                                          
 
 Maybe:
   Add possibility for AI to increase radius of surroundings call
+  Implement a market stall that bypasses negotiations
+  Give command
   Helper AI that guides agents on how to accomplish their task
-
- ======
- Current Thoughts:
-
- Create storage for farmer, ideally have him harvest the crops and store them in his house.
- Implement farmer being able to plant his crops
+  3D ascii render of items
 
 

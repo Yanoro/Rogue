@@ -1733,11 +1733,13 @@ void DesignerWindow::ShowViewed(size_t index) {
       // request/response transcript and the sprite preview.
       break;
     case DesignerDomains::Domain::Equipment:
-      equipmentDraft = entry.equipment;
+      equipmentSet = entry.equipment;
       equipmentError.clear();
-      if (equipmentDraft.has_value()) {
+      equipmentArtMessage.clear();
+      equipmentSelected = 0;
+      if (equipmentSet.has_value() && !equipmentSet->items.empty()) {
         std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
-                      equipmentDraft->name.c_str());
+                      equipmentSet->items.front().name.c_str());
         if (game != nullptr && game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
           const auto rigs = game->rigRegistry.GetAll();
           equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
@@ -1757,10 +1759,11 @@ void DesignerWindow::ShowViewed(size_t index) {
       if (rigDraft.has_value()) {
         std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
                       rigDraft->name.c_str());
-        for (const ItemDef *item : game->itemRegistry.GetAll()) {
-          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
-        }
       }
+      // Opening a saved rig starts on the bare body, exactly like a fresh draft and the
+      // Content Editor's rig pane: the preview answers "what does this rig look like",
+      // and every worn item is an opt-in checkbox below it. Seeding the whole catalogue
+      // made a first look read as a pile of gear rather than a body.
       break;
     case DesignerDomains::Domain::Map:
       mapDraft = entry.map;
@@ -2055,29 +2058,77 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
     if (game == nullptr) {
       reason = "there is no world to validate an item against.";
     } else {
-      const EquipmentDesigner::ApplyResult result =
-          EquipmentDesigner::ApplyReply(finished.ParsedAnswer());
-      applied.ok = result.ok;
-      applied.error = result.error;
-      applied.name = result.draft.name;
-      applied.notes = result.notes;
-      applied.warnings = result.draft.warnings;
-      if (result.ok) {
-        equipmentDraft = result.draft;
+      // One path for both shapes: a bare item object comes back as a one-entry set, so the
+      // window never has to branch on how many items the reply carried.
+      const EquipmentDesigner::SetApplyResult set =
+          EquipmentDesigner::ApplySetReply(finished.ParsedAnswer());
+      applied.wasSet = set.isSet;
+      applied.setName = set.setName;
+      applied.ok = set.ok && set.accepted > 0;
+      applied.error = set.ok ? std::string() : set.error;
+      for (const EquipmentDesigner::ApplyResult &entry : set.items) {
+        if (entry.ok) applied.acceptedNames.push_back(entry.draft.name);
+        applied.entryVerdicts.emplace_back(
+            entry.ok, entry.ok ? ("'" + entry.draft.name + "'") : entry.error);
+        for (const std::string &warning : entry.draft.warnings) {
+          applied.warnings.push_back(entry.draft.name + ": " + warning);
+        }
+      }
+      if (!set.ok) {
+        applied.entryVerdicts.clear();
+      }
+      if (set.ok && set.accepted == 0) {
+        // The reply was readable but every entry was refused. The retry sentence needs a
+        // reason, and the first entry's is the one worth putting in front of the model; the
+        // pane carries the rest.
+        for (const EquipmentDesigner::ApplyResult &entry : set.items) {
+          if (entry.ok) continue;
+          applied.error = entry.error;
+          break;
+        }
+        if (applied.error.empty()) {
+          applied.error = "no item in the set was accepted";
+        }
+      }
+      if (applied.ok) {
+        equipmentSet = EquipmentDesigner::SetDraft{};
+        equipmentSet->name = set.setName;
+        for (const EquipmentDesigner::ApplyResult &entry : set.items) {
+          if (!entry.ok) continue;
+          equipmentSet->items.push_back(entry.draft);
+          if (!entry.notes.empty()) {
+            if (!applied.notes.empty()) applied.notes += "\n";
+            applied.notes += entry.notes;
+          }
+        }
+        equipmentSelected = 0;
         equipmentError.clear();
         std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
-                      result.draft.name.c_str());
+                      equipmentSet->items.front().name.c_str());
         if (game->rigRegistry.Get(equipmentPreviewRig) == nullptr) {
           const auto rigs = game->rigRegistry.GetAll();
           equipmentPreviewRig = rigs.empty() ? std::string() : rigs.front()->id;
         }
+        applied.name =
+            set.setName.empty()
+                ? (equipmentSet->items.size() == 1
+                       ? equipmentSet->items.front().name
+                       : std::to_string(equipmentSet->items.size()) + " items")
+                : set.setName;
         equipmentArtMessage =
-            "Item drafted. Draw its worn art, see it on a rig, then save it.";
+            set.isSet
+                ? "Set drafted: " + std::to_string(equipmentSet->items.size()) +
+                      " item(s). Look at each piece, then save the set."
+                : "Item drafted. Draw its worn art, see it on a rig, then save it.";
         if (autoRequestArt && game->TileArtQueueState().Enabled()) {
-          QueueEquipmentArt();
+          QueueEquipmentSetArt();
         }
       } else {
-        equipmentError = result.error;
+        equipmentSet.reset();
+        equipmentSelected = 0;
+        equipmentError =
+            set.ok ? "every entry in the reply was refused; see the transcript."
+                   : set.error;
       }
     }
   } else if (designMode == DesignerDomains::Domain::Rig) {
@@ -2107,9 +2158,8 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
         rigAnimClip.clear();
         std::snprintf(rigNameBuffer, sizeof(rigNameBuffer), "%s",
                       result.draft.name.c_str());
-        for (const ItemDef *item : game->itemRegistry.GetAll()) {
-          if (!item->wornSprite.empty()) rigPreviewWorn.insert(item->id);
-        }
+        // No equipment by default: see ShowViewed's rig case. The draft is the body;
+        // gear is a checkbox per item.
         rigArtMessage =
             "Rig drafted. Draw its layers, look at it, then save it.";
         // "Art automatically" means exactly that for a rig: its layers *are* the art, and
@@ -2227,7 +2277,7 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
       ViewedResult result;
       result.domain = designMode;
       result.label = applied.name;
-      result.equipment = equipmentDraft;
+      result.equipment = equipmentSet;
       CaptureViewed(std::move(result));
     } else if (designMode == DesignerDomains::Domain::Rig) {
       ViewedResult result;
@@ -2450,9 +2500,14 @@ void DesignerWindow::InspectFinishedExchange(size_t index) {
   // `finished.wasSet` carries the shape into the retry: without it a set is retried as a
   // single definition, refused again for having no top-level "name", and burns the whole
   // budget on a question the model already answered -- which is what the first run of this
-  // did.
-  session->RetryRefused(kDefinitionConversation, applied.error,
-                        ArtifactNoun(designMode), finished.wasSet);
+  // did. Equipment's noun follows the shape too, or a refused outfit is told to send "the
+  // corrected item".
+  std::string noun = ArtifactNoun(designMode);
+  if (designMode == DesignerDomains::Domain::Equipment && finished.wasSet) {
+    noun = "set";
+  }
+  session->RetryRefused(kDefinitionConversation, applied.error, noun,
+                        finished.wasSet);
 }
 
 const DesignerDomains::Descriptor &DesignerWindow::ModeDescriptor() const {
@@ -2786,8 +2841,9 @@ void DesignerWindow::ApplyRouteVerdict(const SpriteRouter::Verdict &verdict) {
                                game->BuildDesignerPrompt(mode, requestSet));
     }
   } else if (!DesignerDomains::IsSprite(mode)) {
-    // Leaving a stale "Set" checkbox ticked under a building would build the next
-    // building's prompt as if a set had been asked for.
+    // The classifier only answers a shape for a sprite. Outside one, an unchecked box is
+    // the truth: an auto-routed equipment request is one item, and a stale tick from a
+    // previous sprite set would otherwise turn it into an outfit nobody asked for.
     requestSet = false;
     requestSetSize = 0;
   }
@@ -3258,7 +3314,11 @@ void DesignerWindow::RefreshRigArtMemo() {
   for (const ItemDef *item : game->itemRegistry.GetAll()) {
     if (!item->wornSprite.empty()) refresh(item->wornSprite, false);
   }
-  if (equipmentDraft.has_value()) refresh(equipmentDraft->wornSprite, false);
+  if (equipmentSet.has_value()) {
+    for (const EquipmentDesigner::Draft &draft : equipmentSet->items) {
+      refresh(draft.wornSprite, false);
+    }
+  }
   // Generation is slow relative to a clip: by the time the frames land the clock may
   // already be past the end, so the preview restarts instead of showing only its last
   // frame.
@@ -3293,9 +3353,22 @@ void DesignerWindow::SaveRig() {
   }
 }
 
-void DesignerWindow::QueueEquipmentArt() {
-  if (!equipmentDraft.has_value() || game == nullptr) return;
-  const EquipmentDesigner::Draft &draft = *equipmentDraft;
+EquipmentDesigner::Draft *DesignerWindow::SelectedEquipment() {
+  if (!equipmentSet.has_value() || equipmentSet->items.empty()) return nullptr;
+  if (equipmentSelected >= equipmentSet->items.size()) equipmentSelected = 0;
+  return &equipmentSet->items[equipmentSelected];
+}
+
+void DesignerWindow::SelectEquipmentItem(size_t index) {
+  if (!equipmentSet.has_value() || index >= equipmentSet->items.size()) return;
+  if (equipmentSelected == index) return;
+  equipmentSelected = index;
+  std::snprintf(equipmentNameBuffer, sizeof(equipmentNameBuffer), "%s",
+                equipmentSet->items[index].name.c_str());
+  equipmentArtMessage.clear();
+}
+
+void DesignerWindow::QueueEquipmentArtFor(EquipmentDesigner::Draft &draft) {
   RigArtRequest request;
   request.label = draft.name;
   request.sprite = draft.wornSprite;
@@ -3305,43 +3378,101 @@ void DesignerWindow::QueueEquipmentArt() {
     request.redesign = SpriteResolves(std::string(), draft.wornSprite, &resolved);
   }
   rigArtQueue.push_back(std::move(request));
-  equipmentArtMessage = "Queued worn art for " + draft.name + ".";
+}
+
+void DesignerWindow::QueueEquipmentArt() {
+  EquipmentDesigner::Draft *draft = SelectedEquipment();
+  if (draft == nullptr || game == nullptr) return;
+  QueueEquipmentArtFor(*draft);
+  equipmentArtMessage = "Queued worn art for " + draft->name + ".";
+}
+
+void DesignerWindow::QueueEquipmentSetArt() {
+  if (!equipmentSet.has_value() || game == nullptr || equipmentSet->items.empty()) {
+    return;
+  }
+  for (EquipmentDesigner::Draft &draft : equipmentSet->items) {
+    QueueEquipmentArtFor(draft);
+  }
+  equipmentArtMessage =
+      equipmentSet->items.size() == 1
+          ? "Queued worn art for " + equipmentSet->items.front().name + "."
+          : "Queued worn art for " +
+                std::to_string(equipmentSet->items.size()) + " item(s); they are drawn " +
+                "one at a time.";
 }
 
 void DesignerWindow::SaveEquipment() {
-  if (!equipmentDraft.has_value() || game == nullptr) return;
-  EquipmentDesigner::Draft &draft = *equipmentDraft;
-  draft.name = std::string(equipmentNameBuffer);
-  draft.slug = EquipmentDesigner::SlugFor(draft.name);
-  if (draft.slug.empty()) {
-    equipmentArtMessage = "Give the item a name before saving.";
+  if (!equipmentSet.has_value() || game == nullptr || equipmentSet->items.empty()) {
     return;
   }
-  const bool existed = game->itemRegistry.Get(draft.slug) != nullptr;
-  std::string savedPath;
-  std::string error;
-  if (!EquipmentDesigner::Save(draft, Settings().content.generatedItems, &savedPath,
-                               &error)) {
-    equipmentArtMessage = error;
-    return;
+
+  // The name box edits the selected item live (see DrawEquipmentPreview), so every draft
+  // already carries the name on screen. What is checked here is the property a set must have
+  // and one item did not: unique ids, because two items with the same slug would write the
+  // same file and the second would silently replace the first.
+  std::map<std::string, size_t> slugOwner;
+  for (size_t index = 0; index < equipmentSet->items.size(); ++index) {
+    EquipmentDesigner::Draft &draft = equipmentSet->items[index];
+    draft.slug = EquipmentDesigner::SlugFor(draft.name);
+    if (draft.slug.empty()) {
+      equipmentArtMessage =
+          "Item " + std::to_string(index + 1) + " has no name to save under.";
+      return;
+    }
+    const auto [owner, inserted] = slugOwner.emplace(draft.slug, index);
+    if (!inserted) {
+      equipmentArtMessage = "Items " + std::to_string(owner->second + 1) + " and " +
+                            std::to_string(index + 1) + " both save as '" + draft.slug +
+                            "'; rename one before saving the set.";
+      return;
+    }
   }
+
+  size_t saved = 0;
+  size_t replaced = 0;
+  std::string failures;
+  for (EquipmentDesigner::Draft &draft : equipmentSet->items) {
+    const bool existed = game->itemRegistry.Get(draft.slug) != nullptr;
+    std::string savedPath;
+    std::string error;
+    if (!EquipmentDesigner::Save(draft, Settings().content.generatedItems, &savedPath,
+                                 &error)) {
+      if (!failures.empty()) failures += " ";
+      failures += draft.slug + ": " + error;
+      continue;
+    }
+    ++saved;
+    if (existed) ++replaced;
+    if (game->debugLog) {
+      game->debugLog->LogInfo("Equipment designer: saved " + savedPath);
+    }
+  }
+  // Once, after the whole batch: every reload replaces the registry's contents, so reloading
+  // inside the loop would throw away the entries written by the loop itself.
   game->itemRegistry.LoadItems(Settings().content.generatedItems);
+
+  if (saved == 0) {
+    equipmentArtMessage = "Nothing was saved. " + failures;
+    return;
+  }
   equipmentArtMessage =
-      "Saved " + savedPath +
-      (existed ? " (the existing item with that id is replaced)" : "") +
-      ". It is now worn by the rig preview in the Content Editor too.";
-  if (game->debugLog) {
-    game->debugLog->LogInfo("Equipment designer: saved " + savedPath);
+      "Saved " + std::to_string(saved) + (saved == 1 ? " item" : " items") + " to " +
+      Settings().content.generatedItems +
+      (replaced > 0 ? " (" + std::to_string(replaced) + " replaced)" : "") +
+      ". They are now worn by the rig preview in the Content Editor too.";
+  if (!failures.empty()) {
+    equipmentArtMessage += " Failed: " + failures;
   }
 }
 
 void DesignerWindow::DrawEquipmentPreview() {
-  if (!equipmentDraft.has_value()) {
+  if (!equipmentSet.has_value() || equipmentSet->items.empty()) {
     ImGui::TextWrapped(
-        "Ask for a piece of worn equipment and its definition and worn-art brief appear "
-        "here. Draw the layer, see it on a rig, then save the item.");
-    ImGui::TextDisabled("For example: \"an iron kettle helm\", \"a patched leather "
-                        "cuirass\".");
+        "Ask for a piece of worn equipment, or a themed set of them. The definition and "
+        "worn-art briefs appear here; draw the layers, see them on a rig, then save.");
+    ImGui::TextDisabled("For example: \"an iron kettle helm\", \"an ember-watch armour "
+                        "and axe set\".");
     if (!equipmentError.empty()) {
       ImGui::Separator();
       ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.62f, 0.5f, 1.0f));
@@ -3350,7 +3481,31 @@ void DesignerWindow::DrawEquipmentPreview() {
     }
     return;
   }
-  EquipmentDesigner::Draft &draft = *equipmentDraft;
+  EquipmentDesigner::SetDraft &set = *equipmentSet;
+  // A set is more than one item, or a named envelope that happened to carry one. Both are
+  // presented as a list of pieces so "what is in this set" is visible before any of it is
+  // saved.
+  const bool isSet = set.items.size() > 1 || !set.name.empty();
+  if (isSet) {
+    ImGui::TextDisabled("%s  |  %zu item(s)",
+                        set.name.empty() ? "Unnamed set" : set.name.c_str(),
+                        set.items.size());
+  }
+  if (set.items.size() > 1) {
+    for (size_t index = 0; index < set.items.size(); ++index) {
+      const EquipmentDesigner::Draft &item = set.items[index];
+      char label[192];
+      std::snprintf(label, sizeof(label), "%zu. %s  (%s)", index + 1,
+                    item.name.c_str(), item.slot.c_str());
+      ImGui::PushID(static_cast<int>(index));
+      if (ImGui::Selectable(label, index == equipmentSelected)) {
+        SelectEquipmentItem(index);
+      }
+      ImGui::PopID();
+    }
+    ImGui::Separator();
+  }
+  EquipmentDesigner::Draft &draft = *SelectedEquipment();
 
   ImGui::TextDisabled("Item");
   ImGui::SameLine();
@@ -3445,8 +3600,14 @@ void DesignerWindow::DrawEquipmentPreview() {
         "An item with id '%s' already exists; saving replaces it in the world.",
         draft.slug.c_str());
   }
-  if (ImGui::Button("Save item")) {
+  if (ImGui::Button(isSet ? "Save set" : "Save item")) {
     SaveEquipment();
+  }
+  if (set.items.size() > 1) {
+    ImGui::SameLine();
+    if (ImGui::Button("Draw all worn art")) {
+      QueueEquipmentSetArt();
+    }
   }
   if (!equipmentArtMessage.empty()) {
     ImGui::TextWrapped("%s", equipmentArtMessage.c_str());
@@ -5333,10 +5494,14 @@ void DesignerWindow::DrawDomainPicker(
           // domain about to be designed for. Once something is being viewed, changing
           // the design domain must not yank the pane away from it.
           if (viewed.empty()) paneDomain = mode;
-          // A building has no shape: leaving "Set" ticked from a sprite request would
-          // rebuild the next building's prompt as if a set had been asked for.
-          if (!DesignerDomains::IsSprite(mode)) {
+          // A domain with no set form clears it: leaving "Set" ticked from a sprite
+          // request would rebuild the next building's prompt as if a set had been asked
+          // for. Equipment keeps the tick, because it has a set form of its own, but the
+          // router's size estimate is a sprite number and means nothing here.
+          if (!DesignerDomains::SupportsSet(mode)) {
             requestSet = false;
+            requestSetSize = 0;
+          } else if (mode == DesignerDomains::Domain::Equipment) {
             requestSetSize = 0;
           }
           RefreshRewriteBrief();
@@ -5433,13 +5598,14 @@ void DesignerWindow::Draw() {
                   : icon ? sizeof(iconNameBuffer) : sizeof(actorSpriteNameBuffer));
     }
 
-    // Single or set. The router proposes it, but a person can ask for one without a
-    // classifier, and can correct the router -- so it is a control, not a hidden decision.
+    // Single or set. The router proposes it for a sprite, but a person can ask for one
+    // without a classifier, and can correct the router -- so it is a control, not a hidden
+    // decision. Equipment has the shape too: one reply may be a themed outfit.
     //
-    // Disabled for a building rather than hidden: a blueprint reply is one design, and a
-    // checkbox that vanished would read as a bug in the dropdown.
+    // Disabled where the domain has no set form rather than hidden: a reply is one artifact,
+    // and a checkbox that vanished would read as a bug in the dropdown.
     ImGui::SameLine();
-    ImGui::BeginDisabled(!DesignerDomains::IsSprite(mode));
+    ImGui::BeginDisabled(!DesignerDomains::SupportsSet(mode));
     if (ImGui::Checkbox("Set", &requestSet)) {
       // The prompt is per shape, so a shape change rebuilds it, exactly as a domain change
       // does. The transcript is left alone: what was already designed is still true.
@@ -5454,9 +5620,20 @@ void DesignerWindow::Draw() {
     }
     ImGui::EndDisabled();
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-      if (!DesignerDomains::IsSprite(mode)) {
-        ImGui::SetTooltip("A building is always one blueprint, so there is no set to ask "
-                          "for.");
+      if (!DesignerDomains::SupportsSet(mode)) {
+        ImGui::SetTooltip(
+            mode == DesignerDomains::Domain::Rig
+                ? "A rig is one body made of layers, so there is no set to ask for."
+                : mode == DesignerDomains::Domain::Map
+                      ? "A map is one map, so there is no set to ask for."
+                      : "A building is always one blueprint, so there is no set to ask "
+                        "for.");
+      } else if (mode == DesignerDomains::Domain::Equipment) {
+        ImGui::SetTooltip(
+            "Ask for a themed set of worn items that belong together -- an armour and its\n"
+            "weapon, a whole outfit. The designer answers with an \"items\" array; every\n"
+            "entry is validated on its own, so one bad item does not discard the rest.\n"
+            "Nothing is written until you press Save set.");
       } else {
         ImGui::SetTooltip(
             "Ask for a set of sprites that belong together, instead of one.\n"

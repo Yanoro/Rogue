@@ -138,6 +138,23 @@ struct Kind {
   // a default activation when a passive definition is switched to an active type,
   // and to drop an activation that a passive type cannot use.
   nlohmann::json (*prepare)(nlohmann::json document) = nullptr;
+
+  // Which heading this kind appears under in the editor's picker. Assigned after
+  // registration (see RegisterBuiltinKinds), so a registry added later still lands under
+  // "Other" instead of vanishing from the picker.
+  std::string section = "Other";
+
+  // Removes the live definition for `id`. Returns false with a reason when the registry
+  // cannot; the Content Editor's trash calls this after confirmation, then deletes the
+  // definition files. Null means the kind cannot be deleted individually.
+  bool (*remove)(const World &world, const std::string &id, std::string *error) =
+      nullptr;
+
+  // The definition files on disk for `id`: the hand-authored catalog and any generated
+  // overlay. The editor's own override file is handled separately. Empty when the kind is
+  // not file-backed.
+  std::vector<std::string> (*definitionFiles)(const World &world,
+                                              const std::string &id) = nullptr;
 };
 
 // Writes `document` as this kind's override under `root/<kind>/<file>.json`, without
@@ -156,6 +173,15 @@ public:
   // Replaces an existing entry with the same id, preserving the first insertion
   // position. Returns false only for an empty id.
   bool Register(Kind kind);
+  // Puts an already-registered kind under a picker section. Used by the built-in
+  // assignment table, so the kind rows stay focused on what each registry does.
+  void SetSection(const std::string &id, const std::string &section);
+  // Wires the trash handlers for an already-registered kind. Separate from Register for
+  // the same reason SetSection is: the kind rows stay about registry wiring.
+  void SetEntryOps(const std::string &id,
+                   bool (*remove)(const World &, const std::string &, std::string *),
+                   std::vector<std::string> (*definitionFiles)(
+                       const World &, const std::string &));
   const std::vector<Kind> &All() const { return kinds; }
   const Kind *For(const std::string &id) const;
 
@@ -170,5 +196,9 @@ const std::vector<Kind> &All();
 
 // The kind for an id ("tiles"), or null.
 const Kind *For(const std::string &id);
+
+// The order the picker draws its section headings in. "Other" is last so a kind with no
+// assignment is still reachable.
+const std::vector<std::string> &SectionOrder();
 
 }  // namespace ContentKinds

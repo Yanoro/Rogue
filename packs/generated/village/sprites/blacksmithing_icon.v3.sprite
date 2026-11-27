@@ -1,0 +1,63 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  light = #FFE0B8
+  mid = #F2C79A
+  shade = #C98B60
+  deep = #7A4A2E
+}
+
+// Flame base outline
+polygon (7,28) (10,23) (13,27) (16,21) (19,27) (22,23) (25,28) (21,30) (11,30) color=out
+
+// Pot body outline
+circle (16,18) radius=8 color=out
+rect (8,11) (24,14) color=out
+rect (6,12) (26,14) color=out
+
+// Handles / lugs outline
+rect (5,13) (7,16) color=out
+rect (25,13) (27,16) color=out
+
+// Interior fills
+// Pot belly
+circle (16,18) radius=7 color=shade
+circle (15,17) radius=6 color=mid
+circle (14,16) radius=5 color=light
+
+// Base soot shadow
+rect (10,23) (22,25) color=deep
+
+// Pot rim interior
+rect (9,12) (23,13) color=light
+rect (7,12) (8,13) color=mid
+rect (24,12) (25,13) color=mid
+
+// Handle holes
+pixel (6,14) color=deep
+pixel (26,14) color=deep
+
+// Rim line divide
+line (9,14) (23,14) color=out
+
+// Fire tongue interiors
+polygon (8,28) (10,24) (12,27) (16,22) (20,27) (22,24) (24,28) (20,29) (12,29) color=light
+polygon (10,28) (12,26) (16,23) (20,26) (22,28) color=mid
+
+// Steam curl rising above
+line (14,9) (15,9) color=out
+line (16,8) (17,6) color=out
+line (15,5) (13,5) color=out
+line (12,6) (12,7) color=out
+
+pixel (15,8) color=light
+pixel (16,7) color=light
+pixel (14,6) color=light
+pixel (13,6) color=light
+
+// Highlight sheen along left body
+line (10,16) (10,19) color=light
+line (11,15) (11,20) color=light

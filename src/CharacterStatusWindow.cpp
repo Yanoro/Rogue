@@ -4,9 +4,12 @@
 #include <cstdio>
 #include <string>
 
+#include "ContentEditorTargets.hpp"
 #include "Components.h"
+#include "Game.h"
 #include "SkillRegistry.h"
 #include "StatRegistry.h"
+#include "StatusEffectRegistry.h"
 #include "imgui.h"
 
 namespace {
@@ -29,9 +32,11 @@ void DescriptionTooltip(const std::string &description) {
 
 } // namespace
 
-CharacterStatusWindow::CharacterStatusWindow(flecs::entity character,
-                                             flecs::entity owner)
-    : character(character), owner(owner) {}
+CharacterStatusWindow::CharacterStatusWindow(Game *game,
+                                             flecs::entity character,
+                                             flecs::entity owner,
+                                             const StatusEffectRegistry *statuses)
+    : game(game), statuses(statuses), character(character), owner(owner) {}
 
 void CharacterStatusWindow::Draw() {
   const bool alive = character.is_alive();
@@ -156,6 +161,33 @@ void CharacterStatusWindow::Draw() {
     }
   } else {
     ImGui::TextDisabled("(none)");
+  }
+
+  // --- Status effects ------------------------------------------------------
+  // The HUD shows active statuses as icons with countdowns; this is the readable list, and
+  // it is where a status opens in the Content Editor. A status instance is the only way to
+  // reach a status that is already applied to someone.
+  ImGui::SeparatorText("Status effects");
+  const StatusEffects *activeStatuses = character.get<StatusEffects>();
+  if (activeStatuses == nullptr || activeStatuses->effects.empty()) {
+    ImGui::TextDisabled("(none)");
+  } else {
+    for (const StatusEffectInstance &instance : activeStatuses->effects) {
+      const StatusEffectDef *definition =
+          statuses != nullptr ? statuses->Get(instance.id) : nullptr;
+      ImGui::PushID(instance.id.c_str());
+      ImGui::Text("%s  %.0fs",
+                  definition != nullptr ? definition->name.c_str()
+                                        : instance.id.c_str(),
+                  static_cast<double>(instance.remaining));
+      if (game != nullptr &&
+          ImGui::BeginPopupContextItem("##status_menu")) {
+        ContentEditorMenu::Draw(
+            *game, game->ContentTargetsForStatusEffect(instance.id), false);
+        ImGui::EndPopup();
+      }
+      ImGui::PopID();
+    }
   }
 
   ImGui::End();

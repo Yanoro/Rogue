@@ -299,7 +299,16 @@ void PromptRewriter::RunRewrite(std::string text) {
     if (!streamFinished.load()) {
       result.error = "the rewrite timed out";
     } else if (reply.empty()) {
-      result.error = "the model returned nothing";
+      // The stream completed but carried no text. The backend can often say why --
+      // an HTTP 404 from a router that will not serve the configured model, a
+      // refused connection, a completion budget spent before the answer began --
+      // and without that this reads as the model having nothing to say. That
+      // ambiguity is exactly how a misrouted request survived as "the model
+      // returned nothing": the request never reached a model at all.
+      const std::string backendError = backend->TakeStreamError(contextId);
+      result.error = backendError.empty()
+                         ? "the model returned nothing"
+                         : "the model returned nothing: " + backendError;
     } else {
       SplitWhy(reply, result.text, result.why);
       // Kept whether or not the split looks right, so the host can log what the model

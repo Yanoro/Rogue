@@ -660,7 +660,24 @@ struct GameSettings {
         float distance = 40.0f;
       } statusEffects;
     } combat;
+    // Offer "Open in CE: …" rows in the right-click menus (world cell, hotbar skill,
+    // inventory item, status effect). On by default: it is an authoring shortcut, and it
+    // costs a player nothing when the cell has no content to open.
+    bool openInContentEditor = true;
   } ui;
+
+  // The container window's "you walked too far" notice.
+  //
+  // The message, colour and size are settings because they are player-facing voice and
+  // style; the distance itself is per entity (Storage::accessRange), because how far a
+  // chest can be reached from is a property of that chest.
+  struct StorageSection {
+    std::string closeMessage = "Chest closed: Moved too far away";
+    // #RRGGBB or #RRGGBBAA, like the window colours.
+    std::string closeColor = "#FFD27AFF";
+    // Pixels; the floating-text base size is 16, clamped to 8-64 where it is used.
+    float closeFontSize = 16.0f;
+  } storage;
 
   // Acquisition field for every character's Vision. Named `perception` rather
   // than `vision` because `vision` is already the independent Vision Chat AI
@@ -1003,6 +1020,16 @@ struct GameSettings {
     // over HTTP. Fine locally, best turned off on a shared machine.
     bool restServer = true;
     int logMaxEntries = 1000;
+
+    // The craft window's debug view. Off by default: the window lists what the PC has
+    // learned, and this is the authoring/testing escape hatch that shows the station's
+    // whole recipe list anyway.
+    struct CraftSection {
+      bool showAllRecipes = false;
+      // Debug: skip material checks and consumption. Every recipe becomes craftable
+      // regardless of what the character carries; used to inspect outputs and timing.
+      bool ignoreIngredients = false;
+    } craft;
   } debug;
 };
 

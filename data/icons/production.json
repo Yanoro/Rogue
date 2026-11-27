@@ -1,0 +1,6 @@
+{
+  "name": "Production",
+  "description": "Fallback icon for crafting skills that have no icon of their own: a turned steel gear with a warm highlight, standing for making things.",
+  "sprite": "",
+  "visualType": "skill_icon"
+}

@@ -94,6 +94,13 @@ const Descriptor *Parse(const std::string &id);
 
 bool IsSprite(Domain domain);
 
+// Whether this domain has a "set" shape: one reply may define several things that belong
+// together. A sprite does (a sheet of related tiles or objects), and equipment does too (a
+// themed outfit). A building, a map, a rig and a single tile are one artifact per reply:
+// their documents have no array envelope, so offering the checkbox would build a prompt
+// that promises something the validator cannot accept.
+bool SupportsSet(Domain domain);
+
 // The sprite kind for a domain. Only valid when IsSprite(domain); returns
 // SpriteKinds::Kind::Tile for a building so a caller that got here by mistake writes a
 // tile rather than corrupting memory. Callers should test IsSprite first.

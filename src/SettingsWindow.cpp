@@ -555,7 +555,8 @@ void SettingsWindow::DrawField(const SettingsSchema::FieldSpec &field) {
       field.path == "ui.combat.highlight.color" ||
       field.path == "ui.combat.hitFeedback.flashColor" ||
       field.path == "combat.castCancelTextColor" ||
-      field.path == "ui.combat.skillUsedTextColor") {
+      field.path == "ui.combat.skillUsedTextColor" ||
+      field.path == "ui.storage.closeColor") {
     DrawUiColorRow(field);
     return;
   }
@@ -1357,9 +1358,11 @@ void SettingsWindow::DrawUiColorRow(
     const SettingsSchema::FieldSpec &field) {
   GameSettings &settings = MutableSettings();
   std::string &hex = *static_cast<std::string *>(field.access(settings));
-  ImVec4 color = UiStyle::ParseColor(hex, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
   const bool isUiColor = field.path == "ui.windowColor" ||
                          field.path == "ui.popupColor";
+  ImVec4 color = UiStyle::ParseColor(
+      hex, isUiColor ? ImVec4(0.0f, 0.0f, 0.0f, 1.0f)
+                     : ImVec4(1.0f, 0.82f, 0.42f, 1.0f));
   const char *label = "Colour";
   if (field.path == "ui.windowColor") {
     label = "Window background";
@@ -1377,6 +1380,8 @@ void SettingsWindow::DrawUiColorRow(
     label = "Canceled cast text";
   } else if (field.path == "ui.combat.skillUsedTextColor") {
     label = "Skill-used text";
+  } else if (field.path == "ui.storage.closeColor") {
+    label = "Too-far notice";
   }
   ImGui::PushID(field.path.c_str());
   ImGui::TextUnformatted(label);
@@ -1395,10 +1400,9 @@ void SettingsWindow::DrawUiColorRow(
     Commit(field, hex);
     if (isUiColor) game->ApplyImGuiStyle();
   }
-  ImGui::TextDisabled(
-      isUiColor
-          ? "RGBA; the alpha bar is the window transparency."
-          : "RGBA; the alpha bar is the opacity of the drawn colour.");
+  ImGui::TextDisabled(isUiColor
+                          ? "RGBA; the alpha bar is the window transparency."
+                          : "RGBA; the alpha is the drawn colour's opacity.");
   ImGui::PopID();
 }
 

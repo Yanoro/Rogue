@@ -134,16 +134,22 @@ size_t OpenRouterAI::WriteCallbackStream(void *contents, size_t size, size_t nme
       }
       if (j.contains("error")) {
         std::string errStr = "OpenRouter Stream Error: " + j["error"].dump();
+        ctx->error = j["error"].dump();
         if (ctx->aiInstance->errorLogger) ctx->aiInstance->errorLogger(errStr);
         else std::cerr << errStr << std::endl;
       } else if (j.contains("choices") && j["choices"].is_array() && !j["choices"].empty()) {
         auto &choice = j["choices"][0];
-        if (choice.contains("finish_reason") && choice["finish_reason"].is_string() &&
-            choice["finish_reason"].get<std::string>() == "length") {
-          if (ctx->aiInstance->errorLogger) {
-            ctx->aiInstance->errorLogger(
-                "OpenRouter: response truncated (finish_reason=length) - reasoning "
-                "tokens may have consumed the max_tokens budget");
+        if (choice.contains("finish_reason") && choice["finish_reason"].is_string()) {
+          // Kept for the empty-response case: "length" with no content is a budget
+          // that went somewhere else (reasoning, or a huge prompt), not a model
+          // that had nothing to say.
+          ctx->finishReason = choice["finish_reason"].get<std::string>();
+          if (ctx->finishReason == "length") {
+            if (ctx->aiInstance->errorLogger) {
+              ctx->aiInstance->errorLogger(
+                  "OpenRouter: response truncated (finish_reason=length) - reasoning "
+                  "tokens may have consumed the max_tokens budget");
+            }
           }
         }
         if (choice.contains("delta")) {
@@ -516,6 +522,12 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
+  {
+    // A failure from the previous request on this context must not outlive it; the
+    // next empty reply is entitled to its own reason.
+    std::lock_guard<std::mutex> lock(streamErrorMutex);
+    streamErrors.erase(contextId);
+  }
   totalRequests++;
 
   std::vector<nlohmann::json> historyJson;
@@ -585,6 +597,10 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     }
 
     bool success = false;
+    // Why this stream produced no answer, if it did not. Sent to the caller through
+    // TakeStreamError before the completion sentinel, because the sentinel itself is
+    // an empty token and cannot carry a reason. See AI::TakeStreamError.
+    std::string failure;
     if (!stoken.stop_requested()) {
       int msgs_left;
       CURLMsg *msg;
@@ -594,6 +610,8 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
             success = true;
           } else {
             std::string errStr = "curl stream failed: " + std::string(curl_easy_strerror(msg->data.result));
+            failure = "could not reach OpenRouter (" +
+                      std::string(curl_easy_strerror(msg->data.result)) + ")";
             if (errorLogger) errorLogger(errStr);
             else std::cerr << errStr << std::endl;
           }
@@ -607,14 +625,31 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     long httpCode = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
     if (httpCode >= 400) {
-      std::string detail = ctx.buffer;
-      if (detail.size() > 400) detail = detail.substr(0, 400);
+      // The body is the provider's explanation ("No endpoints found for ...", a
+      // rate-limit message); it is the useful half and it is about to be freed
+      // with the curl handle.
+      std::string detail = ctx.error.empty() ? ctx.buffer : ctx.error;
+      if (detail.size() > 300) detail = detail.substr(0, 300);
       std::string errStr =
           "OpenRouter stream failed: HTTP " + std::to_string(httpCode);
       if (!detail.empty()) errStr += " - " + detail;
       if (errorLogger) errorLogger(errStr);
       else std::cerr << errStr << std::endl;
       success = false;
+      failure = "OpenRouter HTTP " + std::to_string(httpCode);
+      if (!detail.empty()) failure += ": " + detail;
+    } else if (!ctx.error.empty()) {
+      failure = "OpenRouter error: " + ctx.error;
+    } else if (success && ctx.fullResponse.empty()) {
+      // A completed stream with no text. The finish reason is the difference
+      // between "the model chose to say nothing" and "the budget ran out before
+      // the answer began", and only one of those is worth retrying unchanged.
+      if (ctx.finishReason == "length") {
+        failure = "the answer was cut off before any text (finish_reason=length); "
+                  "raise maxTokens or turn reasoning off";
+      } else if (ctx.finishReason == "content_filter") {
+        failure = "the provider filtered the answer (finish_reason=content_filter)";
+      }
     }
 
     curl_multi_remove_handle(multi_handle, curl);
@@ -637,6 +672,17 @@ bool OpenRouterAI::generateStream(const std::string &contextId,
     {
       std::lock_guard<std::mutex> lock(busyMutex);
       busyContexts.erase(contextId);
+    }
+
+    // Before the sentinel, so a caller that wakes on it can read this: the atomic
+    // store in callback("") is the release the waiter's load acquires.
+    {
+      std::lock_guard<std::mutex> lock(streamErrorMutex);
+      if (failure.empty()) {
+        streamErrors.erase(contextId);
+      } else {
+        streamErrors[contextId] = std::move(failure);
+      }
     }
     
     callback("");
@@ -667,4 +713,15 @@ std::string OpenRouterAI::getContext(const std::string &contextId) {
     return it->second;
   }
   return "";
+}
+
+std::string OpenRouterAI::TakeStreamError(const std::string &contextId) {
+  std::lock_guard<std::mutex> lock(streamErrorMutex);
+  const auto it = streamErrors.find(contextId);
+  if (it == streamErrors.end()) {
+    return {};
+  }
+  std::string error = std::move(it->second);
+  streamErrors.erase(it);
+  return error;
 }

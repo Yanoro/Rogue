@@ -1,0 +1,134 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  out = #1A1210
+  iron_hi = #E4E8EE
+  iron_light = #B8C2CC
+  iron_mid = #828E9E
+  iron_shadow = #4E5968
+  iron_dark = #323A44
+  gold_accent = #E8B038
+}
+
+// === Silhouette / Outer Outline ===
+// Pauldron Left (viewer's left: (6,11)-(10,17))
+rect (6,12) (10,16) color=out
+pixel (7,11) color=out
+pixel (8,11) color=out
+pixel (9,11) color=out
+pixel (6,17) color=out
+pixel (10,17) color=out
+
+// Pauldron Right (viewer's right: (21,11)-(25,17))
+rect (21,12) (25,16) color=out
+pixel (22,11) color=out
+pixel (23,11) color=out
+pixel (24,11) color=out
+pixel (21,17) color=out
+pixel (25,17) color=out
+
+// Cuirass Main Torso Outline (10,12)-(22,22)
+rect (10,12) (22,22) color=out
+pixel (9,13) color=out
+pixel (9,14) color=out
+pixel (9,15) color=out
+pixel (23,13) color=out
+pixel (23,14) color=out
+pixel (23,15) color=out
+
+// Taper lower waist outline slightly
+pixel (10,22) color=#00000000
+pixel (22,22) color=#00000000
+
+// === Base Metal Fill ===
+// Left Pauldron base
+rect (7,12) (9,16) color=iron_mid
+pixel (8,11) color=iron_light
+
+// Right Pauldron base
+rect (22,12) (24,16) color=iron_mid
+pixel (23,11) color=iron_light
+
+// Torso base fill
+rect (10,13) (22,21) color=iron_mid
+rect (11,22) (21,22) color=iron_shadow
+rect (12,12) (20,12) color=iron_light
+
+// Gorget / Neck cutout opening
+pixel (14,12) color=out
+pixel (15,12) color=out
+pixel (16,12) color=out
+pixel (17,12) color=out
+pixel (15,13) color=out
+pixel (16,13) color=out
+pixel (15,14) color=iron_dark
+pixel (16,14) color=iron_dark
+
+// === Pauldron Detailing ===
+// Left pauldron (lit from top-left)
+pixel (7,12) color=iron_hi
+pixel (8,12) color=iron_hi
+pixel (7,13) color=iron_light
+pixel (8,13) color=iron_light
+line (7,14) (9,14) color=iron_dark
+pixel (7,15) color=iron_light
+pixel (9,16) color=iron_shadow
+
+// Right pauldron (shaded side)
+pixel (22,12) color=iron_light
+pixel (23,12) color=iron_light
+pixel (24,12) color=iron_mid
+line (22,14) (24,14) color=iron_dark
+pixel (22,15) color=iron_mid
+pixel (23,16) color=iron_shadow
+pixel (24,16) color=iron_shadow
+
+// Pauldron trim rim highlights
+pixel (6,14) color=out
+pixel (10,14) color=out
+pixel (21,14) color=out
+pixel (25,14) color=out
+
+// === Cuirass Plate & Shading Structure ===
+// Upper chest rim / gorget trim
+line (12,13) (14,13) color=iron_hi
+line (17,13) (19,13) color=iron_light
+pixel (11,13) color=iron_light
+pixel (20,13) color=iron_mid
+
+// Vertical ridge / sternum keel
+line (15,15) (15,20) color=iron_hi
+line (16,15) (16,20) color=iron_shadow
+
+// Left chest plate (lit)
+rect (11,14) (14,18) color=iron_mid
+line (11,14) (14,14) color=iron_light
+pixel (12,14) color=iron_hi
+pixel (13,14) color=iron_hi
+pixel (11,15) color=iron_light
+pixel (12,15) color=iron_hi
+pixel (11,18) color=iron_shadow
+
+// Right chest plate (shaded)
+rect (17,14) (21,18) color=iron_mid
+line (17,14) (20,14) color=iron_light
+rect (18,16) (21,18) color=iron_shadow
+pixel (21,15) color=iron_shadow
+
+// Central gold crest rivet on the sternum
+pixel (15,16) color=gold_accent
+pixel (16,16) color=gold_accent
+
+// Abdominal horizontal segmented plates (faulds)
+line (11,19) (21,19) color=iron_dark
+line (11,20) (15,20) color=iron_light
+line (16,20) (21,20) color=iron_shadow
+line (11,21) (21,21) color=iron_dark
+line (12,22) (15,22) color=iron_mid
+line (16,22) (20,22) color=iron_dark
+
+// Bottom trim rivets
+pixel (13,21) color=iron_hi
+pixel (18,21) color=iron_light

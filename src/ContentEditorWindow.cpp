@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -23,11 +24,14 @@
 #include "SpritePicker.hpp"
 #include "ActorSpritePicker.hpp"
 #include "IconPicker.hpp"
+#include "IconPaths.hpp"
+#include "IconRegistry.h"
 #include "SurfaceSpritePicker.hpp"
 #include "SpritePaths.hpp"
 #include "RigDesigner.hpp"
 #include "RigRender.hpp"
 #include "RigGripDraw.hpp"
+#include "RewriteBriefs.hpp"
 #include "SpriteKinds.hpp"
 #include "imgui.h"
 
@@ -98,6 +102,9 @@ bool DrawColourValue(nlohmann::json &value) {
 // other strings, including nested fields, stay ordinary text fields.
 struct JsonFormOptions {
   const ActorSpriteRegistry *actorSprites = nullptr;
+  // The rig catalogue, for an NPC template's "rig" key. Null for every other kind, which
+  // is what keeps those documents on the generic text field.
+  const RigRegistry *rigs = nullptr;
   ResourceManager *resources = nullptr;
   std::string *actorSpriteFilter = nullptr;
   bool *showActorSpritesWithoutArt = nullptr;
@@ -160,6 +167,113 @@ bool DrawWrappedTextInput(const char *id, std::string &value) {
       ImGuiInputTextFlags_CallbackResize | ImGuiInputTextFlags_AllowTabInput,
       ResizeStringCallback, &buffer);
   if (changed) value = buffer;
+  return changed;
+}
+
+// The rig chooser for an NPC template.
+//
+// A combo with a live preview rather than a thumbnail grid: a rig is a composition, so the
+// useful picture is the assembled body -- exactly what the world draws for this NPC -- and
+// the clip list beside it says what will animate. It is deliberately not the generic text
+// box: a rig id typed from memory is a typo that only shows up as a sprite in the world.
+//
+// The preview is bare, matching the Content Editor's rig pane and the Designer's: worn gear
+// is an item's business, and a template does not equip anything by naming a body. The
+// animation runs off wall time rather than a stored clock, because this is a stateless
+// helper and a still frame would not show that the clips move.
+bool DrawTemplateRigValue(nlohmann::json &value, const RigRegistry &rigs,
+                          const ArtStyleRegistry &styles,
+                          ResourceManager &resources) {
+  std::string current = value.get<std::string>();
+  const ActorRig *selected = current.empty() ? nullptr : rigs.Get(current);
+  bool changed = false;
+
+  ImGui::SetNextItemWidth(260.0f);
+  if (ImGui::BeginCombo("##npc_template_rig",
+                        current.empty() ? "None (sprite/race look)"
+                                        : current.c_str())) {
+    if (ImGui::Selectable("None (sprite/race look)", current.empty())) {
+      value = "";
+      changed = true;
+    }
+    for (const ActorRig *rig : rigs.GetAll()) {
+      const std::string label =
+          (rig->name.empty() ? rig->id : rig->name) + "  (" + rig->id + ")";
+      if (ImGui::Selectable((label + "##rig_" + rig->id).c_str(),
+                            rig->id == current)) {
+        value = rig->id;
+        changed = true;
+      }
+      if (rig->id == current) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+  }
+
+  if (changed) {
+    // The preview and the warning must describe the value the document holds now, not the
+    // one the combo opened with: picking "None" otherwise leaves the old rig on screen for
+    // a frame, which reads as the click having missed.
+    current = value.get<std::string>();
+    selected = current.empty() ? nullptr : rigs.Get(current);
+  }
+
+  // An id that no longer resolves is kept visible instead of silently reading as "None":
+  // the value is still in the document, and Save would write it back.
+  if (!current.empty() && selected == nullptr) {
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.5f, 1.0f),
+                       "No rig named '%s' is loaded; this NPC keeps its sprite.",
+                       current.c_str());
+    return changed;
+  }
+
+  if (selected != nullptr) {
+    // Prefer the clips the world will actually choose from, so the preview is not a one
+    // shot that happens to be first in the file. A rig with neither draws its static
+    // layers, which is what the world does too.
+    const RigClip *clip = nullptr;
+    for (const char *wanted : {"idle", "walk"}) {
+      for (const RigClip &candidate : selected->clips) {
+        if (candidate.id == wanted) {
+          clip = &candidate;
+          break;
+        }
+      }
+      if (clip != nullptr) break;
+    }
+    RigRender::AnimationState animation;
+    if (clip != nullptr && clip->fps > 0 && clip->frames > 0) {
+      const float duration = clip->frames / static_cast<float>(clip->fps);
+      if (duration > 0.0f) {
+        animation.clip = clip;
+        animation.time =
+            std::fmod(static_cast<float>(ImGui::GetTime()), duration);
+      }
+    }
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4.0f);
+    RigRender::Draw(*selected, resources, {}, 96.0f,
+                    animation.clip != nullptr ? &animation : nullptr,
+                    styles.GeometryFor(*selected));
+    ImGui::SameLine();
+    ImGui::BeginGroup();
+    ImGui::TextDisabled("%s  |  %dx%d  |  %d part(s)", selected->id.c_str(),
+                        selected->width, selected->height,
+                        static_cast<int>(selected->parts.size()));
+    if (selected->clips.empty()) {
+      ImGui::TextDisabled(
+          "No clips: the NPC draws the static layers and does not animate.");
+    } else {
+      std::string clips;
+      for (const RigClip &candidate : selected->clips) {
+        if (!clips.empty()) clips += ", ";
+        clips += candidate.id;
+      }
+      ImGui::TextDisabled("Clips: %s", clips.c_str());
+      ImGui::TextDisabled(
+          "The world plays idle/walk/run from how the NPC actually moves.");
+    }
+    ImGui::TextDisabled("A rig replaces the actor sprite above it.");
+    ImGui::EndGroup();
+  }
   return changed;
 }
 
@@ -346,6 +460,13 @@ bool DrawJsonValue(nlohmann::json &value, const std::string &key,
       return true;
     }
     return false;
+  }
+
+  if (depth == 1 && key == "rig" && value.is_string() &&
+      options.rigs != nullptr && options.resources != nullptr &&
+      options.artStyles != nullptr) {
+    return DrawTemplateRigValue(value, *options.rigs, *options.artStyles,
+                                *options.resources);
   }
 
   if (depth == 1 && key == "style" && value.is_string() &&
@@ -644,6 +765,84 @@ ContentEditorWindow::ContentEditorWindow(Game *game, flecs::entity owner)
   ReloadDocument();
 }
 
+ContentEditorWindow::~ContentEditorWindow() {
+  descriptionImprove.Shutdown();
+}
+
+bool ContentEditorWindow::EnsureDescriptionImprove() {
+  if (descriptionImproveReady) {
+    return true;
+  }
+  if (game == nullptr) {
+    return false;
+  }
+  descriptionImproveReady = true;
+  // The same backend, prompt file and contract as the Designer's Improve button. Its own
+  // provider context so a rewrite here cannot disturb a Designer conversation.
+  descriptionRewriter.Configure(
+      game->rewriterAI.get(), Settings().content.rewritePromptFile,
+      "content-editor-description-rewriter", game->debugLog.get());
+  descriptionImprove.Setup(game, &descriptionRewriter, descriptionBuffer,
+                           sizeof(descriptionBuffer));
+  descriptionImprove.SetLogSink([this](const std::string &line) {
+    if (game != nullptr && game->debugLog != nullptr) {
+      game->debugLog->LogInfo(line);
+    }
+  });
+  return true;
+}
+
+ContentEditorWindow::DescriptionEdit
+ContentEditorWindow::DrawVisualDescriptionField(
+    const std::string &target, const std::string &text,
+    const PromptRewriter::Brief &brief) {
+  DescriptionEdit edit;
+  ImGui::TextDisabled("Visual description");
+  const bool hasImprove = EnsureDescriptionImprove() && game != nullptr;
+  if (descriptionTarget != target) {
+    descriptionTarget = target;
+    if (hasImprove) {
+      descriptionImprove.Reset();
+      descriptionImprove.SetBrief(brief);
+    }
+    std::snprintf(descriptionBuffer, sizeof(descriptionBuffer), "%s", text.c_str());
+  }
+  // Snapshot before Drain: a rewrite that lands while the field has focus changes the
+  // buffer inside Drain, and InputTextMultiline cannot report that as an edit. Comparing
+  // the text catches it so the caller still persists the machine-written description.
+  const std::string before = descriptionBuffer;
+  if (hasImprove) {
+    descriptionImprove.Drain();
+  }
+  const bool typed = ImGui::InputTextMultiline(
+      "##visual_description", descriptionBuffer, sizeof(descriptionBuffer),
+      ImVec2(-1.0f, 64.0f));
+  const bool deactivated = ImGui::IsItemDeactivatedAfterEdit();
+  if (ImGui::IsItemHovered()) {
+    ImGui::SetTooltip(
+        "Describe what the picture looks like: shapes, colours, objects. Improve "
+        "asks the same rewriter the Designer uses for a fuller version; your "
+        "wording stays editable and Undo restores it.");
+  }
+  bool rewritten = false;
+  if (hasImprove) {
+    rewritten = descriptionImprove.DrawButtons();
+    const std::string status = descriptionImprove.StatusLine();
+    if (!status.empty()) {
+      ImGui::TextColored(ImVec4(0.75f, 0.78f, 0.85f, 1.0f), "Improve: %s",
+                         status.c_str());
+    }
+    if (descriptionImprove.ShowingRewrite()) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("(rewritten -- Undo restores your wording)");
+    }
+  }
+  const bool bufferChanged = std::string(descriptionBuffer) != before;
+  edit.changed = typed || rewritten || bufferChanged;
+  edit.committed = deactivated || rewritten || bufferChanged;
+  return edit;
+}
+
 ContentKinds::World ContentEditorWindow::World_() {
   return ContentKinds::World{
       game->tileRegistry, game->objectFactory, game->actorSpriteRegistry,
@@ -675,6 +874,8 @@ void ContentEditorWindow::SelectEntry(const std::string &kind,
   statusIsError = false;
   ReloadDocument();
 }
+
+void ContentEditorWindow::RequestFocus() { focusRequested = true; }
 
 void ContentEditorWindow::ReloadDocument() {
   document = nlohmann::json::object();
@@ -760,6 +961,129 @@ void ContentEditorWindow::Save() {
   }
 }
 
+bool ContentEditorWindow::DeleteContentEntry(const ContentKinds::Kind &kind,
+                                             const std::string &id,
+                                             std::string &message,
+                                             bool &isError) {
+  const ContentKinds::World world = World_();
+  // Read and name the files BEFORE removing the live definition: a tile's source path and
+  // an entry's override name both come from the definition that is about to disappear.
+  nlohmann::json definition;
+  if (kind.read != nullptr) {
+    definition = kind.read(world, id);
+  }
+  std::vector<std::string> files;
+  if (kind.definitionFiles != nullptr) {
+    files = kind.definitionFiles(world, id);
+  }
+  if (kind.fileName != nullptr && !Settings().content.editor.empty()) {
+    const std::string stem = kind.fileName(definition);
+    if (!stem.empty()) {
+      files.push_back((std::filesystem::path(Settings().content.editor) /
+                       kind.id / (stem + ".json"))
+                          .string());
+    }
+  }
+  std::sort(files.begin(), files.end());
+  files.erase(std::unique(files.begin(), files.end()), files.end());
+
+  std::string error;
+  if (kind.remove == nullptr || !kind.remove(world, id, &error)) {
+    message = "Could not delete " + kind.label + " '" + id + "'" +
+              (error.empty() ? "." : ": " + error + ".");
+    isError = true;
+    return false;
+  }
+
+  std::string deleted;
+  std::string failed;
+  for (const std::string &file : files) {
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec)) {
+      continue;
+    }
+    if (std::filesystem::remove(file, ec)) {
+      if (!deleted.empty()) deleted += ", ";
+      deleted += file;
+    } else {
+      if (!failed.empty()) failed += ", ";
+      failed += file + (ec ? " (" + ec.message() + ")" : "");
+    }
+  }
+
+  entryId.clear();
+  document = nlohmann::json::object();
+  dirty = false;
+  message = "Deleted " + kind.label + " '" + id + "' from the live registry";
+  if (!deleted.empty()) {
+    message += "; removed " + deleted;
+  } else {
+    message += "; no definition file was on disk";
+  }
+  if (!failed.empty()) {
+    message += ". Could not remove: " + failed;
+    isError = true;
+  } else {
+    isError = false;
+  }
+  return true;
+}
+
+namespace {
+void DrawTrashIcon(ImDrawList *draw, const ImVec2 &min, const ImVec2 &max,
+                   ImU32 color);
+}
+
+void ContentEditorWindow::DrawKindSidebar() {
+  if (game == nullptr) {
+    return;
+  }
+  ImGui::TextDisabled("Content kinds");
+  ImGui::Separator();
+  // Every kind, grouped by the sections assigned in ContentKinds. The headings are not
+  // collapsible: "all content kinds listed" is the point of this column.
+  for (const std::string &section : ContentKinds::SectionOrder()) {
+    bool wroteHeader = false;
+    for (const ContentKinds::Kind &candidate : ContentKinds::All()) {
+      if (candidate.section != section) {
+        continue;
+      }
+      if (!wroteHeader) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", section.c_str());
+        wroteHeader = true;
+      }
+      ImGui::Indent(8.0f);
+      if (ImGui::Selectable(candidate.label.c_str(), candidate.id == kindId)) {
+        kindId = candidate.id;
+        entryId.clear();
+        filterBuffer[0] = '\0';
+        status.clear();
+        statusIsError = false;
+        ReloadDocument();
+        // Show the first entry immediately rather than leaving the old document on
+        // screen for the frame it takes Draw's default selection to run.
+        if (const ContentKinds::Kind *selected = Kind()) {
+          const std::vector<ContentKinds::Entry> entries = selected->list(World_());
+          if (!entries.empty()) {
+            entryId = entries.front().id;
+            ReloadDocument();
+          }
+        }
+      }
+      if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("%s\n%s", candidate.label.c_str(),
+                          candidate.section.c_str());
+      }
+      ImGui::Unindent(8.0f);
+    }
+  }
+  ImGui::Separator();
+  ImGui::PushTextWrapPos(0.0f);
+  ImGui::TextDisabled("Overrides: %s", Settings().content.editor.c_str());
+  ImGui::PopTextWrapPos();
+}
+
 void ContentEditorWindow::DrawKindAndList() {
   if (game == nullptr) {
     ImGui::TextWrapped("The window has no game to read from.");
@@ -769,6 +1093,8 @@ void ContentEditorWindow::DrawKindAndList() {
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr) return;
 
+  ImGui::TextDisabled("%s", kind->label.c_str());
+  ImGui::Separator();
   ImGui::SetNextItemWidth(-1.0f);
   ImGui::InputTextWithHint("##contentFilter", "filter by name...", filterBuffer,
                            sizeof(filterBuffer));
@@ -896,16 +1222,68 @@ void ContentEditorWindow::DrawKindAndList() {
 
     const bool shown = entry.id == entryId;
     ImGui::PushID(entry.id.c_str());
-    if (ImGui::Selectable(entry.label.c_str(), shown)) {
+    const float trashWidth = 22.0f;
+    const float rowWidth = ImGui::GetContentRegionAvail().x;
+    if (ImGui::Selectable(entry.label.c_str(), shown, ImGuiSelectableFlags_None,
+                          ImVec2(std::max(40.0f, rowWidth - trashWidth), 0.0f))) {
       entryId = entry.id;
       ReloadDocument();
       status.clear();
       statusIsError = false;
     }
+    const ImVec2 rowSize = ImGui::GetItemRectSize();
     if (ImGui::IsItemHovered()) {
       ImGui::SetTooltip("%s\nfrom: %s", entry.id.c_str(), entry.origin.c_str());
     }
+    ImGui::SameLine(0.0f, 0.0f);
+    const bool deleteClicked =
+        ImGui::InvisibleButton("##delete_entry", ImVec2(trashWidth, rowSize.y));
+    const bool trashHovered = ImGui::IsItemHovered();
+    DrawTrashIcon(ImGui::GetWindowDrawList(), ImGui::GetItemRectMin(),
+                  ImGui::GetItemRectMax(),
+                  trashHovered ? IM_COL32(255, 120, 105, 255)
+                               : IM_COL32(190, 92, 82, 255));
+    if (trashHovered) {
+      ImGui::SetTooltip("Delete this content");
+    }
     ImGui::PopID();
+    if (deleteClicked) {
+      pendingDeleteKind = kind->id;
+      pendingDeleteEntry = entry.id;
+      ImGui::OpenPopup("Delete content?");
+    }
+  }
+
+  if (ImGui::BeginPopupModal("Delete content?", nullptr,
+                             ImGuiWindowFlags_AlwaysAutoResize)) {
+    const ContentKinds::Kind *pendingKind =
+        ContentKinds::For(pendingDeleteKind);
+    ImGui::Text("Delete %s \"%s\"?",
+                pendingKind != nullptr ? pendingKind->label.c_str() : "content",
+                pendingDeleteEntry.c_str());
+    ImGui::TextDisabled(
+        "This removes the definition file and the running definition. It cannot "
+        "be undone; sprite files are kept.");
+    ImGui::Spacing();
+    if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
+      std::string message;
+      bool isError = false;
+      if (pendingKind != nullptr) {
+        DeleteContentEntry(*pendingKind, pendingDeleteEntry, message, isError);
+      }
+      status = message;
+      statusIsError = isError;
+      pendingDeleteKind.clear();
+      pendingDeleteEntry.clear();
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+      pendingDeleteKind.clear();
+      pendingDeleteEntry.clear();
+      ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
   }
   ImGui::EndChild();
 }
@@ -914,6 +1292,31 @@ namespace {
 
 // A 14x14 trash can, drawn rather than typed: the window uses ImGui's default font, which
 // has no icon glyphs, so a Unicode bin would render as a missing-glyph box.
+void DrawTrashIcon(ImDrawList *draw, const ImVec2 &min, const ImVec2 &max,
+                   ImU32 color) {
+  const float width = max.x - min.x;
+  const float height = max.y - min.y;
+  const float iconWidth = 11.0f;
+  const float iconHeight = 13.0f;
+  const float left = min.x + (width - iconWidth) * 0.5f;
+  const float top = min.y + (height - iconHeight) * 0.5f;
+  // Lid and handle.
+  draw->AddLine(ImVec2(left, top + 3.0f),
+                ImVec2(left + iconWidth, top + 3.0f), color, 1.5f);
+  draw->AddLine(ImVec2(left + 3.0f, top + 1.0f),
+                ImVec2(left + iconWidth - 3.0f, top + 1.0f), color, 1.5f);
+  // Body and three slats.
+  draw->AddRect(ImVec2(left + 1.0f, top + 4.0f),
+                ImVec2(left + iconWidth - 1.0f, top + iconHeight), color, 1.0f,
+                0, 1.5f);
+  draw->AddLine(ImVec2(left + 4.0f, top + 6.0f),
+                ImVec2(left + 4.0f, top + iconHeight - 2.0f), color, 1.0f);
+  draw->AddLine(ImVec2(left + 6.0f, top + 6.0f),
+                ImVec2(left + 6.0f, top + iconHeight - 2.0f), color, 1.0f);
+  draw->AddLine(ImVec2(left + 8.0f, top + 6.0f),
+                ImVec2(left + 8.0f, top + iconHeight - 2.0f), color, 1.0f);
+}
+
 // Whether two image files hold the same picture. Path comparison is not enough: after a
 // variant is activated, `<id>.png` is a *different file* holding the same bytes, and
 // archiving it again would add a duplicate row every time the same sprite is chosen.
@@ -1163,6 +1566,10 @@ void ContentEditorWindow::RefreshSelectedAsset() {
   }
 }
 
+namespace {
+PromptRewriter::Brief BriefForSpriteKind(SpriteKinds::Kind kind);
+}
+
 void ContentEditorWindow::DrawSpritePane() {
   const ContentKinds::Kind *kind = Kind();
   if (kind == nullptr || game == nullptr || !kind->hasSprites) return;
@@ -1185,9 +1592,40 @@ void ContentEditorWindow::DrawSpritePane() {
     }
   }
 
-  DrawSpriteAsset(convention, entryId, SpriteKindOf(*kind), explicitSprite,
-                  /*builtInFallback=*/false, std::string());
+  std::string description;
+  if (document.contains("description") && document["description"].is_string()) {
+    description = document["description"].get<std::string>();
+  }
+  const SpriteKinds::Kind spriteKind = SpriteKindOf(*kind);
+  DrawSpriteAsset(
+      convention, entryId, spriteKind, explicitSprite,
+      /*builtInFallback=*/false, std::string(), std::string(), description,
+      [this](const std::string &text) {
+        document["description"] = text;
+        dirty = true;
+      },
+      BriefForSpriteKind(spriteKind));
 }
+
+namespace {
+
+PromptRewriter::Brief BriefForSpriteKind(SpriteKinds::Kind kind) {
+  switch (kind) {
+    case SpriteKinds::Kind::Tile:
+      return RewriteBriefs::Tile();
+    case SpriteKinds::Kind::Object:
+      return RewriteBriefs::Object();
+    case SpriteKinds::Kind::Actor:
+      return RewriteBriefs::ActorSprite();
+    case SpriteKinds::Kind::Icon:
+      return RewriteBriefs::Icon();
+    case SpriteKinds::Kind::Surface:
+      return RewriteBriefs::SurfaceSprite();
+  }
+  return RewriteBriefs::Tile();
+}
+
+}  // namespace
 
 void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
                                           const std::string &requestName,
@@ -1195,7 +1633,28 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
                                           const std::string &explicitSprite,
                                           bool builtInFallback,
                                           const std::string &artRequirement,
-                                          const std::string &styleId) {
+                                          const std::string &styleId,
+                                          const std::string &visualDescription,
+                                          const std::function<void(
+                                              const std::string &)> &
+                                              applyVisualDescription,
+                                          PromptRewriter::Brief rewriteBrief) {
+  // The visual brief first, so the Regenerate button below sends the text the user is
+  // looking at this frame. The field and the Improve button are the same component the
+  // Designer uses; `rewriteBrief` is the kind-specific vocabulary that keeps the rewrite
+  // inside the asset's domain.
+  std::string requestRequirement = artRequirement;
+  if (!rewriteBrief.kind.empty()) {
+    const DescriptionEdit edit = DrawVisualDescriptionField(
+        convention + "|" + rewriteBrief.kind, visualDescription, rewriteBrief);
+    if (!DescriptionText().empty()) {
+      requestRequirement = DescriptionText();
+    }
+    if (edit.changed && applyVisualDescription) {
+      applyVisualDescription(DescriptionText());
+    }
+    ImGui::Separator();
+  }
   const Texture2D *texture = ResolveSpriteTexture(
       explicitSprite, convention, game->resourceManager, nullptr);
   if (texture == nullptr && builtInFallback && explicitSprite.empty() &&
@@ -1328,8 +1787,8 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
       // reply, so leaving it closed would queue a request that never lands.
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(
-          requestName, spriteKind, artRequirement, /*redesign=*/true, std::string(),
-          generationStyleId);
+          requestName, spriteKind, requestRequirement, /*redesign=*/true,
+          std::string(), generationStyleId);
       status = "asked the Designer for this sprite -- it writes the document if there is "
                "none, then compiles it; the job appears in Art requests";
       statusIsError = false;
@@ -1389,8 +1848,8 @@ void ContentEditorWindow::DrawSpriteAsset(const std::string &convention,
     if (game->designerWindow) {
       game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
       game->designerWindow->AskForSpriteArt(
-          requestName, spriteKind, artRequirement, /*redesign=*/false, spriteEditBuffer,
-          generationStyleId);
+          requestName, spriteKind, requestRequirement, /*redesign=*/false,
+          spriteEditBuffer, generationStyleId);
       status = "asked the Designer to edit this sprite; the previous version is in the "
                "list below and the edited one lands as a new generated version";
       statusIsError = false;
@@ -1582,6 +2041,122 @@ void ContentEditorWindow::DrawBodySilhouettePreview() {
   }
 }
 
+void ContentEditorWindow::DrawSkillIconPane() {
+  if (entryId.empty() || game == nullptr) {
+    return;
+  }
+  ImGui::Separator();
+  ImGui::TextDisabled("Skill icon");
+
+  const std::string skillName = document.value("name", entryId);
+  std::string iconId;
+  if (document.contains("icon") && document["icon"].is_string()) {
+    iconId = document["icon"].get<std::string>();
+  }
+  const IconDef *icon =
+      iconId.empty() ? nullptr : game->iconRegistry.Get(iconId);
+
+  // The visual brief. Deliberately NOT the skill's description: that describes what the
+  // skill does, and asking the art pipeline to draw it produces a picture of the mechanic.
+  const DescriptionEdit descriptionEdit = DrawVisualDescriptionField(
+      "skill:" + entryId + "|" + iconId,
+      icon != nullptr ? icon->description : std::string(),
+      RewriteBriefs::Icon());
+  if (descriptionEdit.committed && icon != nullptr) {
+    nlohmann::json iconDocument = game->iconRegistry.ToJson(*icon);
+    iconDocument["description"] = DescriptionText();
+    // The icon's id is its name slug. Keep the name's slug equal to the id the skill
+    // already references, or AddOrReplace would store the edit under a second id.
+    if (IconRegistry::IdFor(iconDocument) != iconId) {
+      iconDocument["name"] = iconId;
+    }
+    std::string error;
+    std::vector<std::string> warnings;
+    if (game->iconRegistry.AddOrReplace(iconDocument,
+                                        "(skill icon description)", &error,
+                                        &warnings)) {
+      const std::filesystem::path directory = Settings().content.icons;
+      if (!directory.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(directory, ec);
+        std::ofstream out(directory / (iconId + ".json"));
+        if (out.is_open()) {
+          out << iconDocument.dump(2) << "\n";
+        }
+      }
+      // AddOrReplace replaced the map entry, so the pointer we read the style from is
+      // stale; take it again for the shared editor below.
+      icon = game->iconRegistry.Get(iconId);
+      status = "Updated the visual description for " + iconId + ".";
+      statusIsError = false;
+    } else {
+      status = "Could not update the icon description: " + error;
+      statusIsError = true;
+    }
+  }
+
+  if (icon == nullptr) {
+    // No icon definition yet. Create and link one; the actual generation, improvements
+    // and version archive are the shared sprite editor below, not a second pipeline.
+    if (ImGui::Button("Create icon")) {
+      nlohmann::json iconDocument = nlohmann::json::object();
+      iconDocument["name"] = "Skill " + skillName;
+      iconDocument["description"] = DescriptionText();
+      iconDocument["sprite"] = std::string();
+      iconDocument["visualType"] = "skill_icon";
+      const std::string newId = IconRegistry::IdFor(iconDocument);
+      std::string error;
+      std::vector<std::string> warnings;
+      if (newId.empty()) {
+        status = "Give the skill a name before creating its icon.";
+        statusIsError = true;
+      } else if (!game->iconRegistry.AddOrReplace(iconDocument,
+                                                  "(skill icon)", &error,
+                                                  &warnings)) {
+        status = "Could not create the icon: " + error;
+        statusIsError = true;
+      } else {
+        const std::filesystem::path directory = Settings().content.icons;
+        if (!directory.empty()) {
+          std::error_code ec;
+          std::filesystem::create_directories(directory, ec);
+          std::ofstream out(directory / (newId + ".json"));
+          if (out.is_open()) {
+            out << iconDocument.dump(2) << "\n";
+          }
+        }
+        document["icon"] = newId;
+        dirty = true;
+        status = "Created " + newId +
+                 "; use Regenerate sprite below to draw it.";
+        statusIsError = false;
+      }
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Creates the skill's icon definition from the visual description. "
+          "Generation and improvements then use the shared sprite tools.");
+    }
+    ImGui::TextDisabled(
+        "Create the icon, then use Regenerate sprite to draw it.");
+    return;
+  }
+
+  // The same sprite asset editor tiles, objects and equipment use: preview, Regenerate,
+  // the edit/improve field, and the archive of every generated version. The visual
+  // description is passed as the request's requirement, so the skill's own description
+  // never reaches the art model.
+  std::string explicitSprite = icon->sprite;
+  if (PrefersGeneratedSprite(iconId)) {
+    const std::string generated = GeneratedSpritePath(iconId);
+    if (!generated.empty() && std::filesystem::exists(generated)) {
+      explicitSprite = generated;
+    }
+  }
+  DrawSpriteAsset(iconId, iconId, SpriteKinds::Kind::Icon, explicitSprite,
+                  /*builtInFallback=*/false, DescriptionText(), icon->style);
+}
+
 void ContentEditorWindow::DrawItemPreviewPane() {
   if (entryId.empty() || game == nullptr) return;
   const ItemDef *item = game->itemRegistry.Get(entryId);
@@ -1613,18 +2188,6 @@ void ContentEditorWindow::DrawItemPreviewPane() {
     ImGui::TextDisabled("tags: %s", tags.c_str());
   }
 
-  if (ImGui::Button("Give to player inventory")) {
-    std::string message;
-    const bool ok = game->GiveItemToPlayer(entryId, message);
-    status = message;
-    statusIsError = !ok;
-  }
-  if (ImGui::IsItemHovered()) {
-    ImGui::SetTooltip(
-        "Spawn one object from this equipment definition and place it in the "
-        "player's inventory. It is not equipped.");
-  }
-
   if (item->wornSprite.empty()) {
     ImGui::TextDisabled(
         "No worn art: this item has no layer on a rig, so there is nothing to draw "
@@ -1638,12 +2201,27 @@ void ContentEditorWindow::DrawItemPreviewPane() {
   // be made the active one.
   ImGui::Separator();
   ImGui::TextDisabled("Worn sprite");
+  // The worn layer has the same visual-description field and Improve affordance as
+  // every other generation place. It edits the item's worn brief, not its ordinary
+  // description (which describes the item, not the layer).
+  std::string wornBrief = item->wornBrief;
+  if (document.contains("wornBrief") && document["wornBrief"].is_string()) {
+    wornBrief = document["wornBrief"].get<std::string>();
+  }
+  const DescriptionEdit wornEdit = DrawVisualDescriptionField(
+      "item:" + entryId, wornBrief, RewriteBriefs::EquipmentLayer());
+  if (wornEdit.changed) {
+    wornBrief = DescriptionText();
+    document["wornBrief"] = wornBrief;
+    dirty = true;
+  }
+
   // The regeneration brief: the worn look that was authored, when the item carries it,
   // plus the frame every worn layer is drawn against. A worn sprite is not in a registry,
   // so without this the model would be asked to redraw a bare id.
   std::string wornRequirement;
-  if (!item->wornBrief.empty()) {
-    wornRequirement = "The worn layer of " + item->id + ": " + item->wornBrief + ". ";
+  if (!wornBrief.empty()) {
+    wornRequirement = "The worn layer of " + item->id + ": " + wornBrief + ". ";
   } else {
     wornRequirement = "The worn layer of " + item->id + ". ";
   }
@@ -2422,12 +3000,100 @@ void ContentEditorWindow::DrawDocumentPane() {
   }
   ImGui::Separator();
 
+  // One action for the selected entry of the two content kinds that can live in the
+  // player's inventory. Objects and items share it deliberately: every object can be
+  // held, and an object without item mechanics simply has no equipment behaviour.
+  if (!entryId.empty() && (kind->id == "objects" || kind->id == "items")) {
+    if (ImGui::Button("Give selected to player inventory")) {
+      std::string message;
+      const bool ok = game->GiveItemToPlayer(entryId, message);
+      status = message;
+      statusIsError = !ok;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Spawn the selected object template and place it in the player's "
+          "inventory. It is not equipped.");
+    }
+    ImGui::Separator();
+  }
+
+  // The object counterpart of an item definition's stackable/maxStack. The checkbox edits
+  // the component list the factory reads; maxStack travels with it so the inventory knows
+  // how many fit in one cell.
+  if (kind->id == "objects" && document.is_object()) {
+    bool stackable = false;
+    if (document.contains("components") && document["components"].is_array()) {
+      for (const auto &component : document["components"]) {
+        if (component.is_string() &&
+            component.get<std::string>() == "Stackable") {
+          stackable = true;
+          break;
+        }
+      }
+    }
+    if (ImGui::Checkbox("Stackable", &stackable)) {
+      if (!document.contains("components") ||
+          !document["components"].is_array()) {
+        document["components"] = nlohmann::json::array();
+      }
+      nlohmann::json &components = document["components"];
+      if (stackable) {
+        bool present = false;
+        for (const auto &component : components) {
+          if (component.is_string() &&
+              component.get<std::string>() == "Stackable") {
+            present = true;
+            break;
+          }
+        }
+        if (!present) {
+          components.push_back("Stackable");
+        }
+        if (!document.contains("maxStack")) {
+          document["maxStack"] = 20;
+        }
+      } else {
+        for (auto it = components.begin(); it != components.end();) {
+          if (it->is_string() && it->get<std::string>() == "Stackable") {
+            it = components.erase(it);
+          } else {
+            ++it;
+          }
+        }
+        document.erase("maxStack");
+      }
+      dirty = true;
+    }
+    if (ImGui::IsItemHovered()) {
+      ImGui::SetTooltip(
+          "Marks this object as stackable in the inventory. The template's "
+          "maxStack controls how many fit in one cell.");
+    }
+    if (stackable) {
+      int maxStack = 20;
+      if (document.contains("maxStack") &&
+          document["maxStack"].is_number_integer()) {
+        maxStack = document["maxStack"].get<int>();
+      }
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(120.0f);
+      if (ImGui::DragInt("Max stack", &maxStack, 1.0f, 1, 999)) {
+        document["maxStack"] = maxStack;
+        dirty = true;
+      }
+    }
+    ImGui::Separator();
+  }
+
   if (!entryId.empty()) {
     DrawSpritePane();
     if (kind->id == "rigs") {
       DrawRigPreviewPane();
     } else if (kind->id == "items") {
       DrawItemPreviewPane();
+    } else if (kind->id == "skills") {
+      DrawSkillIconPane();
     }
   }
 
@@ -2453,6 +3119,7 @@ void ContentEditorWindow::DrawDocumentPane() {
   options.portraitSource = kind->id == "portraits";
   if (kind->id == "npcs") {
     options.actorSprites = &game->actorSpriteRegistry;
+    options.rigs = &game->rigRegistry;
     options.resources = &game->resourceManager;
     options.actorSpriteFilter = &npcSpriteFilter;
     options.showActorSpritesWithoutArt = &showActorSpritesWithoutArt;
@@ -2558,7 +3225,13 @@ void ContentEditorWindow::DrawVisualAssets(const ContentKinds::World &world) {
 
 void ContentEditorWindow::Draw() {
   bool isOpen = true;
-  ImGui::SetNextWindowSize(ImVec2(980, 640), ImGuiCond_FirstUseEver);
+  ImGui::SetNextWindowSize(ImVec2(1200, 720), ImGuiCond_FirstUseEver);
+  // Raised when a context menu asked for this entry: a window that opens behind the world
+  // reads as the click having done nothing.
+  if (focusRequested) {
+    ImGui::SetNextWindowFocus();
+    focusRequested = false;
+  }
   ImGui::Begin("Content Editor", &isOpen, ImGuiWindowFlags_None);
   if (!isOpen) {
     if (game != nullptr) game->contentEditorWindowEntity.remove<ActiveWindow>();
@@ -2578,29 +3251,6 @@ void ContentEditorWindow::Draw() {
   if (ImGui::CollapsingHeader("Visual assets")) {
     DrawVisualAssets(World_());
   }
-
-  // The kind selector. The list of kinds is the registry table, so a new registry appears
-  // here without touching this window.
-  ImGui::TextDisabled("Kind:");
-  ImGui::SameLine();
-  ImGui::SetNextItemWidth(160.0f);
-  if (ImGui::BeginCombo("##contentKind", Kind() != nullptr ? Kind()->label.c_str() : "")) {
-    for (const ContentKinds::Kind &candidate : ContentKinds::All()) {
-      const bool selected = candidate.id == kindId;
-      if (ImGui::Selectable(candidate.label.c_str(), selected)) {
-        kindId = candidate.id;
-        entryId.clear();
-        filterBuffer[0] = '\0';
-        status.clear();
-        statusIsError = false;
-        ReloadDocument();
-      }
-      if (selected) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-  }
-  ImGui::SameLine();
-  ImGui::TextDisabled("| %s", Settings().content.editor.c_str());
   ImGui::Separator();
 
   // Open on a real document rather than an empty pane: the list is the table's, so the
@@ -2617,8 +3267,17 @@ void ContentEditorWindow::Draw() {
     }
   }
 
+  // Three columns, left to right: every content kind, the entries of the selected kind,
+  // and the document. The kind list is always visible, so switching registries is one
+  // click instead of opening a combo.
   const float available = ImGui::GetContentRegionAvail().x;
-  const float listWidth = std::clamp(available * 0.3f, 220.0f, 360.0f);
+  const float kindWidth = std::clamp(available * 0.15f, 160.0f, 220.0f);
+  const float listWidth = std::clamp(available * 0.27f, 240.0f, 360.0f);
+  ImGui::BeginChild("kind_pane", ImVec2(kindWidth, 0), ImGuiChildFlags_Borders);
+  DrawKindSidebar();
+  ImGui::EndChild();
+
+  ImGui::SameLine(0.0f, 8.0f);
   ImGui::BeginChild("content_list_pane", ImVec2(listWidth, 0), false);
   DrawKindAndList();
   ImGui::EndChild();

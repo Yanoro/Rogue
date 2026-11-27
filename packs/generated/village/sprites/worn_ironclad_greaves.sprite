@@ -1,0 +1,80 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  outl = #1A1210
+  iron_hi = #E4E4E6
+  iron_light = #A8ABB0
+  iron_mid = #6B6F78
+  iron_dark = #43464D
+  iron_deep = #282A30
+  accent = #6EA8E8
+}
+
+// === Silhouettes and Outlines ===
+// Left Leg (Viewer's Left, x: 12..16)
+rect (12,20) (16,30) color=outl
+rect (11,29) (16,31) color=outl
+
+// Right Leg (Viewer's Right, x: 18..22)
+rect (18,20) (22,30) color=outl
+rect (18,29) (23,31) color=outl
+
+// Knee guard caps (poleyns) rounded contour
+pixel (11,21) color=outl
+pixel (17,21) color=outl
+pixel (17,21) color=outl
+pixel (23,21) color=outl
+
+// === Left Greave Plate Base ===
+rect (12,21) (16,29) color=iron_mid
+rect (12,29) (15,30) color=iron_mid
+
+// Left Knee Poleyn
+rect (12,20) (16,22) color=iron_light
+pixel (12,20) color=iron_hi
+pixel (13,20) color=iron_hi
+line (12,22) (16,22) color=iron_deep
+
+// Left Shin Ridge & Shading
+line (13,23) (13,28) color=iron_hi
+line (14,23) (14,28) color=iron_light
+line (15,23) (15,28) color=iron_dark
+line (16,23) (16,28) color=iron_deep
+
+// Left Sabaton / Foot Guard
+line (12,29) (14,29) color=iron_light
+line (12,30) (15,30) color=iron_mid
+line (11,30) (11,31) color=outl
+pixel (12,30) color=iron_hi
+pixel (15,30) color=iron_dark
+
+// === Right Greave Plate Base ===
+rect (18,21) (22,29) color=iron_mid
+rect (19,29) (22,30) color=iron_mid
+
+// Right Knee Poleyn
+rect (18,20) (22,22) color=iron_light
+pixel (18,20) color=iron_hi
+pixel (19,20) color=iron_hi
+line (18,22) (22,22) color=iron_deep
+
+// Right Shin Ridge & Shading
+line (19,23) (19,28) color=iron_hi
+line (20,23) (20,28) color=iron_light
+line (21,23) (21,28) color=iron_dark
+line (22,23) (22,28) color=iron_deep
+
+// Right Sabaton / Foot Guard
+line (19,29) (21,29) color=iron_light
+line (19,30) (22,30) color=iron_mid
+pixel (18,30) color=iron_hi
+pixel (22,30) color=iron_dark
+pixel (23,30) color=outl
+
+// === Crisp Plate Trim / Rivet Accents ===
+pixel (14,21) color=accent
+pixel (20,21) color=accent
+pixel (13,25) color=iron_hi
+pixel (19,25) color=iron_hi

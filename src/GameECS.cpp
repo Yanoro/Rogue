@@ -123,6 +123,29 @@ void GiveUniversalSkills(flecs::entity character,
     block.values.push_back({attack->id, 1, 0});
   }
   character.set<SkillBlock>(block);
+  if (const SkillDef *attack = registry->Get("attack")) {
+    GrantRecipes(character, attack->recipes);
+  }
+}
+
+void GrantRecipes(flecs::entity character, const std::vector<std::string> &ids) {
+  if (!character.is_alive() || ids.empty()) {
+    return;
+  }
+  KnownRecipes *known = character.get_mut<KnownRecipes>();
+  if (known == nullptr) {
+    // No component yet, or a deferred set is pending: queue the whole list with the set, so
+    // the knowledge travels with the component rather than relying on a get_mut after it.
+    KnownRecipes fresh;
+    for (const std::string &id : ids) {
+      fresh.Add(id);
+    }
+    character.set<KnownRecipes>(std::move(fresh));
+    return;
+  }
+  for (const std::string &id : ids) {
+    known->Add(id);
+  }
 }
 
 // Stamps authored starting stat values (a map's or a template's "stats" object)
@@ -194,6 +217,9 @@ void ApplyStartingSkills(flecs::entity character,
     if (block->Find(spec.id) == nullptr) {
       block->values.push_back({spec.id, 0, 0});
     }
+    // Knowing the skill is what grants its recipes; a skill already on the block still
+    // grants them, because an authored list may be re-applied (and Add ignores duplicates).
+    GrantRecipes(character, def->recipes);
     std::string reason;
     if (!ApplyStartingSkill(*block, *def, spec, &reason)) {
       warn("Warning: Starting skill '" + spec.id +
@@ -413,25 +439,25 @@ bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
     message = "The player has not been created yet.";
     return false;
   }
-  const ItemDef *definition = itemRegistry.Get(itemId);
-  if (definition == nullptr) {
-    message = "No equipment definition is named '" + itemId + "'.";
-    return false;
-  }
   auto factoryRes = ecs.get<ObjectFactoryResource>();
   if (!factoryRes || factoryRes->factory == nullptr) {
     message = "The object factory is not available.";
     return false;
   }
   const auto &templates = factoryRes->factory->GetTemplates();
-  if (templates.find(itemId) == templates.end()) {
-    message = "Equipment '" + itemId +
-              "' has no object template, so it cannot be spawned.";
+  const auto found = templates.find(itemId);
+  if (found == templates.end()) {
+    message = "No object template is named '" + itemId + "'.";
     return false;
   }
+  // An item definition is optional: every object can be held, and a wall simply has no
+  // equipment behaviour behind it. The definition only supplies the display name (when
+  // it has one) and stack-room-aware capacity.
+  const ItemDef *definition = itemRegistry.Get(itemId);
   const int capacity = InventoryCapacity(
       playerEntity, Settings().player.inventorySlots);
-  if (!InventoryCanAdd(playerEntity, definition, &itemRegistry, capacity)) {
+  if (!InventoryCanAdd(playerEntity, definition, &itemRegistry, capacity,
+                       itemId)) {
     message = "The player's inventory is full.";
     return false;
   }
@@ -442,9 +468,14 @@ bool Game::GiveItemToPlayer(const std::string &itemId, std::string &message) {
     return false;
   }
   playerEntity.add<Holds>(item);
-  message = "Added one " +
-            (definition->name.empty() ? itemId : definition->name) +
-            " to the player's inventory.";
+  std::string name = found->second.value("name", itemId);
+  if (const DisplayName *display = item.get<DisplayName>()) {
+    name = display->name;
+  }
+  if (definition != nullptr && !definition->name.empty()) {
+    name = definition->name;
+  }
+  message = "Added one " + name + " to the player's inventory.";
   return true;
 }
 

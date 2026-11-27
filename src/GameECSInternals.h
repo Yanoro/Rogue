@@ -26,6 +26,10 @@
 // --- Character setup helpers, defined in GameECS.cpp --------------------------
 void GiveDefaultStats(flecs::entity character, const StatRegistry *registry);
 void GiveUniversalSkills(flecs::entity character, const SkillRegistry *registry);
+// Adds recipes to a character's KnownRecipes, ignoring duplicates and empty ids. The one
+// place recipe knowledge is written, so skills and authored starting knowledge cannot
+// produce different shapes of the list.
+void GrantRecipes(flecs::entity character, const std::vector<std::string> &ids);
 void ApplyStartingStats(flecs::entity character,
                         const std::vector<StatValue> &starting,
                         const StatRegistry *registry, const std::string &name,

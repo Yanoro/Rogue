@@ -2,11 +2,13 @@
 
 #include "DesignerSession.h"
 #include "RigDesigner.hpp"
+#include "TileDesigner.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <map>
 
 namespace {
 
@@ -58,37 +60,22 @@ namespace EquipmentDesigner {
 
 std::string SlugFor(const std::string &name) { return Slugify(name); }
 
-ApplyResult ApplyReply(const std::string &text) {
+namespace {
+
+// The hard ceiling on one reply. The prompt asks for two to five -- an outfit, not a
+// catalogue -- and every accepted item costs a definition file and a worn-art generation.
+// A generous bound refused loudly beats accepting forty and finding out through the spend.
+constexpr size_t kMaxItemsPerReply = 12;
+
+// Builds one draft from one item document. Shared by both reply shapes, because a set
+// differs in how many definitions the reply carries and not in what an item is.
+ApplyResult DraftFromJson(const nlohmann::json &reply) {
   ApplyResult result;
   auto fail = [&result](const std::string &reason) {
     result.ok = false;
     result.error = reason;
     return result;
   };
-
-  const std::string cleaned = DesignerReply::StripReasoning(text);
-  std::string block = DesignerReply::ExtractJsonBlock(cleaned);
-  const bool fromBlock = !block.empty();
-  if (!fromBlock) block = cleaned;  // a bare object is accepted, as for tiles
-  if (block.find_first_not_of(" \t\r\n") == std::string::npos) {
-    return fail("The reply was empty. Send the item as one ```json block, as "
-                "data/items/EQUIPMENTDESIGNER.md requires.");
-  }
-
-  nlohmann::json reply;
-  try {
-    reply = nlohmann::json::parse(block);
-  } catch (const std::exception &parseError) {
-    if (fromBlock && cleaned.find("```", cleaned.find("```json") + 7) ==
-                         std::string::npos) {
-      return fail("The reply looks truncated -- the JSON block was never closed. Send "
-                  "the brief more briefly.");
-    }
-    return fail(std::string("The item is not valid JSON: ") + parseError.what());
-  }
-  if (!reply.is_object()) {
-    return fail("The json block must be a JSON object describing one item.");
-  }
 
   Draft draft;
   draft.name = reply.value("name", std::string());
@@ -231,7 +218,124 @@ ApplyResult ApplyReply(const std::string &text) {
   return result;
 }
 
-std::string BuildSystemPrompt(const std::string &promptFile) {
+}  // namespace
+
+SetApplyResult ApplySetReply(const std::string &text) {
+  SetApplyResult result;
+
+  const std::string cleaned = DesignerReply::StripReasoning(text);
+  std::string block = DesignerReply::ExtractJsonBlock(cleaned);
+  const bool fromBlock = !block.empty();
+  if (!fromBlock) block = cleaned;  // a bare object is accepted, as for tiles
+  if (block.find_first_not_of(" \t\r\n") == std::string::npos) {
+    result.error = "The reply was empty. Send the item, or the set, as one ```json "
+                   "block, as data/items/EQUIPMENTDESIGNER.md requires.";
+    return result;
+  }
+
+  nlohmann::json reply;
+  try {
+    reply = nlohmann::json::parse(block);
+  } catch (const std::exception &parseError) {
+    if (fromBlock && cleaned.find("```", cleaned.find("```json") + 7) ==
+                         std::string::npos) {
+      result.error = "The reply looks truncated -- the JSON block was never closed. Send "
+                     "the brief more briefly.";
+      return result;
+    }
+    result.error = std::string("The reply is not valid JSON: ") + parseError.what();
+    return result;
+  }
+  if (!reply.is_object()) {
+    result.error = "The json block must be a JSON object: one item, or a set with an "
+                   "\"items\" array.";
+    return result;
+  }
+
+  const auto items = reply.find("items");
+  result.isSet = items != reply.end();
+  if (!result.isSet) {
+    // The single shape, and the older spelling: no envelope key at all. Kept as a
+    // one-entry result so the window has one path for both shapes.
+    result.ok = true;
+    result.items.push_back(DraftFromJson(reply));
+  } else {
+    // The name is cosmetic, and a non-string is a malformed envelope rather than a reason to
+    // refuse every item: the set still parses and the pane shows the items.
+    if (reply.contains("set") && reply["set"].is_string()) {
+      result.setName = reply["set"].get<std::string>();
+    }
+    if (!items->is_array()) {
+      result.error = "\"items\" must be an array of item definitions. Send one complete "
+                     "item per entry, in the order the set should read.";
+      return result;
+    }
+    if (items->empty()) {
+      result.error = "\"items\" is empty, so the reply defines nothing. A set needs at "
+                     "least one item, and the contract asks for two to five.";
+      return result;
+    }
+    if (items->size() > kMaxItemsPerReply) {
+      result.error = "\"items\" has " + std::to_string(items->size()) +
+                     " entries, which is more than this engine will accept in one reply "
+                     "(the limit is " +
+                     std::to_string(kMaxItemsPerReply) +
+                     "). Send a smaller set -- two to five is the useful range.";
+      return result;
+    }
+    for (size_t index = 0; index < items->size(); ++index) {
+      if (!(*items)[index].is_object()) {
+        result.error = "entry " + std::to_string(index) +
+                       " of \"items\" is not a JSON object. Every entry must be a "
+                       "complete item definition.";
+        return result;
+      }
+    }
+    result.ok = true;
+    for (const nlohmann::json &entry : *items) {
+      result.items.push_back(DraftFromJson(entry));
+    }
+  }
+
+  // The set's name becomes a tag on every item: that is what makes the pieces findable as
+  // a set later, and it saves the model from repeating the name in each item's tags. A
+  // single reply has no set name to add.
+  const std::string setTag = Slugify(result.setName);
+
+  std::map<std::string, size_t> slugOwner;
+  for (size_t index = 0; index < result.items.size(); ++index) {
+    ApplyResult &entry = result.items[index];
+    if (!entry.ok) {
+      // The index is the whole point of per-entry refusal: the retry can say "entry 3",
+      // and a sentence that only says "one of these is wrong" makes the model guess.
+      if (result.isSet) {
+        entry.error = "entry " + std::to_string(index) + ": " + entry.error;
+      }
+      ++result.refused;
+      continue;
+    }
+    if (!setTag.empty() &&
+        std::find(entry.draft.tags.begin(), entry.draft.tags.end(), setTag) ==
+            entry.draft.tags.end()) {
+      entry.draft.tags.push_back(setTag);
+      entry.draft.document["tags"] = entry.draft.tags;
+    }
+    // Two entries with the same name save to the same file, so the second would replace
+    // the first. Reported on the entry now rather than at save time, when the pane has
+    // already moved on.
+    const auto [owner, inserted] = slugOwner.emplace(entry.draft.slug, index);
+    (void)owner;
+    if (!inserted) {
+      entry.draft.warnings.push_back(
+          "another item in this set is also named '" + entry.draft.name +
+          "'; rename one before saving or it will overwrite the other");
+    }
+    ++result.accepted;
+  }
+  return result;
+}
+
+std::string BuildSystemPrompt(const std::string &promptFile, bool set) {
   std::string prompt;
   if (!promptFile.empty()) {
     std::ifstream file(promptFile);
@@ -244,7 +348,14 @@ std::string BuildSystemPrompt(const std::string &promptFile) {
     return "ERROR: the equipment designer's instruction file '" + promptFile +
            "' could not be read.";
   }
-  return prompt;
+  // The shape-fence convention is shared with the sprite documents -- the same
+  // `<!--%%SINGLE%%-->` / `<!--%%SET%%-->` comment pairs -- even though the stripper lives
+  // in TileDesigner. A second copy here would be a second thing that can disagree about
+  // what a section is. An unfenced document passes through unchanged, so an older prompt
+  // file still works and simply has no set instructions.
+  return TileDesigner::SelectShape(
+      std::move(prompt),
+      set ? TileDesigner::PromptShape::Set : TileDesigner::PromptShape::One);
 }
 
 std::string WornArtRequirement(const Draft &draft) {

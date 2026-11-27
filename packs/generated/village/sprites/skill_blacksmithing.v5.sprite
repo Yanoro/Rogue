@@ -1,0 +1,56 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  out = #1A1210
+  light = #FFE0B8
+  mid = #b1b0aa
+  dark = #2e2e2e
+}
+
+// === Anvil Base & Body Silhouette ===
+polygon (6,27) (25,27) (23,24) (19,22) (18,19) (26,17) (26,15) (24,14) (8,14) (5,16) (13,19) (12,22) (8,24) color=out
+polygon (7,26) (24,26) (22,24) (18,22) (17,19) (25,17) (25,16) (23,15) (9,15) (6,16) (14,19) (13,22) (9,24) color=dark
+
+// Anvil Horn and Face shading (mid tone for upper lit edge)
+rect (9,15) (23,16) color=mid
+rect (10,17) (18,18) color=mid
+pixel (24,16) color=mid
+pixel (6,16) color=mid
+
+// Chipped/scarred surface texture on anvil face
+pixel (12,15) color=dark
+pixel (16,15) color=light
+pixel (17,15) color=dark
+pixel (20,15) color=light
+
+// Anvil base highlight rim
+rect (10,25) (21,25) color=mid
+
+// === Striking Hammer (diagonal impact pose) ===
+// Hammer handle centered on hammer head
+line (22,2) (13,11) color=out
+line (24,4) (15,13) color=out
+line (23,3) (14,12) color=mid
+
+// Hammer head silhouette (blocky cross-peen / sledge)
+polygon (11,4) (18,11) (14,15) (7,8) color=out
+
+// Hammer head body interior
+polygon (12,5) (17,10) (14,13) (9,8) color=dark
+
+// Hammer striking face & top lit planes
+line (12,5) (14,3) color=out
+line (8,9) (10,7) color=out
+polygon (9,8) (12,5) (14,7) (11,10) color=mid
+
+// Hammer striking face catching bright highlight
+line (13,14) (10,11) color=out
+line (12,13) (10,11) color=light
+pixel (11,12) color=light
+pixel (13,9) color=light
+
+// Sparks / impact nick at striking point
+pixel (13,14) color=light
+pixel (14,13) color=out

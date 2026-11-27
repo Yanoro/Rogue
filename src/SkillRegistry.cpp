@@ -307,6 +307,11 @@ void ParseSkillDocument(const nlohmann::json &j, const std::string &id,
       def.trainedBy.push_back(activity.get<std::string>());
     }
   }
+  if (j.contains("recipes")) {
+    for (const auto& recipe : j["recipes"]) {
+      def.recipes.push_back(recipe.get<std::string>());
+    }
+  }
 
   // A skill nothing can progress through is content error, not a runtime
   // state: report it here rather than letting it sit inert forever.
@@ -468,6 +473,7 @@ nlohmann::json SkillRegistry::ToJson(const std::string& id) const {
   j["stages"] = def->stages;
   j["xpPerStage"] = def->xpPerStage;
   j["trainedBy"] = def->trainedBy;
+  j["recipes"] = def->recipes;
 
   if (SkillIsActivatable(def->type)) {
     // Start from the source's activation so a field this build does not know

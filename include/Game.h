@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "Components.h"
+#include "ContentEditorTargets.hpp"
 #include "AsciiArtFonts.hpp"
 #include "DebugLog.h"
 #include "DebugWindowState.h"
@@ -231,8 +232,9 @@ public:
   // Re-applies ui.windowColor / ui.popupColor to the live ImGui style. Called once after
   // rlImGuiSetup and again by the Settings window's colour picker.
   void ApplyImGuiStyle();
-  // Content-editor developer action: spawn one object from `itemId` and place it
-  // in the player's inventory. Does not equip it and respects capacity/stacking.
+  // Content-editor developer action: spawn one object template (an item or any other
+  // object) and place it in the player's inventory. Does not equip it and respects
+  // capacity/stacking. Every object can be held; item definitions only add mechanics.
   bool GiveItemToPlayer(const std::string &itemId, std::string &message);
 
   bool shouldClose() const;
@@ -366,6 +368,9 @@ private:
   NpcTemplateRegistry npcTemplateRegistry;
   BrainTemplateRegistry brainTemplateRegistry;
   std::vector<StartingSkill> playerStartingSkills;
+  // Recipes authored directly in player.json's "knownRecipes", granted in addition to those
+  // the player's skills teach. Empty when the file says nothing.
+  std::vector<std::string> playerKnownRecipes;
   HookRegistry hookRegistry;
   TileRegistry tileRegistry;
   BlueprintRegistry blueprintRegistry;
@@ -492,6 +497,9 @@ private:
   size_t virtualHeight;
 
   flecs::entity contextMenuTarget;
+  // The cell the menu was opened on. Kept because the content rows are per-cell, and a bare
+  // tile has no entity to carry the position.
+  GamePosition contextMenuCell{};
   bool openContextMenu = false;
   Vector2 contextMenuScreenPos;
 
@@ -547,6 +555,15 @@ private:
   flecs::entity npcSpawnerWindowEntity;
   flecs::entity surfaceWindowEntity;
   flecs::entity inventoryWindowEntity;
+  // The single craft window. Opening another station retargets it rather than stacking a
+  // second copy; see CraftWindow.h.
+  flecs::entity craftWindowEntity;
+  std::shared_ptr<class CraftWindow> craftWindow;
+  // The most recent timed-craft outcome for the player, plus a serial the craft window
+  // uses to show each completion exactly once. Written by CraftResolutionSystem; the
+  // window is a friend, so no accessor is needed.
+  std::string lastCraftMessage;
+  unsigned long long lastCraftMessageSerial = 0;
   flecs::entity taskBoardWindowEntity;
   flecs::entity systemOneWindowEntity;
   // Stage 0 of docs/spatial-memory-design.md: holds the facing-marker checkbox
@@ -705,6 +722,13 @@ private:
   friend class NpcSpawnerWindow;
   friend class SurfaceWindow;
   friend class InventoryWindow;
+  // The storage/chest window reads the player entity, the item registry and the icon
+  // registry, and logs the transfers it makes; it is interactive now, not the read-only
+  // view that needed no Game at all.
+  friend class StorageWindow;
+  // The craft window reads the player's KnownRecipes, the item and recipe registries and
+  // the player's held items, and starts the Craft interaction.
+  friend class CraftWindow;
   friend void AddSurfaceAt(flecs::world world, GamePosition position,
                            const std::string &surfaceId, flecs::entity source,
                            float durationOverride, int radius);
@@ -821,6 +845,32 @@ public:
   // Health of one profile, defaulting to "untested" for an id nobody has probed.
   SystemOne::SystemOneProfileStatus SystemOneStatusFor(const std::string &id) const;
 
+  // ---- Content Editor shortcuts ------------------------------------------
+  //
+  // What a right-click menu can open in the Content Editor. A cell can hold several
+  // independent pieces of content -- a tile, a surface over it, the object and the character
+  // standing on it -- and each is edited by a different kind, so these return a list rather
+  // than the one "best" answer. Deduplicated by (kind, id), and an id no registry holds is
+  // omitted, so a row can never open an editor on nothing.
+
+  // The content at one world cell, in a stable order: tile, surfaces, then the entities
+  // standing there. The player is skipped, as in the action menu.
+  std::vector<ContentEditorTarget> ContentTargetsAt(GamePosition position);
+
+  // The content one entity carries: its NPC template, rig, portrait and actor sprite, or
+  // its object template. Used by ContentTargetsAt for every entity on a cell.
+  std::vector<ContentEditorTarget> ContentTargetsFor(flecs::entity entity);
+
+  // The single-entry forms used by the other menus.
+  std::vector<ContentEditorTarget> ContentTargetsForSkill(const std::string &skillId) const;
+  std::vector<ContentEditorTarget> ContentTargetsForItem(const std::string &itemId) const;
+  std::vector<ContentEditorTarget> ContentTargetsForStatusEffect(
+      const std::string &statusId) const;
+
+  // Shows the Content Editor on one registry entry and brings the window forward. Does
+  // nothing when the window was never created or the entry cannot be selected.
+  void OpenContentEditor(const std::string &kind, const std::string &id);
+
 private:
 
   std::unique_ptr<InputHandler> inputHandler;
@@ -860,6 +910,21 @@ private:
   // window, so several can be open at once; re-opening one that is already on
   // screen is a no-op.
   void OpenStorageWindow(flecs::entity container);
+
+  // Opens (or retargets) the craft window at a Workstation. The caller checks
+  // WithinAccessRange first; this only builds the window.
+  void OpenCraftWindow(flecs::entity station);
+
+  // Whether the player is within the access range of an object that has one (Storage or
+  // Workstation). True for an entity with neither (a character's inventory is not
+  // range-limited), and when either position is missing. Chebyshev tiles, so a diagonal
+  // neighbour counts as one step. Both container windows and the craft window use it, so
+  // "how close is close enough" has one implementation.
+  bool WithinAccessRange(flecs::entity object) const;
+
+  // One notice over the player, styled from Settings().storage (colour and font size)
+  // and centred on the sprite. Used for the open refusal and the walk-away close.
+  void ShowPlayerNotice(const std::string &text);
 
   // Opens the read-only window showing a character's name, starting context,
   // stats and skills. Like OpenStorageWindow it gets its own carrier entity, so

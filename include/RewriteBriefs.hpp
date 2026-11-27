@@ -53,4 +53,8 @@ PromptRewriter::Brief Icon();
 // For the surface-sprite designer. One tileable overlay, not a scene.
 PromptRewriter::Brief SurfaceSprite();
 
+// For a worn equipment layer. Not an actor sprite: it is one transparent layer over a
+// rig in the item's frame, so a rewrite must not add a whole body, a pose or a scene.
+PromptRewriter::Brief EquipmentLayer();
+
 }  // namespace RewriteBriefs

@@ -1,0 +1,46 @@
+sprite 32x32
+kind object
+material iron
+wrap off
+
+palette {
+  out = #1A1210
+  light = #C8C4BD
+  mid = #949089
+  dark = #68645E
+}
+
+// Outline: Hammer Head (slanted rectangular cross-peen head)
+polygon (5,8) (13,4) (24,14) (21,21) (15,16) (12,19) (7,14) color=out
+
+// Outline: Handle (stout shaft extending to bottom-right)
+polygon (15,15) (18,13) (29,24) (26,27) color=out
+polygon (26,24) (30,28) (28,30) (24,26) color=out
+
+// Head - Top faceted face (Highlight)
+polygon (6,9) (13,5) (22,13) (16,11) color=light
+
+// Head - Main body / striking plane (Midtone)
+polygon (7,10) (16,11) (22,13) (20,19) (16,15) color=mid
+
+// Head - Peen taper & underside shadow (Dark tone)
+polygon (6,9) (7,14) (11,17) (15,15) (7,10) color=dark
+line (13,5) (22,13) color=light
+
+// Striking face edge highlight
+line (22,14) (20,19) color=light
+
+// Handle core fill (Midtone warm-grey)
+line (17,15) (27,25) color=mid
+line (18,16) (28,26) color=mid
+
+// Handle lit upper bevel
+line (16,14) (26,24) color=light
+
+// Handle under-shadow
+line (18,17) (27,26) color=dark
+
+// Handle grip cap / base
+pixel (28,28) color=mid
+pixel (27,29) color=dark
+pixel (29,27) color=light

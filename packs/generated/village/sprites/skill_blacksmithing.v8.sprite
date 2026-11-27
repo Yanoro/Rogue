@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+material iron
+palette {
+  dark = #1A1210
+  iron_base = #4A4E53
+  iron_lit = #7D848C
+  iron_shadow = #32353B
+  wood_base = #7A4A2E
+  wood_lit = #A8673E
+}
+
+// --- Hammer Handle & Head ---
+// Angled handle coming down from top-right towards the anvil face
+polygon (26,3) (28,5) (18,17) (16,15) color=dark
+line (26,4) (17,16) color=wood_lit
+line (27,5) (18,17) color=wood_base
+
+// Hammer head striking downward
+polygon (11,10) (17,6) (20,10) (14,15) color=dark
+polygon (12,11) (17,7) (19,9) (14,14) color=iron_base
+line (13,11) (17,7) color=iron_lit
+line (14,13) (18,9) color=iron_shadow
+
+// Striking impact mark / contact
+pixel (12,15) color=iron_lit
+pixel (13,16) color=iron_lit
+
+// --- Anvil Silhouette & Structure ---
+// Outer silhouette of anvil: horn on left (x=4), waist, heavy flared base
+polygon (4,17) (25,17) (26,18) (26,20) (22,21) (18,22) (18,25) (24,28) (24,30) (7,30) (7,28) (13,25) (13,22) (8,21) (4,18) color=dark
+
+// Base foot
+rect (8,29) (23,29) color=iron_shadow
+rect (8,28) (23,28) color=iron_base
+line (9,28) (15,28) color=iron_lit
+
+// Waist / Central Pillar
+rect (14,23) (17,26) color=iron_shadow
+rect (14,23) (15,26) color=iron_base
+
+// Body under the table
+polygon (8,20) (22,20) (18,23) (13,23) color=iron_shadow
+line (9,20) (14,20) color=iron_base
+
+// Top Face / Working Table & Left Horn
+polygon (5,18) (25,18) (25,19) (5,19) color=iron_base
+// Beveled lit face of the anvil (dented/scarred along the top)
+line (11,18) (24,18) color=iron_lit
+pixel (15,18) color=iron_shadow
+pixel (18,18) color=dark
+
+// Left horn interior
+pixel (5,18) color=iron_lit
+pixel (6,18) color=iron_lit
+pixel (7,19) color=iron_base
+
+// Wear and dent marks on anvil face
+pixel (13,19) color=iron_shadow
+pixel (20,19) color=iron_shadow

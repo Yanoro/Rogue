@@ -84,6 +84,24 @@ public:
     return false;
   }
 
+  // Why the most recent stream on `contextId` produced no answer, when the backend
+  // knows: a transport failure, an HTTP status, or an error object the provider sent
+  // instead of content. Empty when nothing failed in a way the backend can name --
+  // including a successful request whose model genuinely said nothing.
+  //
+  // The stream contract marks completion with an empty token, and an empty token
+  // cannot say "this was rejected". Callers that only wait for the sentinel therefore
+  // read a 404 from the router or a refused connection as a silent model -- which is
+  // how a misrouted Improve request survived as "the model returned nothing". This is
+  // where the transport half of that story is recoverable.
+  //
+  // Reading it consumes it, so an empty result cannot report a previous request's
+  // failure. The default returns empty: a backend with no such failure to report has
+  // nothing to add.
+  virtual std::string TakeStreamError(const std::string & /*contextId*/) {
+    return {};
+  }
+
   // Turns the backend's chain-of-thought on or off, where the backend has one.
   //
   // Exists because reasoning is the wrong tool for some requests and actively harmful

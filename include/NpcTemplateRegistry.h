@@ -141,6 +141,11 @@ public:
   // Where Load read from, for turning an id back into a path.
   const std::string& GetDirectory() const { return directory; }
 
+  // Removes one definition from the live registry. Returns false when the id is
+  // unknown. The Content Editor calls this after its confirmation; deleting the
+  // definition file is the caller's job.
+  bool Remove(const std::string &id) { return templates.erase(id) > 0; }
+
   void SetDebugLog(DebugLog* log) { debugLog = log; }
 
 private:

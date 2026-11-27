@@ -1,0 +1,19 @@
+{
+  "armor": 4.0,
+  "name": "Ironclad Greaves",
+  "occupies": 1,
+  "slot": "legs",
+  "tags": [
+    "iron",
+    "armor",
+    "heavy",
+    "plate",
+    "ironclad"
+  ],
+  "tier": 2.0,
+  "worn": {
+    "brief": "unbroken smooth grey iron plate greaves enclosing the lower legs with crisp vertical edges",
+    "sprite": "worn_ironclad_greaves",
+    "z": 50
+  }
+}

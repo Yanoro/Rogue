@@ -1,0 +1,38 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  edge = #1A1210
+  fill_lit = stone.3
+  fill_shadow = stone.1
+  fill_mid = stone.2
+  highlight = stone.4
+}
+
+// Outer silhouette / outline of the anvil
+polygon (5,10) (26,10) (27,12) (24,15) (21,15) (20,18) (21,22) (25,25) (25,26) (6,26) (6,25) (10,22) (11,18) (10,15) (5,12) color=edge
+
+// Interior fill - main structure
+polygon (6,11) (25,11) (23,14) (20,14) (19,18) (20,21) (24,24) (24,25) (7,25) (7,24) (11,21) (12,18) (11,14) (6,13) color=fill_mid
+
+// Horn & top working face (lit upper plane)
+rect (9,11) (25,13) color=fill_lit
+polygon (6,11) (9,11) (9,13) (6,12) color=fill_lit
+line (7,11) (25,11) color=highlight
+
+// Waist and body shading (two-tone interior, light from top-left)
+rect (12,14) (19,18) color=fill_mid
+rect (16,14) (19,18) color=fill_shadow
+
+// Lower flared base
+polygon (8,22) (23,22) (24,24) (24,25) (7,25) (7,24) color=fill_mid
+polygon (16,22) (23,22) (24,24) (24,25) (16,25) color=fill_shadow
+line (8,22) (15,22) color=fill_lit
+
+// Hardy hole / indent detail on the top surface
+pixel (22,12) color=edge
+pixel (23,12) color=edge
+
+// Central interior dividing crease for volume
+line (16,14) (16,21) color=edge

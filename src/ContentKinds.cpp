@@ -1,4 +1,5 @@
 #include "ContentKinds.h"
+#include "Settings.h"
 
 #include <mutex>
 
@@ -691,6 +692,297 @@ KindRegistry &Registry() {
   return registry;
 }
 
+namespace {
+
+// The definition files a kind owns: its catalog copy and, for the kinds with a designer
+// overlay, the generated copy. Empty directory strings are skipped.
+std::vector<std::string> DefinitionFiles(const std::string &directory,
+                                         const std::string &generated,
+                                         const std::string &id) {
+  std::vector<std::string> files;
+  if (!directory.empty()) {
+    files.push_back(directory + "/" + id + ".json");
+  }
+  if (!generated.empty()) {
+    files.push_back(generated + "/" + id + ".json");
+  }
+  return files;
+}
+
+bool RemoveTile(const World &world, const std::string &id, std::string *error) {
+  if (!world.tiles.RemoveDefinition(id)) {
+    if (error != nullptr) *error = "no tile with that name";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> TileDefinitions(const World &world,
+                                         const std::string &id) {
+  std::vector<std::string> files;
+  if (const TileDef *definition = world.tiles.Get(id)) {
+    if (!definition->sourcePath.empty()) {
+      files.push_back(definition->sourcePath);
+    }
+  }
+  return files;
+}
+
+bool RemoveObject(const World &world, const std::string &id, std::string *error) {
+  if (!world.objects.RemoveTemplate(id)) {
+    if (error != nullptr) *error = "no object template with that key";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> ObjectDefinitions(const World &world,
+                                           const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.objects,
+                         Settings().content.generatedObjects, id);
+}
+
+bool RemoveActorSprite(const World &world, const std::string &id,
+                       std::string *error) {
+  if (!world.actorSprites.Remove(id)) {
+    if (error != nullptr) *error = "no actor sprite with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> ActorSpriteDefinitions(const World &world,
+                                                const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.actorSprites, std::string(), id);
+}
+
+bool RemoveIcon(const World &world, const std::string &id, std::string *error) {
+  if (!world.icons.Remove(id)) {
+    if (error != nullptr) *error = "no icon with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> IconDefinitions(const World &world,
+                                         const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.icons, std::string(), id);
+}
+
+bool RemoveArtStyle(const World &world, const std::string &id,
+                    std::string *error) {
+  if (!world.artStyles.Remove(id)) {
+    if (error != nullptr) *error = "no art style with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> ArtStyleDefinitions(const World &world,
+                                             const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.artStyles, std::string(), id);
+}
+
+bool RemovePortrait(const World &world, const std::string &id,
+                    std::string *error) {
+  if (!world.portraits.Remove(id)) {
+    if (error != nullptr) *error = "no portrait with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> PortraitDefinitions(const World &world,
+                                             const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.portraits, std::string(), id);
+}
+
+bool RemoveBodySilhouette(const World &world, const std::string &id,
+                          std::string *error) {
+  if (!world.bodySilhouettes.Remove(id)) {
+    if (error != nullptr) *error = "no body silhouette with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> BodySilhouetteDefinitions(const World &world,
+                                                   const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.bodySilhouettes, std::string(), id);
+}
+
+bool RemoveSkill(const World &world, const std::string &id, std::string *error) {
+  if (!world.skills.Remove(id)) {
+    if (error != nullptr) *error = "no skill with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> SkillDefinitions(const World &world,
+                                          const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.skills, std::string(), id);
+}
+
+bool RemoveItem(const World &world, const std::string &id, std::string *error) {
+  if (!world.items.Remove(id)) {
+    if (error != nullptr) *error = "no item with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> ItemDefinitions(const World &world,
+                                         const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.items,
+                         Settings().content.generatedItems, id);
+}
+
+bool RemoveMovement(const World &world, const std::string &id,
+                    std::string *error) {
+  if (!world.movements.Remove(id)) {
+    if (error != nullptr) *error = "no movement with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> MovementDefinitions(const World &world,
+                                             const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.movements,
+                         Settings().content.generatedMovements, id);
+}
+
+bool RemoveRig(const World &world, const std::string &id, std::string *error) {
+  if (!world.rigs.Remove(id)) {
+    if (error != nullptr) *error = "no rig with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> RigDefinitions(const World &world,
+                                        const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.rigs,
+                         Settings().content.generatedRigs, id);
+}
+
+bool RemoveSurfaceSprite(const World &world, const std::string &id,
+                         std::string *error) {
+  if (!world.surfaceSprites.Remove(id)) {
+    if (error != nullptr) *error = "no surface sprite with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> SurfaceSpriteDefinitions(const World &world,
+                                                  const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.surfaceSprites, std::string(), id);
+}
+
+bool RemoveSurface(const World &world, const std::string &id,
+                   std::string *error) {
+  if (!world.surfaces.Remove(id)) {
+    if (error != nullptr) *error = "no surface with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> SurfaceDefinitions(const World &world,
+                                            const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.surfaces, std::string(), id);
+}
+
+bool RemoveResource(const World &world, const std::string &id,
+                    std::string *error) {
+  if (!world.resources.Remove(id)) {
+    if (error != nullptr) *error = "no resource with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> ResourceDefinitions(const World &world,
+                                             const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.resources, std::string(), id);
+}
+
+bool RemoveEffect(const World &world, const std::string &id,
+                  std::string *error) {
+  if (!world.effects.Remove(id)) {
+    if (error != nullptr) *error = "no effect with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> EffectDefinitions(const World &world,
+                                           const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.effects, std::string(), id);
+}
+
+bool RemoveStatusEffect(const World &world, const std::string &id,
+                        std::string *error) {
+  if (!world.statusEffects.Remove(id)) {
+    if (error != nullptr) *error = "no status effect with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> StatusEffectDefinitions(const World &world,
+                                                 const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.statusEffects, std::string(), id);
+}
+
+bool RemoveBehavior(const World &world, const std::string &id,
+                    std::string *error) {
+  if (!world.behaviors.Remove(id)) {
+    if (error != nullptr) *error = "no behavior with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> BehaviorDefinitions(const World &world,
+                                             const std::string &id) {
+  (void)world;
+  return DefinitionFiles(Settings().content.behaviors, std::string(), id);
+}
+
+bool RemoveNpc(const World &world, const std::string &id, std::string *error) {
+  if (!world.npcs.Remove(id)) {
+    if (error != nullptr) *error = "no NPC template with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> NpcDefinitions(const World &world,
+                                        const std::string &id) {
+  const std::string directory = world.npcs.GetDirectory().empty()
+                                    ? Settings().content.npcs
+                                    : world.npcs.GetDirectory();
+  return DefinitionFiles(directory, std::string(), id);
+}
+
+bool RemoveBrain(const World &world, const std::string &id,
+                 std::string *error) {
+  if (!world.brains.Remove(id)) {
+    if (error != nullptr) *error = "no brain with that id";
+    return false;
+  }
+  return true;
+}
+std::vector<std::string> BrainDefinitions(const World &world,
+                                          const std::string &id) {
+  const std::string directory = world.brains.GetDirectory().empty()
+                                    ? Settings().content.brains
+                                    : world.brains.GetDirectory();
+  return DefinitionFiles(directory, std::string(), id);
+}
+
+}  // namespace
+
 void RegisterBuiltinKinds() {
   static std::once_flag once;
   std::call_once(once, [] {
@@ -781,7 +1073,7 @@ void RegisterBuiltinKinds() {
     });
     Registry().Register({
           "items",
-          "Equipment",
+          "Item definitions",
           /*hasSprites=*/false,
           &ListItems,
           &ReadItem,
@@ -911,6 +1203,71 @@ void RegisterBuiltinKinds() {
           &BrainFileName,
           nullptr,
     });
+
+    // The picker's headings. Kept beside the registry rather than inside each row: the
+    // row already carries seven function pointers, and this is the one piece of the table
+    // that is presentation order rather than registry wiring.
+    struct SectionAssignment {
+      const char *id;
+      const char *section;
+    };
+    static const SectionAssignment assignments[] = {
+        {"tiles", "World"},
+        {"objects", "World"},
+        {"surfaces", "World"},
+        {"surface_sprites", "World"},
+        {"items", "Items"},
+        {"actors", "Characters"},
+        {"rigs", "Characters"},
+        {"body_silhouettes", "Characters"},
+        {"portraits", "Characters"},
+        {"npcs", "Characters"},
+        {"brains", "Characters"},
+        {"behaviors", "Characters"},
+        {"skills", "Skills & rules"},
+        {"movements", "Skills & rules"},
+        {"effects", "Skills & rules"},
+        {"status_effects", "Skills & rules"},
+        {"resources", "Skills & rules"},
+        {"icons", "Interface"},
+        {"art_styles", "Interface"},
+    };
+    for (const SectionAssignment &assignment : assignments) {
+      Registry().SetSection(assignment.id, assignment.section);
+    }
+
+    // The trash handlers. Kept in one table for the same reason the sections are: the
+    // kind rows above carry registry wiring, and this is presentation/edit policy.
+    struct EntryOps {
+      const char *id;
+      bool (*remove)(const World &, const std::string &, std::string *);
+      std::vector<std::string> (*definitionFiles)(const World &,
+                                                  const std::string &);
+    };
+    static const EntryOps entryOps[] = {
+        {"tiles", &RemoveTile, &TileDefinitions},
+        {"objects", &RemoveObject, &ObjectDefinitions},
+        {"actors", &RemoveActorSprite, &ActorSpriteDefinitions},
+        {"icons", &RemoveIcon, &IconDefinitions},
+        {"art_styles", &RemoveArtStyle, &ArtStyleDefinitions},
+        {"portraits", &RemovePortrait, &PortraitDefinitions},
+        {"body_silhouettes", &RemoveBodySilhouette, &BodySilhouetteDefinitions},
+        {"skills", &RemoveSkill, &SkillDefinitions},
+        {"items", &RemoveItem, &ItemDefinitions},
+        {"movements", &RemoveMovement, &MovementDefinitions},
+        {"rigs", &RemoveRig, &RigDefinitions},
+        {"surface_sprites", &RemoveSurfaceSprite, &SurfaceSpriteDefinitions},
+        {"surfaces", &RemoveSurface, &SurfaceDefinitions},
+        {"resources", &RemoveResource, &ResourceDefinitions},
+        {"effects", &RemoveEffect, &EffectDefinitions},
+        {"status_effects", &RemoveStatusEffect, &StatusEffectDefinitions},
+        {"behaviors", &RemoveBehavior, &BehaviorDefinitions},
+        {"npcs", &RemoveNpc, &NpcDefinitions},
+        {"brains", &RemoveBrain, &BrainDefinitions},
+    };
+    for (const EntryOps &ops : entryOps) {
+      Registry().SetEntryOps(ops.id, ops.remove, ops.definitionFiles);
+    }
   });
 }
 
@@ -926,6 +1283,30 @@ bool KindRegistry::Register(Kind kind) {
   }
   kinds.push_back(std::move(kind));
   return true;
+}
+
+void KindRegistry::SetEntryOps(
+    const std::string &id,
+    bool (*remove)(const World &, const std::string &, std::string *),
+    std::vector<std::string> (*definitionFiles)(const World &,
+                                                const std::string &)) {
+  for (Kind &kind : kinds) {
+    if (kind.id == id) {
+      kind.remove = remove;
+      kind.definitionFiles = definitionFiles;
+      return;
+    }
+  }
+}
+
+void KindRegistry::SetSection(const std::string &id,
+                              const std::string &section) {
+  for (Kind &kind : kinds) {
+    if (kind.id == id) {
+      kind.section = section;
+      return;
+    }
+  }
 }
 
 const Kind *KindRegistry::For(const std::string &id) const {
@@ -947,6 +1328,12 @@ const std::vector<Kind> &All() {
 
 const Kind *For(const std::string &id) {
   return MutableRegistry().For(id);
+}
+
+const std::vector<std::string> &SectionOrder() {
+  static const std::vector<std::string> order = {
+      "World", "Items", "Characters", "Skills & rules", "Interface", "Other"};
+  return order;
 }
 
 }  // namespace ContentKinds

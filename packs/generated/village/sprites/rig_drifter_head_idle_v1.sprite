@@ -1,0 +1,98 @@
+sprite 32x32
+kind object
+
+palette {
+  skin = #F2C79A
+  skin_hi = #FFE0B8
+  skin_shadow = #C98B60
+  scruff = #7A4A2E
+  eye_white = #FFFFFF
+  eye_pupil = #3B6FD6
+  outline = #1A1210
+}
+
+frame "f1" {
+  // Head silhouette / outline in (11,4)-(21,12)
+  rect (12,4) (20,12) color=outline
+  rect (11,5) (21,11) color=outline
+
+  // Face skin base
+  rect (12,5) (20,11) color=skin
+
+  // Top / upper-left forehead highlight
+  line (13,5) (19,5) color=skin_hi
+  pixel (12,6) color=skin_hi
+
+  // Cheeks and lower face shading (lean, shadowed look)
+  line (12,10) (12,11) color=skin_shadow
+  line (20,10) (20,11) color=skin_shadow
+  line (13,11) (19,11) color=skin_shadow
+
+  // Scruff on jawline
+  pixel (14,11) color=scruff
+  pixel (16,11) color=scruff
+  pixel (18,11) color=scruff
+  pixel (15,10) color=scruff
+  pixel (17,10) color=scruff
+
+  // Wary eyes: whites
+  rect (13,7) (15,8) color=eye_white
+  rect (17,7) (19,8) color=eye_white
+
+  // Pupils looking slightly tense / sideways
+  pixel (14,7) color=eye_pupil
+  pixel (14,8) color=outline
+  pixel (18,7) color=eye_pupil
+  pixel (18,8) color=outline
+
+  // Determined / wary eyebrows
+  line (13,6) (15,6) color=outline
+  line (17,6) (19,6) color=outline
+
+  // Small nose and mouth
+  pixel (16,9) color=skin_shadow
+  pixel (16,10) color=outline
+}
+
+frame "f2" {
+  // Head dips down 1 pixel to (11,5)-(21,13)
+  rect (12,5) (20,13) color=outline
+  rect (11,6) (21,12) color=outline
+
+  // Face skin base
+  rect (12,6) (20,12) color=skin
+
+  // Top / upper-left forehead highlight
+  line (13,6) (19,6) color=skin_hi
+  pixel (12,7) color=skin_hi
+
+  // Cheeks and lower face shading
+  line (12,11) (12,12) color=skin_shadow
+  line (20,11) (20,12) color=skin_shadow
+  line (13,12) (19,12) color=skin_shadow
+
+  // Scruff on jawline
+  pixel (14,12) color=scruff
+  pixel (16,12) color=scruff
+  pixel (18,12) color=scruff
+  pixel (15,11) color=scruff
+  pixel (17,11) color=scruff
+
+  // Wary eyes: whites
+  rect (13,8) (15,9) color=eye_white
+  rect (17,8) (19,9) color=eye_white
+
+  // Pupils looking slightly tense / sideways
+  pixel (14,8) color=eye_pupil
+  pixel (14,9) color=outline
+  pixel (18,8) color=eye_pupil
+  pixel (18,9) color=outline
+
+  // Determined / wary eyebrows
+  line (13,7) (15,7) color=outline
+  line (17,7) (19,7) color=outline
+
+  // Small nose and mouth
+  pixel (16,10) color=skin_shadow
+  pixel (16,11) color=outline
+}

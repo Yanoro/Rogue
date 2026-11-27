@@ -38,9 +38,10 @@ void Game::DrawGameWindows() {
   }
 
   if (ImGui::BeginPopup("ObjectContextMenu")) {
+    bool anyRows = false;
     if (contextMenuTarget.is_alive()) {
       auto interactions = InteractionRegistry::GetAvailableInteractions(contextMenuTarget);
-      
+
       std::string objName = "Object";
       if (contextMenuTarget.has<DisplayName>()) {
         objName = contextMenuTarget.get<DisplayName>()->name;
@@ -78,31 +79,63 @@ void Game::DrawGameWindows() {
       // action on the world.
       const bool hasShowStatus = contextMenuTarget.has<Actor>();
 
-      if (interactions.empty() && !hasSeeInventory && !hasShowStatus) {
-        ImGui::Text("No actions available");
-      } else {
-        for (const auto& interaction : interactions) {
-          if (ImGui::Selectable(interaction.name.c_str())) {
+      bool wroteInteractionRows = false;
+      for (const auto& interaction : interactions) {
+        // Take/Store are the AI's argument-bearing container commands. The player moves
+        // items by dragging in the container window, so the menu would only be a slower
+        // path to the same thing (and these rows need an item name this menu cannot ask
+        // for). They stay registered for the AI and for the interaction grammar.
+        if (interaction.name == "Take" || interaction.name == "Store") {
+          continue;
+        }
+        if (ImGui::Selectable(interaction.name.c_str())) {
+          if (interaction.name == "Craft" && contextMenuTarget.has<Workstation>()) {
+            // The craft option opens the station UI instead of pathing: the same access
+            // range the container windows use decides whether it may open, and an
+            // out-of-range attempt says so rather than walking the player over.
+            if (WithinAccessRange(contextMenuTarget)) {
+              OpenCraftWindow(contextMenuTarget);
+            } else {
+              ShowPlayerNotice("Too far away");
+            }
+          } else {
             selectInteraction(interaction.name);
           }
         }
-        if (hasSeeInventory) {
-          if (!interactions.empty()) {
-            ImGui::Separator();
-          }
-          if (ImGui::Selectable(DEFAULT_SEE_INVENTORY_OPTION)) {
-            selectInteraction(DEFAULT_SEE_INVENTORY_OPTION);
-          }
+        wroteInteractionRows = true;
+      }
+      anyRows = wroteInteractionRows || hasSeeInventory || hasShowStatus;
+      if (hasSeeInventory) {
+        if (wroteInteractionRows) {
+          ImGui::Separator();
         }
-        if (hasShowStatus) {
-          if (!interactions.empty() || hasSeeInventory) {
-            ImGui::Separator();
-          }
-          if (ImGui::Selectable(DEFAULT_SHOW_STATUS_OPTION)) {
-            OpenCharacterStatusWindow(contextMenuTarget);
-          }
+        if (ImGui::Selectable(DEFAULT_SEE_INVENTORY_OPTION)) {
+          selectInteraction(DEFAULT_SEE_INVENTORY_OPTION);
         }
       }
+      if (hasShowStatus) {
+        if (wroteInteractionRows || hasSeeInventory) {
+          ImGui::Separator();
+        }
+        if (ImGui::Selectable(DEFAULT_SHOW_STATUS_OPTION)) {
+          OpenCharacterStatusWindow(contextMenuTarget);
+        }
+      }
+    } else {
+      // A bare cell still has ground, and the ground is content too: this is what makes a
+      // tile reachable without an object standing on it.
+      ImGui::TextDisabled("Ground");
+      ImGui::Separator();
+    }
+
+    // The cell's editable content, after the actions. The helper owns the
+    // ui.openInContentEditor check, so turning it off removes these rows in every menu at
+    // once. `anyRows` is passed so a separator only appears when there is something above
+    // it.
+    const bool drewTargets =
+        ContentEditorMenu::Draw(*this, ContentTargetsAt(contextMenuCell), anyRows);
+    if (!anyRows && !drewTargets) {
+      ImGui::Text("No actions available");
     }
     ImGui::EndPopup();
   }

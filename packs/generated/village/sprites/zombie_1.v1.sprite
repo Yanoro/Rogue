@@ -1,0 +1,119 @@
+sprite 96x96
+kind object
+
+palette {
+  out = #1A1210
+  skin = #F2C79A
+  skin_hi = #FFE0B8
+  skin_sh = #C98B60
+  zomb_green = #7CB342
+  zomb_dark = #558B2F
+  hair_dark = #4A2A1C
+  hair_mid = #7A4A2E
+  hair_hi = #A8673E
+  tunic_base = #2F5FA8
+  tunic_dark = #1C3A70
+  tunic_hi = #6EA8E8
+  eye_blue = #3B6FD6
+  eye_white = #FFFFFF
+  eye_pupil = #1A1210
+  boot = #5A3A22
+  boot_dark = #3E2413
+}
+
+// === SHADOW / FEET BASELINE ===
+rect (32,88) (64,92) color=out
+rect (30,82) (44,91) color=out
+rect (52,82) (66,91) color=out
+rect (32,84) (42,90) color=boot
+rect (32,88) (42,90) color=boot_dark
+rect (54,84) (64,90) color=boot
+rect (54,88) (64,90) color=boot_dark
+
+// === LEGS / PANTS ===
+rect (34,70) (44,84) color=out
+rect (52,70) (62,84) color=out
+rect (36,72) (42,82) color=tunic_dark
+rect (54,72) (60,82) color=tunic_dark
+// Tattered pant hems
+pixel (38,82) color=skin_sh
+pixel (56,82) color=skin_sh
+
+// === BODY / TUNIC ===
+rect (32,50) (64,74) color=out
+rect (34,52) (62,72) color=tunic_base
+rect (34,62) (62,72) color=tunic_dark
+// Tunic highlight
+rect (36,54) (46,60) color=tunic_hi
+// Tattered tear showing zombie skin
+rect (48,58) (54,64) color=out
+rect (50,60) (52,62) color=zomb_green
+
+// === OUTSTRETCHED ZOMBIE ARMS ===
+// Left arm (reaching forward/left)
+rect (18,52) (34,64) color=out
+rect (20,54) (32,62) color=tunic_base
+rect (14,54) (22,64) color=out
+rect (16,56) (20,62) color=skin
+rect (16,59) (20,62) color=skin_sh
+// Right arm (reaching forward/right)
+rect (62,52) (78,64) color=out
+rect (64,54) (76,62) color=tunic_base
+rect (74,54) (82,64) color=out
+rect (76,56) (80,62) color=skin
+pixel (79,57) color=zomb_green
+
+// === LARGE CHIBI HEAD BASE ===
+rect (22,12) (74,54) color=out
+rect (24,14) (72,52) color=skin
+// Soft two-tone shading on face
+rect (24,38) (72,52) color=skin_sh
+rect (28,16) (68,38) color=skin
+rect (28,16) (44,24) color=skin_hi
+
+// Zombie skin decay patch on temple
+rect (60,18) (70,28) color=zomb_green
+rect (62,20) (68,26) color=zomb_dark
+
+// === MESSY HAIR ===
+rect (20,10) (76,24) color=out
+rect (22,12) (74,22) color=hair_mid
+rect (26,14) (60,18) color=hair_hi
+rect (22,18) (74,22) color=hair_dark
+// Messy tufts
+rect (30,6) (40,12) color=out
+rect (32,8) (38,12) color=hair_mid
+rect (50,6) (62,12) color=out
+rect (52,8) (60,12) color=hair_mid
+polygon (22,22) (26,30) (28,22) color=out
+polygon (23,22) (26,28) (27,22) color=hair_mid
+
+// === LARGE EXPRESSIVE CHIBI EYES ===
+// Left eye (big cute eye, wide open)
+rect (30,28) (44,44) color=out
+rect (32,30) (42,42) color=eye_white
+rect (34,32) (42,42) color=eye_blue
+rect (36,34) (40,40) color=eye_pupil
+rect (34,32) (36,36) color=eye_white
+
+// Right eye (dazed, mismatched zombie eye)
+rect (52,28) (66,44) color=out
+rect (54,30) (64,42) color=eye_white
+rect (56,32) (62,40) color=eye_blue
+rect (58,34) (60,38) color=eye_pupil
+rect (56,32) (58,34) color=eye_white
+// X stitch above right eye
+line (56,22) (62,26) color=out
+line (62,22) (56,26) color=out
+
+// === ZOMBIE MOUTH & DETAILS ===
+// Goofy open jaw
+rect (42,44) (54,50) color=out
+rect (44,46) (52,49) color=skin_sh
+pixel (44,46) color=eye_white
+pixel (51,46) color=eye_white
+
+// Dribble / stitch
+pixel (44,50) color=zomb_green
+pixel (44,51) color=zomb_green
+line (34,48) (38,48) color=skin_sh

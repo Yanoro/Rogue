@@ -259,9 +259,15 @@ void ObjectFactory::RegisterDefaultComponents() {
   RegisterComponent<Structural>("Structural", [](flecs::entity obj, const nlohmann::json&) { obj.add<Structural>(); });
   RegisterComponent<ShowNameTag>("ShowNameTag", [](flecs::entity obj, const nlohmann::json&) { obj.add<ShowNameTag>(); });
   RegisterComponent<Portable>("Portable", [](flecs::entity obj, const nlohmann::json&) { obj.add<Portable>(); });
+  RegisterComponent<Stackable>("Stackable", [](flecs::entity obj, const nlohmann::json& tmpl) {
+    Stackable stackable;
+    stackable.maxStack = std::max(1, tmpl.value("maxStack", stackable.maxStack));
+    obj.set<Stackable>(stackable);
+  });
   RegisterComponent<Storage>("Storage", [](flecs::entity obj, const nlohmann::json& tmpl) {
     Storage s;
     s.capacity = tmpl.value("capacity", 10);
+    s.accessRange = std::max(0, tmpl.value("accessRange", s.accessRange));
     obj.set<Storage>(s);
   });
   
@@ -291,6 +297,7 @@ void ObjectFactory::RegisterDefaultComponents() {
         w.recipes.push_back(r.get<std::string>());
       }
     }
+    w.accessRange = std::max(0, tmpl.value("accessRange", w.accessRange));
     obj.set<Workstation>(w);
   });
   

@@ -1,0 +1,64 @@
+sprite 32x32
+kind object
+material iron
+palette {
+  bg_dark = #1b1714
+  bg_mid = #2a231d
+  bg_light = #3b3128
+  frame = #5a4938
+  ink = #0d0b0a
+  metal_light = #6b6f73
+  metal_dark = #43474a
+  rust = #7a3f2a
+  bone = #cbb89a
+  ember = #d0783a
+  highlight = #e6c48a
+}
+
+// Background circular medallion / frame inset
+circle (16,16) radius=14 color=ink
+circle (16,16) radius=13 color=bg_dark
+circle (16,16) radius=12 color=bg_mid
+scatter color=bg_light,bg_dark density=0.15 seed=42 cluster=2 inside
+
+// Faint sweeping motion arc behind the strike
+line (18,4) (26,11) color=bg_light
+line (19,5) (27,12) color=metal_dark
+line (24,10) (28,20) color=rust
+line (25,12) (28,21) color=bg_light
+
+// Heavy curved cleaver silhouette (ink outline)
+polygon (4,27) (9,22) (11,15) (21,7) (27,5) (27,9) (22,17) (15,24) (9,27) color=ink
+polygon (5,26) (10,21) (12,14) (21,6) (26,6) (26,8) (21,16) (14,23) (8,27) color=metal_dark
+
+// Blade face lit bevel and cutting edge
+polygon (12,14) (21,6) (26,6) (24,9) (17,16) (13,19) color=metal_light
+line (13,15) (22,7) color=bone
+line (12,14) (21,6) color=highlight
+
+// Blade wear, pitting, notches, rust streaks
+pixel (17,10) color=rust
+pixel (18,11) color=ink
+pixel (15,14) color=rust
+pixel (20,8) color=ink
+pixel (21,8) color=rust
+line (18,13) (16,17) color=rust
+
+// Hilt / grip at bottom-left
+line (5,26) (8,23) color=bone
+line (6,27) (9,24) color=bg_dark
+line (4,28) (6,26) color=ink
+pixel (7,24) color=highlight
+pixel (8,26) color=bg_light
+
+// Slashing wind/swoosh crest
+line (22,4) (28,7) color=highlight
+line (28,8) (29,14) color=bone
+line (29,15) (28,22) color=metal_light
+
+// Single warm ember accent sparking off the tip of the cleave
+pixel (28,5) color=ember
+pixel (29,6) color=ember
+pixel (27,4) color=highlight
+pixel (30,7) color=rust
+pixel (29,4) color=ember

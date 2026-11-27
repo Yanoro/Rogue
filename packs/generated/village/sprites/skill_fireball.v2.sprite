@@ -1,0 +1,76 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  surf_dark = #1b1714
+  surf_mid = #2a231d
+  surf_warm = #3b3128
+  surf_light = #5a4938
+  ink = #0d0b0a
+  metal_light = #6b6f73
+  metal_dark = #43474a
+  rust = #7a3f2a
+  bone = #cbb89a
+  ember = #d0783a
+  highlight = #e6c48a
+}
+
+// Smoky tail and plume silhouettes (trailing up and right)
+circle (18,13) radius=7 color=ink
+circle (22,9) radius=6 color=ink
+circle (25,6) radius=4 color=ink
+polygon (10,18) (23,5) (27,8) (18,22) color=ink
+
+// Dark smoke body
+circle (18,13) radius=6 color=surf_dark
+circle (22,9) radius=5 color=surf_dark
+circle (25,6) radius=3 color=surf_mid
+polygon (11,17) (22,6) (26,9) (17,21) color=surf_mid
+
+// Secondary smoke curls / heat layers
+circle (16,14) radius=4 color=surf_warm
+circle (20,11) radius=3 color=surf_warm
+line (22,7) (27,5) color=surf_light
+pixel (28,4) color=rust
+pixel (24,3) color=surf_light
+pixel (29,7) color=surf_mid
+
+// Main fireball head outline / dark slag shell
+circle (11,20) radius=8 color=ink
+circle (10,21) radius=7 color=surf_dark
+
+// Molten crust & slag texture
+polygon (6,21) (10,14) (16,16) (18,22) (12,27) (7,25) color=surf_warm
+circle (11,20) radius=6 color=rust
+
+// Inner glowing fissure & fiery heart
+polygon (7,22) (11,17) (15,19) (14,24) (9,25) color=ember
+polygon (8,22) (11,18) (13,20) (12,23) (10,24) color=highlight
+pixel (10,21) color=bone
+pixel (11,20) color=bone
+
+// Charred outer crust fragments / cracks over the glow
+line (6,20) (9,21) color=surf_dark
+line (12,18) (15,22) color=surf_dark
+line (8,24) (11,23) color=surf_mid
+pixel (13,17) color=surf_warm
+pixel (7,23) color=surf_dark
+pixel (14,23) color=surf_dark
+
+// Trailing sparks and burning embers shedding off
+pixel (18,17) color=ember
+pixel (19,16) color=rust
+pixel (15,12) color=ember
+pixel (16,11) color=highlight
+pixel (21,14) color=rust
+pixel (23,10) color=ember
+pixel (20,8) color=rust
+pixel (26,8) color=ember
+pixel (14,26) color=rust
+pixel (5,18) color=rust
+pixel (4,23) color=ember
+
+// Scorched edges and scuffed debris
+scatter color=ink,surf_dark density=0.22 seed=41 cluster=1 inside
+scatter color=rust,ember density=0.08 seed=89 cluster=1 inside

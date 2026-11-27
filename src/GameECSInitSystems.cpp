@@ -1038,10 +1038,15 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                   // this is the copy that gets spent, so it is the only one that
                   // has to still be valid when the timer ends. The claim covers
                   // the whole batch, so a batch that can no longer be paid for in
-                  // full is canceled rather than partially executed.
-                  RecipeInputClaim claim = ClaimRecipeInputs(actor, *recipe, batches);
+                  // full is canceled rather than partially executed. The debug
+                  // free-crafting option skips the claim and the spending entirely.
+                  const bool freeCraft = Settings().debug.craft.ignoreIngredients;
+                  RecipeInputClaim claim;
+                  if (!freeCraft) {
+                      claim = ClaimRecipeInputs(actor, *recipe, batches);
+                  }
                   std::string msg;
-                  if (!claim.missing.empty()) {
+                  if (!freeCraft && !claim.missing.empty()) {
                       // A real gameplay outcome: the actor spent the materials on
                       // something else during the wait. Nothing is destroyed and
                       // it is told why the craft came to nothing.
@@ -1052,9 +1057,11 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                   } else {
                       // Spend the materials only now, on the path that is about to
                       // produce something.
-                      for (flecs::entity item : claim.items) {
-                          actor.remove<Holds>(item);
-                          item.destruct();
+                      if (!freeCraft) {
+                          for (flecs::entity item : claim.items) {
+                              actor.remove<Holds>(item);
+                              item.destruct();
+                          }
                       }
 
                       // One roll per batch item, not one roll scaled by the
@@ -1084,6 +1091,12 @@ void Game::ECSInitAgentSystems() {  // System to flush background AI thread call
                       msg += FormatTrainingGains(training);
                   }
 
+                  // The player's craft window reads this: the message already goes to
+                  // the debug log, but the window is where a player watches the craft.
+                  if (actor == this->playerEntity) {
+                      this->lastCraftMessage = msg;
+                      ++this->lastCraftMessageSerial;
+                  }
                   if (actor.has<AgentBrainWrapper>()) {
                       actor.get_mut<AgentBrainWrapper>()->agBrain->appendContext("user", msg);
                   }

@@ -1,0 +1,19 @@
+{
+  "armor": 6.0,
+  "name": "Ironclad Cuirass",
+  "occupies": 1,
+  "slot": "torso",
+  "tags": [
+    "iron",
+    "armor",
+    "heavy",
+    "plate",
+    "ironclad"
+  ],
+  "tier": 2.0,
+  "worn": {
+    "brief": "a heavy plate cuirass of solid satin-grey iron with sharp unmarred rims and matching smooth pauldrons",
+    "sprite": "worn_ironclad_cuirass",
+    "z": 60
+  }
+}

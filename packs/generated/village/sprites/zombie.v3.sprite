@@ -1,0 +1,178 @@
+version 1
+sprite 96x96
+kind object
+
+frame "f1" {
+  // --- Outline & Silhouette: Matted hair on crown ---
+  rect (43,4) (51,5) color=#4c2836
+  rect (41,6) (53,7) color=#4c2836
+  rect (39,8) (55,9) color=#574848
+  rect (42,6) (50,8) color=#716460
+  pixel (44,5) color=#888073
+  pixel (47,5) color=#888073
+
+  // Hair locks drooping down
+  line (38,10) (36,18) color=#4c2836
+  line (39,10) (37,17) color=#574848
+  line (40,11) (38,16) color=#716460
+  line (54,10) (57,17) color=#4c2836
+  line (53,10) (56,16) color=#574848
+
+  // --- Head & Face (Sunken, gaunt zombie features) ---
+  rect (40,10) (53,19) color=#97b390
+  rect (42,9) (51,13) color=#ccd5bc
+  rect (44,10) (49,12) color=#eedcd3
+
+  // Matted bangs overlaying forehead
+  pixel (43,9) color=#574848
+  pixel (44,10) color=#4c2836
+  pixel (48,9) color=#574848
+  pixel (49,11) color=#4c2836
+  pixel (52,10) color=#574848
+
+  // Eye sockets & Dead sunken eyes
+  rect (41,13) (44,15) color=#574848
+  rect (48,13) (51,15) color=#574848
+  pixel (42,14) color=#4c2836
+  pixel (43,14) color=#fae0d2
+  pixel (49,14) color=#4c2836
+  pixel (50,14) color=#fae0d2
+
+  // Rotting cheek & hollow contours
+  pixel (40,16) color=#716460
+  pixel (53,16) color=#716460
+  rect (41,17) (43,18) color=#87946f
+  rect (49,17) (52,18) color=#87946f
+
+  // Gaping, decaying jaw / mouth
+  rect (44,16) (48,18) color=#4c2836
+  pixel (45,16) color=#eedcd3
+  pixel (47,16) color=#cdbbb3
+  pixel (46,18) color=#9b6460
+
+  // Jaw outline & Chin
+  rect (43,19) (49,20) color=#97b390
+  rect (44,21) (48,21) color=#87946f
+  line (42,19) (42,21) color=#4c2836
+  line (50,19) (50,21) color=#4c2836
+  rect (44,22) (48,22) color=#4c2836
+
+  // --- Slumped Neck & Asymmetric Shambling Shoulders ---
+  rect (44,22) (47,24) color=#87946f
+  pixel (45,23) color=#97b390
+  pixel (46,24) color=#716460
+
+  // Left arm outstretched forward/limp (viewer's left: raised forward)
+  rect (31,25) (41,27) color=#4c2836
+  rect (32,26) (40,28) color=#716460
+  rect (33,26) (39,27) color=#a78e8a
+  // Ragged sleeve
+  rect (36,25) (42,30) color=#574848
+  rect (37,26) (41,29) color=#716460
+  pixel (38,27) color=#b99f97
+  // Exposed withered arm & clawed hand
+  rect (27,27) (33,29) color=#97b390
+  rect (28,28) (32,29) color=#ccd5bc
+  rect (24,28) (27,30) color=#87946f
+  pixel (23,29) color=#4c2836
+  pixel (23,31) color=#4c2836
+  pixel (24,30) color=#eedcd3
+
+  // Right arm hanging slack (viewer's right: dangling down)
+  rect (52,24) (58,28) color=#4c2836
+  rect (53,25) (57,27) color=#716460
+  rect (54,28) (58,36) color=#574848
+  rect (55,29) (57,35) color=#716460
+  pixel (56,31) color=#888073
+  // Dangle forearm & hand
+  rect (55,37) (58,45) color=#87946f
+  rect (56,38) (57,44) color=#97b390
+  rect (55,46) (58,49) color=#4c2836
+  rect (56,47) (57,49) color=#87946f
+  pixel (56,50) color=#cdbbb3
+  pixel (57,50) color=#4c2836
+
+  // --- Torso / Tattered Vestments ---
+  rect (41,25) (52,38) color=#4c2836
+  rect (42,26) (51,37) color=#574848
+  rect (43,27) (50,36) color=#716460
+  rect (44,27) (49,34) color=#a78e8a
+  pixel (45,28) color=#cab7b0
+  pixel (46,29) color=#eee2dc
+
+  // Exposed ribs / wound on chest
+  rect (46,31) (49,34) color=#4c2836
+  rect (47,32) (48,34) color=#9b6460
+  pixel (47,32) color=#bb8a84
+  pixel (48,33) color=#eedcd3
+
+  // Bandage / belt binding around waist
+  rect (41,38) (52,42) color=#4c2836
+  rect (42,39) (51,41) color=#b99f97
+  rect (43,40) (50,41) color=#cdbbb3
+  pixel (46,40) color=#fef1e9
+  pixel (47,40) color=#cab7b0
+
+  // Ragged tunic hem / shredded cloth
+  rect (40,42) (52,48) color=#574848
+  rect (41,43) (51,47) color=#716460
+  rect (42,43) (46,46) color=#a78e8a
+  pixel (41,49) color=#574848
+  pixel (43,49) color=#574848
+  pixel (45,48) color=#4c2836
+  pixel (48,50) color=#574848
+  pixel (50,49) color=#4c2836
+  pixel (52,48) color=#574848
+
+  // --- Legs: Shuffling, wide stance ---
+  // Left leg (viewer's left - angled outward)
+  rect (40,48) (46,65) color=#4c2836
+  rect (41,49) (45,64) color=#716460
+  rect (42,50) (44,63) color=#888073
+  pixel (43,53) color=#b99f97
+  pixel (43,58) color=#b99f97
+
+  // Tattered knee tear exposing rotted bone/joint
+  rect (41,59) (44,62) color=#4c2836
+  rect (42,60) (43,61) color=#87946f
+  pixel (42,60) color=#ccd5bc
+
+  // Left lower leg and foot wrap
+  rect (38,65) (45,78) color=#4c2836
+  rect (39,66) (44,77) color=#9b6460
+  rect (40,67) (43,76) color=#a78e8a
+  pixel (41,70) color=#cdbbb3
+  pixel (42,73) color=#cdbbb3
+
+  // Left boot / dragging foot planted at bottom
+  rect (35,79) (45,92) color=#4c2836
+  rect (36,80) (44,91) color=#574848
+  rect (37,81) (43,90) color=#716460
+  rect (38,82) (42,88) color=#888073
+  // Boot sole & mud
+  rect (34,91) (45,94) color=#4c2836
+  rect (35,92) (44,93) color=#574848
+  pixel (37,93) color=#716460
+
+  // Right leg (viewer's right - shambling back/straight)
+  rect (47,48) (53,65) color=#4c2836
+  rect (48,49) (52,64) color=#716460
+  rect (49,50) (51,63) color=#888073
+  pixel (50,54) color=#a78e8a
+
+  // Right lower leg wrap
+  rect (48,65) (54,78) color=#4c2836
+  rect (49,66) (53,77) color=#9b6460
+  rect (50,67) (52,76) color=#bb8a84
+  pixel (51,71) color=#cab7b0
+
+  // Right boot / foot planted firmly
+  rect (49,79) (58,92) color=#4c2836
+  rect (50,80) (57,91) color=#574848
+  rect (51,81) (56,90) color=#716460
+  rect (52,82) (55,88) color=#888073
+  // Sole & base contacts ground
+  rect (49,91) (59,94) color=#4c2836
+  rect (50,92) (58,93) color=#574848
+  pixel (53,93) color=#716460
+}

@@ -1,0 +1,79 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  bg_dark = #1b1714
+  bg_mid = #2a231d
+  bg_light = #3b3128
+  bg_accent = #5a4938
+  ink = #0d0b0a
+  metal_light = #6b6f73
+  metal_dark = #43474a
+  rust = #7a3f2a
+  bone = #cbb89a
+  ember = #d0783a
+  highlight = #e6c48a
+}
+
+// Background talismanic / icon backing coin (worn, dark, inset)
+circle (16,16) radius=14 color=ink
+circle (16,16) radius=13 color=bg_mid
+circle (16,16) radius=12 color=bg_dark
+
+// Rim wear and shading on icon coin
+line (5,5) (27,5) color=bg_light
+line (5,5) (5,27) color=bg_accent
+line (27,6) (27,27) color=ink
+line (6,27) (27,27) color=ink
+
+scatter color=rust,bg_light density=0.15 seed=41 cluster=2 inside
+
+// Smoke and tail plume (streak from top-left toward bottom-right impact)
+polygon (3,4) (13,10) (7,15) color=ink
+polygon (6,6) (16,12) (10,18) color=bg_accent
+polygon (4,8) (10,13) (6,15) color=rust
+
+// Secondary flame lick trailing back
+polygon (8,4) (14,6) (11,10) color=ember
+polygon (10,3) (13,5) (11,7) color=highlight
+
+// Fiery core silhouette (flying fireball)
+circle (19,18) radius=8 color=ink
+circle (19,18) radius=7 color=rust
+circle (18,17) radius=6 color=ember
+
+// Inner hot core
+circle (17,16) radius=4 color=highlight
+circle (16,15) radius=2 color=bone
+
+// Charred rocky crust and porous slag chunks on the fireball surface
+polygon (18,18) (25,16) (23,23) color=bg_mid
+polygon (19,19) (24,18) (22,22) color=metal_dark
+polygon (14,21) (19,25) (22,23) color=ink
+polygon (15,22) (18,24) (21,22) color=bg_dark
+
+// Leading edge fiery pressure ridge
+line (20,13) (25,17) color=ember
+line (21,12) (26,16) color=rust
+line (26,17) (24,22) color=rust
+pixel (26,18) color=ember
+pixel (25,19) color=highlight
+
+// Scattered glowing sparks and ember flakes trailing off
+pixel (9,11) color=highlight
+pixel (6,7) color=ember
+pixel (12,8) color=ember
+pixel (14,4) color=highlight
+pixel (8,18) color=rust
+pixel (12,19) color=ember
+pixel (16,10) color=highlight
+pixel (24,10) color=rust
+pixel (27,13) color=ember
+pixel (28,20) color=rust
+pixel (22,27) color=ember
+pixel (20,26) color=highlight
+pixel (17,27) color=rust
+
+// Surface grit and scorched texture inside the fireball silhouette
+scatter color=bg_mid,metal_dark,rust density=0.08 seed=19 cluster=1 inside

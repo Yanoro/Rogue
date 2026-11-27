@@ -93,4 +93,34 @@ inline const Texture2D *ResolveIconTexture(const IconRegistry &icons,
                               nullptr);
 }
 
+// The icon's own art, with no fallback chain: nullptr when it has none.
+//
+// The inventory slot plate needs this, because ResolveIconTexture's "missing" fallback
+// would put a question mark in every empty cell. An unknown id and an icon with no art both
+// return null, so the caller draws the flat plate it used before the asset existed.
+inline const Texture2D *TryResolveIconTexture(const IconRegistry &icons,
+                                              ResourceManager &resources,
+                                              const std::string &id,
+                                              DebugLog *debugLog) {
+  if (id.empty()) return nullptr;
+  const IconDef *definition = icons.Get(id);
+  if (definition == nullptr) {
+    return ResolveSpriteTexture(std::string(), id, resources, debugLog);
+  }
+  if (PrefersGeneratedSprite(definition->id)) {
+    const std::string generated = GeneratedSpritePath(definition->id);
+    if (!generated.empty() && std::filesystem::exists(generated)) {
+      if (const Texture2D *texture = ResolveSpriteTexture(
+              generated, definition->id, resources, debugLog)) {
+        return texture;
+      }
+    }
+  }
+  const std::string reference =
+      definition->sprite.empty() ? definition->id : definition->sprite;
+  return LooksLikePath(reference)
+             ? ResolveSpriteTexture(reference, definition->id, resources, debugLog)
+             : ResolveSpriteTexture(std::string(), reference, resources, debugLog);
+}
+
 }  // namespace IconPaths

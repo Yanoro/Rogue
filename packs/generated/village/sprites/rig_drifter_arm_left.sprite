@@ -1,0 +1,50 @@
+sprite 32x32
+kind object
+
+palette {
+  out = #1A1210
+  cloth_base = #8B939C
+  cloth_dark = #5E656E
+  cloth_lit = #B8C0CA
+  wrap_base = #D6CEBE
+  wrap_dark = #A39B8B
+  skin_base = #F2C79A
+  skin_lit = #FFE0B8
+  skin_dark = #C98B60
+}
+
+// Left arm silhouette (dark outline)
+rect (7,12) (10,23) color=out
+
+// Sleeve (shoulder / bicep / forearm)
+rect (8,13) (9,18) color=cloth_base
+pixel (8,13) color=cloth_lit
+pixel (8,14) color=cloth_lit
+pixel (8,15) color=cloth_lit
+pixel (9,16) color=cloth_dark
+pixel (9,17) color=cloth_dark
+
+// Frayed sleeve edge
+pixel (7,18) color=cloth_dark
+pixel (8,18) color=cloth_base
+pixel (9,18) color=cloth_dark
+
+// Bandaged wrist
+rect (8,19) (9,20) color=wrap_base
+pixel (8,19) color=#EFE8DC
+pixel (9,20) color=wrap_dark
+pixel (7,19) color=out
+pixel (10,19) color=out
+pixel (7,20) color=out
+pixel (10,20) color=out
+
+// Relaxed hand (fingers / palm)
+rect (8,21) (9,22) color=skin_base
+pixel (8,21) color=skin_lit
+pixel (9,22) color=skin_dark
+pixel (7,21) color=out
+pixel (10,21) color=out
+pixel (7,22) color=out
+pixel (10,22) color=out
+pixel (8,23) color=out
+pixel (9,23) color=out

@@ -59,6 +59,11 @@ public:
                     std::string *error, std::vector<std::string> *warnings);
   static std::string IdFor(const nlohmann::json &document);
 
+  // Removes one definition from the live registry. Returns false when the id is
+  // unknown. The Content Editor calls this after its confirmation; deleting the
+  // definition file is the caller's job.
+  bool Remove(const std::string &id) { return effects.erase(id) > 0; }
+
   void SetDebugLog(DebugLog *log) { debugLog = log; }
 
 private:

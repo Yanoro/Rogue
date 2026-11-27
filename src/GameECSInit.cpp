@@ -22,6 +22,7 @@
 #include "Defaults.h"
 #include "DrawAsciiDebug.h"
 #include "EntityInfoWindow.h"
+#include "CraftWindow.h"
 #include "StorageWindow.h"
 #include "Game.h"
 #include "ObjectDesigner.hpp"
@@ -46,12 +47,14 @@
 #include "CombatResolver.hpp"
 #include "Equipment.hpp"
 #include "EquipmentRuntime.hpp"
+#include "InventoryView.hpp"
 #include "FloatingText.hpp"
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
 #include "RecipeFormatting.h"
 #include "Rng.hpp"
 #include "Settings.h"
+#include "UiStyle.hpp"
 #include "SkillTraining.hpp"
 #include "StartingSkills.hpp"
 #include "StringUtils.hpp"
@@ -1633,17 +1636,24 @@ void Game::ECSInit() {
                ". Use [CRAFT] to see what it can make.\n";
       }
 
+      // Debug escape hatch: skip the material check (and the spending below) so a
+      // recipe can be inspected without gathering its inputs first.
+      const bool freeCraft = Settings().debug.craft.ignoreIngredients;
+
       // Refuse unsatisfiable work before the wait: a recipe that is only half
       // satisfiable must fail now with a complete shortage list, not after the
       // actor has stood at the station for the whole timer. This claim is a dry
       // run for a timed craft -- CraftResolutionSystem claims and spends again
       // when the timer ends. It is asked for the whole batch, so [CRAFT bread 3]
       // is refused up front when only two loaves' worth of flour is carried.
-      RecipeInputClaim claim = ClaimRecipeInputs(actor, *recipe, batches);
-      if (!claim.missing.empty()) {
-        return "System: You do not have enough materials to craft " +
-               FormatBatchedLabel(batches, recipe->id) +
-               ". Still needed: " + claim.missing + ".\n";
+      RecipeInputClaim claim;
+      if (!freeCraft) {
+        claim = ClaimRecipeInputs(actor, *recipe, batches);
+        if (!claim.missing.empty()) {
+          return "System: You do not have enough materials to craft " +
+                 FormatBatchedLabel(batches, recipe->id) +
+                 ". Still needed: " + claim.missing + ".\n";
+        }
       }
 
       auto factoryRes = actor.world().get<ObjectFactoryResource>();
@@ -1697,9 +1707,11 @@ void Game::ECSInit() {
       // one that gets spent. Destroying it before ProduceRecipeOutputs walks the
       // same relationship is why the entities were collected first. The batch is
       // executed one run at a time so each output rolls its own chance.
-      for (flecs::entity item : claim.items) {
-        actor.remove<Holds>(item);
-        item.destruct();
+      if (!freeCraft) {
+        for (flecs::entity item : claim.items) {
+          actor.remove<Holds>(item);
+          item.destruct();
+        }
       }
       Rng rng = NextRollStream(actor.world());
       std::string produced;
@@ -1796,14 +1808,34 @@ void Game::ECSInit() {
 
       int currentCount = 0;
       target.each<Holds>([&](flecs::entity) { currentCount++; });
-      int spaceLeft = target.get<Storage>()->capacity - currentCount;
-      if (spaceLeft <= 0) {
+      // Capacity is counted in cells, the same way the chest window draws them: a stack of
+      // five is one cell and a new stack needs a free one. The old count was one per item
+      // entity, which disagreed with the window as soon as identical items could stack.
+      const int capacity = target.get<Storage>()->capacity;
+      const auto registryRes = target.world().get<ItemRegistryResource>();
+      const ItemRegistry *items =
+          registryRes != nullptr ? registryRes->registry : nullptr;
+      int storable = 0;
+      if (items != nullptr) {
+          // The longest prefix that fits: the caller may have asked for more than the
+          // container can hold, and a partial store is the useful answer.
+          std::vector<flecs::entity> prefix;
+          for (flecs::entity item : itemsToStore) {
+              prefix.push_back(item);
+              if (!CanAddItems(target, prefix, items, capacity)) break;
+              storable = static_cast<int>(prefix.size());
+          }
+      } else {
+          storable = std::clamp(capacity - currentCount, 0,
+                                static_cast<int>(itemsToStore.size()));
+      }
+      if (storable == 0) {
           return "System: The storage is full.\n";
       }
 
       int stored = 0;
       for (flecs::entity item : itemsToStore) {
-          if (stored >= spaceLeft) break;
+          if (stored >= storable) break;
 
           // An item that leaves its holder stops being worn; otherwise it would
           // keep contributing from inside the chest.
@@ -2158,6 +2190,7 @@ void Game::ECSInit() {
     GiveUniversalSkills(playerEntity, skillRes->registry);
     ApplyStartingSkills(playerEntity, skillRes->registry, playerStartingSkills,
                         debugLog.get());
+    GrantRecipes(playerEntity, playerKnownRecipes);
   }
   // The player gets the same default body every other character does -- slots and
   // look -- so [EQUIPMENT] and [EQUIP] work from the first frame and a humanoid
@@ -2436,6 +2469,46 @@ void Game::ECSInit() {
   }
 }
 
+bool Game::WithinAccessRange(flecs::entity object) const {
+  int range = -1;
+  if (const Storage *storage = object.get<Storage>()) {
+    range = storage->accessRange;
+  } else if (const Workstation *station = object.get<Workstation>()) {
+    range = station->accessRange;
+  }
+  if (range < 0) {
+    // A character's inventory is inspectable from anywhere; only a station or a container
+    // is standing somewhere that matters.
+    return true;
+  }
+  const GamePosition *objectPos = object.get<GamePosition>();
+  const GamePosition *playerPos = playerEntity.get<GamePosition>();
+  if (objectPos == nullptr || playerPos == nullptr) {
+    return true;
+  }
+  // Chebyshev: a diagonal neighbour is one step, which is what "standing beside it" means
+  // on a grid.
+  return std::max(std::abs(playerPos->x - objectPos->x),
+                  std::abs(playerPos->y - objectPos->y)) <= range;
+}
+
+void Game::ShowPlayerNotice(const std::string &text) {
+  if (!playerEntity.is_alive() || text.empty()) {
+    return;
+  }
+  const GameSettings::StorageSection &storage = Settings().storage;
+  const ImVec4 rgba =
+      UiStyle::ParseColor(storage.closeColor, ImVec4(1.0f, 0.82f, 0.42f, 1.0f));
+  const Color color = {
+      static_cast<unsigned char>(std::clamp(rgba.x, 0.0f, 1.0f) * 255.0f),
+      static_cast<unsigned char>(std::clamp(rgba.y, 0.0f, 1.0f) * 255.0f),
+      static_cast<unsigned char>(std::clamp(rgba.z, 0.0f, 1.0f) * 255.0f),
+      static_cast<unsigned char>(std::clamp(rgba.w, 0.0f, 1.0f) * 255.0f)};
+  SpawnFloatingNotice(playerEntity, text, color,
+                      std::clamp(storage.closeFontSize, 8.0f, 64.0f),
+                      /*centered=*/true);
+}
+
 void Game::OpenStorageWindow(flecs::entity container) {
   if (!container.is_alive()) {
     return;
@@ -2444,6 +2517,13 @@ void Game::OpenStorageWindow(flecs::entity container) {
   // interaction resolver) or from a window's draw pass, so the structural
   // changes are deferred to the end of the stage.
   ecs.defer([this, container]() {
+    // A container you are not standing beside cannot be opened. The world menu's
+    // "See Inventory" walks the player over first, so in normal play this only refuses a
+    // direct open (the NPC/debug menus) -- and it says why instead of doing nothing.
+    if (!WithinAccessRange(container)) {
+      ShowPlayerNotice("Too far away");
+      return;
+    }
     // Reuse the carrier entity if this container already has a window, so
     // asking to see the same inventory again does not stack a duplicate. A
     // closed window keeps its carrier (with StorageWindowTarget, without
@@ -2467,9 +2547,11 @@ void Game::OpenStorageWindow(flecs::entity container) {
 
     if (!carrier.has<ActiveWindow>()) {
       // The texture cache is handed over so item rows can draw the same sprite
-      // the item shows on the map; without it they fall back to the ASCII look.
+      // the item shows on the map. Game itself is handed over because the window is no
+      // longer read-only: taking and dragging need the player entity and the transfer
+      // rules.
       carrier.set<ActiveWindow>({std::make_shared<StorageWindow>(
-          container, carrier, &resourceManager)});
+          container, carrier, this, &resourceManager)});
     }
   });
 }
@@ -2502,8 +2584,30 @@ void Game::OpenCharacterStatusWindow(flecs::entity character) {
 
     if (!carrier.has<ActiveWindow>()) {
       carrier.set<ActiveWindow>(
-          {std::make_shared<CharacterStatusWindow>(character, carrier)});
+          {std::make_shared<CharacterStatusWindow>(this, character, carrier,
+                                                   &statusEffectRegistry)});
     }
+  });
+}
+
+void Game::OpenCraftWindow(flecs::entity station) {
+  if (!station.is_alive() || !station.has<Workstation>()) {
+    return;
+  }
+  // Called from a window draw (the context menu) or anywhere else structural changes have
+  // to be deferred, so the carrier is created and retargeted inside the defer.
+  ecs.defer([this, station]() {
+    if (!craftWindow) {
+      craftWindow = std::make_shared<CraftWindow>(this, station);
+    } else {
+      // One window, retargeted: opening a second station replaces the first rather than
+      // stacking two craft UIs with independent selections.
+      craftWindow->SetStation(station);
+    }
+    if (!craftWindowEntity.is_alive()) {
+      craftWindowEntity = ecs.entity("Craft Window");
+    }
+    craftWindowEntity.set<ActiveWindow>({craftWindow});
   });
 }
 

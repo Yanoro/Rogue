@@ -13,6 +13,15 @@
       "height": 32
     },
     {
+      "id": "inventory_slot",
+      "label": "Inventory slots",
+      "section": "inventory_slot",
+      "theme": "",
+      "consumes": [],
+      "width": 32,
+      "height": 32
+    },
+    {
       "id": "resource_icon",
       "label": "Resource icons",
       "section": "resource_icon",

@@ -131,6 +131,20 @@ public:
                     std::string *error, std::vector<std::string> *warnings);
   static std::string IdFor(const nlohmann::json &document);
 
+  // Removes one style and its insertion-order entry. Returns false when the id is
+  // unknown. The Content Editor calls this after its confirmation.
+  bool Remove(const std::string &id) {
+    if (styles.erase(id) == 0) return false;
+    for (auto it = order.begin(); it != order.end();) {
+      if (*it == id) {
+        it = order.erase(it);
+      } else {
+        ++it;
+      }
+    }
+    return true;
+  }
+
   void SetDebugLog(DebugLog *log) { debugLog = log; }
 
 private:

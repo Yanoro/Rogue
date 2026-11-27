@@ -15,6 +15,13 @@ private:
   std::unordered_map<std::string, std::string> fullContexts;
   std::mutex messagesMutex;
 
+  // Why the last stream on a context failed. Ollama answers a bad model name or a
+  // refused connection with no tokens at all, and the completion sentinel is an
+  // empty token too, so without this the caller cannot tell the two apart. See
+  // AI::TakeStreamError.
+  std::unordered_map<std::string, std::string> streamErrors;
+  std::mutex streamErrorMutex;
+
   // Second, independent mutex rather than reusing messagesMutex: the timing is
   // written from the curl worker (inside WriteCallbackStream) at the moment the
   // final chunk arrives, which is the same instant the end-of-stream sentinel is
@@ -35,6 +42,9 @@ private:
     std::string contextId;
     OllamaAI *aiInstance;
     std::string fullResponse;
+    // The provider's `error` field, captured in the parser because the bug that
+    // matters (an unknown model) arrives as an HTTP error body, not as a token.
+    std::string error;
   };
 
   static size_t WriteCallback(void *contents, size_t size, size_t nmemb,
@@ -70,6 +80,10 @@ public:
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;
+
+  // See AI::TakeStreamError. Reads and clears the failure recorded for the most
+  // recent stream on `contextId`.
+  std::string TakeStreamError(const std::string &contextId) override;
 
   // Drops the stored token context and the recorded messages for `contextId`.
   // Ollama's /api/generate is stateful: it returns a `context` array that the

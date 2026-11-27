@@ -1,0 +1,6 @@
+{
+  "name": "Inventory Slot",
+  "description": "The plate drawn behind one inventory or container cell. Empty means its sprite is the convention id 'inventory_slot'.",
+  "sprite": "",
+  "visualType": "inventory_slot"
+}

@@ -1,0 +1,74 @@
+sprite 32x32
+kind object
+
+palette {
+  out = #1A1210
+  skin_base = #F2C79A
+  skin_hi = #FFE0B8
+  skin_sh = #C98B60
+  iron_hi = stone.4
+  iron_mid = stone.2
+  iron_sh = iron.1
+  wood_base = wood.2
+  wood_hi = wood.3
+  wood_sh = wood.1
+}
+
+// Hammer head (silhouette & outline)
+rect (8,3) (23,10) color=out
+rect (6,4) (25,9) color=out
+
+// Hammer head fills
+rect (7,5) (24,8) color=iron_mid
+line (8,4) (23,4) color=iron_hi
+line (7,5) (7,8) color=iron_hi
+line (9,5) (22,5) color=iron_hi
+line (8,9) (23,9) color=iron_sh
+line (24,5) (24,8) color=iron_sh
+
+// Central eye/collar of hammer
+rect (14,4) (17,10) color=iron_sh
+line (15,4) (16,4) color=iron_hi
+
+// Hammer handle (shaft)
+rect (14,10) (17,29) color=out
+rect (15,10) (16,28) color=wood_base
+line (15,10) (15,28) color=wood_hi
+line (16,10) (16,28) color=wood_sh
+
+// Left hand (higher grip, wrapping around shaft)
+rect (9,13) (16,20) color=out
+rect (10,14) (15,19) color=skin_base
+
+// Left hand fingers & structure
+line (10,14) (14,14) color=skin_hi
+line (10,16) (15,16) color=skin_sh
+line (10,18) (15,18) color=skin_sh
+rect (8,15) (11,19) color=out
+rect (9,16) (10,18) color=skin_base
+pixel (9,16) color=skin_hi
+
+// Left hand thumb resting across
+rect (12,12) (17,14) color=out
+line (13,13) (16,13) color=skin_hi
+
+// Right hand (lower grip, interlocking underneath)
+rect (15,19) (22,26) color=out
+rect (16,20) (21,25) color=skin_base
+
+// Right hand knuckles and shading
+line (16,20) (21,20) color=skin_hi
+line (16,22) (21,22) color=skin_sh
+line (16,24) (21,24) color=skin_sh
+rect (20,21) (23,25) color=out
+rect (21,22) (22,24) color=skin_base
+pixel (21,22) color=skin_hi
+
+// Right hand thumb crossing shaft
+rect (14,19) (18,21) color=out
+line (15,20) (17,20) color=skin_hi
+
+// Handle butt peeking out at bottom
+pixel (15,28) color=wood_hi
+pixel (16,28) color=wood_base
+line (14,29) (17,29) color=out

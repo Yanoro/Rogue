@@ -1,0 +1,61 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  out = #1A1210
+  h_dark = #4A2A1C
+  h_mid = #7A4A2E
+  h_lit = #A8673E
+}
+
+// Main hair silhouette / outline
+polygon (11,4) (13,2) (18,2) (21,3) (23,6) (23,10) (21,11) (21,8) (19,8) (17,9) (16,7) (14,9) (12,8) (10,10) (9,7) (9,5) color=out
+
+// Core hair volume
+rect (11,3) (21,6) color=h_dark
+rect (12,2) (19,3) color=h_dark
+
+// Side tufts / ear coverage
+polygon (9,6) (11,6) (11,10) (10,10) color=h_dark
+polygon (21,6) (23,6) (22,10) (21,10) color=h_dark
+
+// Bangs and midtone body
+rect (11,4) (20,6) color=h_mid
+rect (12,3) (18,4) color=h_mid
+
+// Shaggy matted bangs hanging down over forehead
+pixel (11,7) color=h_mid
+pixel (12,7) color=h_mid
+pixel (12,8) color=h_dark
+pixel (13,7) color=h_mid
+pixel (14,7) color=h_mid
+pixel (14,8) color=h_dark
+pixel (16,6) color=h_mid
+pixel (17,7) color=h_mid
+pixel (17,8) color=h_mid
+pixel (18,7) color=h_dark
+pixel (19,7) color=h_mid
+pixel (20,7) color=h_mid
+
+// Highlights on top/left strands
+rect (13,3) (17,3) color=h_lit
+pixel (12,4) color=h_lit
+pixel (13,4) color=h_lit
+pixel (15,4) color=h_lit
+pixel (17,4) color=h_lit
+pixel (13,5) color=h_lit
+
+// Strands and texture definition
+pixel (10,7) color=h_mid
+pixel (10,8) color=h_mid
+pixel (10,9) color=out
+pixel (22,7) color=h_mid
+pixel (22,8) color=h_mid
+pixel (22,9) color=out
+
+// Forehead bang tips outline crispness
+pixel (12,9) color=out
+pixel (14,9) color=out
+pixel (17,9) color=out
+pixel (19,8) color=out

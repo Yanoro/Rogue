@@ -315,6 +315,11 @@ struct SkillDef {
   // startup hook check exists to catch.
   std::vector<std::string> trainedBy;
 
+  // Recipes this skill teaches. Granted to a character when it acquires the skill (see
+  // GrantRecipes), so knowledge follows the skill instead of being checked against it: a
+  // recipe may also be granted by other means, and a skill with no recipes grants nothing.
+  std::vector<std::string> recipes;
+
   // XP needed for one level while in a stage, indexed by stage. The last entry
   // repeats for any stage past the end of the list, and an empty list means a
   // flat default.

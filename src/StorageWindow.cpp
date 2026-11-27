@@ -1,48 +1,30 @@
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "StorageWindow.h"
-#include "AsciiArtDraw.hpp"
-#include "SpriteDraw.hpp"
-#include "SpritePaths.hpp"
-#include "Components.h"
-#include "ResourceManager.h"
-#include "StringUtils.hpp"
-#include "imgui.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <vector>
 
-namespace {
-
-// One row per *distinct* item, not per entity: a chest holding five apples
-// shows a single "Apple (5)" entry.
-//
-// The look is the item's sprite, or the Unknown placeholder when it has none --
-// the same rule the world uses (Game::DrawEntityVisual). There is no glyph and no
-// ASCII art in a row any more, so there is nothing else to copy out of the entity.
-struct StorageEntry {
-  // Copied as a pointer, not referenced: the rows are rebuilt from the live ECS
-  // every frame and the item entity can be destroyed in between.
-  const Texture2D *sprite = nullptr;
-  std::string name;
-  int count = 0;
-};
-
-ImVec4 ToImVec4(const Color &color) {
-  return ImVec4(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f,
-                color.a / 255.0f);
-}
-
-constexpr float kGlyphSize = 32.0f;
-
-} // namespace
+#include "Components.h"
+#include "ContentEditorTargets.hpp"
+#include "Game.h"
+#include "IconPaths.hpp"
+#include "InventoryDrag.hpp"
+#include "InventorySlotDraw.hpp"
+#include "InventoryView.hpp"
+#include "ResourceManager.h"
+#include "Settings.h"
+#include "SpritePaths.hpp"
+#include "imgui.h"
 
 StorageWindow::StorageWindow(flecs::entity container, flecs::entity owner,
-                             ResourceManager *resources)
-    : container(container), owner(owner), resources(resources) {}
+                             Game *game, ResourceManager *resources)
+    : container(container), owner(owner), game(game), resources(resources) {}
 
 void StorageWindow::Draw() {
-  // The chest can be destroyed (map reload, editor delete) while the window is
-  // open; closing here keeps the next frame from reading a dangling entity.
+  // The container can be destroyed (map reload, editor delete) while the window is open;
+  // closing here keeps the next frame from reading a dangling entity.
   if (!container.is_alive()) {
     if (owner.is_alive()) {
       owner.remove<ActiveWindow>();
@@ -53,15 +35,15 @@ void StorageWindow::Draw() {
   std::string title =
       container.has<DisplayName>() ? container.get<DisplayName>()->name
                                    : "Storage";
-  // The "###" id keys ImGui's per-window state to this container; including the
-  // container id keeps several inventory windows distinct so they can be open at
-  // the same time instead of collapsing into one.
+  // The "###" id keys ImGui's per-window state to this container; including the container
+  // id keeps several windows distinct so they can be open at the same time.
   title += "###StorageWindow" + std::to_string(container.id());
 
   bool isOpen = true;
-  ImGui::SetNextWindowSize(ImVec2(300, 260), ImGuiCond_FirstUseEver);
+  // Wide enough for the ten-column cell grid; a narrower window would clip the last
+  // columns into a horizontal scrollbar.
+  ImGui::SetNextWindowSize(ImVec2(520, 340), ImGuiCond_FirstUseEver);
   ImGui::Begin(title.c_str(), &isOpen, ImGuiWindowFlags_None);
-
   if (!isOpen) {
     if (owner.is_alive()) {
       owner.remove<ActiveWindow>();
@@ -69,89 +51,214 @@ void StorageWindow::Draw() {
     ImGui::End();
     return;
   }
-
-  // Aggregate by display name, case-insensitively and in first-seen order, the
-  // same rule StringUtils::StackNames uses for the [INVENTORY] and chest-examine
-  // text. Capacity is counted per entity, since each holds one slot.
-  std::vector<StorageEntry> entries;
-  int usedSlots = 0;
-  container.each<Holds>([&](flecs::entity item) {
-    if (!item.is_alive()) {
-      return;
-    }
-    usedSlots++;
-
-    std::string name =
-        item.has<DisplayName>() ? item.get<DisplayName>()->name : "Item";
-    auto existing = std::find_if(
-        entries.begin(), entries.end(), [&name](const StorageEntry &entry) {
-          return StringUtils::EqualsIgnoreCase(entry.name, name);
-        });
-    if (existing != entries.end()) {
-      existing->count++;
-      return;
-    }
-
-    StorageEntry entry;
-    entry.name = name;
-    // The item's sprite, if it was given one at spawn. The path in the component
-    // was already validated when it was attached, so this is a cache hit; the
-    // null check is only for an item spawned while no manager was set.
-    if (resources != nullptr) {
-      if (const Sprite *sprite = item.get<Sprite>()) {
-        entry.sprite = resources->TryGetTexture(sprite->path);
-      }
-    }
-    entry.count = 1;
-    entries.push_back(entry);
-  });
-
-  // A character has no Storage component, only containers do, so the capacity
-  // is only meaningful there. Showing "N / 0 slots" for an NPC would be wrong.
-  if (const Storage *storage = container.get<Storage>()) {
-    ImGui::TextDisabled("%d / %d slots, %d distinct", usedSlots,
-                        storage->capacity, static_cast<int>(entries.size()));
-  } else {
-    ImGui::TextDisabled("%d item(s), %d distinct", usedSlots,
-                        static_cast<int>(entries.size()));
-  }
-  ImGui::Separator();
-
-  if (entries.empty()) {
-    ImGui::TextDisabled("Empty");
+  if (game == nullptr) {
+    ImGui::TextDisabled("The window has no game to read from.");
     ImGui::End();
     return;
   }
 
-  // Scroll region so a container with many distinct items stays inside a small
-  // window instead of being clipped.
-  ImGui::BeginChild("##StorageContents", ImVec2(0, 0));
-  for (size_t i = 0; i < entries.size(); ++i) {
-    const StorageEntry &entry = entries[i];
-
-    // Its sprite, or the placeholder. The button is only the click target and the
-    // neutral plate behind a cut-out sprite; its return value is unused here.
-    const Texture2D *look = entry.sprite;
-    if (look == nullptr && resources != nullptr) {
-      look = resources->TryGetTexture(UnknownSpritePath());
+  // Walking out of the container's access range closes the window and says why. Checked in
+  // Draw because this is the only place the window knows it is on screen; a chest behind a
+  // wall stops being usable the moment you step away.
+  if (container.has<Storage>() && !game->WithinAccessRange(container)) {
+    if (owner.is_alive()) {
+      owner.remove<ActiveWindow>();
     }
-
-    ImGui::PushID(static_cast<int>(i));
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
-    ImGui::Button("##look", ImVec2(kGlyphSize, kGlyphSize));
-    if (look != nullptr) {
-      DrawSpriteImGui(*look, ImGui::GetItemRectMin(), ImGui::GetItemRectSize());
-    }
-    ImGui::PopStyleColor();
-    ImGui::PopID();
-
-    ImGui::SameLine();
-    std::string label = entry.name;
-    if (entry.count > 1) {
-      label += " (" + std::to_string(entry.count) + ")";
-    }
-    ImGui::TextUnformatted(label.c_str());
+    game->ShowPlayerNotice(Settings().storage.closeMessage);
+    ImGui::End();
+    return;
   }
+
+  // A Storage container can be looted; a character inspected through "See Inventory" is
+  // read-only. The difference is the component, not the window: corpses and boxes are
+  // Storage, a living NPC is an Actor.
+  const bool lootable = container.has<Storage>();
+  const int capacity = HeldCapacity(container, Settings().player.inventorySlots);
+  SlottedInventory view =
+      BuildSlottedInventory(container, &game->itemRegistry, capacity);
+  const Texture2D *slotPlate = IconPaths::TryResolveIconTexture(
+      game->iconRegistry, game->resourceManager, "inventory_slot",
+      game->debugLog.get());
+
+  int itemCount = 0;
+  for (const InventoryCell &cell : view.cells) itemCount += cell.count;
+  ImGui::TextDisabled("%d / %d slots, %d item(s)",
+                      static_cast<int>(view.cells.size()), capacity, itemCount);
+  ImGui::Separator();
+  if (!status.empty()) {
+    ImGui::TextWrapped("%s", status.c_str());
+    ImGui::Separator();
+  }
+
+  // Takes one whole cell (a stack is several item entities) into the player's inventory.
+  // All or nothing: a half-moved stack is worse than a refusal.
+  const auto takeCell = [&](const InventoryCell &cell) {
+    if (!lootable) return;
+    const int playerCapacity =
+        InventoryCapacity(game->playerEntity, Settings().player.inventorySlots);
+    if (!CanAddItems(game->playerEntity, cell.items, &game->itemRegistry,
+                     playerCapacity)) {
+      status = "Not enough room in your inventory for " + cell.name + ".";
+      return;
+    }
+    MoveHeldItems(container, game->playerEntity, cell.items);
+    status = "Took " + cell.name +
+             (cell.count > 1 ? " x" + std::to_string(cell.count) : "") + ".";
+    if (game->debugLog) game->debugLog->LogInfo(status);
+  };
+
+  // A drop lands on one named slot. An occupied slot refuses rather than swapping; a drop
+  // from this same window is the reorder, and moves nothing in the ECS.
+  const auto acceptDroppedCell = [&](int slot) {
+    if (!lootable) return;
+    const InventoryDrag::State &drag = InventoryDrag::Active();
+    if (!drag.active) return;
+    if (slot < 0 || slot >= view.slotCount) {
+      InventoryDrag::Clear();
+      return;
+    }
+    if (view.slotToCell[static_cast<size_t>(slot)] >= 0) {
+      status = "That slot is occupied.";
+      InventoryDrag::Clear();
+      return;
+    }
+    if (drag.source == container) {
+      PlaceItemsAtSlot(container, drag.items, slot);
+      status = "Moved " + drag.name + ".";
+      InventoryDrag::Clear();
+      return;
+    }
+    MoveHeldItems(drag.source, container, drag.items);
+    PlaceItemsAtSlot(container, drag.items, slot);
+    status = "Stored " + drag.name + ".";
+    if (game->debugLog) game->debugLog->LogInfo(status);
+    InventoryDrag::Clear();
+  };
+
+  ImGui::BeginChild("##StorageContents", ImVec2(0, 0));
+  constexpr int kColumns = 10;
+  constexpr float kCell = 42.0f;
+  const int rows = std::max(1, (view.slotCount + kColumns - 1) / kColumns);
+  ImGui::BeginTable("##storage_grid", kColumns,
+                    ImGuiTableFlags_SizingFixedFit |
+                        ImGuiTableFlags_NoSavedSettings |
+                        ImGuiTableFlags_BordersInnerV |
+                        ImGuiTableFlags_BordersInnerH);
+  for (int col = 0; col < kColumns; ++col) {
+    ImGui::TableSetupColumn("##slot_col", ImGuiTableColumnFlags_WidthFixed,
+                            kCell + 4.0f);
+  }
+  for (int row = 0; row < rows; ++row) {
+    ImGui::TableNextRow();
+    for (int col = 0; col < kColumns; ++col) {
+      const int index = row * kColumns + col;
+      if (index >= view.slotCount) {
+        continue;
+      }
+      ImGui::TableSetColumnIndex(col);
+      ImGui::PushID(index);
+      ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+      ImGui::InvisibleButton("##slot", ImVec2(kCell, kCell));
+      const ImVec2 cellMin = ImGui::GetItemRectMin();
+      DrawInventorySlotPlate(ImGui::GetWindowDrawList(), cellMin, kCell,
+                             slotPlate, /*available=*/true);
+      const bool hovered = ImGui::IsItemHovered();
+      const int slotCell =
+          index < view.slotCount ? view.slotToCell[static_cast<size_t>(index)] : -1;
+      InventoryCell *cell =
+          slotCell >= 0 ? &view.cells[static_cast<size_t>(slotCell)] : nullptr;
+
+      if (cell != nullptr && lootable) {
+        // The sprite alone, centred on the cursor. The tooltip preview is suppressed because
+        // ImGui anchors it to the mouse's bottom-right; drawing on the foreground list puts
+        // the picture where the pointer is.
+        if (ImGui::BeginDragDropSource(
+                ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+          InventoryDrag::Begin(container, *cell);
+          const uint64_t token = static_cast<uint64_t>(container.id());
+          ImGui::SetDragDropPayload(InventoryDrag::kPayload, &token, sizeof(token));
+          const Texture2D *texture = nullptr;
+          if (resources != nullptr && !cell->items.empty()) {
+            if (const Sprite *sprite = cell->items.front().get<Sprite>()) {
+              texture = resources->TryGetTexture(sprite->path);
+            }
+          }
+          if (texture == nullptr && resources != nullptr) {
+            texture = resources->TryGetTexture(UnknownSpritePath());
+          }
+          if (texture != nullptr) {
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const float half = kCell * 0.5f;
+            ImGui::GetForegroundDrawList()->AddImage(
+                static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)),
+                ImVec2(mouse.x - half, mouse.y - half),
+                ImVec2(mouse.x + half, mouse.y + half));
+          }
+          ImGui::EndDragDropSource();
+        }
+      }
+      if (lootable && ImGui::BeginDragDropTarget()) {
+        if (ImGui::AcceptDragDropPayload(InventoryDrag::kPayload) != nullptr) {
+          acceptDroppedCell(index);
+        }
+        ImGui::EndDragDropTarget();
+      }
+
+      if (cell != nullptr) {
+        const Texture2D *texture = nullptr;
+        if (resources != nullptr && !cell->items.empty()) {
+          if (const Sprite *sprite = cell->items.front().get<Sprite>()) {
+            texture = resources->TryGetTexture(sprite->path);
+          }
+        }
+        if (texture != nullptr) {
+          ImGui::GetWindowDrawList()->AddImage(
+              static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)),
+              cellMin, cellMin + ImVec2(kCell, kCell));
+        } else {
+          ImGui::GetWindowDrawList()->AddText(
+              ImVec2(cellMin.x + 3, cellMin.y + 3), IM_COL32(220, 220, 220, 255),
+              cell->name.c_str());
+        }
+        if (cell->count > 1) {
+          char count[16];
+          std::snprintf(count, sizeof(count), "%d", cell->count);
+          const ImVec2 size = ImGui::CalcTextSize(count);
+          ImGui::GetWindowDrawList()->AddText(
+              ImVec2(cellMin.x + kCell - size.x - 2,
+                     cellMin.y + kCell - size.y - 1),
+              IM_COL32(255, 240, 180, 255), count);
+        }
+        if (hovered) {
+          ImGui::BeginTooltip();
+          ImGui::TextUnformatted(cell->name.c_str());
+          if (cell->count > 1) {
+            ImGui::Text("Count: %d", cell->count);
+          }
+          ImGui::TextDisabled(lootable
+                                  ? "Right-click to take; drag to your inventory"
+                                  : "Read-only: this is a character's inventory");
+          ImGui::EndTooltip();
+        }
+        if (ImGui::BeginPopupContextItem("##storage_slot_menu")) {
+          bool anyRows = false;
+          if (lootable) {
+            if (ImGui::Selectable("Take")) {
+              takeCell(*cell);
+            }
+            anyRows = true;
+          }
+          // The item definition is still editable content, even in a read-only window.
+          ContentEditorMenu::Draw(*game, game->ContentTargetsForItem(cell->itemId),
+                                  anyRows);
+          ImGui::EndPopup();
+        }
+      }
+      ImGui::PopStyleVar();
+      ImGui::PopID();
+    }
+  }
+  ImGui::EndTable();
   ImGui::EndChild();
 
   ImGui::End();

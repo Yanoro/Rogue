@@ -193,6 +193,37 @@ bool LoadAIProfile(const std::string &id, const nlohmann::json &entry,
   return true;
 }
 
+// The blocks that may name an `ai.profiles` entry, with the kind each expects.
+//
+// One list, used twice: the loader seeds each block from its profile before
+// reading the block's own keys, and the override merge below uses the same paths
+// to keep a profile chosen in settings.local.json from being half-overridden.
+struct BlockSeed {
+  const char *blockPath;
+  const char *kind;
+  GameSettings::ModelSection &(*block)(GameSettings &);
+};
+const BlockSeed kBlockSeeds[] = {
+    {"model", "s2",
+     [](GameSettings &s) -> GameSettings::ModelSection & { return s.model; }},
+    {"designer.model", "s2",
+     [](GameSettings &s) -> GameSettings::ModelSection & {
+       return s.designer.model;
+     }},
+    {"designer.rewriter.model", "s2",
+     [](GameSettings &s) -> GameSettings::ModelSection & {
+       return s.designer.rewriter.model;
+     }},
+    {"navigation.single.model", "s2",
+     [](GameSettings &s) -> GameSettings::ModelSection & {
+       return s.navigation.single.model;
+     }},
+    {"system1.model", "s1",
+     [](GameSettings &s) -> GameSettings::ModelSection & {
+       return s.system1.model;
+     }},
+};
+
 }  // namespace
 
 bool LoadGameSettings(const std::string &path) {
@@ -245,6 +276,60 @@ bool LoadGameSettings(const std::string &path) {
       // RFC 7396 merge patch: nested objects merge key by key, so the override
       // file only needs the keys it actually changes.
       root.merge_patch(local);
+
+      // A profile named in the override layer replaces that block's inline
+      // settings; it does not stack on top of the ones the main file wrote.
+      //
+      // This is not a stylistic preference, it is what makes a profile mean
+      // anything. The loader seeds a block from its profile and then lets an
+      // inline key override the seed -- correct when the inline key was written
+      // beside the profile. After a merge patch, though, the main file's keys are
+      // sitting beside a profile that only the override file wrote, so they win
+      // and the block names one profile while actually running the main file's
+      // model. Observed, not theorised: designer.rewriter.model ships
+      // google/gemini-3.8-flash inline, and choosing the deepseek profile in
+      // settings.local.json left the block on gemini *with deepseek's provider
+      // routing and allow_fallbacks:false*, so OpenRouter answered every rewrite
+      // with 404 "No endpoints found" -- which the Improve button could only
+      // report as "the model returned nothing".
+      //
+      // The whole override block is kept, so a field written beside the profile in
+      // the same file still overrides it, exactly as the seeding comment promises.
+      // A profile named in the main file is untouched: there the inline keys are
+      // the author's explicit intent, not stale leftovers. The one thing this
+      // gives up is a main-file key the override dropped without restating (an
+      // inline apiKey, say); the credential inheritance further down is what makes
+      // that safe for a hosted backend.
+      for (const BlockSeed &seed : kBlockSeeds) {
+        const std::string blockPath = seed.blockPath;
+        const nlohmann::json *localProfile =
+            SettingsSchema::JsonAt(local, blockPath + ".profile");
+        if (localProfile == nullptr || !localProfile->is_string() ||
+            localProfile->get<std::string>().empty()) {
+          continue;
+        }
+        const nlohmann::json *localBlock =
+            SettingsSchema::JsonAt(local, blockPath);
+        if (localBlock == nullptr || !localBlock->is_object()) {
+          continue;
+        }
+        // Only a profile that actually resolves may replace the block. A typo
+        // has to leave the main file's inline settings in place, because that is
+        // what the seeding pass below reports as "using the inline block" -- after
+        // a blind replacement there would be no inline block left, and the typo
+        // would silently fall back to the built-in llama3 instead of the model the
+        // main file named. Tested against the object's keys rather than looked up
+        // by dotted path because a profile id may contain a dot (qwen2.5vl), which
+        // a path lookup would read as another level.
+        const std::string profileId = localProfile->get<std::string>();
+        const nlohmann::json *profiles =
+            SettingsSchema::JsonAt(root, "ai.profiles");
+        if (profiles == nullptr || !profiles->is_object() ||
+            !profiles->contains(profileId)) {
+          continue;
+        }
+        SettingsSchema::SetJsonAt(root, blockPath, *localBlock);
+      }
       std::cout << "Settings: merged overrides from " << localPath.string()
                 << std::endl;
     } catch (const std::exception &e) {
@@ -293,31 +378,6 @@ bool LoadGameSettings(const std::string &path) {
     }
   }
 
-  struct BlockSeed {
-    const char *blockPath;
-    const char *kind;
-    GameSettings::ModelSection &(*block)(GameSettings &);
-  };
-  static const BlockSeed kBlockSeeds[] = {
-      {"model", "s2",
-       [](GameSettings &s) -> GameSettings::ModelSection & { return s.model; }},
-      {"designer.model", "s2",
-       [](GameSettings &s) -> GameSettings::ModelSection & {
-         return s.designer.model;
-       }},
-      {"designer.rewriter.model", "s2",
-       [](GameSettings &s) -> GameSettings::ModelSection & {
-         return s.designer.rewriter.model;
-       }},
-      {"navigation.single.model", "s2",
-       [](GameSettings &s) -> GameSettings::ModelSection & {
-         return s.navigation.single.model;
-       }},
-      {"system1.model", "s1",
-       [](GameSettings &s) -> GameSettings::ModelSection & {
-         return s.system1.model;
-       }},
-  };
   for (const BlockSeed &seed : kBlockSeeds) {
     const nlohmann::json *name = SettingsSchema::JsonAt(
         root, std::string(seed.blockPath) + ".profile");

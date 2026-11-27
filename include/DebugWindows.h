@@ -17,6 +17,9 @@ public:
   void Draw() override;
 private:
   Game* game;
+  // The console's search box. A substring filter over the toggle labels; kept here so the
+  // console remembers what it was showing across frames.
+  char filter[64] = {};
 };
 
 class TileInfoWindow : public Window {

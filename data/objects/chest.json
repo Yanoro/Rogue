@@ -9,6 +9,7 @@
     "PlaceCategories"
   ],
   "capacity": 20,
+  "accessRange": 1,
   "art": [
     "----",
     "|--|",

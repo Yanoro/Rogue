@@ -1,0 +1,67 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  out = #1A1210
+  iron_dark = #4A4644
+  iron_mid = #78736E
+  iron_light = #B8B3AC
+  highlight = #FFFFFF
+  wood_handle = #5A3A22
+}
+
+// === HAMMER (descending from upper right) ===
+// Handle angled from top-right to anvil face
+line (26,4) (17,13) color=out
+line (27,5) (18,14) color=out
+line (28,6) (19,15) color=out
+line (27,5) (18,14) color=wood_handle
+
+// Hammer Head outline
+polygon (12,12) (18,6) (22,10) (16,16) color=out
+// Hammer Head fill
+polygon (13,12) (18,7) (21,10) (16,15) color=iron_dark
+// Lit top/left facets of hammer head
+line (13,11) (17,7) color=iron_mid
+line (14,10) (18,6) color=iron_light
+pixel (17,7) color=highlight
+pixel (18,8) color=iron_light
+
+// === ANVIL (grounded, solid, broad face) ===
+// Anvil Outline Silhouette
+// Horn at left (x=5..10), Face (x=10..22), Right shelf/step (x=23..25)
+// Waist (y=21..24), Flared Base (y=25..28)
+rect (5,16) (25,20) color=out
+polygon (4,17) (9,16) (9,19) (5,19) color=out
+rect (9,20) (22,25) color=out
+polygon (6,26) (25,26) (27,29) (4,29) color=out
+
+// Anvil Base Fill
+rect (6,27) (25,28) color=iron_dark
+line (6,27) (25,27) color=iron_mid
+line (5,28) (26,28) color=iron_dark
+line (7,27) (13,27) color=iron_light
+
+// Anvil Waist Fill
+rect (11,21) (20,25) color=iron_dark
+rect (12,21) (14,25) color=iron_mid
+
+// Anvil Upper Body & Face Fill
+rect (9,17) (24,19) color=iron_dark
+polygon (5,18) (9,17) (9,19) (6,19) color=iron_dark
+
+// Anvil lit face & wear / scarring
+line (9,17) (24,17) color=iron_light
+line (6,18) (9,17) color=iron_light
+pixel (14,17) color=iron_mid
+pixel (18,17) color=iron_dark
+pixel (19,17) color=highlight
+
+// Body tone separation (two-tone light on left, shadow on right)
+rect (10,18) (15,19) color=iron_mid
+pixel (11,18) color=iron_light
+
+// Strike spark / impact highlight
+pixel (16,16) color=highlight
+pixel (15,15) color=iron_light

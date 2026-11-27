@@ -74,10 +74,26 @@ size_t OllamaAI::WriteCallbackStream(void *contents, size_t size, size_t nmemb,
         ctx->aiInstance->lastStats[ctx->contextId] = stats;
       }
 
+      // An error body is one JSON object with an `error` field and no tokens: the
+      // shape a bad model name or a rejected request produces. Captured for the
+      // caller, which otherwise sees only "no tokens" (see AI::TakeStreamError).
+      if (j.contains("error")) {
+        ctx->error = j["error"].is_string() ? j["error"].get<std::string>()
+                                            : j["error"].dump();
+      }
+
       if (j.contains("response") && !j["response"].is_null()) {
         std::string token = j["response"];
-        ctx->fullResponse += token;
-        ctx->callback(token);
+        // Only a non-empty response is a token. The final chunk carries an empty
+        // `response` next to `done`, and an empty token is the end-of-stream
+        // sentinel every caller keys on -- dispatching it from here as well would
+        // end the stream at the first chunk that happened to be empty, which the
+        // caller can only read as "the model returned nothing". The explicit
+        // callback("") after the transfer is the one sentinel.
+        if (!token.empty()) {
+          ctx->fullResponse += token;
+          ctx->callback(token);
+        }
       }
 
     } catch (const std::exception &e) {
@@ -236,6 +252,12 @@ bool OllamaAI::generateStream(const std::string &contextId,
     std::lock_guard<std::mutex> lock(busyMutex);
     busyContexts.insert(contextId);
   }
+  {
+    // A failure from the previous request on this context must not outlive it; the
+    // next empty reply is entitled to its own reason.
+    std::lock_guard<std::mutex> lock(streamErrorMutex);
+    streamErrors.erase(contextId);
+  }
 
   nlohmann::json payload = {
       {"model", modelName},
@@ -301,6 +323,10 @@ bool OllamaAI::generateStream(const std::string &contextId,
     }
 
     bool success = false;
+    // Why this stream produced no answer, if it did not. Sent to the caller through
+    // TakeStreamError before the completion sentinel, which is itself an empty token
+    // and cannot carry a reason. See AI::TakeStreamError.
+    std::string failure;
     if (!stoken.stop_requested()) {
       int msgs_left;
       CURLMsg *msg;
@@ -310,11 +336,33 @@ bool OllamaAI::generateStream(const std::string &contextId,
             success = true;
           } else {
             std::string errStr = "curl stream failed: " + std::string(curl_easy_strerror(msg->data.result));
+            failure = "could not reach Ollama at " + endpoint + " (" +
+                      std::string(curl_easy_strerror(msg->data.result)) + ")";
             if (errorLogger) errorLogger(errStr);
             else std::cerr << errStr << std::endl;
           }
         }
       }
+    }
+
+    // curl treats HTTP 4xx/5xx as a successful transfer, so an unknown model -- the
+    // most common Ollama failure -- would otherwise look like the model answering
+    // with nothing at all.
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    if (httpCode >= 400) {
+      std::string detail = ctx.error.empty() ? ctx.buffer : ctx.error;
+      if (detail.size() > 300) detail = detail.substr(0, 300);
+      std::string errStr = "Ollama stream failed: HTTP " +
+                           std::to_string(httpCode);
+      if (!detail.empty()) errStr += " - " + detail;
+      if (errorLogger) errorLogger(errStr);
+      else std::cerr << errStr << std::endl;
+      success = false;
+      failure = "Ollama HTTP " + std::to_string(httpCode);
+      if (!detail.empty()) failure += ": " + detail;
+    } else if (!ctx.error.empty()) {
+      failure = "Ollama error: " + ctx.error;
     }
 
     curl_multi_remove_handle(multi_handle, curl);
@@ -332,6 +380,17 @@ bool OllamaAI::generateStream(const std::string &contextId,
     {
       std::lock_guard<std::mutex> lock(busyMutex);
       busyContexts.erase(contextId);
+    }
+
+    // Before the sentinel, so a caller that wakes on it can read this: the atomic
+    // store in callback("") is the release the waiter's load acquires.
+    {
+      std::lock_guard<std::mutex> lock(streamErrorMutex);
+      if (failure.empty()) {
+        streamErrors.erase(contextId);
+      } else {
+        streamErrors[contextId] = std::move(failure);
+      }
     }
     
     callback("");
@@ -356,6 +415,17 @@ std::string OllamaAI::getContext(const std::string &contextId) {
     return it->second;
   }
   return "";
+}
+
+std::string OllamaAI::TakeStreamError(const std::string &contextId) {
+  std::lock_guard<std::mutex> lock(streamErrorMutex);
+  const auto it = streamErrors.find(contextId);
+  if (it == streamErrors.end()) {
+    return {};
+  }
+  std::string error = std::move(it->second);
+  streamErrors.erase(it);
+  return error;
 }
 
 void OllamaAI::resetContext(const std::string &contextId) {

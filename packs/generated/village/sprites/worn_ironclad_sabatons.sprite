@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  out = #1A1210
+  plate_hi = #E0E5EC
+  plate_mid = #8C99A8
+  plate_shd = #505A66
+  sole = #282C34
+  rivet = #B4C0CE
+}
+
+// Left sabaton (actor's right leg: x=11 to 16, y=24 to 31)
+// Silhouette & Outline
+rect (11,24) (15,31) color=out
+rect (10,28) (15,31) color=out
+
+// Base plate fill
+rect (12,25) (14,30) color=plate_mid
+rect (11,28) (15,30) color=plate_mid
+
+// Bottom sole / tread
+line (11,31) (15,31) color=sole
+
+// Laminar articulation plates (upper greave, ankle, square toe cap)
+line (12,24) (14,24) color=out
+line (12,26) (14,26) color=out
+line (11,28) (14,28) color=out
+line (11,30) (15,30) color=plate_shd
+
+// Highlights & shine
+pixel (12,25) color=plate_hi
+pixel (12,27) color=plate_hi
+line (11,29) (12,29) color=plate_hi
+pixel (13,29) color=rivet
+
+// Right sabaton (actor's left leg: x=17 to 22, y=24 to 31)
+// Silhouette & Outline
+rect (17,24) (21,31) color=out
+rect (17,28) (22,31) color=out
+
+// Base plate fill
+rect (18,25) (20,30) color=plate_mid
+rect (17,28) (21,30) color=plate_mid
+
+// Bottom sole / tread
+line (17,31) (21,31) color=sole
+
+// Laminar articulation plates
+line (18,24) (20,24) color=out
+line (18,26) (20,26) color=out
+line (18,28) (21,28) color=out
+line (17,30) (21,30) color=plate_shd
+
+// Highlights & shine
+pixel (18,25) color=plate_hi
+pixel (18,27) color=plate_hi
+line (18,29) (19,29) color=plate_hi
+pixel (20,29) color=rivet

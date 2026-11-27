@@ -68,6 +68,13 @@ public:
 
   size_t Count() const { return skills.size(); }
 
+  // Removes a skill and its stored source document. Returns false when the id is
+  // unknown. The Content Editor calls this after its confirmation.
+  bool Remove(const std::string &id) {
+    sources.erase(id);
+    return skills.erase(id) > 0;
+  }
+
   void SetDebugLog(DebugLog* log) { debugLog = log; }
 
 private:

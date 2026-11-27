@@ -1,0 +1,109 @@
+sprite 32x32
+kind object
+
+palette {
+  out = #1A1210
+  tunic_base = #845334
+  tunic_dark = #5c351e
+  tunic_light = #a66e46
+  patch = #b3692f
+  patch_dark = #733e14
+  stitch = #dbb98b
+  red_base = #d93838
+  red_dark = #8f1d1d
+  red_light = #f06060
+  belt_base = #402315
+  belt_dark = #24140b
+  buckle = #f3c246
+  buckle_light = #fff185
+}
+
+frame "f1" {
+  // Outline: raised collar/bandana and torso
+  rect (12,10) (20,13) color=out
+  rect (10,13) (22,22) color=out
+
+  // Tunic body shape
+  rect (11,13) (21,21) color=tunic_base
+
+  // Bandana around the neck (raised 1px)
+  rect (13,10) (19,12) color=red_base
+  pixel (12,11) color=red_base
+  pixel (20,11) color=red_base
+  line (13,10) (18,10) color=red_light
+  line (13,12) (19,12) color=red_dark
+  // Bandana knot and fray
+  pixel (16,13) color=red_base
+  pixel (15,13) color=red_light
+  pixel (16,14) color=red_dark
+  pixel (17,13) color=red_dark
+
+  // Tunic shading
+  rect (19,14) (21,21) color=tunic_dark
+  line (11,21) (21,21) color=tunic_dark
+  line (11,14) (13,14) color=tunic_light
+  line (11,15) (11,18) color=tunic_light
+
+  // Patch on chest
+  rect (12,16) (14,18) color=patch
+  pixel (14,18) color=patch_dark
+  pixel (12,16) color=stitch
+  pixel (14,16) color=stitch
+  pixel (12,18) color=stitch
+
+  // Belt & Buckle
+  rect (11,19) (21,20) color=belt_dark
+  line (12,19) (20,19) color=belt_base
+  rect (15,19) (17,20) color=buckle
+  pixel (15,19) color=buckle_light
+  pixel (16,19) color=out
+  pixel (16,20) color=belt_dark
+
+  // Bottom hem detail
+  pixel (16,21) color=out
+}
+
+frame "f2" {
+  // Outline: settled collar/bandana and torso
+  rect (12,11) (20,14) color=out
+  rect (10,14) (22,22) color=out
+
+  // Tunic body shape
+  rect (11,14) (21,21) color=tunic_base
+
+  // Bandana around the neck
+  rect (13,11) (19,13) color=red_base
+  pixel (12,12) color=red_base
+  pixel (20,12) color=red_base
+  line (13,11) (18,11) color=red_light
+  line (13,13) (19,13) color=red_dark
+  // Bandana knot and fray
+  pixel (16,14) color=red_base
+  pixel (15,14) color=red_light
+  pixel (16,15) color=red_dark
+  pixel (17,14) color=red_dark
+
+  // Tunic shading (shadow on right and bottom)
+  rect (19,15) (21,21) color=tunic_dark
+  line (11,21) (21,21) color=tunic_dark
+  line (11,15) (13,15) color=tunic_light
+  line (11,16) (11,19) color=tunic_light
+
+  // Patch on left chest/belly
+  rect (12,17) (14,19) color=patch
+  pixel (14,19) color=patch_dark
+  pixel (12,17) color=stitch
+  pixel (14,17) color=stitch
+  pixel (12,19) color=stitch
+
+  // Belt & Buckle
+  rect (11,19) (21,20) color=belt_dark
+  line (12,19) (20,19) color=belt_base
+  rect (15,19) (17,20) color=buckle
+  pixel (15,19) color=buckle_light
+  pixel (16,19) color=out
+  pixel (16,20) color=belt_dark
+
+  // Bottom hem slit / tunic tail detail
+  pixel (16,21) color=out
+}

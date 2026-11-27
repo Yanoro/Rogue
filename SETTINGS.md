@@ -520,12 +520,25 @@ Font and starting camera.
 
 ## `ui`
 
-ImGui window backgrounds: colour and transparency.
+Window colours, and the Content Editor shortcut in the right-click menus.
 
 | field | type | default | meaning |
 |---|---|---|---|
 | `windowColor` | string | `#000000D9` | ImGui window background, #RRGGBB or #RRGGBBAA. Alpha is the window transparency. |
 | `popupColor` | string | `#000000FF` | ImGui popup background, #RRGGBB or #RRGGBBAA. Alpha is the popup transparency. |
+| `openInContentEditor` | bool | `true` | Offer "Open in CE: …" rows in the right-click menus (world, hotbar, inventory, status effects), opening the Content Editor on that definition. Off removes every one of them. |
+
+---
+
+## `ui.storage`
+
+A container's window: the notice shown when the player walks out of range.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `closeMessage` | string | `Chest closed: Moved too far away` | Floating text shown over the player when a container window closes because they walked out of its access range. |
+| `closeColor` | string | `#FFD27AFF` | Colour of that notice, #RRGGBB or #RRGGBBAA. |
+| `closeFontSize` | float | `16` | Font size of that notice, in pixels. Clamped to 8-64 where it is drawn. |
 
 ---
 
@@ -610,7 +623,7 @@ Where each content registry loads its definitions from.
 | `movements` | string | `data/movements` | Shared movement templates: what walking, running or a kick is, in words and timing. A rig's clips point at a movement and supply the frames. *Restart to apply.* |
 | `generatedMovements` | string | `data/generated/movements` | Generated overlay for movement definitions. Loaded after data/movements; empty means a generated movement lives for this run only. *Restart to apply.* |
 | `generatedItems` | string | `data/generated/items` | Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only. *Restart to apply.* |
-| `equipmentPromptFile` | string | `data/items/EQUIPMENTDESIGNER.md` | The equipment designer's instructions: the worn-item reply format and which slots a rig can show. *Restart to apply.* |
+| `equipmentPromptFile` | string | `data/items/EQUIPMENTDESIGNER.md` | The equipment designer's instructions: the worn-item and themed-set reply formats and which slots a rig can show. *Restart to apply.* |
 | `rigPromptFile` | string | `data/rigs/RIGDESIGNER.md` | The rig designer's instructions: the humanoid frame and the per-part reply format. *Restart to apply.* |
 | `races` | string | `data/races` | Race registry directory. *Restart to apply.* |
 | `npcs` | string | `data/npcs` | NPC template directory: named starting configurations a map spawns by name and overrides. *Restart to apply.* |
@@ -728,6 +741,17 @@ Debug-window state, the ECS REST server and log retention.
 | `windowStateFile` | string | `./debug_windows_state.json` | Where debug-window visibility is written on shutdown and read on start. *Restart to apply.* |
 | `restServer` | bool | `true` | Starts flecs' unauthenticated ECS REST server. Turn off on a shared machine. *Restart to apply.* |
 | `logMaxEntries` | int | `1000` | Entries the Debug Log keeps before dropping the oldest. *Restart to apply.* |
+
+---
+
+## `debug.craft`
+
+The craft window's debug view: which recipes to list regardless of knowledge.
+
+| field | type | default | meaning |
+|---|---|---|---|
+| `showAllRecipes` | bool | `false` | List every recipe this station offers even when the PC has not learned it. Off by default; the recipe list is normally filtered by KnownRecipes. |
+| `ignoreIngredients` | bool | `false` | Craft without having the recipe's ingredients: the craft window stops dimming the recipe, the Craft button stops requiring them, and completing the craft consumes nothing. |
 
 ---
 

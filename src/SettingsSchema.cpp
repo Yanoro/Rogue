@@ -36,6 +36,7 @@ using UiCombatSection = GameSettings::UiSection::CombatSection;
 using UiHighlightSection = GameSettings::UiSection::CombatSection::HighlightSection;
 using UiStatusEffectsSection = GameSettings::UiSection::CombatSection::StatusEffectsSection;
 using UiHitFeedbackSection = GameSettings::UiSection::CombatSection::HitFeedbackSection;
+using StorageSection = GameSettings::StorageSection;
 using PlayerSection = GameSettings::PlayerSection;
 using CombatSection = GameSettings::CombatSection;
 using MovementSection = GameSettings::MovementSection;
@@ -636,11 +637,12 @@ const std::vector<SectionSpec> &Sections() {
       {"chunks", "chunks", "Fixed world chunk grid and the agent-facing area card/route strip.", ""},
       {"window", "window", "Window creation.", ""},
       {"render", "render", "Font and starting camera.", ""},
-      {"ui", "ui", "ImGui window backgrounds and global floating-text defaults.", ""},
+      {"ui", "ui", "Window colours, floating-text defaults, Content Editor shortcuts and global combat UI defaults.", ""},
       {"ui.combat", "Combat UI", "Player skill-use callout.", ""},
       {"ui.combat.highlight", "Target highlight", "How the player's current target is outlined.", ""},
       {"ui.combat.statusEffects", "Status effects", "World-space status display over characters.", ""},
       {"ui.combat.hitFeedback", "Hit feedback", "Global damage flash, shake and hit-animation defaults.", ""},
+      {"ui.storage", "storage", "A container's window: the notice shown when the player walks out of range.", ""},
       {"player", "player", "The player entity and its starting tile.", ""},
       {"combat", "combat", "Aimed skills: indicator-first or instant at the cursor.", ""},
       {"movement", "Movement", "NPC locomotion model. The player always keeps acceleration and friction.", ""},
@@ -652,6 +654,7 @@ const std::vector<SectionSpec> &Sections() {
       {"art", "art", "The art pack and its generated overlay. Convention sprites resolve from `<pack>/sprites/` first, then the generated layer.", ""},
       {"art.generation", "art.generation", "Live generation of art for content an agent invents while the game runs. This is the one part of the art feature that spends money unattended.", ""},
       {"debug", "debug", "Debug-window state, the ECS REST server and log retention.", ""},
+      {"debug.craft", "craft", "The craft window's debug view: which recipes to list regardless of knowledge.", ""},
   };
   return sections;
 }
@@ -1254,6 +1257,21 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "Default floating-text position relative to its target.",
             &GameSettings::ui, &UiSection::floatingTextPosition))
         .Enum({"above", "center", "below"});
+    add(Field<ValueType::Bool>("ui", "ui.openInContentEditor",
+            "Offer \"Open in CE: …\" rows in the right-click menus (world, hotbar, inventory, status effects), opening the Content Editor on that definition. Off removes every one of them.",
+            &GameSettings::ui, &UiSection::openInContentEditor));
+
+    // --- ui.storage -------------------------------------------------------
+    add(Field<ValueType::String>("ui.storage", "ui.storage.closeMessage",
+            "Floating text shown over the player when a container window closes because they walked out of its access range.",
+            &GameSettings::storage, &StorageSection::closeMessage));
+    add(Field<ValueType::String>("ui.storage", "ui.storage.closeColor",
+            "Colour of that notice, #RRGGBB or #RRGGBBAA.",
+            &GameSettings::storage, &StorageSection::closeColor))
+        .Default("#FFD27AFF");
+    add(Field<ValueType::Float>("ui.storage", "ui.storage.closeFontSize",
+            "Font size of that notice, in pixels. Clamped to 8-64 where it is drawn.",
+            &GameSettings::storage, &StorageSection::closeFontSize));
 
     // --- player -----------------------------------------------------------
     add(Field<ValueType::String>("player", "player.name",
@@ -1480,7 +1498,7 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
             "Generated overlay for Designer-authored equipment. Loaded after data/items; empty means a generated item lives for this run only.", &GameSettings::content, &ContentSection::generatedItems))
         .Restart();
     add(Field<ValueType::String>("content", "content.equipmentPromptFile",
-            "The equipment designer's instructions: the worn-item reply format and which slots a rig can show.", &GameSettings::content, &ContentSection::equipmentPromptFile))
+            "The equipment designer's instructions: the worn-item and themed-set reply formats and which slots a rig can show.", &GameSettings::content, &ContentSection::equipmentPromptFile))
         .Restart();
     add(Field<ValueType::String>("content", "content.rigPromptFile",
             "The rig designer's instructions: the humanoid frame and the per-part reply format.", &GameSettings::content, &ContentSection::rigPromptFile))
@@ -1611,6 +1629,16 @@ add(Field<ValueType::String>("navigation.single", "navigation.single.model.model
     add(Field<ValueType::Bool>("debug", "debug.restServer",
             "Starts flecs' unauthenticated ECS REST server. Turn off on a shared machine.", &GameSettings::debug, &DebugSection::restServer))
         .Restart();
+    // --- debug.craft ------------------------------------------------------
+    add(Field<ValueType::Bool>("debug.craft", "debug.craft.showAllRecipes",
+            "List every recipe this station offers even when the PC has not learned it. Off by default; the recipe list is normally filtered by KnownRecipes.",
+            &GameSettings::debug, &DebugSection::craft,
+            &DebugSection::CraftSection::showAllRecipes));
+    add(Field<ValueType::Bool>("debug.craft", "debug.craft.ignoreIngredients",
+            "Craft without having the recipe's ingredients: the craft window stops dimming the recipe, the Craft button stops requiring them, and completing the craft consumes nothing.",
+            &GameSettings::debug, &DebugSection::craft,
+            &DebugSection::CraftSection::ignoreIngredients));
+
     add(Field<ValueType::Int>("debug", "debug.logMaxEntries",
             "Entries the Debug Log keeps before dropping the oldest.", &GameSettings::debug, &DebugSection::logMaxEntries))
         .Restart();

@@ -10,6 +10,8 @@
 #include <nlohmann/json.hpp>
 
 #include "ContentKinds.h"
+#include "PromptRewriter.hpp"
+#include "RewriteInputBox.hpp"
 #include "VisualAssetRegistry.h"
 #include "RigRegistry.h"
 #include "SpriteKinds.hpp"
@@ -38,6 +40,7 @@ class ContentEditorWindow : public Window {
 public:
   explicit ContentEditorWindow(Game *game,
                                flecs::entity owner = flecs::entity::null());
+  ~ContentEditorWindow() override;
 
   void Draw() override;
 
@@ -45,12 +48,38 @@ public:
   // template" button; the window is already kept alive by Game.
   void SelectEntry(const std::string &kind, const std::string &entry);
 
+  // Asks Draw to raise the window on its next frame. A window shown from a context menu can
+  // be behind others, and "open on this object" that leaves it buried reads as nothing
+  // having happened.
+  void RequestFocus();
+
 private:
   // Rebuilds the working copy from the live registry. Also what "Revert" does.
   void ReloadDocument();
   void Save();
 
+  // The left column: every content kind, grouped by section. Clicking one selects it;
+  // the entries for it appear in the middle column.
+  void DrawKindSidebar();
   void DrawKindAndList();
+  // A visual-description field with the Designer's Improve/Undo affordance. Only one is
+  // visible per frame, so the shared rewriter and buffer cannot be attached to two texts
+  // at once. Returns whether the text changed this frame, and whether the change is
+  // ready to persist (lost focus or a rewrite landed).
+  struct DescriptionEdit {
+    bool changed = false;
+    bool committed = false;
+  };
+  DescriptionEdit DrawVisualDescriptionField(const std::string &target,
+                                             const std::string &text,
+                                             const PromptRewriter::Brief &brief);
+  std::string DescriptionText() const { return descriptionBuffer; }
+  bool EnsureDescriptionImprove();
+  // Deletes one entry: removes the live definition and its definition files, after the
+  // trash button's confirmation. Art files are deliberately kept.
+  bool DeleteContentEntry(const ContentKinds::Kind &kind,
+                          const std::string &id, std::string &message,
+                          bool &isError);
   void DrawVisualAssets(const ContentKinds::World &world);
   void DrawDocumentPane();
   void DrawSpritePane();
@@ -69,7 +98,11 @@ private:
   void DrawSpriteAsset(const std::string &convention, const std::string &requestName,
                        SpriteKinds::Kind spriteKind, const std::string &explicitSprite,
                        bool builtInFallback, const std::string &artRequirement,
-                       const std::string &styleId = std::string());
+                       const std::string &styleId = std::string(),
+                       const std::string &visualDescription = std::string(),
+                       const std::function<void(const std::string &)> &
+                           applyVisualDescription = {},
+                       PromptRewriter::Brief rewriteBrief = {});
 
   // The rig preview: the composed body with worn equipment, drawn over it. A rig is the
   // one kind whose document is a *composition*, so the generic form alone cannot show
@@ -81,6 +114,9 @@ private:
   // The equipment preview: the item's numbers and, when it has worn art, the layer on a
   // chosen rig. A worn item with no body to wear it is only half an item.
   void DrawItemPreviewPane();
+  // The skill's HUD icon: current art, and a one-click generation that creates the icon
+  // definition and points the skill's `icon` field at it.
+  void DrawSkillIconPane();
   // Interactive paper-doll anchor overlay for the body-silhouette kind.
   void DrawBodySilhouettePreview();
 
@@ -113,6 +149,12 @@ private:
   // definition the selection came from, and an id is what the next read takes.
   std::string kindId = "tiles";
   std::string entryId;
+  // The row whose trash button opened the confirmation modal.
+  std::string pendingDeleteKind;
+  std::string pendingDeleteEntry;
+
+  // Set by RequestFocus, consumed by Draw: one frame of "raise this window".
+  bool focusRequested = false;
 
   // Which worn items the rig preview is showing, keyed by item id. Reset when the
   // selected rig changes so a different rig starts from a full outfit.
@@ -132,6 +174,14 @@ private:
   // its sprite through DrawSpriteAsset gets the same editing for free. Cleared when the
   // section moves to a different sprite, so an instruction never leaks across assets.
   char spriteEditBuffer[512] = {};
+  // The one visible visual-description field, and the Designer's Improve machinery
+  // behind it. `descriptionTarget` is the asset/field the buffer was loaded from; a
+  // different target reloads the buffer and resets the undo state.
+  PromptRewriter descriptionRewriter;
+  RewriteInputBox descriptionImprove;
+  char descriptionBuffer[1024] = {};
+  std::string descriptionTarget;
+  bool descriptionImproveReady = false;
   std::string spriteEditTarget;
   // Grip editing in the item pane: the clip/frame whose arm the weapon is previewed on.
   std::string itemGripClip;

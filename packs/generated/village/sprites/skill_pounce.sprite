@@ -1,0 +1,38 @@
+sprite 32x32
+kind object
+material stone
+palette {
+  dark = #1A1210
+  fill_tone = #b1b0aa
+  hi_tone = #d8d7d2
+}
+
+polygon (4,18) (7,15) (11,11) (15,9) (19,9) (22,11) (26,14) (28,19) (28,21) (25,21) (23,17) (20,18) (21,22) (18,22) (16,17) (13,18) (10,23) (7,23) (8,19) (5,21) color=dark
+
+polygon (3,16) (6,13) (10,9) (15,8) (20,8) (24,11) (28,16) (29,19) (27,21) (25,20) (22,15) (19,16) (20,21) (17,21) (15,16) (12,17) (9,22) (6,22) (7,17) (4,19) color=dark
+
+polygon (5,16) (8,13) (12,10) (16,9) (19,10) (23,12) (26,15) (27,18) (24,18) (22,14) (18,15) (18,19) (16,19) (14,14) (11,16) (9,20) (7,20) (7,16) color=fill_tone
+
+line (17,6) (19,9) color=dark
+line (19,6) (21,9) color=dark
+pixel (18,7) color=hi_tone
+pixel (18,8) color=fill_tone
+
+polygon (22,10) (25,12) (28,14) (27,16) (24,15) (22,13) color=dark
+polygon (23,11) (26,13) (27,15) (24,14) color=fill_tone
+pixel (28,14) color=dark
+pixel (28,15) color=dark
+
+polygon (20,13) (24,16) (26,18) (25,20) (23,19) (21,16) color=fill_tone
+line (24,17) (27,20) color=dark
+line (22,16) (24,21) color=dark
+
+polygon (8,12) (13,9) (18,9) (15,11) (10,14) color=hi_tone
+polygon (18,9) (22,11) (20,13) (16,11) color=hi_tone
+polygon (22,11) (25,13) (24,14) (21,12) color=hi_tone
+
+polygon (3,18) (5,15) (7,12) (6,14) (4,17) color=hi_tone
+line (2,20) (5,16) color=dark
+line (4,21) (7,17) color=dark
+
+pixel (23,12) color=dark

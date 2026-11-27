@@ -1,0 +1,57 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  dark = #1A1210
+  slit = #110E12
+  steel_shadow = #5C6E80
+  steel_mid = #8FA3B8
+  steel_light = #C4D3E2
+  steel_bright = #EDF4FA
+}
+
+// Outer silhouette / dark outline (dome and lower visor sweep)
+rect (10,2) (22,10) color=dark
+rect (9,4) (23,10) color=dark
+rect (8,9) (11,12) color=dark
+rect (21,9) (24,12) color=dark
+rect (12,11) (20,11) color=dark
+
+// Base steel plate interior
+rect (11,3) (21,10) color=steel_mid
+rect (10,5) (22,10) color=steel_mid
+rect (9,10) (11,11) color=steel_mid
+rect (21,10) (23,11) color=steel_mid
+
+// Shadow on lower and right side
+rect (17,4) (21,10) color=steel_shadow
+rect (10,9) (22,10) color=steel_shadow
+rect (21,10) (22,11) color=steel_shadow
+pixel (20,3) color=steel_shadow
+pixel (21,4) color=steel_shadow
+
+// Clean metallic top-left highlight and frontal gleam
+rect (11,3) (15,4) color=steel_light
+rect (12,5) (15,6) color=steel_light
+rect (10,6) (11,8) color=steel_light
+line (12,3) (14,3) color=steel_bright
+pixel (13,4) color=steel_bright
+pixel (12,5) color=steel_bright
+
+// Central ridge (crest) running down the skull
+line (16,2) (16,7) color=dark
+line (15,3) (15,7) color=steel_bright
+
+// Narrow horizontal visor slit (eye slit)
+rect (11,8) (21,8) color=slit
+pixel (10,8) color=dark
+pixel (22,8) color=dark
+
+// Lower rim reinforcement beneath the slit
+line (12,9) (20,9) color=steel_light
+line (12,10) (20,10) color=steel_shadow
+
+// Smooth rear/cheek flange trims
+pixel (9,11) color=steel_light
+pixel (23,11) color=steel_shadow

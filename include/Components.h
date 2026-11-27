@@ -3,6 +3,7 @@
 #include "AI.h"
 #include "Defaults.h"
 #include "raylib-cpp.hpp"
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -102,6 +103,17 @@ struct HeldSkillState {
 // the last page crossed out.
 struct InventorySlots {
   int capacity = 30;
+};
+
+// Where a holder's cells sit in the inventory/container grid.
+//
+// A window arrangement, not gameplay state: Holds still says what a holder owns, and the AI
+// and capacity checks keep reading that. This only remembers that, say, the apple stack is
+// in slot 5 and slot 4 is intentionally empty, so a drop can target a slot and a reorder
+// survives the window closing. Index = slot; 0 is empty; otherwise the id is one item
+// entity of the cell that lives there. Runtime-only, never serialized.
+struct HeldSlotLayout {
+  std::vector<std::uint64_t> slots;
 };
 
 struct Velocity : public raylib::Vector2 {
@@ -1907,6 +1919,10 @@ struct TileSizeResource {
 
 struct Workstation {
   std::vector<std::string> recipes;
+  // How close the player must be for the craft window to open, in tiles (Chebyshev), the
+  // same rule and the same key a Storage container uses. Object templates set it with
+  // "accessRange"; the default is one tile, so a workbench is used standing at it.
+  int accessRange = 1;
 };
 
 struct Obstacle {
@@ -1943,10 +1959,36 @@ struct Structural {};
 // wall objects unreadable.
 struct ShowNameTag {};
 
-struct Storage {
-  int capacity = 10;
+// Recipes this character has learned. Runtime-only: skills grant their recipes when the
+// skill is acquired (data/skills/<id>.json "recipes"), and player.json may author starting
+// knowledge with "knownRecipes"; other sources can add to the same list.
+struct KnownRecipes {
+  std::vector<std::string> ids;
+
+  bool Has(const std::string& id) const {
+    return std::find(ids.begin(), ids.end(), id) != ids.end();
+  }
+  void Add(const std::string& id) {
+    if (!id.empty() && !Has(id)) ids.push_back(id);
+  }
 };
 
+struct Storage {
+  int capacity = 10;
+  // How close the player must be to open this container, and how far they may walk after
+  // opening before its window closes, in tiles (Chebyshev: a diagonal neighbour is one
+  // step). A per-entity knob so a shop counter can be reached across a room while a chest
+  // wants you standing beside it. Object templates set it with "accessRange".
+  int accessRange = 1;
+};
+
+
+// Object-level stacking. The CE's object editor toggles the "Stackable" component and the
+// template's maxStack; the inventory reads this before falling back to the ItemDef's own
+// stackable/maxStack, so a plain object (wheat, ore) can stack without an item definition.
+struct Stackable {
+  int maxStack = 20;
+};
 
 struct Portable {
   bool canBePickedUp = true;
@@ -2346,6 +2388,11 @@ inline void RegisterComponents(flecs::world &ecs) {
       .member<unsigned char>("a");
 
   ecs.component<ActiveWindow>();
+  // The windows' cell arrangement: index = slot, value = one item entity of the cell there.
+  // Not reflected: it is display order, rebuilt and pruned from the live Holds set.
+  ecs.component<HeldSlotLayout>();
+  // Learned crafting recipes. Runtime-only; see KnownRecipes.
+  ecs.component<KnownRecipes>();
   ecs.component<StorageWindowTarget>();
   ecs.component<CharacterStatusWindowTarget>();
   ecs.component<NavigationDebugWindowTarget>();

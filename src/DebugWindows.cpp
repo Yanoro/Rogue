@@ -126,261 +126,274 @@ void DebugConsoleWindow::Draw() {
   }
 
   ImGui::Text("Debug Windows");
+  ImGui::SetNextItemWidth(240.0f);
+  ImGui::InputTextWithHint("##window_filter", "filter windows...", filter,
+                           sizeof(filter));
+  ImGui::SameLine();
+  if (ImGui::Button("Clear")) {
+    filter[0] = '\0';
+  }
   ImGui::Separator();
 
-  bool showEntityInfo = game->playerEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Entity Info Window", &showEntityInfo)) {
-    if (showEntityInfo) {
-      game->playerEntity.set<ActiveWindow>({std::make_shared<EntityInfoWindow>(game->playerEntity)});
-    } else {
-      game->playerEntity.remove<ActiveWindow>();
+  // One row per toggle. The filter is a case-insensitive substring match, so "map" finds
+  // both map windows without the user having to know which group they are filed under.
+  const auto matches = [this](const char *label) {
+    if (filter[0] == '\0') return true;
+    std::string haystack(label);
+    std::string needle(filter);
+    const auto lower = [](std::string &text) {
+      std::transform(text.begin(), text.end(), text.begin(),
+                     [](unsigned char c) {
+                       return static_cast<char>(std::tolower(c));
+                     });
+    };
+    lower(haystack);
+    lower(needle);
+    return haystack.find(needle) != std::string::npos;
+  };
+  const auto toggle = [&](const char *label, bool shown, auto apply) {
+    if (!matches(label)) return;
+    ImGui::TableNextColumn();
+    if (ImGui::Checkbox(label, &shown)) apply(shown);
+  };
+  const auto beginCategory = [&](const char *title) {
+    if (!ImGui::CollapsingHeader(title, ImGuiTreeNodeFlags_DefaultOpen)) {
+      return false;
     }
-  }
-  ImGui::SameLine();
+    ImGui::BeginTable(title, 2,
+                      ImGuiTableFlags_SizingStretchSame |
+                          ImGuiTableFlags_NoSavedSettings);
+    return true;
+  };
 
-  bool showTileInfo = game->tileInfoWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Tile Info Window", &showTileInfo)) {
-    if (showTileInfo) {
-      game->tileInfoWindowEntity.set<ActiveWindow>({std::make_shared<TileInfoWindow>(game)});
-    } else {
-      game->tileInfoWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  bool showAStar = game->astarWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("A* Window", &showAStar)) {
-    if (showAStar) {
-      game->astarWindowEntity.set<ActiveWindow>({std::make_shared<AStarWindow>(game)});
-    } else {
-      game->astarWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  bool showOverview = game->entityOverviewWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Entity Overview", &showOverview)) {
-    if (showOverview) {
-      game->entityOverviewWindowEntity.set<ActiveWindow>({std::make_shared<EntityOverviewWindow>(game)});
-    } else {
-      game->entityOverviewWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  bool showLog = game->debugLogWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Log Window", &showLog)) {
-    if (showLog) {
-      game->debugLogWindowEntity.set<ActiveWindow>({std::make_shared<DebugLogWindow>(game)});
-    } else {
-      // The window is the only thing that turns retention on, so closing it must
-      // release the extra entries rather than leaving the log over its cap.
-      game->debugLog->SetRetainOldEntries(false);
-      game->debugLogWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  bool showMap = game->mapReloadWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Map Reload Window", &showMap)) {
-    if (showMap) {
-      game->mapReloadWindowEntity.set<ActiveWindow>({std::make_shared<MapReloadWindow>(game)});
-    } else {
-      game->mapReloadWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  bool showSettings = game->settingsWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Settings", &showSettings)) {
-    if (showSettings) {
-      game->settingsWindowEntity.set<ActiveWindow>(
-          {std::make_shared<SettingsWindow>(game)});
-    } else {
-      game->settingsWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  bool showAscii = game->drawAsciiToggleWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Collision Debug", &showAscii)) {
-    if (showAscii) {
-      game->drawAsciiToggleWindowEntity.set<ActiveWindow>({std::make_shared<DrawAsciiDebugWindow>(game)});
-    } else {
-      game->drawAsciiToggleWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  bool showPlaceNames = game->debugWindowState->GetShowPlaceNames();
-  if (ImGui::Checkbox("Show Place Names", &showPlaceNames)) {
-    game->debugWindowState->SetShowPlaceNames(showPlaceNames);
+  if (beginCategory("Inspection")) {
+    toggle("Entity Info Window", game->playerEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->playerEntity.set<ActiveWindow>(
+                   {std::make_shared<EntityInfoWindow>(game->playerEntity)});
+             } else {
+               game->playerEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Tile Info Window", game->tileInfoWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->tileInfoWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<TileInfoWindow>(game)});
+             } else {
+               game->tileInfoWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("A* Window", game->astarWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->astarWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<AStarWindow>(game)});
+             } else {
+               game->astarWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Entity Overview", game->entityOverviewWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->entityOverviewWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<EntityOverviewWindow>(game)});
+             } else {
+               game->entityOverviewWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Log Window", game->debugLogWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->debugLogWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<DebugLogWindow>(game)});
+             } else {
+               // The window is the only thing that turns retention on, so closing it
+               // releases the extra entries rather than leaving the log over its cap.
+               game->debugLog->SetRetainOldEntries(false);
+               game->debugLogWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    ImGui::EndTable();
   }
 
-  bool showFont = game->fontSelectionWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Font Selection", &showFont)) {
-    if (showFont) {
-      game->fontSelectionWindowEntity.set<ActiveWindow>({std::make_shared<FontSelectionWindow>(game)});
-    } else {
-      game->fontSelectionWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  bool showMapEditor = game->mapEditorWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Map Editor", &showMapEditor)) {
-    if (showMapEditor) {
-      game->mapEditorWindowEntity.set<ActiveWindow>({std::make_shared<MapEditorWindow>(game)});
-    } else {
-      game->mapEditorWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  ImGui::SameLine();
-
-  bool showAIMenu = game->aiMenuWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("AI Menu", &showAIMenu)) {
-    if (showAIMenu) {
-      game->aiMenuWindowEntity.set<ActiveWindow>({std::make_shared<AIMenuWindow>(game)});
-    } else {
-      game->aiMenuWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  ImGui::SameLine();
-
-  bool showNPCMenu = game->npcMenuWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("NPC Menu", &showNPCMenu)) {
-    if (showNPCMenu) {
-      game->npcMenuWindowEntity.set<ActiveWindow>({std::make_shared<NPCMenuWindow>(game)});
-    } else {
-      game->npcMenuWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-  bool showNpcSpawner = game->npcSpawnerWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("NPC Spawner", &showNpcSpawner)) {
-    if (showNpcSpawner) {
-      game->npcSpawnerWindowEntity.set<ActiveWindow>(
-          {std::make_shared<NpcSpawnerWindow>(game)});
-    } else {
-      game->npcSpawnerWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  // Its own row: the rows above already fill the console width, and a clipped
-  // checkbox is indistinguishable from a missing feature.
-  bool showSurfaces = game->surfaceWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Surfaces", &showSurfaces)) {
-    if (showSurfaces) {
-      game->surfaceWindowEntity.set<ActiveWindow>(
-          {std::make_shared<SurfaceWindow>(game)});
-    } else {
-      game->surfaceWindowEntity.remove<ActiveWindow>();
-      game->pendingSurfacePaint.active = false;
-    }
+  if (beginCategory("World & Map")) {
+    toggle("Map Reload Window", game->mapReloadWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->mapReloadWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<MapReloadWindow>(game)});
+             } else {
+               game->mapReloadWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Map Editor", game->mapEditorWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->mapEditorWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<MapEditorWindow>(game)});
+             } else {
+               game->mapEditorWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Surfaces", game->surfaceWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->surfaceWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<SurfaceWindow>(game)});
+             } else {
+               game->surfaceWindowEntity.remove<ActiveWindow>();
+               game->pendingSurfacePaint.active = false;
+             }
+           });
+    toggle("Blueprints", game->blueprintWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->blueprintWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<BlueprintWindow>(game)});
+             } else {
+               game->blueprintWindowEntity.remove<ActiveWindow>();
+               // Leaving the ghost armed with no window to deselect it from would be a
+               // trap, so the placement mode goes with the window.
+               game->selectedBlueprintId.clear();
+             }
+           });
+    toggle("Task Board", game->taskBoardWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->taskBoardWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<TaskBoardWindow>(game)});
+             } else {
+               game->taskBoardWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Show Place Names", game->debugWindowState->GetShowPlaceNames(),
+           [&](bool on) { game->debugWindowState->SetShowPlaceNames(on); });
+    ImGui::EndTable();
   }
 
-  // The task board opens a new row rather than joining the one above, per the
-  // rule stated below: the rows above already fill a narrow Debug Console and
-  // ImGui clips past the right edge, which silently makes a checkbox
-  // unclickable. The Designer and Tile Designer pair continues on this row.
-  bool showTaskBoard = game->taskBoardWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Task Board", &showTaskBoard)) {
-    if (showTaskBoard) {
-      game->taskBoardWindowEntity.set<ActiveWindow>(
-          {std::make_shared<TaskBoardWindow>(game)});
-    } else {
-      game->taskBoardWindowEntity.remove<ActiveWindow>();
-    }
-  }
-  ImGui::SameLine();
-
-  // Its own row for the same reason the rows above have one: the row already
-  // fills a narrow Debug Console and ImGui clips anything past the right edge,
-  // which silently makes a checkbox unclickable.
-  bool showSystemOne = game->systemOneWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("System 1", &showSystemOne)) {
-    if (showSystemOne) {
-      game->systemOneWindowEntity.set<ActiveWindow>(
-          {std::make_shared<SystemOneWindow>(game, game->systemOneRecorder.get())});
-    } else {
-      game->systemOneWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  ImGui::SameLine();
-  bool showDesigner = game->designerWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Designer", &showDesigner)) {
-    if (showDesigner && game->designerWindow) {
-      // The instance is owned by Game, not by the component, so this only shows
-      // or hides it: the conversation survives a toggle. See Game.h.
-      game->designerWindowEntity.set<ActiveWindow>({game->designerWindow});
-    } else {
-      game->designerWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  ImGui::SameLine();
-  bool showContentEditor = game->contentEditorWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Content Editor", &showContentEditor)) {
-    if (showContentEditor && game->contentEditorWindow) {
-      // Owned by Game, not by the component, so this only shows or hides it: the
-      // document being edited survives a toggle.
-      game->contentEditorWindowEntity.set<ActiveWindow>({game->contentEditorWindow});
-    } else {
-      game->contentEditorWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  bool showBlueprint = game->blueprintWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Blueprints", &showBlueprint)) {
-    if (showBlueprint) {
-      game->blueprintWindowEntity.set<ActiveWindow>({std::make_shared<BlueprintWindow>(game)});
-    } else {
-      game->blueprintWindowEntity.remove<ActiveWindow>();
-      // Leaving the ghost armed with no window to deselect it from would be a
-      // trap, so the placement mode goes with the window.
-      game->selectedBlueprintId.clear();
-    }
-  }
-
-  // Deliberately *not* SameLine: the Font Selection / Map Editor / AI Menu / NPC
-  // Menu row already fills a narrow Debug Console, and ImGui clips (and makes
-  // unclickable) anything past the right edge, so appending to that row hid this
-  // checkbox entirely. Its own row fits at any window width.
-  bool showVisionChat = game->visionChatWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Vision Chat", &showVisionChat)) {
-    // The instance itself is owned by Game, not by the component, so this only
-    // shows or hides it: the transcript survives a toggle. See Game.h.
-    if (showVisionChat && game->visionChatWindow) {
-      game->visionChatWindowEntity.set<ActiveWindow>({game->visionChatWindow});
-    } else {
-      game->visionChatWindowEntity.remove<ActiveWindow>();
-    }
-    game->debugWindowState->SetShowVisionChatWindow(showVisionChat);
+  if (beginCategory("AI & Agents")) {
+    toggle("AI Menu", game->aiMenuWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->aiMenuWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<AIMenuWindow>(game)});
+             } else {
+               game->aiMenuWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("NPC Menu", game->npcMenuWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->npcMenuWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<NPCMenuWindow>(game)});
+             } else {
+               game->npcMenuWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("NPC Spawner", game->npcSpawnerWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->npcSpawnerWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<NpcSpawnerWindow>(game)});
+             } else {
+               game->npcSpawnerWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("System 1", game->systemOneWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->systemOneWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<SystemOneWindow>(game,
+                                                      game->systemOneRecorder.get())});
+             } else {
+               game->systemOneWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Vision Chat", game->visionChatWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             // The instance is owned by Game, so this only shows or hides it: the
+             // transcript survives a toggle.
+             if (on && game->visionChatWindow) {
+               game->visionChatWindowEntity.set<ActiveWindow>(
+                   {game->visionChatWindow});
+             } else {
+               game->visionChatWindowEntity.remove<ActiveWindow>();
+             }
+             game->debugWindowState->SetShowVisionChatWindow(on);
+           });
+    toggle("Vision Debug", game->visionDebugWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->visionDebugWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<VisionDebugWindow>(game)});
+             } else {
+               game->visionDebugWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Stop All AI Agents", game->debugWindowState->GetStopAllAI(),
+           [&](bool on) {
+             game->debugWindowState->SetStopAllAI(on);
+             game->ecs.filter<AgentBrainWrapper>().each(
+                 [&](flecs::entity, AgentBrainWrapper &wrapper) {
+                   if (wrapper.agBrain) {
+                     wrapper.agBrain->isStopped = on;
+                   }
+                 });
+           });
+    ImGui::EndTable();
   }
 
-  // Its own row, for the reason stated twice above: this row would otherwise be
-  // past the right edge of a narrow Debug Console, which makes a checkbox
-  // unclickable rather than merely clipped.
-  bool showVisionDebug = game->visionDebugWindowEntity.has<ActiveWindow>();
-  if (ImGui::Checkbox("Vision Debug", &showVisionDebug)) {
-    if (showVisionDebug) {
-      game->visionDebugWindowEntity.set<ActiveWindow>(
-          {std::make_shared<VisionDebugWindow>(game)});
-    } else {
-      game->visionDebugWindowEntity.remove<ActiveWindow>();
-    }
-  }
-
-  ImGui::Separator();
-  
-  bool stopAllAI = game->debugWindowState->GetStopAllAI();
-  if (ImGui::Checkbox("Stop All AI Agents", &stopAllAI)) {
-    game->debugWindowState->SetStopAllAI(stopAllAI);
-    game->ecs.filter<AgentBrainWrapper>().each([&](flecs::entity, AgentBrainWrapper& wrapper) {
-      if (wrapper.agBrain) {
-        wrapper.agBrain->isStopped = stopAllAI;
-      }
-    });
+  if (beginCategory("Content & Interface")) {
+    toggle("Designer", game->designerWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             // Owned by Game, so this only shows or hides it: the conversation survives a
+             // toggle.
+             if (on && game->designerWindow) {
+               game->designerWindowEntity.set<ActiveWindow>(
+                   {game->designerWindow});
+             } else {
+               game->designerWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Content Editor", game->contentEditorWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on && game->contentEditorWindow) {
+               game->contentEditorWindowEntity.set<ActiveWindow>(
+                   {game->contentEditorWindow});
+             } else {
+               game->contentEditorWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Settings", game->settingsWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->settingsWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<SettingsWindow>(game)});
+             } else {
+               game->settingsWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Font Selection", game->fontSelectionWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->fontSelectionWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<FontSelectionWindow>(game)});
+             } else {
+               game->fontSelectionWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    toggle("Collision Debug", game->drawAsciiToggleWindowEntity.has<ActiveWindow>(),
+           [&](bool on) {
+             if (on) {
+               game->drawAsciiToggleWindowEntity.set<ActiveWindow>(
+                   {std::make_shared<DrawAsciiDebugWindow>(game)});
+             } else {
+               game->drawAsciiToggleWindowEntity.remove<ActiveWindow>();
+             }
+           });
+    ImGui::EndTable();
   }
 
   ImGui::Separator();

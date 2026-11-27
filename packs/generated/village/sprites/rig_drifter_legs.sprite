@@ -1,0 +1,60 @@
+sprite 32x32
+kind object
+wrap off
+
+palette {
+  outl = #1A1210
+  trouser_dark = #2A2A2E
+  trouser_base = #3E3E46
+  trouser_light = #54545E
+  gaiter_base = #9E9284
+  gaiter_dark = #6E6458
+  boot_base = #4C4B50
+  boot_dark = #323136
+  boot_hi = #65646B
+}
+
+// Outlines / Silhouette
+rect (12,20) (21,31) color=outl
+
+// Left leg (viewer's left: x=12..16) and right leg (viewer's right: x=17..21)
+// Crotch / space between legs
+erase rect (16,23) (17,31)
+erase pixel (12,20)
+erase pixel (21,20)
+erase pixel (12,31)
+erase pixel (21,31)
+
+// Upper legs / Trousers (y=20 to y=24)
+rect (13,20) (15,24) color=trouser_base
+rect (18,20) (20,24) color=trouser_base
+
+// Trouser shadows and highlights
+pixel (13,20) color=trouser_light
+pixel (18,20) color=trouser_light
+line (15,21) (15,24) color=trouser_dark
+line (20,21) (20,24) color=trouser_dark
+
+// Cloth gaiters / leg wraps (y=25 to y=28)
+rect (13,25) (15,28) color=gaiter_base
+rect (18,25) (20,28) color=gaiter_base
+
+// Wraps details and band shadows
+line (13,26) (15,26) color=gaiter_dark
+line (18,26) (20,26) color=gaiter_dark
+pixel (15,28) color=gaiter_dark
+pixel (20,28) color=gaiter_dark
+pixel (13,25) color=#B8AC9D
+pixel (18,25) color=#B8AC9D
+
+// Dull grey boots (y=29 to y=30) and soles (y=31)
+rect (13,29) (15,30) color=boot_base
+rect (18,29) (20,30) color=boot_base
+pixel (13,29) color=boot_hi
+pixel (18,29) color=boot_hi
+pixel (15,30) color=boot_dark
+pixel (20,30) color=boot_dark
+
+// Boot soles at y=31 (soles touch y=31, centered around x=16)
+line (13,31) (15,31) color=boot_dark
+line (18,31) (20,31) color=boot_dark

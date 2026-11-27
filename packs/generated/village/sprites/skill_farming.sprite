@@ -1,0 +1,73 @@
+sprite 32x32
+kind object
+material stone
+
+palette {
+  dark = #1A1210
+  light = #FFE0B8
+  mid = #F2C79A
+  shade = #C98B60
+}
+
+// Main stalk spine
+line (7,26) (22,8) color=dark
+line (8,26) (23,8) color=dark
+
+// Stalk fill and highlights
+line (8,25) (21,9) color=light
+
+// Base stem
+line (6,28) (9,25) color=dark
+pixel (7,27) color=shade
+
+// Lower small leaf sprouting left
+polygon (7,24) (3,23) (4,20) (8,22) color=dark
+polygon (6,23) (4,22) (5,21) (7,22) color=mid
+
+// Grains along the stem (paired grains stepping up to tip)
+// Grain 1 (Lower Left)
+polygon (8,21) (5,19) (7,17) (10,19) color=dark
+polygon (8,20) (6,19) (7,18) (9,19) color=mid
+pixel (8,19) color=light
+
+// Grain 2 (Lower Right)
+polygon (11,22) (14,20) (16,22) (13,24) color=dark
+polygon (12,22) (14,21) (15,22) (13,23) color=shade
+
+// Grain 3 (Mid-lower Left)
+polygon (11,18) (8,16) (10,14) (13,16) color=dark
+polygon (11,17) (9,16) (10,15) (12,16) color=mid
+pixel (11,16) color=light
+
+// Grain 4 (Mid-lower Right)
+polygon (14,19) (17,17) (19,19) (16,21) color=dark
+polygon (15,19) (17,18) (18,19) (16,20) color=shade
+
+// Grain 5 (Mid-upper Left)
+polygon (14,15) (11,13) (13,11) (16,13) color=dark
+polygon (14,14) (12,13) (13,12) (15,13) color=mid
+pixel (14,13) color=light
+
+// Grain 6 (Mid-upper Right)
+polygon (17,16) (20,14) (22,16) (19,18) color=dark
+polygon (18,16) (20,15) (21,16) (19,17) color=shade
+
+// Grain 7 (Upper Left)
+polygon (17,12) (14,10) (16,8) (19,10) color=dark
+polygon (17,11) (15,10) (16,9) (18,10) color=light
+
+// Grain 8 (Upper Right)
+polygon (20,13) (23,11) (25,13) (22,15) color=dark
+polygon (21,13) (23,12) (24,13) (22,14) color=shade
+
+// Terminal grain at the top
+polygon (20,9) (22,5) (25,6) (23,10) color=dark
+polygon (21,8) (22,6) (24,7) (23,9) color=mid
+pixel (22,7) color=light
+
+// Awns / Bristles radiating from top grains
+line (22,5) (23,2) color=dark
+line (25,6) (28,4) color=dark
+line (16,8) (14,4) color=dark
+line (23,11) (27,9) color=dark
+line (13,11) (10,7) color=dark

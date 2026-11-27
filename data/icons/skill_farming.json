@@ -1,0 +1,6 @@
+{
+  "description": "The HUD icon for the Farming skill. Working the soil and bringing in a crop. Learned by harvesting, and the difference between a field that feeds a village and one that feeds a family.",
+  "name": "Skill Farming",
+  "sprite": "",
+  "visualType": "skill_icon"
+}

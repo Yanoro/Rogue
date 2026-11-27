@@ -10,6 +10,7 @@ namespace {
 std::vector<VisualAssetDef> BuiltinTypes() {
   return {
       {"inventory_icon", "Inventory icons", "inventory_icon", "", {"items", "icons"}, 32, 32},
+      {"inventory_slot", "Inventory slots", "inventory_slot", "", {}, 32, 32},
       {"resource_icon", "Resource icons", "resource_icon", "", {"resources"}, 32, 32},
       {"skill_icon", "Skill icons", "skill_icon", "", {"skills", "icons"}, 32, 32},
       {"status_icon", "Status icons", "status_icon", "", {"status_effects"}, 32, 32},

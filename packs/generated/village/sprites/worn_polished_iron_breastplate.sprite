@@ -1,0 +1,70 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  out = #1A1210
+  iron_dark = #6B778D
+  iron_mid = #9AA6B8
+  iron_light = #D4DFEE
+  iron_spec = #FFFFFF
+  gold_trim = #D89A32
+}
+
+// Outline silhouette for breastplate and shoulder caps
+rect (10,11) (13,14) color=out
+rect (19,11) (22,14) color=out
+rect (11,13) (21,21) color=out
+pixel (10,18) color=out
+pixel (10,19) color=out
+pixel (22,18) color=out
+pixel (22,19) color=out
+
+// Base polished metal body
+rect (11,12) (13,14) color=iron_mid
+rect (19,12) (21,14) color=iron_mid
+rect (12,14) (20,20) color=iron_mid
+pixel (11,18) color=iron_mid
+pixel (11,19) color=iron_mid
+pixel (21,18) color=iron_mid
+pixel (21,19) color=iron_mid
+
+// Shading on lower and right side
+rect (17,16) (20,19) color=iron_dark
+line (13,20) (19,20) color=iron_dark
+pixel (20,15) color=iron_dark
+pixel (21,18) color=iron_dark
+pixel (21,19) color=iron_dark
+
+// Light illumination on upper and left chest
+rect (12,14) (16,18) color=iron_light
+line (11,12) (13,12) color=iron_light
+line (11,13) (11,14) color=iron_light
+pixel (12,19) color=iron_light
+
+// Central breastplate keel/ridge
+line (16,14) (16,19) color=iron_spec
+pixel (16,20) color=iron_light
+
+// Stark polished specular highlights (top-left glint)
+rect (13,14) (14,16) color=iron_spec
+pixel (12,15) color=iron_spec
+pixel (19,12) color=iron_spec
+pixel (20,12) color=iron_spec
+
+// Neck cutout clearing head/neck
+erase rect (14,11) (18,12)
+line (14,12) (18,12) color=out
+pixel (13,13) color=out
+pixel (19,13) color=out
+
+// Gold waist flange/rim
+line (11,21) (21,21) color=gold_trim
+pixel (10,21) color=out
+pixel (22,21) color=out
+pixel (12,21) color=iron_spec
+line (11,22) (21,22) color=out
+
+// Rivets on collar and shoulder straps
+pixel (12,13) color=iron_spec
+pixel (20,13) color=iron_spec

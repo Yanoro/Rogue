@@ -1,0 +1,78 @@
+sprite 32x32
+kind object
+material iron
+palette {
+  dark = #1A1210
+  body = #7A4A2E
+  light = #FFE0B8
+  mid = #C98B60
+}
+
+// Low fire base / embers
+rect (10,26) (21,28) color=dark
+pixel (12,25) color=dark
+pixel (15,24) color=dark
+pixel (16,24) color=dark
+pixel (19,25) color=dark
+rect (11,26) (20,27) color=mid
+pixel (13,26) color=light
+pixel (17,26) color=light
+
+// Pot body outline
+rect (7,15) (24,24) color=dark
+polygon (7,23) (10,26) (21,26) (24,23) color=dark
+
+// Pot ear handles
+pixel (5,16) color=dark
+pixel (5,17) color=dark
+pixel (6,16) color=dark
+pixel (6,17) color=dark
+pixel (25,16) color=dark
+pixel (25,17) color=dark
+pixel (26,16) color=dark
+pixel (26,17) color=dark
+
+// Pot body interior fill
+rect (8,16) (23,23) color=body
+polygon (8,23) (11,25) (20,25) (23,23) color=body
+
+// Pot body two-tone shading / highlight
+rect (8,16) (13,22) color=mid
+pixel (8,16) color=light
+pixel (8,17) color=light
+pixel (9,16) color=light
+
+// Pot rim
+line (6,14) (25,14) color=dark
+line (7,15) (24,15) color=dark
+line (7,14) (24,14) color=light
+line (15,15) (22,15) color=mid
+
+// Interior glow wink under tilted lid
+line (12,13) (21,13) color=light
+
+// Tilted lid
+line (8,12) (23,9) color=dark
+line (9,11) (22,8) color=dark
+line (9,11) (22,8) color=mid
+line (9,11) (15,10) color=light
+// Lid handle knob
+pixel (16,8) color=dark
+pixel (16,7) color=dark
+pixel (15,7) color=dark
+
+// Stylised steam curl rising on the right
+pixel (19,9) color=dark
+pixel (20,8) color=dark
+pixel (20,7) color=dark
+pixel (21,6) color=dark
+pixel (22,5) color=dark
+pixel (23,5) color=dark
+pixel (24,6) color=dark
+pixel (24,7) color=dark
+pixel (23,8) color=dark
+
+pixel (20,7) color=light
+pixel (21,6) color=light
+pixel (22,5) color=light
+pixel (23,6) color=light

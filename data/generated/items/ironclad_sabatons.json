@@ -1,0 +1,19 @@
+{
+  "armor": 2.0,
+  "name": "Ironclad Sabatons",
+  "occupies": 1,
+  "slot": "feet",
+  "tags": [
+    "iron",
+    "armor",
+    "heavy",
+    "plate",
+    "ironclad"
+  ],
+  "tier": 2.0,
+  "worn": {
+    "brief": "clean square-toed iron sabatons polished to an even grey shine with sharp laminar edges",
+    "sprite": "worn_ironclad_sabatons",
+    "z": 45
+  }
+}

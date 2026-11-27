@@ -397,9 +397,10 @@ private:
     // the draft is the thing worth keeping in the history.
     std::optional<RigDesigner::Draft> rig;
 
-    // Equipment: an item definition and its worn-art brief. The world object it would
-    // spawn from is not part of this domain.
-    std::optional<EquipmentDesigner::Draft> equipment;
+    // Equipment: the item definitions and their worn-art briefs, one or more when the
+    // reply was a themed set. The world objects they would spawn from are not part of this
+    // domain.
+    std::optional<EquipmentDesigner::SetDraft> equipment;
 
     // Tile: by name, because the editor writes *through* a pointer into the registry.
     // The entry is therefore the asset's identity rather than a snapshot: re-accepting
@@ -480,12 +481,20 @@ private:
   };
   std::optional<RigDesigner::Draft> rigDraft;
 
-  // The equipment draft and its worn-art request. The preview composes it on one of the
-  // rigs in the registry, because a worn item with no body is just a number.
+  // The equipment draft, and its worn-art requests. The preview composes one item at a time
+  // on a rig from the registry, because a worn item with no body is just a number. A reply
+  // may define one item or a themed set; both are stored as a SetDraft so the pane, the art
+  // queue and the save path have one shape to handle.
   void DrawEquipmentPreview();
+  // Queues worn art for the selected item, and for every item in the set.
   void QueueEquipmentArt();
+  void QueueEquipmentArtFor(EquipmentDesigner::Draft &draft);
+  void QueueEquipmentSetArt();
   void SaveEquipment();
-  std::optional<EquipmentDesigner::Draft> equipmentDraft;
+  EquipmentDesigner::Draft *SelectedEquipment();
+  void SelectEquipmentItem(size_t index);
+  std::optional<EquipmentDesigner::SetDraft> equipmentSet;
+  size_t equipmentSelected = 0;
   std::string equipmentError;
   std::string equipmentArtMessage;
   std::string equipmentPreviewRig;

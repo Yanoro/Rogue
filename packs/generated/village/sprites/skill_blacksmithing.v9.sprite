@@ -1,0 +1,50 @@
+sprite 32x32
+kind object
+material iron
+
+palette {
+  dark = #1A1210
+  lit = #B8B2AC
+  shadow = #766F6A
+}
+
+// Silhouette / Outlines
+// Anvil base & waist
+polygon (7,27) (24,27) (23,24) (19,20) (12,20) (8,24) color=dark
+// Anvil horn (left) and heel (right)
+polygon (4,18) (10,18) (10,21) (6,19) color=dark
+rect (9,16) (25,20) color=dark
+rect (6,15) (26,17) color=dark
+
+// Hammer coming in at a dynamic striking angle from upper-right
+// Hammer shaft
+line (28,3) (17,14) color=dark
+line (27,2) (16,13) color=dark
+// Hammer head outline
+polygon (14,10) (19,5) (23,9) (18,14) color=dark
+
+// Hammer Head Interior
+polygon (15,10) (19,6) (22,9) (18,13) color=lit
+polygon (17,12) (18,13) (22,9) (21,8) color=shadow
+
+// Hammer Handle Interior
+line (27,3) (18,12) color=lit
+
+// Anvil Upper Face / Horn Interior
+// Face surface highlight
+rect (8,16) (24,17) color=lit
+polygon (5,18) (9,17) (9,18) color=lit
+// Body midtones and shadow
+rect (10,18) (24,19) color=shadow
+polygon (5,18) (9,18) (9,20) (6,19) color=shadow
+
+// Anvil Waist & Feet Interior
+polygon (13,21) (18,21) (21,24) (10,24) color=shadow
+polygon (9,25) (22,25) (23,26) (8,26) color=shadow
+rect (10,25) (21,25) color=lit
+rect (14,21) (17,23) color=lit
+
+// Contact impact spark tick
+pixel (14,15) color=lit
+pixel (13,14) color=lit
+pixel (17,15) color=lit

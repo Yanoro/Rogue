@@ -11,6 +11,8 @@
 #include "EquipmentRuntime.hpp"
 #include "Game.h"
 #include "IconPaths.hpp"
+#include "InventoryDrag.hpp"
+#include "InventorySlotDraw.hpp"
 #include "InventoryView.hpp"
 #include "ItemRegistry.h"
 #include "RaceRegistry.h"
@@ -150,9 +152,47 @@ void InventoryWindow::DrawPageControls(int pageCount) {
 void InventoryWindow::DrawGrid() {
   const int capacity = InventoryCapacity(
       game->playerEntity, Settings().player.inventorySlots);
-  std::vector<InventoryCell> cells = BuildInventoryCells(
-      game->playerEntity, &game->itemRegistry);
+  // Cells placed in the holder's remembered slots, not in Holds order: that is what makes a
+  // drop target a specific empty slot and a reorder stick.
+  SlottedInventory view =
+      BuildSlottedInventory(game->playerEntity, &game->itemRegistry, capacity);
   const int first = page * 30;
+
+  // The shared cell plate (visual asset "inventory_slot"). Null when the asset has no art
+  // yet, which the helper answers with the flat rectangle the window used before.
+  const Texture2D *slotPlate = IconPaths::TryResolveIconTexture(
+      game->iconRegistry, game->resourceManager, "inventory_slot",
+      game->debugLog.get());
+
+  // Drops land on one named slot. An occupied slot refuses rather than swapping, and a drop
+  // from this same window is the reorder: the cell moves to the empty slot and nothing is
+  // written to Holds.
+  const auto acceptDroppedCell = [this, &view](int slot) {
+    const InventoryDrag::State &drag = InventoryDrag::Active();
+    if (!drag.active) return;
+    if (slot < 0 || slot >= view.slotCount) {
+      InventoryDrag::Clear();
+      return;
+    }
+    if (view.slotToCell[static_cast<size_t>(slot)] >= 0) {
+      status = "That slot is occupied.";
+      InventoryDrag::Clear();
+      return;
+    }
+    if (drag.source == game->playerEntity) {
+      PlaceItemsAtSlot(game->playerEntity, drag.items, slot);
+      status = "Moved " + drag.name + ".";
+      InventoryDrag::Clear();
+      return;
+    }
+    // The slot is empty, so the cell fits by definition; the move is all-or-nothing because
+    // a slot is the unit.
+    MoveHeldItems(drag.source, game->playerEntity, drag.items);
+    PlaceItemsAtSlot(game->playerEntity, drag.items, slot);
+    status = "Took " + drag.name + ".";
+    if (game->debugLog) game->debugLog->LogInfo(status);
+    InventoryDrag::Clear();
+  };
 
   constexpr int kColumns = 10;
   constexpr float kCell = 42.0f;
@@ -174,11 +214,8 @@ void InventoryWindow::DrawGrid() {
       ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
       if (index >= capacity) {
         const ImVec2 cellMin = ImGui::GetCursorScreenPos();
-        ImGui::GetWindowDrawList()->AddRectFilled(
-            cellMin, cellMin + ImVec2(kCell, kCell), IM_COL32(18, 19, 22, 180));
-        ImGui::GetWindowDrawList()->AddRect(
-            cellMin, cellMin + ImVec2(kCell, kCell), IM_COL32(70, 74, 82, 190),
-            2.0f);
+        DrawInventorySlotPlate(ImGui::GetWindowDrawList(), cellMin, kCell,
+                               slotPlate, /*available=*/false);
         if (const Texture2D *locked = IconPaths::ResolveIconTexture(
                 game->iconRegistry, game->resourceManager, "inventory_locked",
                 game->debugLog.get())) {
@@ -194,27 +231,59 @@ void InventoryWindow::DrawGrid() {
         continue;
       }
 
-      const bool hasItem =
-          index >= first && static_cast<size_t>(index) < cells.size();
-      ImGui::BeginDisabled(!hasItem);
+      const int slotCell =
+          index < view.slotCount ? view.slotToCell[static_cast<size_t>(index)] : -1;
+      InventoryCell *cell =
+          slotCell >= 0 ? &view.cells[static_cast<size_t>(slotCell)] : nullptr;
+      // Enabled even when empty: an empty cell has to accept a drop, and a disabled ImGui
+      // item accepts no payload.
       if (ImGui::InvisibleButton("##cell", ImVec2(kCell, kCell))) {
         // Single click selects nothing yet; double-click is the action below.
       }
       const ImVec2 cellMin = ImGui::GetItemRectMin();
-      ImGui::GetWindowDrawList()->AddRectFilled(
-          cellMin, cellMin + ImVec2(kCell, kCell), IM_COL32(30, 32, 36, 150));
-      ImGui::GetWindowDrawList()->AddRect(
-          cellMin, cellMin + ImVec2(kCell, kCell),
-          hasItem ? IM_COL32(120, 125, 135, 220) : IM_COL32(70, 74, 82, 190),
-          2.0f);
+      DrawInventorySlotPlate(ImGui::GetWindowDrawList(), cellMin, kCell, slotPlate,
+                             /*available=*/true);
       const bool hovered = ImGui::IsItemHovered();
       const bool doubleClicked = ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) &&
                                  hovered;
-      if (hasItem) {
-        InventoryCell &cell = cells[static_cast<size_t>(index)];
+      if (cell != nullptr) {
+        // The drag preview is the sprite alone, centred exactly on the cursor. ImGui's own
+        // drag tooltip is suppressed because it anchors to the bottom-right of the mouse;
+        // the foreground draw list puts the picture where the pointer is.
+        if (ImGui::BeginDragDropSource(
+                ImGuiDragDropFlags_SourceNoPreviewTooltip)) {
+          InventoryDrag::Begin(game->playerEntity, *cell);
+          const uint64_t token = static_cast<uint64_t>(game->playerEntity.id());
+          ImGui::SetDragDropPayload(InventoryDrag::kPayload, &token, sizeof(token));
+          const Texture2D *texture =
+              cell->items.empty()
+                  ? nullptr
+                  : ItemTexture(cell->items.front(), game->resourceManager);
+          if (texture == nullptr) {
+            texture = game->resourceManager.TryGetTexture(UnknownSpritePath());
+          }
+          if (texture != nullptr) {
+            const ImVec2 mouse = ImGui::GetIO().MousePos;
+            const float half = kCell * 0.5f;
+            ImGui::GetForegroundDrawList()->AddImage(
+                static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)),
+                ImVec2(mouse.x - half, mouse.y - half),
+                ImVec2(mouse.x + half, mouse.y + half));
+          }
+          ImGui::EndDragDropSource();
+        }
+      }
+      // Every real slot accepts a drop; the accept helper decides whether the slot is free.
+      if (ImGui::BeginDragDropTarget()) {
+        if (ImGui::AcceptDragDropPayload(InventoryDrag::kPayload) != nullptr) {
+          acceptDroppedCell(index);
+        }
+        ImGui::EndDragDropTarget();
+      }
+      if (cell != nullptr) {
         const ImVec2 min = cellMin;
         if (const Texture2D *texture = ItemTexture(
-                cell.items.empty() ? flecs::entity::null() : cell.items.front(),
+                cell->items.empty() ? flecs::entity::null() : cell->items.front(),
                 game->resourceManager)) {
           ImGui::GetWindowDrawList()->AddImage(
               static_cast<ImTextureID>(static_cast<intptr_t>(texture->id)), min,
@@ -222,9 +291,9 @@ void InventoryWindow::DrawGrid() {
         } else {
           ImGui::GetWindowDrawList()->AddText(
               ImVec2(min.x + 3, min.y + 3), IM_COL32(220, 220, 220, 255),
-              cell.name.c_str());
+              cell->name.c_str());
         }
-        const std::string count = ItemCountLabel(cell);
+        const std::string count = ItemCountLabel(*cell);
         if (!count.empty()) {
           const ImVec2 size = ImGui::CalcTextSize(count.c_str());
           ImGui::GetWindowDrawList()->AddText(
@@ -233,30 +302,37 @@ void InventoryWindow::DrawGrid() {
         }
         if (hovered) {
           ImGui::BeginTooltip();
-          ImGui::TextUnformatted(cell.name.c_str());
-          if (cell.stackable && cell.count > 1) {
-            ImGui::Text("Count: %d", cell.count);
+          ImGui::TextUnformatted(cell->name.c_str());
+          if (cell->stackable && cell->count > 1) {
+            ImGui::Text("Count: %d", cell->count);
           }
-          if (cell.definition != nullptr) {
-            if (cell.definition->damage > 0.0f) {
-              ImGui::Text("Damage: %.0f", cell.definition->damage);
+          if (cell->definition != nullptr) {
+            if (cell->definition->damage > 0.0f) {
+              ImGui::Text("Damage: %.0f", cell->definition->damage);
             }
-            if (cell.definition->armor > 0.0f) {
-              ImGui::Text("Armour: %.0f", cell.definition->armor);
+            if (cell->definition->armor > 0.0f) {
+              ImGui::Text("Armour: %.0f", cell->definition->armor);
             }
             ImGui::TextDisabled("Double-click to equip");
           }
+          ImGui::TextDisabled("Drag to a storage window to store it");
           ImGui::EndTooltip();
         }
-        if (doubleClicked && !cell.items.empty() && cell.definition != nullptr &&
-            !cell.definition->slot.empty()) {
+        if (doubleClicked && !cell->items.empty() && cell->definition != nullptr &&
+            !cell->definition->slot.empty()) {
           const EquipOutcome outcome =
-              EquipItem(game->playerEntity, cell.items.front(), &game->itemRegistry);
+              EquipItem(game->playerEntity, cell->items.front(), &game->itemRegistry);
           status = outcome.message;
           if (game->debugLog) game->debugLog->LogInfo(outcome.message);
         }
+        // The item definition is editable content; the row opens it in the Content Editor.
+        // Drawn after the tooltip on purpose: a tooltip and a popup cannot both be open.
+        if (ImGui::BeginPopupContextItem("##item_menu")) {
+          ContentEditorMenu::Draw(*game, game->ContentTargetsForItem(cell->itemId),
+                                  false);
+          ImGui::EndPopup();
+        }
       }
-      ImGui::EndDisabled();
       ImGui::PopStyleVar();
       ImGui::PopID();
     }
@@ -364,6 +440,14 @@ void InventoryWindow::DrawPaperDoll() {
         status = UnequipItem(game->playerEntity, worn);
         if (game->debugLog) game->debugLog->LogInfo(status);
       }
+      // A worn item is still its definition; open it in the Content Editor.
+      if (ImGui::BeginPopupContextItem("##worn_menu")) {
+        if (const ItemType *type = worn.get<ItemType>()) {
+          ContentEditorMenu::Draw(*game, game->ContentTargetsForItem(type->id),
+                                  false);
+        }
+        ImGui::EndPopup();
+      }
     } else {
       if (const Texture2D *icon = IconPaths::ResolveIconTexture(
               game->iconRegistry, game->resourceManager, layout->icon,
@@ -428,6 +512,13 @@ void InventoryWindow::DrawPaperDoll() {
       if (doubleClicked) {
         status = UnequipItem(game->playerEntity, worn);
         if (game->debugLog) game->debugLog->LogInfo(status);
+      }
+      if (ImGui::BeginPopupContextItem("##worn_menu")) {
+        if (const ItemType *type = worn.get<ItemType>()) {
+          ContentEditorMenu::Draw(*game, game->ContentTargetsForItem(type->id),
+                                  false);
+        }
+        ImGui::EndPopup();
       }
     } else {
       if (const Texture2D *icon = IconPaths::ResolveIconTexture(

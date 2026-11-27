@@ -1,0 +1,22 @@
+{
+  "armor": 3.0,
+  "name": "Ironclad Sallet",
+  "occupies": 1,
+  "slot": "head",
+  "tags": [
+    "iron",
+    "armor",
+    "heavy",
+    "plate",
+    "ironclad"
+  ],
+  "tier": 2.0,
+  "worn": {
+    "brief": "a smooth, unblemished iron sallet with a narrow eye slit and a clean grey metallic gleam",
+    "hides": [
+      "hair"
+    ],
+    "sprite": "worn_ironclad_sallet",
+    "z": 100
+  }
+}

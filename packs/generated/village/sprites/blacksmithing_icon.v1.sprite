@@ -1,0 +1,61 @@
+sprite 32x32
+kind object
+palette {
+  out = #1A1210
+  light = #FFE0B8
+  mid = #F2C79A
+  dark = #C98B60
+  deep = #7A4A2E
+}
+
+// Low flames beneath the pot
+rect (9,25) (22,26) color=out
+polygon (9,25) (11,21) (13,25) color=out
+polygon (14,26) (16,20) (18,26) color=out
+polygon (19,25) (21,21) (23,25) color=out
+polygon (10,24) (11,22) (12,24) color=light
+polygon (15,25) (16,21) (17,25) color=light
+polygon (20,24) (21,22) (22,24) color=light
+
+// Pot body outline
+circle (16,18) radius=7 color=out
+rect (9,13) (22,19) color=out
+rect (8,12) (23,14) color=out
+
+// Pot handles
+rect (6,14) (8,16) color=out
+rect (23,14) (25,16) color=out
+pixel (7,15) color=light
+pixel (24,15) color=dark
+
+// Pot interior fill
+circle (16,18) radius=6 color=mid
+rect (10,14) (21,18) color=mid
+rect (9,13) (22,13) color=light
+
+// Base shading and volume
+circle (16,18) radius=5 color=mid
+rect (10,18) (21,21) color=dark
+line (11,22) (20,22) color=dark
+line (12,23) (19,23) color=deep
+
+// Pot rim and interior opening
+line (10,13) (21,13) color=light
+rect (11,14) (20,15) color=deep
+
+// Highlight on lit rim and left side
+pixel (9,14) color=light
+pixel (10,15) color=light
+line (10,16) (10,18) color=light
+
+// Gentle rising steam curl
+line (15,9) (15,11) color=out
+line (16,7) (16,8) color=out
+line (17,6) (18,6) color=out
+line (19,7) (19,8) color=out
+line (17,8) (18,8) color=out
+
+pixel (15,10) color=light
+pixel (16,8) color=light
+pixel (17,7) color=light
+pixel (18,7) color=light

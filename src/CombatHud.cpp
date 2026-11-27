@@ -686,6 +686,8 @@ void Game::DrawCombatHud() {
               mutableAutoCast->Set(skillId, on);
             }
           }
+          // The skill is editable content too; the row opens it in the Content Editor.
+          ContentEditorMenu::Draw(*this, ContentTargetsForSkill(skillId), true);
           ImGui::EndPopup();
         }
         if (def != nullptr && hovered) {

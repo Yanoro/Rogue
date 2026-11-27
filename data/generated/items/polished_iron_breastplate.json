@@ -1,0 +1,18 @@
+{
+  "armor": 4.0,
+  "name": "Polished Iron Breastplate",
+  "occupies": 1,
+  "slot": "torso",
+  "tags": [
+    "armor",
+    "torso",
+    "iron",
+    "heavy"
+  ],
+  "tier": 2.0,
+  "worn": {
+    "brief": "a rounded plate cuirass in brilliant pale polished iron with stark white specular highlights and a slight waist flare",
+    "sprite": "worn_polished_iron_breastplate",
+    "z": 60
+  }
+}

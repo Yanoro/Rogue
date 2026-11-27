@@ -15,6 +15,13 @@ private:
   std::unordered_map<std::string, std::string> lastMessages;
   std::unordered_map<std::string, std::string> fullContexts;
   std::mutex messagesMutex;
+
+  // Why the last stream on a context failed. Separate from the message maps because
+  // it is written by the curl worker and read by the caller only after the sentinel,
+  // the same handoff as lastMessages -- but it must survive an *empty* response,
+  // which is exactly the case lastMessages does not record. See AI::TakeStreamError.
+  std::unordered_map<std::string, std::string> streamErrors;
+  std::mutex streamErrorMutex;
   nlohmann::json options;
   std::string currentProvider = "Unknown";
   std::string currentQuantization = "Unknown";
@@ -36,6 +43,11 @@ private:
     OpenRouterAI *aiInstance;
     std::string fullResponse;
     bool isThinking = false;
+    // Captured while the workers still has the body: an error object the provider
+    // sent instead of content, and the reason the last choice ended. Kept on the
+    // context rather than re-read from the buffer because the parser has consumed it.
+    std::string error;
+    std::string finishReason;
   };
 
   std::atomic<int> totalRequests{0};
@@ -69,6 +81,10 @@ public:
   bool isBusy(const std::string &contextId) override;
   std::string getLastMessage(const std::string &contextId) override;
   std::string getContext(const std::string &contextId) override;
+
+  // See AI::TakeStreamError. Reads and clears the failure recorded for the most
+  // recent stream on `contextId`.
+  std::string TakeStreamError(const std::string &contextId) override;
 
   std::string getAIName() const override { return "OpenRouter"; }
   std::string getModelName() const override { return modelName; }

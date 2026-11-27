@@ -69,6 +69,7 @@ struct FloatingText {
   // its number where the victim fell.
   Vector2 anchor = {0.0f, 0.0f};
   bool anchored = false;
+
 };
 
 // Spawns one floating number over `target` and returns its carrier entity, or
@@ -132,6 +133,16 @@ inline flecs::entity SpawnFloatingCallout(flecs::entity target, std::string text
       SpawnFloatingText(target, std::move(text), color, extraStack, fontSize,
                         centered, vertical, motion);
   return carrier;
+}
+
+// One player-facing notice with its own size, optionally centred on the target's sprite.
+// The container window uses this for the "walked too far" message, where the text, colour
+// and size come from settings and the place is the player's own body.
+inline flecs::entity SpawnFloatingNotice(flecs::entity target, std::string text,
+                                         Color color, float fontSize,
+                                         bool centered, int extraStack = 0) {
+  return SpawnFloatingText(target, std::move(text), color, extraStack, fontSize,
+                           centered);
 }
 
 // "+N" over an entity that earned `amount` XP. A grant that only banks progress

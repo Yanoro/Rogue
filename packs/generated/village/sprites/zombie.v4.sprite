@@ -1,0 +1,131 @@
+sprite 96x96
+kind object
+wrap off
+
+palette {
+  bg = #00000000
+  ink = #0d0b0a
+  s0 = #1b1714
+  s1 = #2a231d
+  s2 = #3b3128
+  s3 = #5a4938
+  bone_base = #cbb89a
+  bone_hi = #e6c48a
+  bone_dark = #5a4938
+  metal_base = #43474a
+  metal_hi = #6b6f73
+  rust = #7a3f2a
+  ember = #d0783a
+}
+
+// Silhouette / Outlines & Main Mass
+// Slumped Head / Skull
+circle (38,20) radius=12 color=ink
+rect (30,22) (46,34) color=ink
+circle (38,19) radius=11 color=s1
+rect (31,22) (45,33) color=s1
+
+// Head shading and skull structure
+circle (37,18) radius=9 color=s2
+polygon (34,13) (42,13) (44,22) (32,22) color=bone_base
+rect (33,14) (40,19) color=bone_hi
+// Eye sockets
+circle (35,21) radius=3 color=ink
+circle (42,22) radius=3 color=ink
+pixel (35,21) color=ember
+pixel (42,22) color=s0
+// Slack jaw / teeth
+rect (34,26) (43,32) color=s0
+line (35,28) (42,28) color=ink
+pixel (36,27) color=bone_base
+pixel (38,27) color=bone_hi
+pixel (40,27) color=bone_base
+pixel (37,30) color=bone_base
+pixel (39,30) color=bone_hi
+pixel (41,30) color=bone_dark
+
+// Hunched Neck and Shoulder Mass
+polygon (26,28) (56,26) (66,48) (22,46) color=ink
+polygon (28,30) (54,28) (64,46) (24,44) color=s1
+polygon (30,32) (50,30) (56,42) (28,42) color=s2
+
+// Left Arm / Dragging Limbs (Viewer's Left - Reaching forward)
+polygon (20,38) (28,36) (24,62) (14,60) color=ink
+polygon (22,39) (27,37) (23,60) (16,59) color=s1
+// Forearm & Bony Hand
+polygon (14,58) (24,60) (18,84) (10,78) color=ink
+polygon (15,60) (22,61) (17,82) (12,77) color=bone_dark
+line (12,77) (10,88) color=bone_base
+line (14,79) (13,90) color=bone_base
+line (17,80) (17,89) color=bone_hi
+pixel (10,89) color=ink
+pixel (13,91) color=ink
+pixel (17,90) color=ink
+
+// Torso / Tatters / Exposed Ribs
+polygon (26,44) (62,44) (58,74) (24,70) color=ink
+polygon (28,46) (60,46) (56,72) (26,68) color=s1
+// Tattered layers
+polygon (30,48) (56,48) (52,66) (30,64) color=s2
+polygon (34,50) (48,50) (46,62) (32,60) color=s3
+// Exposed necrotic ribs & wound (right side of chest)
+rect (46,48) (56,64) color=s0
+line (46,51) (54,52) color=bone_base
+line (47,55) (55,56) color=bone_base
+line (48,59) (54,60) color=bone_base
+line (48,63) (52,64) color=bone_dark
+pixel (47,52) color=bone_hi
+pixel (48,56) color=bone_hi
+pixel (50,53) color=rust
+pixel (51,57) color=rust
+pixel (49,61) color=rust
+
+// Pelvis and Shrouded Waist
+polygon (24,68) (58,70) (64,84) (20,80) color=ink
+polygon (26,70) (56,72) (62,82) (22,78) color=s1
+// Tattered hem points
+line (22,78) (20,88) color=ink
+line (26,80) (28,89) color=ink
+line (35,82) (36,92) color=ink
+line (44,82) (43,90) color=ink
+line (54,82) (57,89) color=ink
+polygon (24,78) (28,87) (33,78) color=s0
+polygon (33,78) (37,90) (42,78) color=s2
+polygon (42,78) (45,88) (52,78) color=s0
+polygon (52,78) (56,87) (60,78) color=s1
+
+// Trailing Back Arm (Viewer's Right)
+polygon (56,36) (68,40) (74,64) (64,62) color=ink
+polygon (58,38) (66,41) (72,62) (64,61) color=s0
+// Forearm clutching a rusted broken blade
+polygon (66,60) (74,62) (80,80) (72,78) color=ink
+polygon (68,62) (73,63) (78,78) (73,77) color=s1
+// Rusted cleaver/iron embedded or gripped
+rect (74,74) (82,90) color=ink
+rect (75,76) (80,88) color=metal_base
+line (76,76) (76,87) color=metal_hi
+line (78,78) (80,88) color=rust
+pixel (77,82) color=rust
+pixel (79,85) color=s0
+
+// Legs: Shambling Stance
+// Right Leg (Forward step, bent knee)
+polygon (28,78) (40,78) (38,92) (26,92) color=ink
+polygon (30,80) (38,80) (36,91) (28,91) color=s0
+// Left Leg (Trailing, twisted back)
+polygon (46,78) (58,78) (68,93) (56,93) color=ink
+polygon (48,80) (56,80) (66,92) (57,92) color=s0
+// Rotting foot/toes forward
+rect (24,90) (36,94) color=ink
+rect (25,91) (35,93) color=bone_dark
+pixel (26,91) color=bone_base
+pixel (28,91) color=bone_base
+pixel (30,91) color=bone_base
+// Trailing heel
+rect (58,91) (68,94) color=ink
+rect (59,92) (67,93) color=s0
+
+// Surface weathering and dirt flecks
+scatter color=s0,s1 density=0.12 seed=404 cluster=2 inside
+scatter color=rust density=0.04 seed=911 cluster=1 inside
+scatter color=bone_dark density=0.03 seed=133 cluster=1 inside

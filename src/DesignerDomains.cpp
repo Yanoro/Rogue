@@ -131,6 +131,10 @@ const Descriptor *Parse(const std::string &id) {
 
 bool IsSprite(Domain domain) { return For(domain).sprite != nullptr; }
 
+bool SupportsSet(Domain domain) {
+  return IsSprite(domain) || domain == Domain::Equipment;
+}
+
 SpriteKinds::Kind SpriteOf(Domain domain) {
   const Descriptor &descriptor = For(domain);
   if (descriptor.sprite == nullptr) {

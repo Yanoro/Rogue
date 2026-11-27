@@ -1,0 +1,44 @@
+{
+  "description": "A lean wanderer in patched wool, rough trousers, and a faded red neckerchief.",
+  "height": 32,
+  "name": "Drifter",
+  "parts": [
+    {
+      "brief": "threadbare charcoal trousers with wrapped cloth gaiters over dull grey boots",
+      "id": "legs",
+      "sprite": "rig_drifter_legs",
+      "z": 10
+    },
+    {
+      "brief": "patched brown wool tunic with a frayed red bandana tied high around the neck",
+      "id": "body",
+      "sprite": "rig_drifter_body",
+      "z": 20
+    },
+    {
+      "brief": "frayed grey sleeve down to a bandaged wrist and relaxed hand",
+      "id": "arm_left",
+      "sprite": "rig_drifter_arm_left",
+      "z": 25
+    },
+    {
+      "brief": "frayed grey sleeve ending in a bare hand shaped to grip a hilt",
+      "id": "arm_right",
+      "sprite": "rig_drifter_arm_right",
+      "z": 25
+    },
+    {
+      "brief": "lean, shadowed face with scruff on the jaw and wary eyes",
+      "id": "head",
+      "sprite": "rig_drifter_head",
+      "z": 30
+    },
+    {
+      "brief": "shaggy matted dark brown hair hanging low over the forehead and ears",
+      "id": "hair",
+      "sprite": "rig_drifter_hair",
+      "z": 40
+    }
+  ],
+  "width": 32
+}

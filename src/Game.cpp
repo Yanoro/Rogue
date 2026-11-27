@@ -969,6 +969,12 @@ void Game::UpdateGUI() {
     Vector2 mouseWorldPos = GetScreenToWorld2D(GetMousePosition(), camera);
     GamePosition gPos = map->ScreenCoordsToGameCoords(mouseWorldPos.x, mouseWorldPos.y);
 
+    // The menu is per cell now, not per entity: a bare tile has no entity, and a cell can
+    // hold a tile, a surface and a character at once. The target is the one action
+    // interactable on the cell, when there is one.
+    contextMenuCell = gPos;
+    contextMenuTarget = flecs::entity::null();
+
     bool found = false;
     // Both interactable objects and characters open the player context menu.
     // The player itself is excluded: its own inventory is not exposed this way.
@@ -984,9 +990,15 @@ void Game::UpdateGUI() {
             return;
           }
           contextMenuTarget = entity;
-          openContextMenu = true;
           found = true;
         });
+
+    // An object cell keeps its menu even with the shortcut off. A bare cell only opens one
+    // when the shortcut is on, because otherwise there would be nothing in it -- that is
+    // the old behaviour, preserved.
+    if (found || Settings().ui.openInContentEditor) {
+      openContextMenu = true;
+    }
   }
 
 }
@@ -1480,6 +1492,7 @@ void Game::BeginSpriteGap(const Blueprint &design, const MissingMaterial &gap,
 
 void Game::LoadPlayerTemplate() {
   playerStartingSkills.clear();
+  playerKnownRecipes.clear();
   const std::string path = Settings().content.player;
   if (path.empty()) return;
   std::ifstream file(path);
@@ -1505,6 +1518,24 @@ void Game::LoadPlayerTemplate() {
     else std::cerr << message << std::endl;
   };
   ParseStartingSkills(document["skills"], "player", playerStartingSkills, warn);
+
+  // Authored knowledge, alongside skills: a recipe can be given to a character without a
+  // skill teaching it, which is the second way into KnownRecipes.
+  if (document.contains("knownRecipes")) {
+    if (!document["knownRecipes"].is_array()) {
+      warn("Warning: player template " + path +
+           " has a non-array 'knownRecipes'; ignoring it.");
+    } else {
+      for (const auto &id : document["knownRecipes"]) {
+        if (id.is_string() && !id.get<std::string>().empty()) {
+          playerKnownRecipes.push_back(id.get<std::string>());
+        } else {
+          warn("Warning: player template " + path +
+               " has an empty or non-string knownRecipes entry; skipping it.");
+        }
+      }
+    }
+  }
 }
 
 void Game::LoadContentOverrides() {
@@ -1794,7 +1825,7 @@ std::string Game::BuildDesignerPrompt(DesignerDomains::Domain domain,
   }
   if (domain == DesignerDomains::Domain::Equipment) {
     return EquipmentDesigner::BuildSystemPrompt(
-        Settings().content.equipmentPromptFile);
+        Settings().content.equipmentPromptFile, set);
   }
   if (domain == DesignerDomains::Domain::Map) {
     // The map prompt needs both vocabularies: the legend names tiles, and objects are

@@ -179,6 +179,20 @@ PromptRewriter::Brief Icon() {
   return brief;
 }
 
+PromptRewriter::Brief EquipmentLayer() {
+  PromptRewriter::Brief brief;
+  brief.kind = "equipment_layer";
+  brief.context =
+      "The text describes one worn equipment layer for a top-down 2D game: a single "
+      "transparent sprite drawn over a character's rig, in the item's own frame -- a "
+      "helmet on the head slot, a cuirass on the torso, a blade held at the hand grip. "
+      "It can describe the item's shape, materials, colours, wear, highlights and how "
+      "it reads on the body. It cannot describe a whole character, body parts the layer "
+      "does not cover, a pose, a portrait, an animation, a world object, stats or "
+      "gameplay effects. Keep it to the layer itself and do not rename the item.";
+  return brief;
+}
+
 PromptRewriter::Brief SurfaceSprite() {
   PromptRewriter::Brief brief;
   brief.kind = "surface_sprite";
