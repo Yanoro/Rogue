@@ -145,6 +145,9 @@ private:
   // default. It is a generation control, not a content field; the content's own style
   // field remains the persistent override.
   std::string generationTheme;
+  // "No style" for the next generation: unlike an empty theme, this stops the fallback to
+  // the global default rather than asking for it. Transient for the same reason.
+  bool generationNoStyle = false;
   char anchorSlotBuffer[64] = "";
 
   std::string status;

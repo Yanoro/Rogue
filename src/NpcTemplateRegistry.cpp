@@ -299,9 +299,12 @@ nlohmann::json NpcTemplateRegistry::ToJson(const NpcTemplate& definition) const 
   nlohmann::json document = nlohmann::json::object();
   document["name"] = definition.name;
   if (!definition.description.empty()) document["description"] = definition.description;
-  if (!definition.sprite.empty()) document["sprite"] = definition.sprite;
-  if (!definition.rig.empty()) document["rig"] = definition.rig;
-  if (!definition.portrait.empty()) document["portrait"] = definition.portrait;
+  // Always present, even empty: an empty sprite/rig/portrait is a real choice, and the
+  // Content Editor only draws a picker when the key exists. Omitting it made the zombie
+  // template impossible to give a sprite.
+  document["sprite"] = definition.sprite;
+  document["rig"] = definition.rig;
+  document["portrait"] = definition.portrait;
   if (!definition.race.empty()) document["race"] = definition.race;
   if (!definition.background.empty()) document["background"] = definition.background;
   if (!definition.brain.empty()) document["brain"] = definition.brain;

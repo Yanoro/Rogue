@@ -1526,12 +1526,22 @@ void Game::RefreshNpcTemplateAppearance(const std::string &templateId) {
         }
       });
   for (flecs::entity entity : targets) {
-    // Remove first: GiveBody only attaches a Sprite when the new reference
-    // resolves. Without this, a sprite changed to empty or invalid would leave
-    // the old picture on the live entity.
+    // Rebuild the body the way spawn does, so an edit looks exactly like a
+    // respawn. Remove first: GiveBody only attaches a Sprite when the new
+    // reference resolves, and a stale RigBody would keep winning over any new
+    // sprite.
     entity.remove<Sprite>();
+    entity.remove<RigBody>();
+    entity.remove<RigAnim>();
     GiveBody(entity, &raceRegistry, definition->race, definition->slots,
              definition->sprite, resourceManager, debugLog.get());
+    if (!definition->rig.empty()) {
+      if (const ActorRig *rig = rigRegistry.Get(definition->rig)) {
+        entity.set<RigBody>({definition->rig});
+        entity.set<RigAnim>({});
+        ApplyRigFootprint(entity, *rig);
+      }
+    }
     if (definition->portrait.empty()) {
       entity.remove<Portrait>();
     } else {

@@ -85,6 +85,15 @@ bool ArtStyleRegistry::AddOrReplace(const nlohmann::json &document,
     if (error != nullptr) *error = "the entry has no id or name";
     return false;
   }
+  // `kNoArtStyle` is a reserved value, not a theme: an asset writes it to say "no style",
+  // so a theme loaded under the same id would make that sentence mean the opposite.
+  if (IsNoArtStyle(definition.id)) {
+    if (error != nullptr) {
+      *error = std::string("'") + kNoArtStyle +
+               "' is reserved for 'no style' and cannot be a theme id";
+    }
+    return false;
+  }
   definition.name = document.value("name", definition.id);
   definition.description = document.value("description", std::string());
   definition.positive = document.value("positive", std::string());
